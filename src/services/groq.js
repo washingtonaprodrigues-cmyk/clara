@@ -92,7 +92,7 @@ async function classify(message, history = [], userName = null, tom = 'carinhoso
   try {
     const prompt = buildClassifyPrompt(userName, tom, history);
     const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: 'llama-3.1-8b-instant',
       messages: [
         { role: 'system', content: prompt },
         { role: 'user', content: message },
@@ -138,7 +138,7 @@ async function generateSearchResponse(query, searchResult, userName, tom, histor
       : `Usuario perguntou: "${query}"\nNao encontrei na web. Responda com seu proprio conhecimento de forma util e organizada com emojis e categorias. Avise se dados forem muito especificos. Ofereca continuar ajudando.`;
 
     const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: 'llama-3.1-8b-instant',
       messages: [
         { role: 'system', content: systemPrompt },
         ...history,
@@ -162,7 +162,7 @@ async function generateMemorySummary(memories, question, userName, tom) {
       .join('\n');
     const systemPrompt = buildResponsePrompt(userName, tom);
     const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: 'llama-3.1-8b-instant',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Minhas anotacoes:\n${memoriesText}\n\nPergunta: ${question}` },
