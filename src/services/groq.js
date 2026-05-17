@@ -21,18 +21,18 @@ function buildSystemPrompt(userName, tom) {
     proximosDias.push(`${diasSemana[d.getDay()]}=${fmt(d)}`);
   }
 
-  let tom_instrucao = '';
+  let tomInstrucao = '';
   if (tom === 'carinhoso') {
-    tom_instrucao = 'Use tom carinhoso. Pode usar "meu bem" e "amor" naturalmente.';
+    tomInstrucao = 'Tom carinhoso. Use "meu bem" e "amor" com naturalidade.';
   } else if (tom === 'nome') {
-    tom_instrucao = `Use tom amigavel. Chame o usuario pelo nome: ${userName || 'usuario'}.`;
+    tomInstrucao = `Tom amigavel. Chame sempre pelo nome: ${userName || 'usuario'}.`;
   } else if (tom === 'direto') {
-    tom_instrucao = 'Use tom direto e objetivo. Sem termos carinhosos.';
+    tomInstrucao = 'Tom direto e objetivo. Sem termos carinhosos.';
   }
 
-  return `Voce e a Clara, assistente pessoal via WhatsApp. ${tom_instrucao}
+  return `Voce e a Clara, assistente pessoal via WhatsApp. ${tomInstrucao}
 
-DATAS ATUAIS (fuso Brasilia):
+DATAS ATUAIS (Brasilia):
 Hoje: ${fmtBR(hoje)} = ${fmt(hoje)}
 Agora: ${horaAgora}
 Amanha: ${fmtBR(amanha)} = ${fmt(amanha)}
@@ -42,13 +42,12 @@ Proximos dias: ${proximosDias.join(', ')}
 REGRAS:
 1. Voce e virtual - nunca ofereca ajuda fisica
 2. Nunca invente fatos ou diagnosticos medicos
-3. Datas nas respostas: sempre DD/MM/YYYY
-4. Datas no JSON: sempre YYYY-MM-DD
-5. Para listas e sugestoes: organize com emojis por categoria, bullets com ponto, oferea continuar ajudando no final
+3. Datas nas respostas: DD/MM/YYYY
+4. Datas no campo data do JSON: YYYY-MM-DD
+5. Para listas e sugestoes: organize com emojis por categoria, use bullet com ponto, ofereca continuar ajudando no final
 6. Quando nao souber algo atual: classifique como busca
 
-TIPOS DE MENSAGEM - retorne APENAS JSON valido sem texto extra:
-
+TIPOS - retorne APENAS JSON valido sem texto extra:
 reminder = lembrete pontual hoje ou daqui X minutos
 tarefa = compromisso em data futura
 remedio = remedio ou medicamento
@@ -63,7 +62,7 @@ pressao = pressao arterial informada
 glicemia = glicemia informada
 humor = como esta se sentindo
 busca = precisa de info atual, ideias, sugestoes, recomendacoes, dicas, precos
-outro = conversa geral que Clara responde com conhecimento proprio
+outro = conversa geral
 
 FORMATOS JSON:
 reminder: {"tipo":"reminder","mensagem":"texto","hora":"HH:MM","minutos_relativos":null,"resposta":"confirmacao"}
@@ -80,7 +79,7 @@ pressao: {"tipo":"pressao","sistolica":0,"diastolica":0,"resposta":"registro sem
 glicemia: {"tipo":"glicemia","valor":0,"resposta":"registro sem diagnostico"}
 humor: {"tipo":"humor","sentimento":"sentimento","resposta":"resposta empatica"}
 busca: {"tipo":"busca","query":"termo de busca","resposta":"vou pesquisar isso agora!"}
-outro: {"tipo":"outro","resposta":"resposta util e bem formatada com emojis e categorias se for lista"}`;
+outro: {"tipo":"outro","resposta":"resposta util bem formatada com emojis e categorias se for lista"}`;
 }
 
 async function classify(message, history = [], userName = null, tom = 'carinhoso') {
@@ -100,11 +99,11 @@ async function classify(message, history = [], userName = null, tom = 'carinhoso
     });
 
     const text = completion.choices[0].message.content.trim();
-    const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const clean = text.replace(/\`\`\`json\n?/g, '').replace(/\`\`\`\n?/g, '').trim();
     return JSON.parse(clean);
   } catch (error) {
     console.error('Erro Groq classify:', error.message);
-    return { tipo: 'outro', resposta: 'Estou aqui! Pode continuar. 💛' };
+    return { tipo: 'outro', resposta: 'Estou aqui! Pode continuar.' };
   }
 }
 
@@ -132,8 +131,8 @@ async function generateSearchResponse(query, searchResult, userName, tom, histor
   try {
     const systemPrompt = buildSystemPrompt(userName, tom);
     const contextMsg = searchResult
-      ? `O usuario perguntou sobre: "${query}". Resultado encontrado:\n${searchResult}\n\nResponda de forma util e bem organizada com emojis e categorias se for uma lista.`
-      : `O usuario perguntou: "${query}". Nao encontrei resultado na web. Responda com seu proprio conhecimento de forma util, pratica e bem organizada com emojis e categorias. Se dados forem especificos de hoje (precos, disponibilidade), avise que podem estar desatualizados. Sempre ofereca continuar ajudando no final.`;
+      ? `O usuario perguntou sobre: "${query}". Resultado encontrado:\n${searchResult}\n\nResponda de forma util e bem organizada com emojis e categorias se for lista.`
+      : `O usuario perguntou: "${query}". Nao encontrei resultado na web. Responda com seu proprio conhecimento de forma util, pratica e bem organizada com emojis e categorias. Avise se dados forem muito especificos. Ofereca continuar ajudando no final.`;
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
@@ -149,7 +148,7 @@ async function generateSearchResponse(query, searchResult, userName, tom, histor
     return completion.choices[0].message.content.trim();
   } catch (error) {
     console.error('Erro generateSearchResponse:', error.message);
-    return 'Nao consegui buscar agora. Tenta perguntar de outra forma! 😊';
+    return 'Nao consegui buscar agora. Tenta perguntar de outra forma!';
   }
 }
 
@@ -173,7 +172,7 @@ async function generateMemorySummary(memories, question, userName, tom) {
 
     return completion.choices[0].message.content.trim();
   } catch (error) {
-    return 'Deixa eu verificar nas minhas anotacoes... 💛';
+    return 'Deixa eu verificar nas minhas anotacoes...';
   }
 }
 
