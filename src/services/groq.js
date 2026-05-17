@@ -1,3 +1,4 @@
+// Clara v1.3 - contexto 12 mensagens
 const Groq = require('groq-sdk');
 const axios = require('axios');
 
