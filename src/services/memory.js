@@ -52,7 +52,7 @@ async function saveConversationMessage(userId, role, content) {
   }
 }
 
-async function getConversationHistory(userId, limit = 8) {
+async function getConversationHistory(userId, limit = 12) {
   const msgs = await prisma.memory.findMany({
     where: { userId, type: 'conversa' },
     orderBy: { createdAt: 'desc' },
