@@ -1,4 +1,4 @@
-// Clara v1.4
+// Clara v1.4 — corrigido
 const Groq = require('groq-sdk');
 const axios = require('axios');
 
@@ -24,8 +24,10 @@ function buildClassifyPrompt(userName, tom, history) {
   const d = getDatas();
   let tomStr = tom === 'nome' ? `pelo nome ${userName || 'usuario'}` : tom === 'direto' ? 'direto sem carinho' : 'carinhoso';
 
-  const historyStr = history.length > 0
-    ? 'Historico recente:\n' + history.map(h => `${h.role === 'user' ? 'Usuario' : 'Clara'}: ${h.content}`).join('\n')
+  // CORRECAO: limita historico a 3 mensagens para economizar tokens
+  const historyLimitada = history.slice(-3);
+  const historyStr = historyLimitada.length > 0
+    ? 'Historico recente:\n' + historyLimitada.map(h => `${h.role === 'user' ? 'Usuario' : 'Clara'}: ${h.content}`).join('\n')
     : '';
 
   return `Voce e um classificador de mensagens para a assistente Clara (tom: ${tomStr}).
@@ -35,6 +37,7 @@ Proximos 7 dias: ${d.proximos}
 ${historyStr}
 
 Analise a mensagem e retorne SOMENTE um objeto JSON valido. Nada mais, nenhum texto fora do JSON.
+Se houver multiplos lembretes ou tarefas na mesma mensagem, processe apenas o PRIMEIRO. O usuario pode enviar os outros separadamente.
 
 Tipos possiveis:
 - saudacao: oi, ola, bom dia, como vai
@@ -88,24 +91,52 @@ Oferea continuar ajudando no final.
 Nunca ofereca ajuda fisica. Nunca de diagnosticos medicos.`;
 }
 
+// CORRECAO: extrai o primeiro JSON valido da resposta, mesmo que venha com texto ao redor
+function extrairJSON(text) {
+  const clean = text
+    .replace(/^```json\s*/g, '')
+    .replace(/^```\s*/g, '')
+    .replace(/```\s*$/g, '')
+    .trim();
+
+  // Tenta parse direto primeiro
+  try {
+    return JSON.parse(clean);
+  } catch (_) {}
+
+  // Fallback: extrai o primeiro objeto JSON encontrado na string
+  const match = clean.match(/\{[\s\S]*\}/);
+  if (match) {
+    return JSON.parse(match[0]);
+  }
+
+  throw new Error('Nenhum JSON valido encontrado na resposta');
+}
+
 async function classify(message, history = [], userName = null, tom = 'carinhoso') {
   try {
     const prompt = buildClassifyPrompt(userName, tom, history);
     const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      // CORRECAO: modelo menor para classificacao — economiza ~10x tokens por dia
+      model: 'llama3-8b-8192',
       messages: [
         { role: 'system', content: prompt },
         { role: 'user', content: message },
       ],
       temperature: 0.1,
-      max_tokens: 800,
+      max_tokens: 400,
     });
 
     const text = completion.choices[0].message.content.trim();
-    const clean = text.replace(/^```json\s*/g, '').replace(/^```\s*/g, '').replace(/```\s*$/g, '').trim();
-    return JSON.parse(clean);
+    return extrairJSON(text);
   } catch (error) {
     console.error('Erro Groq classify:', error.message);
+
+    // CORRECAO: se for rate limit, avisa o usuario de forma amigavel
+    if (error.message && error.message.includes('rate_limit_exceeded')) {
+      return { tipo: 'outro', resposta: 'Estou um pouquinho sobrecarregada agora, meu bem! Tenta de novo em alguns minutinhos 💛' };
+    }
+
     return { tipo: 'outro', resposta: 'Estou aqui! Pode continuar.' };
   }
 }
@@ -141,7 +172,7 @@ async function generateSearchResponse(query, searchResult, userName, tom, histor
       model: 'llama-3.3-70b-versatile',
       messages: [
         { role: 'system', content: systemPrompt },
-        ...history,
+        ...history.slice(-3), // CORRECAO: limita historico aqui tambem
         { role: 'user', content: contextMsg },
       ],
       temperature: 0.5,
