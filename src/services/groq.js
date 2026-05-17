@@ -1,108 +1,108 @@
-// Clara v1.3 - contexto 12 mensagens
+// Clara v1.4
 const Groq = require('groq-sdk');
 const axios = require('axios');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-function buildSystemPrompt(userName, tom) {
+function getDatas() {
   const agora = new Date();
   const hoje = new Date(agora.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-  const amanha = new Date(hoje); amanha.setDate(hoje.getDate() + 1);
-  const depoisDeAmanha = new Date(hoje); depoisDeAmanha.setDate(hoje.getDate() + 2);
-
   const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const fmtBR = (d) => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
-  const horaAgora = hoje.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false });
-  const diasSemana = ['domingo','segunda-feira','terca-feira','quarta-feira','quinta-feira','sexta-feira','sabado'];
-
-  const proximosDias = [];
+  const hora = hoje.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const dias = ['domingo','segunda-feira','terca-feira','quarta-feira','quinta-feira','sexta-feira','sabado'];
+  const proximos = [];
   for (let i = 1; i <= 7; i++) {
-    const d = new Date(hoje);
-    d.setDate(hoje.getDate() + i);
-    proximosDias.push(`${diasSemana[d.getDay()]}=${fmt(d)}`);
+    const d = new Date(hoje); d.setDate(hoje.getDate() + i);
+    proximos.push(`${dias[d.getDay()]}=${fmt(d)}`);
   }
-
-  let tomInstrucao = '';
-  if (tom === 'carinhoso') {
-    tomInstrucao = 'Tom carinhoso. Use "meu bem" e "amor" com naturalidade.';
-  } else if (tom === 'nome') {
-    tomInstrucao = `Tom amigavel. Chame sempre pelo nome: ${userName || 'usuario'}.`;
-  } else if (tom === 'direto') {
-    tomInstrucao = 'Tom direto e objetivo. Sem termos carinhosos.';
-  }
-
-  return `Voce e a Clara, assistente pessoal via WhatsApp. ${tomInstrucao}
-
-DATAS ATUAIS (Brasilia):
-Hoje: ${fmtBR(hoje)} = ${fmt(hoje)}
-Agora: ${horaAgora}
-Amanha: ${fmtBR(amanha)} = ${fmt(amanha)}
-Depois de amanha: ${fmtBR(depoisDeAmanha)} = ${fmt(depoisDeAmanha)}
-Proximos dias: ${proximosDias.join(', ')}
-
-REGRAS:
-1. Voce e virtual - nunca ofereca ajuda fisica
-2. Nunca invente fatos ou diagnosticos medicos
-3. Datas nas respostas: DD/MM/YYYY
-4. Datas no campo data do JSON: YYYY-MM-DD
-5. Para listas e sugestoes: organize com emojis por categoria, use bullet com ponto, ofereca continuar ajudando no final
-6. Quando nao souber algo atual: classifique como busca
-7. SEMPRE verifique o historico da conversa antes de classificar - se a mensagem atual for continuacao de algo anterior (ex: usuario respondeu uma pergunta que voce fez), use esse contexto na resposta
-8. Se o usuario enviar uma lista de itens ou uma resposta curta, verifique se e continuacao da mensagem anterior antes de classificar como outro
-
-TIPOS - retorne APENAS JSON valido sem texto extra:
-reminder = lembrete pontual hoje ou daqui X minutos
-tarefa = compromisso em data futura
-remedio = remedio ou medicamento
-compra = item de casa comprado
-gasto = dinheiro gasto
-segredo = algo privado para guardar
-saudacao = oi, ola, bom dia
-confirmacao = tomei, feito, ok, sim, pronto
-preferencia_tom = usuario quer mudar como Clara o trata
-consulta_memoria = pergunta sobre o que foi salvo
-pressao = pressao arterial informada
-glicemia = glicemia informada
-humor = como esta se sentindo
-busca = precisa de info atual, ideias, sugestoes, recomendacoes, dicas, precos
-outro = conversa geral
-
-FORMATOS JSON:
-reminder: {"tipo":"reminder","mensagem":"texto","hora":"HH:MM","minutos_relativos":null,"resposta":"confirmacao"}
-tarefa: {"tipo":"tarefa","titulo":"descricao","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null","itens":null,"resposta":"confirmacao com data DD/MM/YYYY e pergunta sobre o que precisara"}
-remedio: {"tipo":"remedio","nome":"nome","quantidade":0,"frequencia":1,"horarios":["08:00"],"resposta":"confirmacao"}
-compra: {"tipo":"compra","item":"item","resposta":"confirmacao"}
-gasto: {"tipo":"gasto","valor":0.0,"categoria":"categoria","descricao":"descricao","resposta":"confirmacao"}
-segredo: {"tipo":"segredo","categoria":"categoria","label":"rotulo","conteudo":"conteudo","resposta":"confirmacao discreta"}
-saudacao: {"tipo":"saudacao","resposta":"saudacao calorosa"}
-confirmacao: {"tipo":"confirmacao","resposta":"confirmacao carinhosa"}
-preferencia_tom: {"tipo":"preferencia_tom","tom":"carinhoso/nome/direto","nome":"nome ou null","resposta":"confirmacao"}
-consulta_memoria: {"tipo":"consulta_memoria","sobre":"tema","resposta":"vou verificar..."}
-pressao: {"tipo":"pressao","sistolica":0,"diastolica":0,"resposta":"registro sem diagnostico"}
-glicemia: {"tipo":"glicemia","valor":0,"resposta":"registro sem diagnostico"}
-humor: {"tipo":"humor","sentimento":"sentimento","resposta":"resposta empatica"}
-busca: {"tipo":"busca","query":"termo de busca","resposta":"vou pesquisar isso agora!"}
-outro: {"tipo":"outro","resposta":"resposta util bem formatada com emojis e categorias se for lista"}`;
+  const amanha = new Date(hoje); amanha.setDate(hoje.getDate() + 1);
+  return { hoje: fmt(hoje), hojeOBR: fmtBR(hoje), amanha: fmt(amanha), amanhaOBR: fmtBR(amanha), hora, proximos: proximos.join(' | ') };
 }
 
-async function classify(message, history = [], userName = null, tom = 'carinhoso', maxHistory = 12) {
-  try {
-    const systemPrompt = buildSystemPrompt(userName, tom);
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...history,
-      { role: 'user', content: message },
-    ];
+function buildClassifyPrompt(userName, tom, history) {
+  const d = getDatas();
+  let tomStr = tom === 'nome' ? `pelo nome ${userName || 'usuario'}` : tom === 'direto' ? 'direto sem carinho' : 'carinhoso';
 
+  const historyStr = history.length > 0
+    ? 'Historico recente:\n' + history.map(h => `${h.role === 'user' ? 'Usuario' : 'Clara'}: ${h.content}`).join('\n')
+    : '';
+
+  return `Voce e um classificador de mensagens para a assistente Clara (tom: ${tomStr}).
+Hoje: ${d.hojeOBR} (${d.hoje}). Agora: ${d.hora}. Amanha: ${d.amanhaOBR} (${d.amanha}).
+Proximos 7 dias: ${d.proximos}
+
+${historyStr}
+
+Analise a mensagem e retorne SOMENTE um objeto JSON valido. Nada mais, nenhum texto fora do JSON.
+
+Tipos possiveis:
+- saudacao: oi, ola, bom dia, como vai
+- reminder: lembrete com horario hoje ou daqui X minutos
+- tarefa: compromisso em data futura
+- remedio: remedio ou medicamento
+- compra: item comprado
+- gasto: dinheiro gasto
+- segredo: guardar algo privado
+- confirmacao: tomei, feito, ok, pronto
+- preferencia_tom: quer mudar como Clara o trata
+- consulta_memoria: pergunta sobre o que foi salvo
+- pressao: pressao arterial
+- glicemia: glicemia
+- humor: como esta se sentindo
+- busca: ideias, sugestoes, recomendacoes, dicas, precos, info atual
+- outro: conversa geral
+
+Formato por tipo:
+saudacao: {"tipo":"saudacao","resposta":"[saudacao calorosa em portugues]"}
+busca: {"tipo":"busca","query":"[termo de busca]","resposta":"vou pesquisar!"}
+outro: {"tipo":"outro","resposta":"[resposta util em portugues]"}
+reminder: {"tipo":"reminder","mensagem":"[texto]","hora":"HH:MM","minutos_relativos":null,"resposta":"[confirmacao]"}
+tarefa: {"tipo":"tarefa","titulo":"[titulo]","data":"YYYY-MM-DD","hora":"HH:MM","itens":null,"resposta":"[confirmacao com data DD/MM/YYYY]"}
+remedio: {"tipo":"remedio","nome":"[nome]","quantidade":0,"frequencia":1,"horarios":["08:00"],"resposta":"[confirmacao]"}
+compra: {"tipo":"compra","item":"[item]","resposta":"[confirmacao]"}
+gasto: {"tipo":"gasto","valor":0.0,"categoria":"[cat]","descricao":"[desc]","resposta":"[confirmacao]"}
+segredo: {"tipo":"segredo","categoria":"[cat]","label":"[label]","conteudo":"[conteudo]","resposta":"[confirmacao]"}
+confirmacao: {"tipo":"confirmacao","resposta":"[confirmacao]"}
+preferencia_tom: {"tipo":"preferencia_tom","tom":"carinhoso/nome/direto","nome":null,"resposta":"[confirmacao]"}
+consulta_memoria: {"tipo":"consulta_memoria","sobre":"[tema]","resposta":"vou verificar..."}
+pressao: {"tipo":"pressao","sistolica":0,"diastolica":0,"resposta":"[confirmacao]"}
+glicemia: {"tipo":"glicemia","valor":0,"resposta":"[confirmacao]"}
+humor: {"tipo":"humor","sentimento":"[sent]","resposta":"[empatico]"}
+
+IMPORTANTE: Retorne APENAS o JSON. Sem explicacoes, sem texto antes ou depois.`;
+}
+
+function buildResponsePrompt(userName, tom) {
+  const d = getDatas();
+  let tomStr = '';
+  if (tom === 'carinhoso') tomStr = 'Use tom carinhoso. Pode usar "meu bem" e "amor".';
+  else if (tom === 'nome') tomStr = `Chame sempre pelo nome: ${userName || 'usuario'}.`;
+  else tomStr = 'Tom direto e objetivo.';
+
+  return `Voce e a Clara, assistente pessoal via WhatsApp. ${tomStr}
+Hoje: ${d.hojeOBR}. Hora: ${d.hora}.
+Responda em portugues brasileiro de forma util.
+Para listas: use emojis por categoria e bullets com ponto.
+Oferea continuar ajudando no final.
+Nunca ofereca ajuda fisica. Nunca de diagnosticos medicos.`;
+}
+
+async function classify(message, history = [], userName = null, tom = 'carinhoso') {
+  try {
+    const prompt = buildClassifyPrompt(userName, tom, history);
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
-      messages,
-      temperature: 0.3,
-      max_tokens: 1000,
+      messages: [
+        { role: 'system', content: prompt },
+        { role: 'user', content: message },
+      ],
+      temperature: 0.1,
+      max_tokens: 800,
     });
 
     const text = completion.choices[0].message.content.trim();
-    const clean = text.replace(/\`\`\`json\n?/g, '').replace(/\`\`\`\n?/g, '').trim();
+    const clean = text.replace(/^```json\s*/g, '').replace(/^```\s*/g, '').replace(/```\s*$/g, '').trim();
     return JSON.parse(clean);
   } catch (error) {
     console.error('Erro Groq classify:', error.message);
@@ -132,10 +132,10 @@ async function searchWeb(query) {
 
 async function generateSearchResponse(query, searchResult, userName, tom, history = []) {
   try {
-    const systemPrompt = buildSystemPrompt(userName, tom);
+    const systemPrompt = buildResponsePrompt(userName, tom);
     const contextMsg = searchResult
-      ? `O usuario perguntou sobre: "${query}". Resultado encontrado:\n${searchResult}\n\nResponda de forma util e bem organizada com emojis e categorias se for lista.`
-      : `O usuario perguntou: "${query}". Nao encontrei resultado na web. Responda com seu proprio conhecimento de forma util, pratica e bem organizada com emojis e categorias. Avise se dados forem muito especificos. Ofereca continuar ajudando no final.`;
+      ? `Usuario perguntou: "${query}"\nResultado encontrado:\n${searchResult}\n\nResponda de forma util e organizada.`
+      : `Usuario perguntou: "${query}"\nNao encontrei na web. Responda com seu proprio conhecimento de forma util e organizada com emojis e categorias. Avise se dados forem muito especificos. Ofereca continuar ajudando.`;
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
@@ -160,9 +160,7 @@ async function generateMemorySummary(memories, question, userName, tom) {
     const memoriesText = memories
       .map((m) => `[${m.type}] ${m.content} (${m.createdAt.toLocaleDateString('pt-BR')})`)
       .join('\n');
-
-    const systemPrompt = buildSystemPrompt(userName, tom);
-
+    const systemPrompt = buildResponsePrompt(userName, tom);
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       messages: [
@@ -172,11 +170,10 @@ async function generateMemorySummary(memories, question, userName, tom) {
       temperature: 0.5,
       max_tokens: 500,
     });
-
     return completion.choices[0].message.content.trim();
   } catch (error) {
     return 'Deixa eu verificar nas minhas anotacoes...';
   }
 }
 
-module.exports = { classify, searchWeb, generateSearchResponse, generateMemorySummary, buildSystemPrompt };
+module.exports = { classify, searchWeb, generateSearchResponse, generateMemorySummary, buildResponsePrompt };
