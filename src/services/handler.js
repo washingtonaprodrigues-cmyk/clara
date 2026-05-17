@@ -324,7 +324,7 @@ async function transcribeAudio(audioUrl) {
     const response = await axios.post('https://api.groq.com/openai/v1/audio/transcriptions', form, {
       headers: {
         ...form.getHeaders(),
-        'Authorization': ,
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
       },
       timeout: 30000,
     });
