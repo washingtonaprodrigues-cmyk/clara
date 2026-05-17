@@ -153,8 +153,8 @@ async function generateSearchResponse(query, searchResult, userName, tom, histor
   try {
     const systemPrompt = buildSystemPrompt(userName, tom);
     const contextMsg = searchResult
-      ? `Resultado da busca por "${query}":\n${searchResult}\n\nResponda ao usuario de forma natural baseado nessa informacao. Se nao tiver info suficiente, diga honestamente e sugira onde buscar.`
-      : `Nao encontrei resultado especifico para "${query}". Diga honestamente que nao tem essa informacao atualizada e sugira onde buscar.`;
+      ? `Resultado da busca por "${query}":\n${searchResult}\n\nResponda ao usuario de forma natural e util baseado nessa informacao. Seja pratica e objetiva.`
+      : `O usuario perguntou: "${query}". Nao encontrei resultado na web, mas responda com seu proprio conhecimento de forma util, pratica e honesta. Se for sobre precos ou dados especificos de hoje, avise que pode estar desatualizado. Seja direto e ajude de verdade.`;
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
