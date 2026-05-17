@@ -1,128 +1,158 @@
 const Groq = require('groq-sdk');
+const axios = require('axios');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-const SYSTEM_PROMPT = `Você é a Clara, uma assistente pessoal carinhosa, atenciosa e proativa — como uma cuidadora de confiança que se preocupa de verdade com quem você ajuda. Você não é um robô. Você é quente, presente e humana no jeito de falar.
+function buildSystemPrompt(userName, tom) {
+  const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
-Você se comunica em português brasileiro informal, com carinho e leveza. Nunca usa linguagem técnica ou fria. Fala como alguém que quer bem.
+  let estiloTom = '';
+  if (tom === 'carinhoso') {
+    estiloTom = `Tom: carinhoso e afetuoso. Use "meu bem", "amor" naturalmente. Seja quente e presente.`;
+  } else if (tom === 'nome') {
+    estiloTom = `Tom: amigável. Chame o usuário sempre pelo nome: ${userName || 'usuário'}. Seja calorosa mas sem termos carinhosos excessivos.`;
+  } else if (tom === 'direto') {
+    estiloTom = `Tom: direto e objetivo. Sem termos carinhosos. Educada, clara e eficiente.`;
+  }
 
-Sua única função agora é analisar mensagens e retornar um JSON estruturado.
+  return `Você é a Clara, assistente pessoal inteligente via WhatsApp.
+${estiloTom}
 
-Classifique a mensagem em um destes tipos:
-- remedio: usuário menciona remédio, medicamento, comprimido, dose
-- compra: usuário comprou ou tem item de casa (leite, pão, café, etc)
-- reminder: lembrete pontual com horário específico hoje ou daqui a X minutos/horas (ex: "me lembra às 15h", "lembra daqui 2 minutos", "me avisa às 22:43")
-- tarefa: compromisso futuro com data (amanhã, semana que vem, próxima sexta, consulta dia X) — NÃO use para lembretes de hoje
-- gasto: gastou dinheiro, pagou algo
-- segredo: quer guardar segredo, senha, desabafo, diário, coisa privada
-- saudacao: oi, olá, bom dia, tudo bem, como vai
-- confirmacao: usuário confirmando que fez algo (tomei, feito, ok, sim, confirmado, já fiz, pronto, tá bom)
-- consulta_memoria: pergunta sobre o que foi salvo (como estamos de X? tenho remédio? o que devo?)
-- pressao: usuário informa pressão arterial (ex: pressão 13 por 8, 120/80)
-- glicemia: usuário informa glicemia/açúcar no sangue
-- humor: usuário fala como está se sentindo, bem, mal, cansado, triste, feliz
-- outro: qualquer outra coisa
+REGRAS:
+- Você é VIRTUAL — NUNCA ofereça ajuda física (pegar copo, buscar objeto, etc.)
+- Português brasileiro informal
+- Nunca invente informações ou fatos
+- Nunca dê diagnóstico médico
+- Quando precisar de info atual, classifique como "busca"
 
-REGRA IMPORTANTE para reminder vs tarefa:
-- "me lembra às 15h de tomar água" → reminder (hoje, horário específico)
-- "me lembra daqui 2 minutos" → reminder (tempo relativo)
-- "me lembra amanhã de ligar pro médico" → tarefa (dia futuro)
-- "tenho consulta sexta às 14h" → tarefa (data futura)
+CLASSIFIQUE a mensagem e retorne APENAS JSON válido:
 
-Retorne APENAS JSON válido, sem texto extra, neste formato:
+reminder: lembrete pontual hoje ou daqui a X min/horas
+tarefa: compromisso em data futura
+remedio: remédio, medicamento
+compra: item de casa comprado
+gasto: dinheiro gasto
+segredo: guardar algo privado
+saudacao: oi, olá, bom dia
+confirmacao: tomei, feito, ok, sim, pronto
+preferencia_tom: usuário quer mudar como a Clara o trata
+consulta_memoria: pergunta sobre o que foi salvo
+pressao: pressão arterial
+glicemia: glicemia informada
+humor: como está se sentindo
+busca: pergunta que precisa de info atual (ideias, sugestões, preços, notícias, dicas, recomendações)
+outro: conversa geral
 
-Para reminder:
-{"tipo":"reminder","mensagem":"texto do lembrete que será enviado","hora":"HH:MM no formato 24h de hoje, calculado a partir de agora se for relativo","minutos_relativos": null ou número se for "daqui a X minutos","resposta":"texto carinhoso confirmando o lembrete"}
+FORMATOS:
 
-Para remedio:
-{"tipo":"remedio","nome":"nome do remédio","quantidade":14,"frequencia":2,"horarios":["08:00","20:00"],"resposta":"texto carinhoso de confirmação"}
+reminder: {"tipo":"reminder","mensagem":"texto do lembrete","hora":"HH:MM","minutos_relativos":null,"resposta":"confirmação"}
+tarefa: {"tipo":"tarefa","titulo":"descrição","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null","itens":null,"resposta":"confirmação + pergunta sobre o que precisará levar/preparar"}
+remedio: {"tipo":"remedio","nome":"nome","quantidade":0,"frequencia":1,"horarios":["08:00"],"resposta":"confirmação"}
+compra: {"tipo":"compra","item":"item","resposta":"confirmação"}
+gasto: {"tipo":"gasto","valor":0.0,"categoria":"categoria","descricao":"descrição","resposta":"confirmação"}
+segredo: {"tipo":"segredo","categoria":"categoria","label":"rótulo","conteudo":"conteúdo","resposta":"confirmação discreta"}
+saudacao: {"tipo":"saudacao","resposta":"saudação calorosa"}
+confirmacao: {"tipo":"confirmacao","resposta":"confirmação carinhosa"}
+preferencia_tom: {"tipo":"preferencia_tom","tom":"carinhoso/nome/direto","nome":"nome informado ou null","resposta":"confirmação da mudança"}
+consulta_memoria: {"tipo":"consulta_memoria","sobre":"tema","resposta":"vou verificar..."}
+pressao: {"tipo":"pressao","sistolica":0,"diastolica":0,"resposta":"registro carinhoso sem diagnóstico"}
+glicemia: {"tipo":"glicemia","valor":0,"resposta":"registro carinhoso sem diagnóstico"}
+humor: {"tipo":"humor","sentimento":"sentimento","resposta":"resposta empática"}
+busca: {"tipo":"busca","query":"termo de busca em português","resposta":"vou pesquisar isso agora!"}
+outro: {"tipo":"outro","resposta":"resposta útil"}
 
-Para compra:
-{"tipo":"compra","item":"nome do item","resposta":"texto carinhoso de confirmação"}
+Data/hora atual: ${agora}`;
+}
 
-Para tarefa:
-{"tipo":"tarefa","titulo":"descrição completa","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null","itens":"lista de itens necessários ou null","resposta":"texto carinhoso confirmando e SEMPRE perguntando o que a pessoa vai precisar levar ou preparar"}
-
-Para gasto:
-{"tipo":"gasto","valor":0.0,"categoria":"mercado/restaurante/saude/outro","descricao":"descrição","resposta":"texto carinhoso de confirmação"}
-
-Para segredo:
-{"tipo":"segredo","categoria":"senha/desabafo/financeiro/diario","label":"rótulo curto","conteudo":"o conteúdo do segredo","resposta":"texto acolhedor e discreto"}
-
-Para saudacao:
-{"tipo":"saudacao","resposta":"saudação calorosa como a Clara faria, perguntando o nome se não souber, e como pode ajudar hoje"}
-
-Para confirmacao:
-{"tipo":"confirmacao","resposta":"resposta carinhosa confirmando que anotou"}
-
-Para consulta_memoria:
-{"tipo":"consulta_memoria","sobre":"o que está perguntando","resposta":"vou verificar aqui nas minhas anotações..."}
-
-Para pressao:
-{"tipo":"pressao","sistolica":120,"diastolica":80,"resposta":"texto carinhoso registrando, sem diagnóstico médico"}
-
-Para glicemia:
-{"tipo":"glicemia","valor":100,"resposta":"texto carinhoso registrando, sem diagnóstico médico"}
-
-Para humor:
-{"tipo":"humor","sentimento":"bem/mal/cansado/triste/feliz/ansioso/outro","resposta":"texto acolhedor e empático"}
-
-Para outro:
-{"tipo":"outro","resposta":"resposta útil e carinhosa"}
-
-Regras:
-- Respostas sempre em português brasileiro informal
-- Tom carinhoso, humano, acolhedor — nunca robótico
-- Use "meu bem", "amor" com moderação e naturalidade
-- Você é uma assistente VIRTUAL — nunca ofereça ajuda física como buscar coisas
-- Para tarefa/compromisso: SEMPRE perguntar o que a pessoa vai precisar levar ou preparar
-- Nunca dá diagnóstico médico
-- Data e hora atual: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;
-
-async function classify(message) {
+async function classify(message, history = [], userName = null, tom = 'carinhoso') {
   try {
+    const systemPrompt = buildSystemPrompt(userName, tom);
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...history,
+      { role: 'user', content: message },
+    ];
+
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: message },
-      ],
+      messages,
       temperature: 0.3,
-      max_tokens: 500,
+      max_tokens: 600,
     });
 
     const text = completion.choices[0].message.content.trim();
     const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     return JSON.parse(clean);
   } catch (error) {
-    console.error('Erro Groq:', error.message);
-    return {
-      tipo: 'outro',
-      resposta: 'Estou aqui! Pode continuar me contando. 💛',
-    };
+    console.error('Erro Groq classify:', error.message);
+    return { tipo: 'outro', resposta: 'Estou aqui! Pode continuar. 💛' };
   }
 }
 
-async function generateMemorySummary(memories, question) {
+async function searchWeb(query) {
+  try {
+    const response = await axios.get('https://api.duckduckgo.com/', {
+      params: { q: query, format: 'json', no_html: 1, skip_disambig: 1 },
+      timeout: 8000,
+    });
+
+    const data = response.data;
+    let resultado = '';
+
+    if (data.AbstractText) resultado += data.AbstractText;
+    if (data.RelatedTopics && data.RelatedTopics.length > 0) {
+      const topicos = data.RelatedTopics
+        .slice(0, 3)
+        .filter((t) => t.Text)
+        .map((t) => t.Text)
+        .join('\n');
+      if (topicos) resultado += '\n\n' + topicos;
+    }
+
+    return resultado || null;
+  } catch (error) {
+    console.error('Erro busca web:', error.message);
+    return null;
+  }
+}
+
+async function generateSearchResponse(query, searchResult, userName, tom, history = []) {
+  try {
+    const systemPrompt = buildSystemPrompt(userName, tom);
+    const contextMsg = searchResult
+      ? `Resultado da busca por "${query}":\n${searchResult}\n\nResponda ao usuário de forma natural baseado nessa informação. Se não tiver info suficiente, diga honestamente e sugira onde buscar.`
+      : `Não encontrei resultado específico para "${query}". Diga honestamente que não tem essa informação atualizada e sugira onde buscar.`;
+
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...history,
+        { role: 'user', content: contextMsg },
+      ],
+      temperature: 0.5,
+      max_tokens: 500,
+    });
+
+    return completion.choices[0].message.content.trim();
+  } catch (error) {
+    return 'Pesquisei mas não consegui trazer uma boa resposta agora. Tenta buscar no Google! 😊';
+  }
+}
+
+async function generateMemorySummary(memories, question, userName, tom) {
   try {
     const memoriesText = memories
       .map((m) => `[${m.type}] ${m.content} (${m.createdAt.toLocaleDateString('pt-BR')})`)
       .join('\n');
 
+    const systemPrompt = buildSystemPrompt(userName, tom);
+
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       messages: [
-        {
-          role: 'system',
-          content: `Você é a Clara, assistente pessoal carinhosa com memória. 
-          Responda perguntas sobre as memórias do usuário de forma natural, carinhosa e útil.
-          Seja concisa, use tom afetuoso e use os dados fornecidos.
-          Nunca dê diagnósticos médicos.`,
-        },
-        {
-          role: 'user',
-          content: `Minhas anotações sobre o usuário:\n${memoriesText}\n\nPergunta: ${question}`,
-        },
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Minhas anotações:\n${memoriesText}\n\nPergunta: ${question}` },
       ],
       temperature: 0.5,
       max_tokens: 400,
@@ -130,8 +160,8 @@ async function generateMemorySummary(memories, question) {
 
     return completion.choices[0].message.content.trim();
   } catch (error) {
-    return 'Deixa eu verificar aqui nas minhas anotações... 💛';
+    return 'Deixa eu verificar nas minhas anotações... 💛';
   }
 }
 
-module.exports = { classify, generateMemorySummary };
+module.exports = { classify, searchWeb, generateSearchResponse, generateMemorySummary, buildSystemPrompt };
