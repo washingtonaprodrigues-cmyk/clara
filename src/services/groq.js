@@ -46,6 +46,8 @@ REGRAS:
 4. Datas no campo data do JSON: YYYY-MM-DD
 5. Para listas e sugestoes: organize com emojis por categoria, use bullet com ponto, ofereca continuar ajudando no final
 6. Quando nao souber algo atual: classifique como busca
+7. SEMPRE verifique o historico da conversa antes de classificar - se a mensagem atual for continuacao de algo anterior (ex: usuario respondeu uma pergunta que voce fez), use esse contexto na resposta
+8. Se o usuario enviar uma lista de itens ou uma resposta curta, verifique se e continuacao da mensagem anterior antes de classificar como outro
 
 TIPOS - retorne APENAS JSON valido sem texto extra:
 reminder = lembrete pontual hoje ou daqui X minutos
@@ -82,7 +84,7 @@ busca: {"tipo":"busca","query":"termo de busca","resposta":"vou pesquisar isso a
 outro: {"tipo":"outro","resposta":"resposta util bem formatada com emojis e categorias se for lista"}`;
 }
 
-async function classify(message, history = [], userName = null, tom = 'carinhoso') {
+async function classify(message, history = [], userName = null, tom = 'carinhoso', maxHistory = 12) {
   try {
     const systemPrompt = buildSystemPrompt(userName, tom);
     const messages = [
