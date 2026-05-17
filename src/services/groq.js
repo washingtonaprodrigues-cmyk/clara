@@ -4,7 +4,27 @@ const axios = require('axios');
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 function buildSystemPrompt(userName, tom) {
-  const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  // Data e hora exatas de Brasília
+  const agora = new Date();
+  const opcoesData = { timeZone: 'America/Sao_Paulo', weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' };
+  const opcoesHora = { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false };
+  const dataHoje = agora.toLocaleDateString('pt-BR', opcoesData);
+  const horaAgora = agora.toLocaleTimeString('pt-BR', opcoesHora);
+
+  // Calcula datas relativas em Brasília
+  const hoje = new Date(agora.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const amanha = new Date(hoje); amanha.setDate(hoje.getDate() + 1);
+  const depoisDeAmanha = new Date(hoje); depoisDeAmanha.setDate(hoje.getDate() + 2);
+
+  const fmt = (d) => `${String(d.getFullYear())}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+  const diasSemana = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
+  const proximosDias = [];
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(hoje);
+    d.setDate(hoje.getDate() + i);
+    proximosDias.push(`${diasSemana[d.getDay()]} = ${fmt(d)}`);
+  }
 
   let estiloTom = '';
   if (tom === 'carinhoso') {
@@ -18,7 +38,21 @@ function buildSystemPrompt(userName, tom) {
   return `Você é a Clara, assistente pessoal inteligente via WhatsApp.
 ${estiloTom}
 
-REGRAS:
+DATAS E HORÁRIOS — FUSO HORÁRIO DE BRASÍLIA (USE SEMPRE ESTES VALORES):
+- Hoje: ${dataHoje} → ${fmt(hoje)}
+- Agora: ${horaAgora}
+- Amanhã: ${fmt(amanha)}
+- Depois de amanhã: ${fmt(depoisDeAmanha)}
+- Próximos 7 dias: ${proximosDias.join(', ')}
+
+REGRAS PARA DATAS:
+- SEMPRE use os valores acima para calcular datas relativas
+- "amanhã" = ${fmt(amanha)}
+- "depois de amanhã" = ${fmt(depoisDeAmanha)}
+- Para dias da semana futuros, use os valores da lista acima
+- Nunca calcule datas por conta própria — use APENAS os valores fornecidos
+
+REGRAS GERAIS:
 - Você é VIRTUAL — NUNCA ofereça ajuda física (pegar copo, buscar objeto, etc.)
 - Português brasileiro informal
 - Nunca invente informações ou fatos
@@ -59,9 +93,7 @@ pressao: {"tipo":"pressao","sistolica":0,"diastolica":0,"resposta":"registro car
 glicemia: {"tipo":"glicemia","valor":0,"resposta":"registro carinhoso sem diagnóstico"}
 humor: {"tipo":"humor","sentimento":"sentimento","resposta":"resposta empática"}
 busca: {"tipo":"busca","query":"termo de busca em português","resposta":"vou pesquisar isso agora!"}
-outro: {"tipo":"outro","resposta":"resposta útil"}
-
-Data/hora atual: ${agora}`;
+outro: {"tipo":"outro","resposta":"resposta útil"}`;
 }
 
 async function classify(message, history = [], userName = null, tom = 'carinhoso') {
