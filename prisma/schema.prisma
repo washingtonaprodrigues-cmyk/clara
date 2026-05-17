@@ -1,4 +1,4 @@
-// Clara v1.1
+// Clara v1.2
 
 generator client {
   provider = "prisma-client-js"
@@ -13,6 +13,7 @@ model User {
   id          String       @id @default(cuid())
   phone       String       @unique
   name        String?
+  metadata    String?
   createdAt   DateTime     @default(now())
   memories    Memory[]
   medications Medication[]
