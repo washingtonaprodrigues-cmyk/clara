@@ -166,11 +166,23 @@ async function handlePreferenciaTom(user, phone, data) {
 }
 
 async function handleBusca(user, phone, data, history, userName, tom) {
-  await sendMessage(phone, data.resposta);
-  const searchResult = await searchWeb(data.query);
-  const resposta = await generateSearchResponse(data.query, searchResult, userName, tom, history);
-  await sendMessage(phone, resposta);
-  return resposta;
+  try {
+    await sendMessage(phone, data.resposta);
+    let searchResult = null;
+    try {
+      searchResult = await searchWeb(data.query);
+    } catch (e) {
+      console.error('Erro searchWeb:', e.message);
+    }
+    const resposta = await generateSearchResponse(data.query, searchResult, userName, tom, history);
+    await sendMessage(phone, resposta);
+    return resposta;
+  } catch (error) {
+    console.error('Erro handleBusca:', error.message);
+    const fallback = 'Nao consegui buscar agora, mas posso te ajudar com o que sei! Me pergunta direto que eu respondo. 😊';
+    await sendMessage(phone, fallback);
+    return fallback;
+  }
 }
 
 async function handleReminder(user, phone, data) {
