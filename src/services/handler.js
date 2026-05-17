@@ -1,4 +1,4 @@
-const { classify, generateElaborateResponse, generateSearchResponse, generateMemorySummary } = require('../services/groq');
+const { classify, generateElaborateResponse, generateSearchResponse, generateMemorySummary, searchWeb } = require('../services/groq');
 const axios = require('axios');
 const { sendMessage } = require('../services/whatsapp');
 const memory = require('../services/memory');
