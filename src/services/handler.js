@@ -1,8 +1,9 @@
-const { classify, searchWeb, generateSearchResponse, generateMemorySummary } = require('../services/groq');
+const { classify, generateElaborateResponse, generateSearchResponse, generateMemorySummary } = require('../services/groq');
+const axios = require('axios');
 const { sendMessage } = require('../services/whatsapp');
 const memory = require('../services/memory');
 
-async function handleMessage(phone, text) {
+async function handleMessage(phone, text, audioUrl = null) {
   try {
     const user = await memory.getOrCreateUser(phone);
     const { name: userName, tom } = await memory.getUserPreference(user.id);
@@ -94,7 +95,7 @@ async function handleMessage(phone, text) {
         resposta = await handleBusca(user, phone, classified, history, userName, tom);
         break;
       default:
-        resposta = classified.resposta || 'Estou aqui! 💛';
+        resposta = await generateElaborateResponse(text, null, userName, tom, history);
         await sendMessage(phone, resposta);
     }
 
@@ -304,6 +305,35 @@ async function handleMemoryQuery(user, phone, question, userName, tom) {
   const resposta = await generateMemorySummary(memories, question, userName, tom);
   await sendMessage(phone, resposta);
   return resposta;
+}
+
+async function transcribeAudio(audioUrl) {
+  try {
+    // Baixa o audio
+    const audioResponse = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 15000 });
+    const audioBuffer = Buffer.from(audioResponse.data);
+
+    // Envia pro Groq Whisper via form-data
+    const FormData = require('form-data');
+    const form = new FormData();
+    form.append('file', audioBuffer, { filename: 'audio.ogg', contentType: 'audio/ogg' });
+    form.append('model', 'whisper-large-v3');
+    form.append('language', 'pt');
+    form.append('response_format', 'text');
+
+    const response = await axios.post('https://api.groq.com/openai/v1/audio/transcriptions', form, {
+      headers: {
+        ...form.getHeaders(),
+        'Authorization': ,
+      },
+      timeout: 30000,
+    });
+
+    return typeof response.data === 'string' ? response.data.trim() : response.data?.text?.trim() || null;
+  } catch (error) {
+    console.error('Erro transcribeAudio:', error.message);
+    return null;
+  }
 }
 
 module.exports = { handleMessage };
