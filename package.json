@@ -11,6 +11,7 @@
     "postinstall": "npx prisma generate"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "@prisma/client": "^5.10.0",
     "axios": "^1.6.7",
     "dotenv": "^16.4.4",
