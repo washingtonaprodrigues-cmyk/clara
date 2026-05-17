@@ -82,4 +82,24 @@ model Secret {
 model Purchase {
   id           String   @id @default(cuid())
   userId       String
-  user         User
+  user         User     @relation(fields: [userId], references: [id])
+  item         String
+  lastBought   DateTime @default(now())
+  buyCount     Int      @default(1)
+  avgFrequency Int?
+  notified     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+}
+
+model Reminder {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  phone       String
+  message     String
+  scheduledAt DateTime
+  sent        Boolean  @default(false)
+  confirmed   Boolean  @default(false)
+  attempts    Int      @default(0)
+  createdAt   DateTime @default(now())
+}
