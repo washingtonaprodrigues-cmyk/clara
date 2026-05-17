@@ -9,6 +9,9 @@ async function handleMessage(phone, text) {
     console.log(`[${phone}] Tipo: ${classified.tipo}`, classified);
 
     switch (classified.tipo) {
+      case 'reminder':
+        await handleReminder(user, phone, classified);
+        break;
       case 'remedio':
         await handleMedication(user, phone, classified);
         break;
@@ -33,7 +36,7 @@ async function handleMessage(phone, text) {
         await handleHealth(user, phone, classified);
         break;
       case 'confirmacao':
-        await sendMessage(phone, classified.resposta);
+        await handleConfirmacao(user, phone, classified);
         break;
       case 'saudacao':
         await sendMessage(phone, classified.resposta);
@@ -44,6 +47,69 @@ async function handleMessage(phone, text) {
   } catch (error) {
     console.error('Erro handleMessage:', error);
     await sendMessage(phone, 'Ops, tive um probleminha aqui. Pode repetir, meu bem? 💛');
+  }
+}
+
+async function handleReminder(user, phone, data) {
+  try {
+    let scheduledAt;
+
+    if (data.minutos_relativos && data.minutos_relativos > 0) {
+      // Daqui a X minutos
+      scheduledAt = new Date(Date.now() + data.minutos_relativos * 60000);
+    } else if (data.hora) {
+      // Horário específico hoje
+      const [horas, minutos] = data.hora.split(':').map(Number);
+      scheduledAt = new Date();
+      scheduledAt.setHours(horas, minutos, 0, 0);
+
+      // Se o horário já passou hoje, agenda pro dia seguinte
+      if (scheduledAt < new Date()) {
+        scheduledAt.setDate(scheduledAt.getDate() + 1);
+      }
+    } else {
+      // Fallback: 5 minutos
+      scheduledAt = new Date(Date.now() + 5 * 60000);
+    }
+
+    await memory.prisma.reminder.create({
+      data: {
+        userId: user.id,
+        phone,
+        message: `⏰ Lembrete: *${data.mensagem}*\n\nJá fez isso? Me confirma aqui! 💛`,
+        scheduledAt,
+        attempts: 0,
+      },
+    });
+
+    const horarioStr = scheduledAt.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Sao_Paulo',
+    });
+
+    await sendMessage(phone, `${data.resposta}\n\n⏰ Vou te avisar às ${horarioStr}! 💛`);
+    console.log(`⏰ Reminder criado para ${phone} às ${scheduledAt}`);
+  } catch (error) {
+    console.error('Erro handleReminder:', error);
+    await sendMessage(phone, 'Anoetei o lembrete, meu bem! 💛');
+  }
+}
+
+async function handleConfirmacao(user, phone, data) {
+  try {
+    // Marca reminders pendentes como confirmados
+    await memory.prisma.reminder.updateMany({
+      where: {
+        userId: user.id,
+        confirmed: false,
+        sent: false,
+      },
+      data: { confirmed: true, sent: true },
+    });
+    await sendMessage(phone, data.resposta);
+  } catch (error) {
+    await sendMessage(phone, data.resposta);
   }
 }
 
@@ -73,11 +139,7 @@ async function handleTask(user, phone, data) {
     const dateStr = new Date(task.dueDate).toLocaleDateString('pt-BR');
     const timeStr = task.dueTime ? ` às ${task.dueTime}` : '';
     msg += `\n\n📅 *${data.titulo}*\n• ${dateStr}${timeStr}`;
-
-    if (task.items) {
-      msg += `\n• Levar: ${task.items}`;
-    }
-
+    if (task.items) msg += `\n• Levar: ${task.items}`;
     msg += `\n\nVou te lembrar antes! 💛`;
   }
 
