@@ -1,4 +1,4 @@
-// Clara v2.0 - Focada e economica
+// Clara v2.1 - Humana, carinhosa e economica
 const Groq = require('groq-sdk');
 const axios = require('axios');
 
@@ -24,7 +24,7 @@ function buildClassifyPrompt(userName, tom, history) {
   const d = getDatas();
   const tomStr = tom === 'nome' ? `pelo nome ${userName || 'usuario'}` : tom === 'direto' ? 'direto' : 'carinhoso';
   const historyStr = history.length > 0
-    ? 'Historico:\n' + history.slice(-6).map(h => `${h.role === 'user' ? 'U' : 'C'}: ${h.content.substring(0, 100)}`).join('\n')
+    ? 'Historico:\n' + history.slice(-6).map(h => `${h.role === 'user' ? 'U' : 'C'}: ${h.content.substring(0, 120)}`).join('\n')
     : '';
 
   return `Classificador da assistente Clara (tom: ${tomStr}).
@@ -38,32 +38,52 @@ Tipos:
 saudacao, reminder, tarefa, remedio, compra, gasto, segredo, confirmacao, preferencia_tom, consulta_memoria, pressao, glicemia, humor, busca, outro
 
 Formatos:
-saudacao: {"tipo":"saudacao","resposta":"[saudacao carinhosa curta]"}
-reminder: {"tipo":"reminder","mensagem":"[texto]","hora":"HH:MM","minutos_relativos":null,"resposta":"[confirmacao curta]"}
-tarefa: {"tipo":"tarefa","titulo":"[titulo]","data":"YYYY-MM-DD","hora":"HH:MM","itens":null,"resposta":"[confirmacao com data DD/MM/YYYY + pergunta sobre o que precisara]"}
-remedio: {"tipo":"remedio","nome":"[nome]","quantidade":0,"frequencia":1,"horarios":["08:00"],"resposta":"[confirmacao curta]"}
-compra: {"tipo":"compra","item":"[item]","resposta":"[confirmacao curta]"}
-gasto: {"tipo":"gasto","valor":0.0,"categoria":"[cat]","descricao":"[desc]","resposta":"[confirmacao curta]"}
-segredo: {"tipo":"segredo","categoria":"[cat]","label":"[label]","conteudo":"[conteudo]","resposta":"[confirmacao discreta]"}
-confirmacao: {"tipo":"confirmacao","resposta":"[confirmacao carinhosa curta]"}
+saudacao: {"tipo":"saudacao","resposta":"[saudacao carinhosa e humana, pergunta como a pessoa esta]"}
+reminder: {"tipo":"reminder","mensagem":"[texto]","hora":"HH:MM","minutos_relativos":null,"resposta":"[confirmacao carinhosa]"}
+tarefa: {"tipo":"tarefa","titulo":"[titulo]","data":"YYYY-MM-DD","hora":"HH:MM ou null","itens":null,"resposta":"[confirmacao com data DD/MM/YYYY + pergunta carinhosa sobre o que vai precisar levar ou preparar]"}
+remedio: {"tipo":"remedio","nome":"[nome]","quantidade":0,"frequencia":1,"horarios":["08:00"],"resposta":"[confirmacao carinhosa + se quantidade nao foi informada pergunte quantos comprimidos tem na caixa]"}
+compra: {"tipo":"compra","item":"[item]","resposta":"[confirmacao carinhosa]"}
+gasto: {"tipo":"gasto","valor":0.0,"categoria":"[cat]","descricao":"[desc]","resposta":"[confirmacao carinhosa]"}
+segredo: {"tipo":"segredo","categoria":"[cat]","label":"[label]","conteudo":"[conteudo]","resposta":"[confirmacao discreta e acolhedora]"}
+confirmacao: {"tipo":"confirmacao","resposta":"[confirmacao carinhosa e elogiosa, como uma amiga que fica feliz que voce fez]"}
 preferencia_tom: {"tipo":"preferencia_tom","tom":"carinhoso/nome/direto","nome":null,"resposta":"[confirmacao]"}
-consulta_memoria: {"tipo":"consulta_memoria","sobre":"[tema]","resposta":"vou verificar..."}
+consulta_memoria: {"tipo":"consulta_memoria","sobre":"[tema]","resposta":"[vou verificar aqui nas minhas anotacoes...]"}
 pressao: {"tipo":"pressao","sistolica":0,"diastolica":0,"resposta":"[registro carinhoso sem diagnostico]"}
 glicemia: {"tipo":"glicemia","valor":0,"resposta":"[registro carinhoso sem diagnostico]"}
-humor: {"tipo":"humor","sentimento":"[sent]","resposta":"[resposta empatica curta]"}
-busca: {"tipo":"busca","query":"[termo]","resposta":"[confirmacao curta]"}
-outro: {"tipo":"outro","resposta":"[resposta util e carinhosa]"}
+humor: {"tipo":"humor","sentimento":"[sent]","resposta":"[resposta empatica e acolhedora como uma amiga faria]"}
+busca: {"tipo":"busca","query":"[termo]","resposta":"[resposta animada dizendo que vai pesquisar]"}
+outro: {"tipo":"outro","resposta":"[resposta util, carinhosa e humana como uma amiga proxima faria]"}
 
 APENAS JSON. Sem explicacoes.`;
 }
 
-function buildSearchPrompt(userName, tom) {
+function buildResponsePrompt(userName, tom) {
   const d = getDatas();
-  let tomStr = tom === 'carinhoso' ? 'Use tom carinhoso, pode usar "meu bem" e "amor".' : tom === 'nome' ? `Chame pelo nome ${userName}.` : 'Tom direto.';
-  return `Voce e a Clara, assistente pessoal carinhosa. ${tomStr}
-Hoje: ${d.hojeOBR}. Responda em portugues brasileiro informal.
-Seja util, pratica e bem organizada. Use emojis por categoria em listas.
-Nunca ofereca ajuda fisica. Nunca de diagnosticos medicos.`;
+  let tomStr = '';
+  if (tom === 'carinhoso') {
+    tomStr = `Tom: muito carinhoso, afetuoso e humano. Use "meu bem", "amor", "querida/o" com naturalidade, como uma amiga intima faria. Seja genuinamente preocupada, quente e presente. Nunca seja fria ou robotica.`;
+  } else if (tom === 'nome') {
+    tomStr = `Tom: amigavel e proximo. Chame sempre pelo nome ${userName}. Seja calorosa mas sem exagerar nos termos carinhosos.`;
+  } else {
+    tomStr = 'Tom: direto e objetivo. Educada e eficiente. Sem termos carinhosos.';
+  }
+
+  return `Voce e a Clara, assistente pessoal via WhatsApp com personalidade unica e humana.
+${tomStr}
+
+PERSONALIDADE:
+- Proativa: pensa nos detalhes antes do usuario pensar
+- Genuinamente preocupada: se importa de verdade com o bem-estar da pessoa
+- Curiosa com carinho: pergunta pra ajudar melhor, nao por obrigacao
+- Discreta: nunca julga
+- Pratica: resolve sem enrolar
+- Usa humor leve e natural quando apropriado
+
+Hoje: ${d.hojeOBR}. Hora: ${d.hora}.
+Responda em portugues brasileiro informal.
+Para listas: use emojis por categoria, bullets com ponto, ofereca continuar ajudando.
+Nunca ofereca ajuda fisica. Nunca de diagnosticos medicos.
+Datas sempre DD/MM/YYYY.`;
 }
 
 async function classify(message, history = [], userName = null, tom = 'carinhoso') {
@@ -109,10 +129,10 @@ async function searchWeb(query) {
 
 async function generateSearchResponse(query, searchResult, userName, tom, history = []) {
   try {
-    const systemPrompt = buildSearchPrompt(userName, tom);
+    const systemPrompt = buildResponsePrompt(userName, tom);
     const contextMsg = searchResult
-      ? `Pergunta: "${query}"\nResultado:\n${searchResult}\n\nResponda de forma util e organizada.`
-      : `Pergunta: "${query}"\nNao encontrei na web. Responda com seu conhecimento de forma util e organizada com emojis e categorias. Ofereca continuar ajudando.`;
+      ? `Pergunta: "${query}"\nResultado:\n${searchResult}\n\nResponda de forma util e organizada com emojis e categorias.`
+      : `Pergunta: "${query}"\nNao encontrei na web. Responda com seu conhecimento de forma util, pratica e organizada com emojis e categorias. Ofereca continuar ajudando.`;
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
@@ -135,7 +155,7 @@ async function generateMemorySummary(memories, question, userName, tom) {
     const memoriesText = memories
       .map((m) => `[${m.type}] ${m.content} (${m.createdAt.toLocaleDateString('pt-BR')})`)
       .join('\n');
-    const systemPrompt = buildSearchPrompt(userName, tom);
+    const systemPrompt = buildResponsePrompt(userName, tom);
     const completion = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
       messages: [
@@ -151,4 +171,4 @@ async function generateMemorySummary(memories, question, userName, tom) {
   }
 }
 
-module.exports = { classify, searchWeb, generateSearchResponse, generateMemorySummary };
+module.exports = { classify, searchWeb, generateSearchResponse, generateMemorySummary, buildResponsePrompt };
