@@ -1,5 +1,5 @@
-// Clara handler v2.0
-const { classify, searchWeb, generateSearchResponse, generateMemorySummary } = require('../services/groq');
+// Clara handler v2.1 - Humana e carinhosa
+const { classify, searchWeb, generateSearchResponse, generateMemorySummary, buildResponsePrompt } = require('../services/groq');
 const { sendMessage } = require('../services/whatsapp');
 const memory = require('../services/memory');
 const axios = require('axios');
@@ -9,12 +9,12 @@ async function handleMessage(phone, text, audioUrl = null) {
     const user = await memory.getOrCreateUser(phone);
     const { name: userName, tom } = await memory.getUserPreference(user.id);
 
-    // Primeiro contato
+    // Primeiro contato - pergunta preferencia com mais carinho
     if (!user.name && !user.metadata) {
       const isFirst = await checkFirstMessage(user.id);
       if (isFirst) {
         await memory.saveConversationMessage(user.id, 'user', text || 'audio');
-        const msg = `Ola! Eu sou a Clara, sua assistente pessoal.\n\nComo prefere que eu te trate?\n\n1 - Carinhosa (meu bem, amor)\n2 - Pelo nome\n3 - Direto e objetivo\n\nResponde com 1, 2 ou 3!`;
+        const msg = `Oi! Que bom ter voce aqui! Eu sou a Clara, sua assistente pessoal.\n\nAntes de comecar, posso te chamar de "meu bem" e "amor"? Ou prefere que eu:\n\n1 - Sim, pode ser carinhosa!\n2 - Prefiro que me chame pelo nome\n3 - Prefiro um estilo mais direto\n\nResponde com 1, 2 ou 3!`;
         await sendMessage(phone, msg);
         await memory.saveConversationMessage(user.id, 'assistant', msg);
         await memory.prisma.user.update({
@@ -36,8 +36,9 @@ async function handleMessage(phone, text, audioUrl = null) {
         if (meta.tom === 'aguardando_nome') {
           const nome = (text || '').trim().split(' ')[0];
           await memory.saveUserPreference(user.id, nome, 'nome');
-          const msg = `Prazer, ${nome}! Pode contar comigo. Como posso te ajudar hoje?`;
+          const msg = `Que nome lindo! Pode deixar, ${nome}, pode contar comigo pra tudo. Como posso te ajudar hoje?`;
           await sendMessage(phone, msg);
+          await memory.saveConversationMessage(user.id, 'assistant', msg);
           return;
         }
       } catch (e) {}
@@ -51,7 +52,7 @@ async function handleMessage(phone, text, audioUrl = null) {
           text = transcricao;
           console.log(`Audio transcrito de ${phone}: ${text}`);
         } else {
-          await sendMessage(phone, 'Nao consegui entender o audio. Pode digitar?');
+          await sendMessage(phone, 'Nao consegui entender o audio. Pode digitar pra mim?');
           return;
         }
       } catch (e) {
@@ -63,7 +64,10 @@ async function handleMessage(phone, text, audioUrl = null) {
 
     if (!text) return;
 
-    // Historico da conversa (ultimas 6 mensagens)
+    // Cancela lembretes pendentes se usuario enviou qualquer mensagem
+    await cancelPendingReminders(user.id);
+
+    // Historico da conversa
     const history = await memory.getConversationHistory(user.id, 6);
     await memory.saveConversationMessage(user.id, 'user', text);
 
@@ -124,6 +128,15 @@ async function handleMessage(phone, text, audioUrl = null) {
   }
 }
 
+async function cancelPendingReminders(userId) {
+  try {
+    await memory.prisma.reminder.updateMany({
+      where: { userId, confirmed: false, sent: false },
+      data: { confirmed: true, sent: true },
+    });
+  } catch (e) {}
+}
+
 async function checkFirstMessage(userId) {
   const count = await memory.prisma.memory.count({ where: { userId } });
   return count === 0;
@@ -131,17 +144,17 @@ async function checkFirstMessage(userId) {
 
 async function handleTomChoice(user, phone, text) {
   const choice = text.trim().toLowerCase();
-  if (choice === '1' || choice.includes('carinhosa') || choice.includes('carinhoso')) {
+  if (choice === '1' || choice.includes('carinhosa') || choice.includes('sim') || choice.includes('pode')) {
     await memory.saveUserPreference(user.id, null, 'carinhoso');
-    await sendMessage(phone, 'Pode contar comigo, meu bem! Como posso te ajudar hoje?');
+    await sendMessage(phone, 'Que otimo! Fico feliz que posso ser carinhosa com voce. Pode contar comigo pra tudo, meu bem! Como posso te ajudar hoje?');
   } else if (choice === '2' || choice.includes('nome')) {
     await memory.prisma.user.update({ where: { id: user.id }, data: { metadata: JSON.stringify({ tom: 'aguardando_nome' }) } });
-    await sendMessage(phone, 'Qual e o seu nome?');
+    await sendMessage(phone, 'Adoro! Qual e o seu nome?');
   } else if (choice === '3' || choice.includes('diret')) {
     await memory.saveUserPreference(user.id, null, 'direto');
-    await sendMessage(phone, 'Perfeito! Como posso ajudar?');
+    await sendMessage(phone, 'Perfeito! Vou ser direta e objetiva. Como posso ajudar?');
   } else {
-    await sendMessage(phone, 'Responde com 1, 2 ou 3!\n\n1 - Carinhosa\n2 - Pelo nome\n3 - Direto');
+    await sendMessage(phone, 'Responde com 1, 2 ou 3!\n\n1 - Sim, pode ser carinhosa!\n2 - Prefiro pelo nome\n3 - Prefiro direto');
   }
 }
 
@@ -187,7 +200,13 @@ async function handleReminder(user, phone, data) {
     }
 
     await memory.prisma.reminder.create({
-      data: { userId: user.id, phone, message: `Lembrete: ${data.mensagem}\n\nJa fez isso? Me confirma!`, scheduledAt, attempts: 0 },
+      data: {
+        userId: user.id,
+        phone,
+        message: `Oi! So passando pra lembrar: ${data.mensagem}. Ja fez isso? Me confirma aqui!`,
+        scheduledAt,
+        attempts: 0,
+      },
     });
 
     const horarioStr = scheduledAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
@@ -202,21 +221,22 @@ async function handleReminder(user, phone, data) {
 }
 
 async function handleConfirmacao(user, phone, data) {
-  try {
-    await memory.prisma.reminder.updateMany({
-      where: { userId: user.id, confirmed: false, sent: false },
-      data: { confirmed: true, sent: true },
-    });
-  } catch (e) {}
   await sendMessage(phone, data.resposta);
   return data.resposta;
 }
 
 async function handleMedication(user, phone, data) {
+  // Se quantidade nao foi informada, pergunta
+  if (!data.quantidade || data.quantidade === 0) {
+    const resposta = `${data.resposta}\n\nQuantos comprimidos tem na caixa? Assim eu consigo te avisar quando estiver acabando!`;
+    await sendMessage(phone, resposta);
+    return resposta;
+  }
+
   await memory.saveMedication(user.id, data);
-  const daysTotal = Math.floor((data.quantidade || 0) / (data.frequencia || 1));
+  const daysTotal = Math.floor(data.quantidade / (data.frequencia || 1));
   const horariosText = (data.horarios || ['08:00']).join(' e ');
-  const resposta = `${data.resposta}\n\nRemedio: ${data.nome}\n${data.frequencia}x por dia - ${horariosText}\n${data.quantidade} comprimidos - acaba em ~${daysTotal} dias\nVou lembrar nos horarios!`;
+  const resposta = `${data.resposta}\n\nAnotei tudo!\nRemedio: ${data.nome}\nHorarios: ${horariosText}\n${data.quantidade} comprimidos - dura uns ${daysTotal} dias\n\nVou te lembrar certinho e te avisar quando estiver com 10 comprimidos pra voce ja ir providenciando mais!`;
   await sendMessage(phone, resposta);
   return resposta;
 }
@@ -224,7 +244,7 @@ async function handleMedication(user, phone, data) {
 async function handlePurchase(user, phone, data) {
   const result = await memory.savePurchase(user.id, data.item);
   let resposta = data.resposta;
-  if (result.isRecurring) resposta += `\nE a ${result.purchase.buyCount}a vez que voce compra ${data.item}.`;
+  if (result.isRecurring) resposta += ` E a ${result.purchase.buyCount}a vez que voce compra ${data.item}.`;
   await sendMessage(phone, resposta);
   return resposta;
 }
@@ -235,7 +255,7 @@ async function handleTask(user, phone, data) {
   if (task.dueDate) {
     const dateStr = new Date(task.dueDate).toLocaleDateString('pt-BR');
     const timeStr = task.dueTime ? ` as ${task.dueTime}` : '';
-    resposta += `\n\nAgendado: ${data.titulo}\n${dateStr}${timeStr}`;
+    resposta += `\n\nAgendado: ${data.titulo} - ${dateStr}${timeStr}`;
     if (task.items) resposta += `\nLevar: ${task.items}`;
     resposta += '\nVou te lembrar antes!';
   }
