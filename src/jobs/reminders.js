@@ -1,203 +1,302 @@
-// Clara jobs v2.0
+// Clara reminders v3.0 - humana, inteligente e contextual
 const cron = require('node-cron');
 const { PrismaClient } = require('@prisma/client');
 const { sendMessage } = require('../services/whatsapp');
 
 const prisma = new PrismaClient();
 
+function random(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function isSameMinute(date1, date2) {
+  return (
+    date1.getFullYear() === date2.getFullYear() &&
+    date1.getMonth() === date2.getMonth() &&
+    date1.getDate() === date2.getDate() &&
+    date1.getHours() === date2.getHours() &&
+    date1.getMinutes() === date2.getMinutes()
+  );
+}
+
 // ============================================
-// LEMBRETES PONTUAIS - verifica a cada minuto
+// LEMBRETES
 // ============================================
+
 cron.schedule('* * * * *', async () => {
   try {
     const now = new Date();
 
     const reminders = await prisma.reminder.findMany({
-      where: { sent: false, confirmed: false, scheduledAt: { lte: now }, attempts: { lt: 2 } },
+      where: {
+        sent: false,
+        confirmed: false,
+        scheduledAt: {
+          lte: now,
+        },
+      },
+      include: {
+        user: true,
+      },
     });
 
     for (const reminder of reminders) {
-      if (reminder.attempts === 0) {
-        // 1a tentativa - horario exato
-        await sendMessage(reminder.phone, reminder.message);
-        await prisma.reminder.update({
-          where: { id: reminder.id },
-          data: { attempts: 1, scheduledAt: new Date(Date.now() + 10 * 60000) },
-        });
-        console.log(`Lembrete 1/2 enviado para ${reminder.phone}`);
+      try {
 
-      } else if (reminder.attempts === 1) {
-        // 2a tentativa - 10 minutos depois, carinhosa e sem pressao
-        const msg = `Oi, tudo bem por ai? Nao precisa se preocupar nao, se ja fez e so me avisar que eu marco como feito! Se quiser remarcar esse lembrete, e so me chamar. Estou aqui quando precisar!`;
-        await sendMessage(reminder.phone, msg);
-        await prisma.reminder.update({
-          where: { id: reminder.id },
-          data: { attempts: 2, sent: true },
-        });
-        console.log(`Lembrete 2/2 enviado para ${reminder.phone}`);
+        // PRIMEIRO ENVIO
+        if (reminder.attempts === 0) {
+
+          const mensagens = [
+            `Oi 😌 passando pra te lembrar: ${reminder.message}`,
+            `Meu bem, só pra não deixar passar 💜\n${reminder.message}`,
+            `Lembrete rapidinho ✨\n${reminder.message}`,
+            `Clara passando aqui pra te lembrar 😄\n${reminder.message}`,
+          ];
+
+          await sendMessage(reminder.phone, random(mensagens));
+
+          await prisma.reminder.update({
+            where: { id: reminder.id },
+            data: {
+              attempts: 1,
+              scheduledAt: new Date(Date.now() + 10 * 60000),
+            },
+          });
+
+          console.log(`Reminder enviado: ${reminder.phone}`);
+        }
+
+        // SEGUNDO ENVIO
+        else if (reminder.attempts === 1) {
+
+          const mensagens2 = [
+            `Tudo certinho por aí? 😅\nSe já resolveu isso pode só me avisar.`,
+            `Não quero te pressionar tá? 💜\nSó passando novamente caso tenha esquecido.`,
+            `Oi 😌 só reforçando esse lembrete rapidinho.`,
+            `Se quiser remarcar ou ajustar esse lembrete eu consigo também ✨`,
+          ];
+
+          await sendMessage(reminder.phone, random(mensagens2));
+
+          await prisma.reminder.update({
+            where: { id: reminder.id },
+            data: {
+              attempts: 2,
+              sent: true,
+            },
+          });
+
+          console.log(`Reminder reforçado: ${reminder.phone}`);
+        }
+
+      } catch (e) {
+        console.error('Erro reminder individual:', e.message);
       }
     }
+
   } catch (error) {
-    console.error('Erro job lembretes:', error.message);
+    console.error('Erro reminders:', error.message);
   }
 });
 
 // ============================================
-// REMEDIOS - verifica a cada 5 minutos
+// REMÉDIOS
 // ============================================
-cron.schedule('*/5 * * * *', async () => {
+
+cron.schedule('* * * * *', async () => {
   try {
+
     const now = new Date();
-    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
     const medications = await prisma.medication.findMany({
-      where: { active: true, remaining: { gt: 0 } },
-      include: { user: true },
+      where: {
+        active: true,
+        remaining: {
+          gt: 0,
+        },
+      },
+      include: {
+        user: true,
+      },
     });
 
     for (const med of medications) {
-      const times = JSON.parse(med.times || '[]');
-      for (const time of times) {
-        if (isWithinMinutes(currentTime, time, 5)) {
 
-          // Aviso de estoque baixo
-          if (med.remaining <= 3) {
-            await sendMessage(med.user.phone, `Atencao! Seu ${med.name} esta quase acabando, so restam ${med.remaining} comprimidos. Ja pensou em comprar mais antes que acabe?`);
-          } else if (med.remaining === 10) {
-            await sendMessage(med.user.phone, `So um aviso rapido: seu ${med.name} esta com apenas 10 comprimidos. Ja vai pensando em renovar a receita!`);
-          }
+      try {
 
-          // Lembrete de tomar
-          const msg = `Hora do seu ${med.name}! Tomou? Me confirma aqui quando tomar!`;
-          await sendMessage(med.user.phone, msg);
+        const horarios = JSON.parse(med.times || '[]');
 
-          // Desconta estoque
-          await prisma.medication.update({
-            where: { id: med.id },
-            data: { remaining: { decrement: 1 } },
+        for (const horario of horarios) {
+
+          const [h, m] = horario.split(':').map(Number);
+
+          const medTime = new Date();
+          medTime.setHours(h, m, 0, 0);
+
+          if (!isSameMinute(now, medTime)) continue;
+
+          // evita duplicar no mesmo minuto
+          const alreadySent = await prisma.reminder.findFirst({
+            where: {
+              userId: med.userId,
+              message: {
+                contains: med.name,
+              },
+              createdAt: {
+                gte: new Date(Date.now() - 60000),
+              },
+            },
           });
 
-          // Cria reminder de reenvio em 10 minutos se nao confirmar
+          if (alreadySent) continue;
+
+          const mensagens = [
+            `Hora do seu ${med.name} 💊`,
+            `Passando pra lembrar do ${med.name} 😌`,
+            `Meu bem, não esquece do ${med.name} 💜`,
+            `Lembrete do remédio ✨\n${med.name}`,
+          ];
+
+          await sendMessage(med.user.phone, random(mensagens));
+
+          // estoque baixo
+          if (med.remaining === 10) {
+            await sendMessage(
+              med.user.phone,
+              `Só um aviso 😅 seu ${med.name} já está chegando nos 10 comprimidos restantes.`
+            );
+          }
+
+          if (med.remaining <= 3) {
+            await sendMessage(
+              med.user.phone,
+              `Atenção 💜 o ${med.name} está quase acabando (${med.remaining} restantes).`
+            );
+          }
+
+          // decrementa
+          await prisma.medication.update({
+            where: { id: med.id },
+            data: {
+              remaining: {
+                decrement: 1,
+              },
+            },
+          });
+
+          // cria reminder de confirmação
           await prisma.reminder.create({
             data: {
               userId: med.user.id,
               phone: med.user.phone,
-              message: msg,
-              scheduledAt: new Date(Date.now() + 10 * 60000),
-              attempts: 1,
+              message: `Você conseguiu tomar o ${med.name}?`,
+              scheduledAt: new Date(Date.now() + 15 * 60000),
+              attempts: 0,
             },
           });
 
-          console.log(`Remedio ${med.name} lembrado para ${med.user.phone}. Restam ${med.remaining - 1}`);
+          console.log(`Medicamento enviado: ${med.name}`);
         }
+
+      } catch (e) {
+        console.error('Erro medicamento individual:', e.message);
       }
     }
+
   } catch (error) {
-    console.error('Erro job remedios:', error.message);
+    console.error('Erro medicamentos:', error.message);
   }
 });
 
 // ============================================
-// TAREFAS - verifica a cada 30 minutos
+// TAREFAS
 // ============================================
-cron.schedule('*/30 * * * *', async () => {
+
+cron.schedule('*/20 * * * *', async () => {
+
   try {
+
     const now = new Date();
 
     const tasks = await prisma.task.findMany({
-      where: { completed: false, notified: false, dueDate: { not: null } },
-      include: { user: true },
+      where: {
+        completed: false,
+      },
+      include: {
+        user: true,
+      },
     });
 
     for (const task of tasks) {
-      const due = new Date(task.dueDate);
-      const daysUntil = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
-      const hoursUntil = Math.ceil((due - now) / (1000 * 60 * 60));
 
-      let msg = null;
+      try {
 
-      if (hoursUntil <= 1 && hoursUntil > 0) {
-        msg = `Em 1 hora voce tem: ${task.title}`;
-        if (task.dueTime) msg += ` as ${task.dueTime}`;
-        if (task.items) msg += `. Nao esquece de levar: ${task.items}!`;
-      } else if (daysUntil === 0) {
-        msg = `Hoje voce tem: ${task.title}`;
-        if (task.dueTime) msg += ` as ${task.dueTime}`;
-        if (task.items) msg += `. Ja separou: ${task.items}?`;
-      } else if (daysUntil === 1) {
-        msg = `Amanha voce tem: ${task.title}`;
-        if (task.dueTime) msg += ` as ${task.dueTime}`;
-        if (task.items) msg += `. Ja foi separando: ${task.items}?`;
-      } else if (daysUntil === 3) {
-        msg = `Daqui 3 dias: ${task.title}`;
-        if (task.items) msg += `. Vai precisar levar: ${task.items}.`;
-      }
+        if (!task.dueDate) continue;
 
-      if (msg) {
-        await sendMessage(task.user.phone, msg);
-        await prisma.task.update({ where: { id: task.id }, data: { notified: true } });
-        console.log(`Tarefa lembrada para ${task.user.phone}: ${task.title}`);
+        const due = new Date(task.dueDate);
+
+        if (task.dueTime) {
+          const [h, m] = task.dueTime.split(':').map(Number);
+          due.setHours(h, m, 0, 0);
+        } else {
+          due.setHours(12, 0, 0, 0);
+        }
+
+        const diff = due.getTime() - now.getTime();
+
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+        let msg = null;
+
+        if (hours >= 0 && hours <= 1 && !task.notified) {
+
+          msg = `Ei 😄 em cerca de 1 hora você tem:\n${task.title}`;
+
+          if (task.items) {
+            msg += `\n\nTalvez seja bom já separar:\n${task.items}`;
+          }
+
+          await prisma.task.update({
+            where: { id: task.id },
+            data: {
+              notified: true,
+            },
+          });
+
+        } else if (days === 0 && hours > 1 && !task.notified) {
+
+          msg = `Passando pra te lembrar da programação de hoje ✨\n\n${task.title}`;
+
+          if (task.dueTime) {
+            msg += ` às ${task.dueTime}`;
+          }
+
+          if (task.items) {
+            msg += `\n\nLevar:\n${task.items}`;
+          }
+
+          await prisma.task.update({
+            where: { id: task.id },
+            data: {
+              notified: true,
+            },
+          });
+
+        }
+
+        if (msg) {
+          await sendMessage(task.user.phone, msg);
+        }
+
+      } catch (e) {
+        console.error('Erro task individual:', e.message);
       }
     }
+
   } catch (error) {
-    console.error('Erro job tarefas:', error.message);
+    console.error('Erro tarefas:', error.message);
   }
 });
 
-// ============================================
-// BOM DIA - todo dia as 8h
-// ============================================
-cron.schedule('0 8 * * *', async () => {
-  try {
-    const users = await prisma.user.findMany();
-
-    for (const user of users) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
-      const todayTasks = await prisma.task.findMany({
-        where: { userId: user.id, completed: false, dueDate: { gte: today, lt: tomorrow } },
-      });
-
-      const meds = await prisma.medication.findMany({
-        where: { userId: user.id, active: true, remaining: { gt: 0 } },
-      });
-
-      const nome = user.name ? `, ${user.name}` : '';
-      let msg = `Bom dia${nome}! Como voce esta hoje?\n`;
-
-      if (todayTasks.length > 0) {
-        msg += `\nHoje voce tem:\n`;
-        todayTasks.forEach((t) => {
-          msg += `- ${t.title}${t.dueTime ? ` as ${t.dueTime}` : ''}`;
-          if (t.items) msg += ` (levar: ${t.items})`;
-          msg += '\n';
-        });
-      }
-
-      if (meds.length > 0) {
-        msg += `\nRemedios de hoje:\n`;
-        meds.forEach((m) => {
-          const times = JSON.parse(m.times || '[]');
-          msg += `- ${m.name} - ${times.join(', ')} (${m.remaining} comprimidos restantes)\n`;
-        });
-      }
-
-      msg += `\nEstou aqui pra te ajudar no que precisar!`;
-      await sendMessage(user.phone, msg.trim());
-    }
-  } catch (error) {
-    console.error('Erro job bom dia:', error.message);
-  }
-});
-
-function isWithinMinutes(time1, time2, minutes) {
-  const [h1, m1] = time1.split(':').map(Number);
-  const [h2, m2] = time2.split(':').map(Number);
-  const diff = Math.abs(h1 * 60 + m1 - (h2 * 60 + m2));
-  return diff <= minutes;
-}
-
-console.log('Clara - jobs de lembretes iniciados');
+console.log('Clara reminders v3 iniciado');
