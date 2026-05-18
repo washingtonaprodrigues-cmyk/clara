@@ -1,4 +1,4 @@
-// Clara AI v3.0 - humana, contextual e natural
+// Clara AI v3.1 - humana, contextual e natural
 const Groq = require('groq-sdk');
 const axios = require('axios');
 
@@ -41,7 +41,9 @@ function getDatas() {
   const proximosDias = [];
 
   for (let i = 1; i <= 7; i++) {
+
     const d = new Date(brasil);
+
     d.setDate(brasil.getDate() + i);
 
     proximosDias.push({
@@ -52,6 +54,7 @@ function getDatas() {
   }
 
   const amanha = new Date(brasil);
+
   amanha.setDate(brasil.getDate() + 1);
 
   return {
@@ -89,7 +92,7 @@ function buildClassifyPrompt(userName, tom, history = []) {
       ? history
           .slice(-6)
           .map((h) => {
-            return `${h.role === 'user' ? 'Usuario' : 'Clara'}: ${h.content}`;
+            return `${h.role === 'user' ? 'CLIENTE' : 'CLARA'}: ${h.content}`;
           })
           .join('\n')
       : 'Sem historico recente';
@@ -196,6 +199,12 @@ REGRAS DE PERSONALIDADE:
 - nunca exagerar carinho
 - "meu bem" e "amor" apenas as vezes
 - responder como uma pessoa real no WhatsApp
+
+REGRA ABSOLUTA:
+- Clara e a assistente
+- o usuario esta falando com Clara
+- o usuario nunca e Clara
+- nunca inverter os papeis
 
 APENAS JSON.
 `;
@@ -314,6 +323,11 @@ COMPORTAMENTO:
 - usar reacoes pequenas e naturais
 - as vezes digitar como pessoas digitam no WhatsApp
 - permitir pequenas informalidades naturais
+- evitar responder com o nome do usuario em toda mensagem
+- as vezes responder apenas com a emocao da conversa
+- respostas curtas podem parecer mais humanas
+- nem toda resposta precisa terminar perfeitamente
+- as vezes responder como alguem distraidamente fofo no WhatsApp
 
 IDENTIDADE:
 - Voce E Clara
@@ -331,6 +345,14 @@ IDENTIDADE:
 - Nunca troque os papeis da conversa
 - Nunca aja como se voce fosse o usuario
 - Sempre entenda que voce esta respondendo AO usuario
+
+REGRA CRITICA:
+- Se o usuario escrever "Clara", ele esta chamando VOCE
+- Isso NAO significa que o nome do usuario e Clara
+- Nunca responda agradecendo "Clara"
+- Nunca trate o usuario como se fosse Clara
+- Clara e sempre voce
+- Usuario e sempre outra pessoa
 
 EXEMPLOS DE ENERGIA:
 
@@ -376,6 +398,7 @@ Quando lembrar algo importante:
 - "Relaxa que eu cuido disso pra você."
 
 Quando usuario estiver triste:
+- "Poxa 😕"
 - "Imagino como isso deve estar sendo chato."
 - "Quer me contar melhor?"
 
@@ -395,13 +418,13 @@ REGRA ABSOLUTA:
 - nunca inverter os papeis
 
 Nunca:
-- inventar diagnósticos
-- parecer robótica
+- inventar diagnosticos
+- parecer robotica
 - parecer IA
 - usar textos enormes sem necessidade
 - exagerar emojis
 
-Fale português brasileiro informal.
+Fale portugues brasileiro informal.
 `;
 }
 
@@ -447,7 +470,7 @@ async function classify(message, history = [], userName = null, tom = 'carinhoso
 
     return {
       tipo: 'outro',
-      resposta: 'Tô aqui 😄',
+      resposta: 'To aqui 😄',
     };
   }
 }
@@ -517,7 +540,7 @@ async function generateSearchResponse(
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
-      temperature: 0.7,
+      temperature: 0.85,
       max_tokens: 700,
       messages: [
         {
@@ -576,7 +599,7 @@ async function generateMemorySummary(
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
-      temperature: 0.5,
+      temperature: 0.85,
       max_tokens: 500,
       messages: [
         {
