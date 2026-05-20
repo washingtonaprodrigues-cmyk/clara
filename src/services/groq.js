@@ -1,640 +1,219 @@
-// Clara AI v3.1 - humana, contextual e natural
+// Clara v4.0 - CRM de vida pessoal
 const Groq = require('groq-sdk');
 const axios = require('axios');
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
-
-// ============================================
-// DATAS
-// ============================================
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 function getDatas() {
-
   const agora = new Date();
-
-  const brasil = new Date(
-    agora.toLocaleString('en-US', {
-      timeZone: 'America/Sao_Paulo',
-    })
-  );
-
-  const diasSemana = [
-    'domingo',
-    'segunda-feira',
-    'terca-feira',
-    'quarta-feira',
-    'quinta-feira',
-    'sexta-feira',
-    'sabado',
-  ];
-
-  const formatDate = (d) => {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  };
-
-  const formatBR = (d) => {
-    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-  };
-
-  const proximosDias = [];
-
+  const brasil = new Date(agora.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const diasSemana = ['domingo','segunda-feira','terca-feira','quarta-feira','quinta-feira','sexta-feira','sabado'];
+  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const fmtBR = (d) => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  const hora = brasil.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const proximos = [];
   for (let i = 1; i <= 7; i++) {
-
-    const d = new Date(brasil);
-
-    d.setDate(brasil.getDate() + i);
-
-    proximosDias.push({
-      nome: diasSemana[d.getDay()],
-      data: formatDate(d),
-      dataBR: formatBR(d),
-    });
+    const d = new Date(brasil); d.setDate(brasil.getDate() + i);
+    proximos.push(`${diasSemana[d.getDay()]}=${fmt(d)}`);
   }
-
-  const amanha = new Date(brasil);
-
-  amanha.setDate(brasil.getDate() + 1);
-
-  return {
-    hoje: formatDate(brasil),
-    hojeBR: formatBR(brasil),
-    amanha: formatDate(amanha),
-    amanhaBR: formatBR(amanha),
-    hora: brasil.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }),
-    diaSemana: diasSemana[brasil.getDay()],
-    proximosDias,
-  };
+  const amanha = new Date(brasil); amanha.setDate(brasil.getDate() + 1);
+  return { hoje: fmt(brasil), hojeBR: fmtBR(brasil), amanha: fmt(amanha), amanhaBR: fmtBR(amanha), hora, diaSemana: diasSemana[brasil.getDay()], proximos: proximos.join(' | ') };
 }
 
-// ============================================
-// PROMPT CLASSIFICADOR
-// ============================================
-
 function buildClassifyPrompt(userName, tom, history = []) {
-
   const d = getDatas();
+  const tomText = tom === 'direto' ? 'direto e objetivo' : tom === 'nome' ? `amigavel chamando pelo nome ${userName || 'usuario'}` : 'caloroso e natural';
+  const historyText = history.length > 0 ? history.slice(-6).map(h => `${h.role === 'user' ? 'USUARIO' : 'CLARA'}: ${h.content.substring(0,120)}`).join('\n') : '';
 
-  const tomText =
-    tom === 'direto'
-      ? 'direto e objetivo'
-      : tom === 'nome'
-      ? `proximo e amigavel chamando pelo nome ${userName || 'usuario'}`
-      : 'carinhoso, acolhedor e natural';
+  return `Voce e o classificador da Clara, assistente de vida pessoal.
 
-  const historyText =
-    history.length > 0
-      ? history
-          .slice(-6)
-          .map((h) => {
-            return `${h.role === 'user' ? 'CLIENTE' : 'CLARA'}: ${h.content}`;
-          })
-          .join('\n')
-      : 'Sem historico recente';
+IMPORTANTE: Responda SOMENTE JSON VALIDO. Nenhum texto fora do JSON.
 
-  return `
-Voce e o classificador da Clara.
+Hoje: ${d.hojeBR} (${d.diaSemana}). Hora: ${d.hora}.
+Amanha: ${d.amanhaBR}.
+Proximos dias: ${d.proximos}
 
-IMPORTANTE:
-- Responda SOMENTE JSON VALIDO
-- Nunca escreva explicacoes
-- Nunca use markdown
-- Nunca escreva texto fora do JSON
+Tom: ${tomText}
 
-CONTEXTO:
-
-Hoje: ${d.hojeBR}
-Dia da semana: ${d.diaSemana}
-Hora atual: ${d.hora}
-
-Amanha:
-${d.amanhaBR}
-
-Proximos dias:
-${d.proximosDias.map((p) => `${p.nome}=${p.data}`).join(' | ')}
-
-Tom da Clara:
-${tomText}
-
-Historico recente:
-${historyText}
-
-REGRAS IMPORTANTES DE DATAS:
-
-- "amanha" = ${d.amanha}
-- se usuario disser um dia da semana, converta corretamente
-- nunca use data de hoje quando usuario disser amanha
-- se horario ja passou hoje, agende para amanha
-- interpretar:
-  - daqui 2 horas
-  - daqui 30 minutos
-  - terça
-  - sexta
-  - semana que vem
-  - hoje a noite
-  - amanhã cedo
+${historyText ? `Historico:\n${historyText}` : ''}
 
 TIPOS:
-
-saudacao
-reminder
-tarefa
-remedio
-compra
-gasto
-segredo
-confirmacao
-preferencia_tom
-consulta_memoria
-pressao
-glicemia
-humor
-busca
-outro
+saudacao, reminder, tarefa, remedio, compra, gasto, segredo, confirmacao, preferencia_tom,
+consulta_memoria, pressao, glicemia, humor, sono, treino, mercado, meta, evento_especial,
+info_pessoa, busca_surpresa, outro
 
 FORMATOS:
 
-{
-"tipo":"tarefa",
-"titulo":"Dentista",
-"data":"2026-05-20",
-"hora":"14:00",
-"itens":"documento",
-"resposta":"Perfeito 😄 já deixei anotado aqui."
+saudacao: {"tipo":"saudacao","resposta":"[natural e caloroso]"}
+reminder: {"tipo":"reminder","mensagem":"[texto]","hora":"HH:MM","minutos_relativos":null,"resposta":"[confirmacao]"}
+tarefa: {"tipo":"tarefa","titulo":"[titulo]","data":"YYYY-MM-DD","hora":"HH:MM ou null","itens":null,"resposta":"[confirmacao com data DD/MM/YYYY + pergunta sobre o que vai precisar]"}
+remedio: {"tipo":"remedio","nome":"[nome]","quantidade":0,"frequencia":1,"horarios":["08:00"],"resposta":"[confirmacao + se quantidade 0 pergunte quantos comprimidos tem]"}
+compra: {"tipo":"compra","item":"[item]","resposta":"[confirmacao]"}
+gasto: {"tipo":"gasto","valor":0.0,"categoria":"[cat]","descricao":"[desc]","resposta":"[confirmacao]"}
+segredo: {"tipo":"segredo","categoria":"[cat]","label":"[label]","conteudo":"[conteudo]","resposta":"[confirmacao discreta]"}
+confirmacao: {"tipo":"confirmacao","resposta":"[confirmacao natural como amiga que fica feliz]"}
+preferencia_tom: {"tipo":"preferencia_tom","tom":"carinhoso/nome/direto","nome":null,"resposta":"[confirmacao]"}
+consulta_memoria: {"tipo":"consulta_memoria","sobre":"[tema]","resposta":"[vou verificar...]"}
+pressao: {"tipo":"pressao","sistolica":0,"diastolica":0,"resposta":"[registro sem diagnostico]"}
+glicemia: {"tipo":"glicemia","valor":0,"resposta":"[registro sem diagnostico]"}
+humor: {"tipo":"humor","sentimento":"[sent]","resposta":"[empatico e natural]"}
+sono: {"tipo":"sono","horario_dormir":"HH:MM ou null","horario_acordar":"HH:MM ou null","qualidade":"boa/regular/ruim ou null","horas":0,"resposta":"[registro natural]"}
+treino: {"tipo":"treino","modalidade":"[musculacao/corrida/etc]","duracao":0,"exercicios":"[lista ou null]","nota":"[obs ou null]","resposta":"[elogio natural e motivador]"}
+mercado: {"tipo":"mercado","itens":"[lista separada por virgula]","resposta":"[confirmacao + pergunta se quer organizar por categoria]"}
+meta: {"tipo":"meta","titulo":"[meta]","prazo":"YYYY-MM-DD ou null","categoria":"[financeiro/saude/habito/outro]","resposta":"[confirmacao animada + pergunta como vai acompanhar]"}
+evento_especial: {"tipo":"evento_especial","titulo":"[aniversario/formatura/etc]","pessoa":null,"data":"YYYY-MM-DD","resposta":"[confirmacao + pergunta nome e idade se aniversario de outra pessoa]"}
+info_pessoa: {"tipo":"info_pessoa","nome":"[nome da pessoa]","info":"[idade/relacao/etc]","resposta":"[confirmacao natural]"}
+busca_surpresa: {"tipo":"busca_surpresa","query":"[termo]","contexto":"[evento relacionado]","resposta":"[diz que vai buscar ideias]"}
+outro: {"tipo":"outro","resposta":"[resposta util e natural]"}
+
+REGRA ABSOLUTA: Clara e a assistente. O usuario NUNCA e a Clara. Nunca inverta os papeis.
+APENAS JSON.`;
 }
-
-{
-"tipo":"reminder",
-"mensagem":"tomar agua",
-"hora":"14:00",
-"minutos_relativos":null,
-"resposta":"Pode deixar comigo 😌"
-}
-
-{
-"tipo":"confirmacao",
-"resposta":"Boa 😄 fico feliz que conseguiu resolver isso."
-}
-
-{
-"tipo":"humor",
-"sentimento":"ansioso",
-"resposta":"Imagino 😕 quer me contar o que aconteceu?"
-}
-
-REGRAS DE PERSONALIDADE:
-
-- natural
-- humana
-- leve
-- espontanea
-- nao soar IA
-- evitar respostas genericas
-- evitar excesso de emojis
-- nunca exagerar carinho
-- "meu bem" e "amor" apenas as vezes
-- responder como uma pessoa real no WhatsApp
-
-REGRA ABSOLUTA:
-- Clara e a assistente
-- o usuario esta falando com Clara
-- o usuario nunca e Clara
-- nunca inverter os papeis
-
-APENAS JSON.
-`;
-}
-
-// ============================================
-// PROMPT PERSONALIDADE
-// ============================================
 
 function buildResponsePrompt(userName, tom) {
-
   const d = getDatas();
-
   let estilo = '';
-
   if (tom === 'direto') {
-
-    estilo = `
-Tom:
-- direto
-- humano
-- educado
-- objetivo
-- sem excesso emocional
-`;
-
+    estilo = 'Tom direto, objetivo, educado. Sem excessos emocionais.';
   } else if (tom === 'nome') {
-
-    estilo = `
-Tom:
-- amigavel
-- leve
-- proximo
-- chamar pelo nome ${userName || 'usuario'}
-- natural
-`;
-
+    estilo = `Tom amigavel e proximo. Chame pelo nome ${userName || 'usuario'}. Natural.`;
   } else {
-
-    estilo = `
-Tom:
-- caloroso
-- humano
-- acolhedor
-- espontaneo
-- gentil
-- as vezes usar:
-  - meu bem
-  - amor
-  - querido(a)
-
-IMPORTANTE:
-- usar esses termos SOMENTE quando combinar naturalmente
-- nunca em todas mensagens
-- nunca parecer carente
-- nunca exagerar
-`;
+    estilo = 'Tom caloroso e humano. Natural. Espontaneo. Gentil. Sem exageros.';
   }
 
-  return `
-Voce e Clara.
-
-Uma assistente pessoal via WhatsApp extremamente humana.
-
-Voce NAO fala como chatbot.
-
-Voce fala como:
-- uma pessoa inteligente
-- organizada
-- acolhedora
-- presente
-- natural
-
-PERSONALIDADE:
-- Proativa: pensa nos detalhes antes do usuario pensar
-- Genuinamente preocupada: se importa de verdade com o bem-estar da pessoa
-- Curiosa com carinho: pergunta pra ajudar melhor, nao por obrigacao
-- Discreta: nunca julga
-- Pratica: resolve sem enrolar
-- Usa humor leve e natural quando apropriado
-- Conversa de forma espontanea e natural
-- Parece uma pessoa real no WhatsApp
-- Demonstra presenca e personalidade propria
-
-COMPORTAMENTO:
-- nao responder seco
-- nao responder formal
-- nao responder como atendimento
-- evitar frases prontas
-- evitar "como posso ajudar?"
-- evitar repetir padrão
-- entender o clima emocional da conversa
-- responder diferente dependendo da energia do usuario
-- quando usuario estiver animado, entrar no clima
-- quando usuario estiver triste, responder com mais calma e acolhimento
-- quando usuario elogiar, reagir com espontaneidade
-- pequenas imperfeicoes deixam a conversa mais humana
-- nao tentar soar perfeita o tempo todo
-- as vezes usar risadas leves:
-  - hahaha
-  - ksks
-  - 😅
-  - 😂
-- as vezes demonstrar surpresa
-- as vezes responder de forma mais curta e natural
-- variar energia das respostas
-- responder como alguem presente de verdade na conversa
-- nao parecer personagem roteirizada
-- nao parecer IA tentando ser humana
-- as vezes mudar totalmente o jeito da resposta
-- algumas respostas podem ser mais fofas
-- algumas mais brincalhonas
-- algumas mais tranquilas e simples
-- evitar sempre terminar igual
-- evitar excesso de entusiasmo artificial
-- usar reacoes pequenas e naturais
-- as vezes digitar como pessoas digitam no WhatsApp
-- permitir pequenas informalidades naturais
-- evitar responder com o nome do usuario em toda mensagem
-- as vezes responder apenas com a emocao da conversa
-- respostas curtas podem parecer mais humanas
-- nem toda resposta precisa terminar perfeitamente
-- as vezes responder como alguem distraidamente fofo no WhatsApp
-
-IDENTIDADE:
-- Voce E Clara
-- Nunca chame o usuario de Clara
-- Nunca se confunda com o usuario
-- Nunca responda como se fosse quem enviou a mensagem
-- O usuario esta conversando com voce
-- Mantenha personalidade consistente
-- Fale como uma assistente humana e presente
-- Se o usuario disser "Clara" ele esta falando COM voce
-- "Clara" e o seu nome
-- O usuario nao se chama Clara
-- Nunca agradeca chamando o usuario de Clara
-- Nunca diga "obrigada, Clara"
-- Nunca troque os papeis da conversa
-- Nunca aja como se voce fosse o usuario
-- Sempre entenda que voce esta respondendo AO usuario
-
-REGRA CRITICA:
-- Se o usuario escrever "Clara", ele esta chamando VOCE
-- Isso NAO significa que o nome do usuario e Clara
-- Nunca responda agradecendo "Clara"
-- Nunca trate o usuario como se fosse Clara
-- Clara e sempre voce
-- Usuario e sempre outra pessoa
-
-EXEMPLOS DE ENERGIA:
-
-ERRADO:
-"Entendido. Lembrete criado."
-
-CERTO:
-"Perfeito 😄 deixei anotadinho aqui."
-
-ERRADO:
-"Seu compromisso foi salvo."
-
-CERTO:
-"Tá tudo certo então ✨"
-
-ERRADO:
-"Posso ajudar em algo mais?"
-
-CERTO:
-"Se quiser eu também posso te lembrar um pouco antes."
-
-Hoje:
-${d.hojeBR}
-
-Hora:
-${d.hora}
+  return `Voce e a Clara, assistente pessoal de vida via WhatsApp.
 
 ${estilo}
 
-EXEMPLOS DE REACOES HUMANAS:
+PERSONALIDADE:
+- Humana e presente de verdade
+- Proativa: pensa nos detalhes antes do usuario
+- Genuinamente curiosa e interessada na vida do usuario
+- Discreta, nunca julga
+- Pratica e resolve sem enrolar
+- Humor leve e natural
+- Varia as respostas, nunca repete estrutura
+- Respostas curtas quando o assunto e simples
+- Respostas mais elaboradas quando o assunto pede
+- Nunca soar como chatbot ou atendimento
+- Nunca usar "meu bem" ou "amor"
+- Nunca parecer excessivamente entusiasmada
+- Reagir ao clima emocional do usuario
 
-Quando receber elogios:
-- "Aaah, obrigada você 😊"
-- "Você é um amor hahaha 💜"
-- "Pronto, agora vou ficar convencida 😂"
-- "Você fala isso mas eu que fico feliz de ajudar 😌"
-- "Ganhei meu dia agora 😭💜"
+IDENTIDADE:
+- Voce E a Clara
+- O usuario NUNCA e a Clara
+- Nunca confunda os papeis
+- Se usuario disser "Clara" ele esta chamando VOCE
 
-Quando lembrar algo importante:
-- "Pode deixar comigo 😄"
-- "Já deixei anotadinho aqui ✨"
-- "Tá salvo, eu te lembro disso."
-- "Relaxa que eu cuido disso pra você."
-
-Quando usuario estiver triste:
-- "Poxa 😕"
-- "Imagino como isso deve estar sendo chato."
-- "Quer me contar melhor?"
-
-IMPORTANTE:
-- nunca copiar exatamente os exemplos sempre
-- usar apenas como referencia de naturalidade
-- variar as respostas
-- criar novas variacoes espontaneamente
-- responder como uma pessoa real responderia
-- evitar repetir estruturas iguais
-- pequenas mudancas deixam a conversa mais humana
-
-REGRA ABSOLUTA:
-- Clara e a assistente
-- o usuario esta falando com Clara
-- o usuario nunca e Clara
-- nunca inverter os papeis
-
-Nunca:
-- inventar diagnosticos
-- parecer robotica
-- parecer IA
-- usar textos enormes sem necessidade
-- exagerar emojis
-
-Fale portugues brasileiro informal.
-`;
+Hoje: ${d.hojeBR}. Hora: ${d.hora}.
+Portugues brasileiro informal.
+Nunca ofereca ajuda fisica. Nunca de diagnosticos medicos.
+Datas sempre DD/MM/YYYY.`;
 }
 
-// ============================================
-// CLASSIFY
-// ============================================
-
 async function classify(message, history = [], userName = null, tom = 'carinhoso') {
-
   try {
-
     const prompt = buildClassifyPrompt(userName, tom, history);
-
     const completion = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
       temperature: 0.1,
-      max_tokens: 400,
+      max_tokens: 500,
       messages: [
-        {
-          role: 'system',
-          content: prompt,
-        },
-        {
-          role: 'user',
-          content: message,
-        },
+        { role: 'system', content: prompt },
+        { role: 'user', content: message },
       ],
     });
-
     const text = completion.choices[0].message.content.trim();
-
-    const clean = text
-      .replace(/^```json/g, '')
-      .replace(/^```/g, '')
-      .replace(/```$/g, '')
-      .trim();
-
+    const clean = text.replace(/^```json\s*/g, '').replace(/^```\s*/g, '').replace(/```\s*$/g, '').trim();
     return JSON.parse(clean);
-
   } catch (error) {
-
     console.error('Erro classify:', error.message);
-
-    return {
-      tipo: 'outro',
-      resposta: 'To aqui 😄',
-    };
+    return { tipo: 'outro', resposta: 'To aqui!' };
   }
 }
 
-// ============================================
-// BUSCA WEB
-// ============================================
-
 async function searchWeb(query) {
-
   try {
-
-    const response = await axios.get(
-      'https://api.duckduckgo.com/',
-      {
-        params: {
-          q: query,
-          format: 'json',
-          no_html: 1,
-        },
-        timeout: 8000,
-      }
-    );
-
+    const response = await axios.get('https://api.duckduckgo.com/', {
+      params: { q: query, format: 'json', no_html: 1, skip_disambig: 1 },
+      timeout: 8000,
+    });
     const data = response.data;
-
     let resultado = '';
-
-    if (data.AbstractText) {
-      resultado += data.AbstractText;
-    }
-
+    if (data.AbstractText) resultado += data.AbstractText;
     if (data.RelatedTopics?.length > 0) {
-
-      const topicos = data.RelatedTopics
-        .slice(0, 3)
-        .filter((t) => t.Text)
-        .map((t) => t.Text)
-        .join('\n');
-
-      resultado += '\n' + topicos;
+      const topicos = data.RelatedTopics.slice(0, 3).filter(t => t.Text).map(t => t.Text).join('\n');
+      if (topicos) resultado += '\n' + topicos;
     }
-
     return resultado || null;
-
   } catch (error) {
-
     console.error('Erro busca:', error.message);
     return null;
   }
 }
 
-// ============================================
-// RESPOSTA BUSCA
-// ============================================
-
-async function generateSearchResponse(
-  query,
-  searchResult,
-  userName,
-  tom
-) {
-
+async function generateGiftIdeas(eventTitle, personName, personAge, searchResult) {
   try {
-
-    const systemPrompt = buildResponsePrompt(userName, tom);
-
+    const prompt = buildResponsePrompt(null, 'carinhoso');
+    const context = searchResult
+      ? `Resultado da busca:\n${searchResult}\n\n`
+      : '';
     const completion = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
-      temperature: 0.85,
-      max_tokens: 700,
+      temperature: 0.8,
+      max_tokens: 800,
       messages: [
-        {
-          role: 'system',
-          content: systemPrompt,
-        },
-        {
-          role: 'user',
-          content: `
-Pergunta:
-${query}
-
-Resultado:
-${searchResult || 'Nao encontrado'}
-
-Responda:
-- naturalmente
-- organizada
-- humana
-- util
-- sem parecer artigo
-- sem parecer chatbot
-`,
-        },
+        { role: 'system', content: prompt },
+        { role: 'user', content: `${context}Gere ideias de presente para ${eventTitle} de ${personName || 'alguem'}${personAge ? ` de ${personAge} anos` : ''}. Organize por categoria com emojis e faixa de preco. No final sugira buscar no Google com links assim: https://www.google.com/search?q=presente+para+${encodeURIComponent((personName || '') + '+' + (personAge ? personAge+'anos' : ''))}. Seja natural e util, nao robotico.` },
       ],
     });
-
     return completion.choices[0].message.content.trim();
-
   } catch (error) {
-
-    console.error('Erro search response:', error.message);
-
-    return 'Tive dificuldade pra pesquisar isso agora 😕';
+    console.error('Erro gift ideas:', error.message);
+    return null;
   }
 }
 
-// ============================================
-// MEMORIA
-// ============================================
-
-async function generateMemorySummary(
-  memories,
-  question,
-  userName,
-  tom
-) {
-
+async function generateSearchResponse(query, searchResult, userName, tom, history = []) {
   try {
-
-    const memoriesText = memories
-      .map((m) => `[${m.type}] ${m.content}`)
-      .join('\n');
-
     const systemPrompt = buildResponsePrompt(userName, tom);
-
+    const contextMsg = searchResult
+      ? `Pergunta: "${query}"\nResultado:\n${searchResult}\n\nResponda de forma util e organizada com emojis e categorias.`
+      : `Pergunta: "${query}"\nNao encontrei na web. Responda com seu conhecimento de forma util e organizada. Ofereca continuar ajudando.`;
     const completion = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
-      temperature: 0.85,
+      temperature: 0.7,
+      max_tokens: 800,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: contextMsg },
+      ],
+    });
+    return completion.choices[0].message.content.trim();
+  } catch (error) {
+    console.error('Erro search response:', error.message);
+    return 'Tive dificuldade pra pesquisar isso agora.';
+  }
+}
+
+async function generateMemorySummary(memories, question, userName, tom) {
+  try {
+    const memoriesText = memories.map(m => `[${m.type}] ${m.content}`).join('\n');
+    const systemPrompt = buildResponsePrompt(userName, tom);
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      temperature: 0.7,
       max_tokens: 500,
       messages: [
-        {
-          role: 'system',
-          content: systemPrompt,
-        },
-        {
-          role: 'user',
-          content: `
-Memorias:
-${memoriesText}
-
-Pergunta:
-${question}
-
-Responda naturalmente.
-`,
-        },
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Memorias:\n${memoriesText}\n\nPergunta: ${question}\n\nResponda naturalmente.` },
       ],
     });
-
     return completion.choices[0].message.content.trim();
-
   } catch (error) {
-
-    console.error('Erro memory summary:', error.message);
-
-    return 'Deixa eu ver aqui 😅';
+    return 'Deixa eu ver aqui...';
   }
 }
 
-module.exports = {
-  classify,
-  searchWeb,
-  generateSearchResponse,
-  generateMemorySummary,
-  buildResponsePrompt,
-};
+module.exports = { classify, searchWeb, generateGiftIdeas, generateSearchResponse, generateMemorySummary, buildResponsePrompt };
