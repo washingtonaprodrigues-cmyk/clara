@@ -1,894 +1,363 @@
-// Clara handler v3.0 - Mais humana, natural e inteligente
-
-const {
-  classify,
-  searchWeb,
-  generateSearchResponse,
-  generateMemorySummary,
-} = require('../services/groq');
-
+// Clara handler v4.0 - CRM de vida pessoal
+const { classify, searchWeb, generateGiftIdeas, generateSearchResponse, generateMemorySummary } = require('../services/groq');
 const { sendMessage } = require('../services/whatsapp');
 const memory = require('../services/memory');
 const axios = require('axios');
 
-// ============================================
-// MAIN
-// ============================================
-
 async function handleMessage(phone, text, audioUrl = null) {
   try {
     const user = await memory.getOrCreateUser(phone);
+    const { name: userName, tom } = await memory.getUserPreference(user.id);
 
-    const {
-      name: userName,
-      tom,
-    } = await memory.getUserPreference(user.id);
-
-    // ============================================
-    // PRIMEIRO CONTATO
-    // ============================================
-
+    // Primeiro contato
     if (!user.name && !user.metadata) {
       const isFirst = await checkFirstMessage(user.id);
-
       if (isFirst) {
-        await memory.saveConversationMessage(
-          user.id,
-          'user',
-          text || 'audio'
-        );
+        await memory.saveConversationMessage(user.id, 'user', text || 'audio');
+        const msg = `Oi! Que bom te ver aqui
 
-        const msg =
-`Oi! Que bom te ver aqui ✨
+Eu sou a Clara, sua assistente pessoal.
 
-Eu sou a Clara, sua assistente pessoal 💜
+Antes de comecar, como prefere que eu te trate?
 
-Antes da gente começar, me conta uma coisa rapidinho:
-
-1 - Pode ser mais carinhosa comigo 😊
+1 - Pode ser calorosa e natural
 2 - Prefiro que me chame pelo nome
 3 - Prefiro algo mais direto
 
-Pode responder só com 1, 2 ou 3 ✨`;
-
+Responde com 1, 2 ou 3!`;
         await sendMessage(phone, msg);
-
-        await memory.saveConversationMessage(
-          user.id,
-          'assistant',
-          msg
-        );
-
-        await memory.prisma.user.update({
-          where: { id: user.id },
-          data: {
-            metadata: JSON.stringify({
-              tom: 'aguardando_preferencia',
-            }),
-          },
-        });
-
+        await memory.saveConversationMessage(user.id, 'assistant', msg);
+        await memory.prisma.user.update({ where: { id: user.id }, data: { metadata: JSON.stringify({ tom: 'aguardando_preferencia' }) } });
         return;
       }
     }
 
-    // ============================================
-    // AGUARDANDO ESCOLHA
-    // ============================================
-
+    // Aguardando escolha de tom
     if (user.metadata) {
       try {
         const meta = JSON.parse(user.metadata);
-
-        if (meta.tom === 'aguardando_preferencia') {
-          await handleTomChoice(user, phone, text || '');
-          return;
-        }
-
+        if (meta.tom === 'aguardando_preferencia') { await handleTomChoice(user, phone, text || ''); return; }
         if (meta.tom === 'aguardando_nome') {
           const nome = (text || '').trim().split(' ')[0];
-
-          await memory.saveUserPreference(
-            user.id,
-            nome,
-            'nome'
-          );
-
-          const msg =
-`Perfeito, ${nome} ✨
-
-Agora sim, oficialmente apresentados 😄
-Pode contar comigo pro que precisar!`;
-
+          await memory.saveUserPreference(user.id, nome, 'nome');
+          const msg = `Perfeito, ${nome}! Agora sim, pode contar comigo pro que precisar.`;
           await sendMessage(phone, msg);
-
-          await memory.saveConversationMessage(
-            user.id,
-            'assistant',
-            msg
-          );
-
+          await memory.saveConversationMessage(user.id, 'assistant', msg);
           return;
         }
-
+        // Aguardando info de pessoa para evento
+        if (meta.aguardando_info_evento) {
+          await handleEventPersonInfo(user, phone, text || '', meta);
+          return;
+        }
       } catch (e) {}
     }
 
-    // ============================================
-    // TRANSCRIÇÃO DE ÁUDIO
-    // ============================================
-
+    // Transcreve audio
     if (audioUrl && !text) {
       try {
         const transcricao = await transcribeAudio(audioUrl);
-
-        if (transcricao) {
-          text = transcricao;
-
-          console.log(
-            `[Áudio] ${phone}: ${text}`
-          );
-        } else {
-          await sendMessage(
-            phone,
-            'Não consegui entender o áudio 😢 Pode me mandar digitado?'
-          );
-
-          return;
-        }
-
-      } catch (e) {
-        console.error('Erro transcrição:', e.message);
-
-        await sendMessage(
-          phone,
-          'Tive dificuldade pra entender o áudio 😢'
-        );
-
-        return;
-      }
+        if (transcricao) { text = transcricao; console.log(`Audio transcrito de ${phone}: ${text}`); }
+        else { await sendMessage(phone, 'Nao consegui entender o audio. Pode digitar?'); return; }
+      } catch (e) { await sendMessage(phone, 'Tive dificuldade com o audio. Pode digitar?'); return; }
     }
 
     if (!text) return;
 
-    // ============================================
-    // CANCELA LEMBRETES PENDENTES
-    // ============================================
-
+    // Cancela lembretes pendentes
     await cancelPendingReminders(user.id);
 
-    // ============================================
-    // HISTÓRICO
-    // ============================================
+    const history = await memory.getConversationHistory(user.id, 8);
+    await memory.saveConversationMessage(user.id, 'user', text);
 
-    const history = await memory.getConversationHistory(
-      user.id,
-      8
-    );
-
-    await memory.saveConversationMessage(
-      user.id,
-      'user',
-      text
-    );
-
-    // ============================================
-    // CLASSIFICA
-    // ============================================
-
-    const classified = await classify(
-      text,
-      history,
-      userName,
-      tom
-    );
-
-    console.log(
-      `[${phone}] Tipo identificado: ${classified.tipo}`
-    );
+    const classified = await classify(text, history, userName, tom);
+    console.log(`[${phone}] Tipo: ${classified.tipo}`);
 
     let resposta = '';
 
     switch (classified.tipo) {
-
-      case 'reminder':
-        resposta = await handleReminder(
-          user,
-          phone,
-          classified
-        );
-        break;
-
-      case 'tarefa':
-        resposta = await handleTask(
-          user,
-          phone,
-          classified
-        );
-        break;
-
-      case 'remedio':
-        resposta = await handleMedication(
-          user,
-          phone,
-          classified
-        );
-        break;
-
-      case 'compra':
-        resposta = await handlePurchase(
-          user,
-          phone,
-          classified
-        );
-        break;
-
-      case 'gasto':
-        resposta = await handleExpense(
-          user,
-          phone,
-          classified
-        );
-        break;
-
-      case 'segredo':
-        resposta = await handleSecret(
-          user,
-          phone,
-          classified
-        );
-        break;
-
-      case 'consulta_memoria':
-        resposta = await handleMemoryQuery(
-          user,
-          phone,
-          text,
-          userName,
-          tom
-        );
-        break;
-
-      case 'pressao':
-      case 'glicemia':
-      case 'humor':
-        resposta = await handleHealth(
-          user,
-          phone,
-          classified
-        );
-        break;
-
-      case 'confirmacao':
-        resposta = await handleConfirmacao(
-          phone,
-          classified
-        );
-        break;
-
-      case 'preferencia_tom':
-        resposta = await handlePreferenciaTom(
-          user,
-          phone,
-          classified
-        );
-        break;
-
-      case 'busca':
-        resposta = await handleBusca(
-          phone,
-          classified,
-          history,
-          userName,
-          tom
-        );
-        break;
-
+      case 'reminder': resposta = await handleReminder(user, phone, classified); break;
+      case 'tarefa': resposta = await handleTask(user, phone, classified); break;
+      case 'remedio': resposta = await handleMedication(user, phone, classified); break;
+      case 'compra': resposta = await handlePurchase(user, phone, classified); break;
+      case 'gasto': resposta = await handleExpense(user, phone, classified); break;
+      case 'segredo': resposta = await handleSecret(user, phone, classified); break;
+      case 'consulta_memoria': resposta = await handleMemoryQuery(user, phone, text, userName, tom); break;
+      case 'pressao': case 'glicemia': case 'humor': resposta = await handleHealth(user, phone, classified); break;
+      case 'sono': resposta = await handleSleep(user, phone, classified); break;
+      case 'treino': resposta = await handleWorkout(user, phone, classified); break;
+      case 'mercado': resposta = await handleGrocery(user, phone, classified); break;
+      case 'meta': resposta = await handleGoal(user, phone, classified); break;
+      case 'evento_especial': resposta = await handleSpecialEvent(user, phone, classified); break;
+      case 'info_pessoa': resposta = await handlePersonInfo(user, phone, classified); break;
+      case 'busca_surpresa': resposta = await handleSurpriseSearch(user, phone, classified); break;
+      case 'confirmacao': resposta = await handleConfirmacao(user, phone, classified); break;
+      case 'preferencia_tom': resposta = await handlePreferenciaTom(user, phone, classified); break;
       default:
-        resposta =
-          classified.resposta ||
-          'Estou aqui 💜';
-
+        resposta = classified.resposta || 'To aqui!';
         await sendMessage(phone, resposta);
     }
 
-    if (resposta) {
-      await memory.saveConversationMessage(
-        user.id,
-        'assistant',
-        resposta
-      );
-    }
+    if (resposta) await memory.saveConversationMessage(user.id, 'assistant', resposta);
 
   } catch (error) {
     console.error('Erro handleMessage:', error);
-
-    await sendMessage(
-      phone,
-      'Tive um probleminha aqui 😢 Pode repetir pra mim?'
-    );
+    await sendMessage(phone, 'Tive um probleminha aqui. Pode repetir?');
   }
 }
 
-// ============================================
-// TOM
-// ============================================
+async function checkFirstMessage(userId) {
+  const count = await memory.prisma.memory.count({ where: { userId } });
+  return count === 0;
+}
+
+async function cancelPendingReminders(userId) {
+  try {
+    await memory.prisma.reminder.updateMany({
+      where: { userId, confirmed: false, sent: false },
+      data: { confirmed: true, sent: true },
+    });
+  } catch (e) {}
+}
 
 async function handleTomChoice(user, phone, text) {
   const choice = text.trim().toLowerCase();
-
-  if (
-    choice === '1' ||
-    choice.includes('carinhosa') ||
-    choice.includes('sim')
-  ) {
-
-    await memory.saveUserPreference(
-      user.id,
-      null,
-      'carinhoso'
-    );
-
-    await sendMessage(
-      phone,
-`Aaaah, perfeito então 🥹💜
-
-Pode deixar que vou cuidar direitinho de você por aqui.
-E prometo não exagerar 😄`
-    );
-
-    return;
+  if (choice === '1' || choice.includes('calorosa') || choice.includes('sim') || choice.includes('pode')) {
+    await memory.saveUserPreference(user.id, null, 'carinhoso');
+    await sendMessage(phone, 'Combinado! Pode contar comigo pra tudo.');
+  } else if (choice === '2' || choice.includes('nome')) {
+    await memory.prisma.user.update({ where: { id: user.id }, data: { metadata: JSON.stringify({ tom: 'aguardando_nome' }) } });
+    await sendMessage(phone, 'Como voce prefere que eu te chame?');
+  } else if (choice === '3' || choice.includes('diret')) {
+    await memory.saveUserPreference(user.id, null, 'direto');
+    await sendMessage(phone, 'Combinado. Como posso ajudar?');
+  } else {
+    await sendMessage(phone, 'Responde com 1, 2 ou 3!\n\n1 - Calorosa\n2 - Pelo nome\n3 - Direta');
   }
-
-  if (
-    choice === '2' ||
-    choice.includes('nome')
-  ) {
-
-    await memory.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        metadata: JSON.stringify({
-          tom: 'aguardando_nome',
-        }),
-      },
-    });
-
-    await sendMessage(
-      phone,
-      'Perfeito ✨ E como você prefere que eu te chame?'
-    );
-
-    return;
-  }
-
-  if (
-    choice === '3' ||
-    choice.includes('direto')
-  ) {
-
-    await memory.saveUserPreference(
-      user.id,
-      null,
-      'direto'
-    );
-
-    await sendMessage(
-      phone,
-      'Combinado 👍 Vou ser mais objetiva então.'
-    );
-
-    return;
-  }
-
-  await sendMessage(
-    phone,
-`Pode responder assim:
-
-1 - Carinhosa
-2 - Pelo nome
-3 - Direta ✨`
-  );
 }
 
-// ============================================
-// LEMBRETES
-// ============================================
+async function handlePreferenciaTom(user, phone, data) {
+  const { tom, nome } = data;
+  if (tom === 'nome' && !nome) {
+    await memory.prisma.user.update({ where: { id: user.id }, data: { metadata: JSON.stringify({ tom: 'aguardando_nome' }) } });
+    await sendMessage(phone, 'Como voce prefere que eu te chame?');
+    return '';
+  }
+  await memory.saveUserPreference(user.id, nome || null, tom);
+  await sendMessage(phone, data.resposta);
+  return data.resposta;
+}
 
 async function handleReminder(user, phone, data) {
   try {
-
     let scheduledAt;
-
-    if (
-      data.minutos_relativos &&
-      data.minutos_relativos > 0
-    ) {
-
-      scheduledAt = new Date(
-        Date.now() +
-        data.minutos_relativos * 60000
-      );
-
+    if (data.minutos_relativos && data.minutos_relativos > 0) {
+      scheduledAt = new Date(Date.now() + data.minutos_relativos * 60000);
     } else if (data.hora) {
-
-      const [horas, minutos] =
-        data.hora.split(':').map(Number);
-
+      const [horas, minutos] = data.hora.split(':').map(Number);
       scheduledAt = new Date();
-
-      scheduledAt.setHours(
-        horas,
-        minutos,
-        0,
-        0
-      );
-
-      if (scheduledAt < new Date()) {
-        scheduledAt.setDate(
-          scheduledAt.getDate() + 1
-        );
-      }
-
+      scheduledAt.setHours(horas, minutos, 0, 0);
+      if (scheduledAt < new Date()) scheduledAt.setDate(scheduledAt.getDate() + 1);
     } else {
-
-      scheduledAt = new Date(
-        Date.now() + 5 * 60000
-      );
+      scheduledAt = new Date(Date.now() + 5 * 60000);
     }
-
     await memory.prisma.reminder.create({
-      data: {
-        userId: user.id,
-        phone,
-        message:
-`✨ Só passando pra te lembrar:
-
-${data.mensagem}
-
-Depois me fala se deu tudo certo 💜`,
-        scheduledAt,
-        attempts: 0,
-      },
+      data: { userId: user.id, phone, message: data.mensagem, scheduledAt, attempts: 0 },
     });
-
-    const horarioStr =
-      scheduledAt.toLocaleTimeString(
-        'pt-BR',
-        {
-          hour: '2-digit',
-          minute: '2-digit',
-        }
-      );
-
-    const resposta =
-`${data.resposta}
-
-⏰ Vou te lembrar às ${horarioStr}.`;
-
+    const horarioStr = scheduledAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+    const resposta = `${data.resposta}\nVou te avisar as ${horarioStr}.`;
     await sendMessage(phone, resposta);
-
     return resposta;
-
   } catch (error) {
-
-    console.error(
-      'Erro handleReminder:',
-      error
-    );
-
-    await sendMessage(
-      phone,
-      data.resposta
-    );
-
+    console.error('Erro handleReminder:', error);
+    await sendMessage(phone, data.resposta);
     return data.resposta;
   }
 }
 
-// ============================================
-// TASKS
-// ============================================
-
-async function handleTask(user, phone, data) {
-  const task = await memory.saveTask(
-    user.id,
-    data
-  );
-
-  let resposta = data.resposta;
-
-  if (task.dueDate) {
-
-    const dateStr =
-      new Date(task.dueDate)
-        .toLocaleDateString('pt-BR');
-
-    resposta += `
-
-📅 ${dateStr}`;
-
-    if (task.dueTime) {
-      resposta += ` às ${task.dueTime}`;
-    }
-
-    if (task.items) {
-      resposta += `
-
-🎒 Pra não esquecer:
-${task.items}`;
-    }
-
-    resposta += `
-
-Vou te lembrar antes ✨`;
-  }
-
-  await sendMessage(phone, resposta);
-
-  return resposta;
-}
-
-// ============================================
-// REMÉDIOS
-// ============================================
-
-async function handleMedication(user, phone, data) {
-
-  if (
-    !data.quantidade ||
-    data.quantidade === 0
-  ) {
-
-    const resposta =
-`${data.resposta}
-
-💊 Quantos comprimidos vêm na caixa?
-Assim consigo te avisar antes de acabar 😊`;
-
-    await sendMessage(phone, resposta);
-
-    return resposta;
-  }
-
-  await memory.saveMedication(
-    user.id,
-    data
-  );
-
-  const horariosText =
-    (data.horarios || ['08:00'])
-      .join(' e ');
-
-  const resposta =
-`${data.resposta}
-
-💊 ${data.nome}
-⏰ ${horariosText}
-📦 ${data.quantidade} comprimidos
-
-Vou acompanhar isso com você certinho 💜`;
-
-  await sendMessage(phone, resposta);
-
-  return resposta;
-}
-
-// ============================================
-// COMPRAS
-// ============================================
-
-async function handlePurchase(user, phone, data) {
-
-  const result =
-    await memory.savePurchase(
-      user.id,
-      data.item
-    );
-
-  let resposta = data.resposta;
-
-  if (result.isRecurring) {
-    resposta += `
-    
-👀 Acho que isso já virou compra recorrente por aí 😄`;
-  }
-
-  await sendMessage(phone, resposta);
-
-  return resposta;
-}
-
-// ============================================
-// GASTOS
-// ============================================
-
-async function handleExpense(user, phone, data) {
-
-  await memory.saveExpense(
-    user.id,
-    data
-  );
-
-  const expenses =
-    await memory.getMonthExpenses(user.id);
-
-  const total = expenses.reduce(
-    (sum, e) => sum + e.value,
-    0
-  );
-
-  const resposta =
-`${data.resposta}
-
-💰 Total do mês:
-R$ ${total.toFixed(2)}`;
-
-  await sendMessage(phone, resposta);
-
-  return resposta;
-}
-
-// ============================================
-// SEGREDOS
-// ============================================
-
-async function handleSecret(user, phone, data) {
-
-  await memory.saveSecret(
-    user.id,
-    data
-  );
-
-  const resposta =
-`${data.resposta}
-
-🔒 Guardado com segurança.`;
-
-  await sendMessage(phone, resposta);
-
-  return resposta;
-}
-
-// ============================================
-// SAÚDE
-// ============================================
-
-async function handleHealth(user, phone, data) {
-
-  await memory.saveHealthRecord(
-    user.id,
-    data.tipo,
-    data
-  );
-
-  await sendMessage(
-    phone,
-    data.resposta
-  );
-
+async function handleConfirmacao(user, phone, data) {
+  await sendMessage(phone, data.resposta);
   return data.resposta;
 }
 
-// ============================================
-// MEMÓRIA
-// ============================================
-
-async function handleMemoryQuery(
-  user,
-  phone,
-  question,
-  userName,
-  tom
-) {
-
-  const memories =
-    await memory.getRecentMemories(
-      user.id,
-      20
-    );
-
-  if (memories.length === 0) {
-
-    const resposta =
-      'Ainda não tenho anotações suas aqui 😊';
-
-    await sendMessage(phone, resposta);
-
-    return resposta;
+async function handleTask(user, phone, data) {
+  const task = await memory.saveTask(user.id, data);
+  let resposta = data.resposta;
+  if (task.dueDate) {
+    const dateStr = new Date(task.dueDate).toLocaleDateString('pt-BR');
+    resposta += `\n\n${data.titulo} - ${dateStr}`;
+    if (task.dueTime) resposta += ` as ${task.dueTime}`;
+    if (task.items) resposta += `\nLevar: ${task.items}`;
+    resposta += '\nVou te lembrar antes!';
   }
-
-  const resposta =
-    await generateMemorySummary(
-      memories,
-      question,
-      userName,
-      tom
-    );
-
   await sendMessage(phone, resposta);
-
   return resposta;
 }
 
-// ============================================
-// BUSCA
-// ============================================
-
-async function handleBusca(
-  phone,
-  data,
-  history,
-  userName,
-  tom
-) {
-
-  try {
-
-    await sendMessage(
-      phone,
-      data.resposta
-    );
-
-    let searchResult = null;
-
-    try {
-      searchResult =
-        await searchWeb(data.query);
-    } catch (e) {}
-
-    const resposta =
-      await generateSearchResponse(
-        data.query,
-        searchResult,
-        userName,
-        tom,
-        history
-      );
-
+async function handleMedication(user, phone, data) {
+  if (!data.quantidade || data.quantidade === 0) {
+    const resposta = `${data.resposta}\n\nQuantos comprimidos tem na caixa? Assim consigo te avisar antes de acabar.`;
     await sendMessage(phone, resposta);
-
     return resposta;
+  }
+  await memory.saveMedication(user.id, data);
+  const horariosText = (data.horarios || ['08:00']).join(' e ');
+  const resposta = `${data.resposta}\n\n${data.nome} - ${horariosText}\n${data.quantidade} comprimidos\nVou acompanhar o estoque pra voce.`;
+  await sendMessage(phone, resposta);
+  return resposta;
+}
 
+async function handlePurchase(user, phone, data) {
+  const result = await memory.savePurchase(user.id, data.item);
+  let resposta = data.resposta;
+  if (result.isRecurring) resposta += `\nJa e a ${result.purchase.buyCount}a vez que voce compra ${data.item}.`;
+  await sendMessage(phone, resposta);
+  return resposta;
+}
+
+async function handleExpense(user, phone, data) {
+  await memory.saveExpense(user.id, data);
+  const expenses = await memory.getMonthExpenses(user.id);
+  const total = expenses.reduce((sum, e) => sum + e.value, 0);
+  const resposta = `${data.resposta}\nTotal do mes: R$ ${total.toFixed(2)}`;
+  await sendMessage(phone, resposta);
+  return resposta;
+}
+
+async function handleSecret(user, phone, data) {
+  await memory.saveSecret(user.id, data);
+  const resposta = `${data.resposta}\nGuardado com seguranca.`;
+  await sendMessage(phone, resposta);
+  return resposta;
+}
+
+async function handleHealth(user, phone, data) {
+  await memory.saveHealthRecord(user.id, data.tipo, data);
+  await sendMessage(phone, data.resposta);
+  return data.resposta;
+}
+
+async function handleSleep(user, phone, data) {
+  await memory.saveSleepLog(user.id, data);
+  await sendMessage(phone, data.resposta);
+  return data.resposta;
+}
+
+async function handleWorkout(user, phone, data) {
+  await memory.saveWorkout(user.id, data);
+  await sendMessage(phone, data.resposta);
+  return data.resposta;
+}
+
+async function handleGrocery(user, phone, data) {
+  await memory.saveGroceryList(user.id, data.itens);
+  const resposta = `${data.resposta}\n\nLista salva! Quer que eu organize por categoria?`;
+  await sendMessage(phone, resposta);
+  return resposta;
+}
+
+async function handleGoal(user, phone, data) {
+  await memory.saveMemory(user.id, 'meta', data.titulo, { prazo: data.prazo, categoria: data.categoria });
+  await sendMessage(phone, data.resposta);
+  return data.resposta;
+}
+
+async function handleSpecialEvent(user, phone, data) {
+  const event = await memory.saveEvent(user.id, { titulo: data.titulo, pessoa: data.pessoa, data: data.data, type: 'especial' });
+  // Se nao tem nome da pessoa, pergunta
+  if (!data.pessoa) {
+    const meta = JSON.parse(user.metadata || '{}');
+    meta.aguardando_info_evento = { eventId: event.id, titulo: data.titulo };
+    await memory.prisma.user.update({ where: { id: user.id }, data: { metadata: JSON.stringify(meta) } });
+  }
+  await sendMessage(phone, data.resposta);
+  return data.resposta;
+}
+
+async function handleEventPersonInfo(user, phone, text, meta) {
+  try {
+    // Tenta extrair nome e idade do texto
+    const parts = text.trim().split(/[\s,]+/);
+    const nome = parts[0];
+    const idadeMatch = text.match(/(\d+)/);
+    const idade = idadeMatch ? parseInt(idadeMatch[1]) : null;
+
+    if (meta.aguardando_info_evento) {
+      await memory.updateEventPerson(user.id, meta.aguardando_info_evento.eventId, nome, idade);
+      // Limpa o estado de espera
+      const newMeta = JSON.parse(user.metadata || '{}');
+      delete newMeta.aguardando_info_evento;
+      await memory.prisma.user.update({ where: { id: user.id }, data: { metadata: JSON.stringify(newMeta) } });
+
+      const msg = `Anotado! Vou te lembrar do ${meta.aguardando_info_evento.titulo} de ${nome}${idade ? ` (${idade} anos)` : ''} antes da data chegar.`;
+      await sendMessage(phone, msg);
+      await memory.saveConversationMessage(user.id, 'assistant', msg);
+    }
+  } catch (e) {
+    console.error('Erro handleEventPersonInfo:', e.message);
+  }
+}
+
+async function handlePersonInfo(user, phone, data) {
+  await memory.saveMemory(user.id, 'pessoa', `${data.nome}: ${data.info}`);
+  await sendMessage(phone, data.resposta);
+  return data.resposta;
+}
+
+async function handleSurpriseSearch(user, phone, data) {
+  try {
+    await sendMessage(phone, data.resposta);
+    const searchResult = await searchWeb(data.query);
+    // Busca o evento relacionado pra ter contexto de pessoa e idade
+    const eventMemory = await memory.prisma.event.findFirst({
+      where: { userId: user.id, title: { contains: data.contexto || '' } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const resposta = await generateGiftIdeas(
+      data.contexto || data.query,
+      eventMemory?.personName || null,
+      eventMemory?.personAge || null,
+      searchResult
+    );
+    if (resposta) await sendMessage(phone, resposta);
+    return resposta || '';
   } catch (error) {
-
-    console.error(
-      'Erro busca:',
-      error.message
-    );
-
-    await sendMessage(
-      phone,
-      'Não consegui pesquisar agora 😢'
-    );
-
+    console.error('Erro handleSurpriseSearch:', error.message);
     return '';
   }
 }
 
-// ============================================
-// CONFIRMAÇÕES
-// ============================================
-
-async function handleConfirmacao(
-  phone,
-  data
-) {
-
-  await sendMessage(
-    phone,
-    data.resposta
-  );
-
-  return data.resposta;
+async function handleMemoryQuery(user, phone, question, userName, tom) {
+  const memories = await memory.getRecentMemories(user.id, 30);
+  if (memories.length === 0) {
+    const resposta = 'Ainda nao tenho anotacoes suas aqui. Me conta algo!';
+    await sendMessage(phone, resposta);
+    return resposta;
+  }
+  const resposta = await generateMemorySummary(memories, question, userName, tom);
+  await sendMessage(phone, resposta);
+  return resposta;
 }
-
-// ============================================
-// HELPERS
-// ============================================
-
-async function cancelPendingReminders(
-  userId
-) {
-  try {
-
-    await memory.prisma.reminder.updateMany({
-      where: {
-        userId,
-        confirmed: false,
-        sent: false,
-      },
-      data: {
-        confirmed: true,
-        sent: true,
-      },
-    });
-
-  } catch (e) {}
-}
-
-async function checkFirstMessage(userId) {
-  const count =
-    await memory.prisma.memory.count({
-      where: { userId },
-    });
-
-  return count === 0;
-}
-
-// ============================================
-// ÁUDIO
-// ============================================
 
 async function transcribeAudio(audioUrl) {
-
   try {
-
-    const audioResponse =
-      await axios.get(audioUrl, {
-        responseType: 'arraybuffer',
-        timeout: 15000,
-      });
-
-    const audioBuffer =
-      Buffer.from(audioResponse.data);
-
+    const audioResponse = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 15000 });
+    const audioBuffer = Buffer.from(audioResponse.data);
     const FormData = require('form-data');
-
     const form = new FormData();
-
-    form.append(
-      'file',
-      audioBuffer,
-      {
-        filename: 'audio.ogg',
-        contentType: 'audio/ogg',
-      }
-    );
-
-    form.append(
-      'model',
-      'whisper-large-v3'
-    );
-
-    form.append(
-      'language',
-      'pt'
-    );
-
-    form.append(
-      'response_format',
-      'text'
-    );
-
-    const response = await axios.post(
-      'https://api.groq.com/openai/v1/audio/transcriptions',
-      form,
-      {
-        headers: {
-          ...form.getHeaders(),
-          Authorization:
-            `Bearer ${process.env.GROQ_API_KEY}`,
-        },
-        timeout: 30000,
-      }
-    );
-
-    return typeof response.data === 'string'
-      ? response.data.trim()
-      : response.data?.text?.trim() || null;
-
+    form.append('file', audioBuffer, { filename: 'audio.ogg', contentType: 'audio/ogg' });
+    form.append('model', 'whisper-large-v3');
+    form.append('language', 'pt');
+    form.append('response_format', 'text');
+    const response = await axios.post('https://api.groq.com/openai/v1/audio/transcriptions', form, {
+      headers: { ...form.getHeaders(), 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
+      timeout: 30000,
+    });
+    return typeof response.data === 'string' ? response.data.trim() : response.data?.text?.trim() || null;
   } catch (error) {
-
-    console.error(
-      'Erro transcribeAudio:',
-      error.message
-    );
-
+    console.error('Erro transcribeAudio:', error.message);
     return null;
   }
 }
 
-module.exports = {
-  handleMessage,
-};
+module.exports = { handleMessage };
