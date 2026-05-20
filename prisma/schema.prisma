@@ -1,5 +1,4 @@
-// Clara v1.2
-
+// Clara v4.0 - CRM de vida pessoal
 generator client {
   provider = "prisma-client-js"
 }
@@ -22,6 +21,12 @@ model User {
   secrets     Secret[]
   purchases   Purchase[]
   reminders   Reminder[]
+  events      Event[]
+  habits      Habit[]
+  habitLogs   HabitLog[]
+  groceryLists GroceryList[]
+  sleepLogs   SleepLog[]
+  workouts    Workout[]
 }
 
 model Memory {
@@ -103,4 +108,73 @@ model Reminder {
   confirmed   Boolean  @default(false)
   attempts    Int      @default(0)
   createdAt   DateTime @default(now())
+}
+
+model Event {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  title       String
+  personName  String?
+  personAge   Int?
+  date        DateTime
+  type        String
+  notified    Boolean   @default(false)
+  followedUp  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+}
+
+model Habit {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id])
+  name        String
+  category    String
+  frequency   String
+  goal        String?
+  active      Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  logs        HabitLog[]
+}
+
+model HabitLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  habitId   String
+  habit     Habit    @relation(fields: [habitId], references: [id])
+  done      Boolean  @default(true)
+  note      String?
+  createdAt DateTime @default(now())
+}
+
+model GroceryList {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  items     String
+  total     Float?
+  createdAt DateTime @default(now())
+}
+
+model SleepLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  bedtime   String?
+  wakeTime  String?
+  hours     Float?
+  quality   String?
+  createdAt DateTime @default(now())
+}
+
+model Workout {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  type      String
+  duration  Int?
+  exercises String?
+  note      String?
+  createdAt DateTime @default(now())
 }
