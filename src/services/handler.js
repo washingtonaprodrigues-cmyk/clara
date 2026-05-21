@@ -62,6 +62,16 @@ async function handleMessage(phone, text, audioUrl = null) {
     // Cancela lembretes pendentes
     await cancelPendingReminders(user.id);
 
+    // Verifica se usuario ficou 48h sem interagir — manda menu de capacidades antes de processar
+    const deveVerMenu = await verificar48hSemInteracao(user.id);
+    if (deveVerMenu) {
+      const nome = userName ? `, ${userName}` : '';
+      const menuMsg = `Que bom te ver por aqui${nome}!\n\n${MENU_CAPACIDADES}`;
+      await sendMessage(phone, menuMsg);
+      await memory.saveConversationMessage(user.id, 'assistant', menuMsg);
+      await marcarMenuEnviado(user.id);
+    }
+
     const history = await memory.getConversationHistory(user.id, 8);
     await memory.saveConversationMessage(user.id, 'user', text);
 
@@ -457,6 +467,56 @@ async function transcribeAudio(audioUrl) {
     console.error('Erro transcribeAudio:', error.message);
     return null;
   }
+}
+
+// ── MENU CAPACIDADES ───────────────────────────────────────────────────────────
+
+const MENU_CAPACIDADES = `Estou aqui pra te ajudar com o que precisar. Algumas coisas que faço por você:
+
+📅 *Compromissos e tarefas* — te lembro antes da hora, com o que precisa levar
+💊 *Remédios* — horários e controle de estoque
+🩺 *Saúde* — pressão, glicemia, humor — tudo registrado
+😴 *Sono* — acompanho seu descanso
+🏋️ *Treinos* — registro e histórico
+🛒 *Lista de mercado* — salvo e sugiro repetir quando precisar
+💸 *Gastos do mês* — controle simples e sem julgamento
+🎂 *Datas especiais* — aniversários e eventos com lembrete antecipado
+📝 *Anotações e ideias* — guardo pra você buscar quando quiser
+🎯 *Metas pessoais* — registro e acompanho com você
+🔐 *Segredos* — informações guardadas com discrição
+
+Me conta, como posso te ajudar?`;
+
+async function verificar48hSemInteracao(userId) {
+  try {
+    const ultimaMsg = await memory.prisma.memory.findFirst({
+      where: { userId, type: 'conversa' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!ultimaMsg) return false; // primeiro contato — onboarding cuida disso
+    const horasPassadas = (Date.now() - ultimaMsg.createdAt.getTime()) / (1000 * 60 * 60);
+    if (horasPassadas < 48) return false;
+    // Verifica se ja mandou menu recentemente (evita spam se usuario mandar varias msgs seguidas)
+    const menuRecente = await memory.prisma.memory.findFirst({
+      where: { userId, type: 'menu_enviado' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (menuRecente) {
+      const horasMenu = (Date.now() - menuRecente.createdAt.getTime()) / (1000 * 60 * 60);
+      if (horasMenu < 48) return false; // ja mandou menu nas ultimas 48h
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function marcarMenuEnviado(userId) {
+  try {
+    await memory.prisma.memory.create({
+      data: { userId, type: 'menu_enviado', content: 'menu de capacidades enviado' },
+    });
+  } catch (e) {}
 }
 
 module.exports = { handleMessage };
