@@ -115,6 +115,7 @@ async function handleMessage(phone, text, audioUrl = null) {
       case 'preferencia_tom': resposta = await handlePreferenciaTom(user, phone, classified); break;
       case 'anotacao': resposta = await handleNote(user, phone, classified); break;
       case 'consulta_notas': resposta = await handleConsultaNotas(user, phone, classified); break;
+      case 'ajuda_menu': resposta = await handleAjudaMenu(user, phone, userName); break;
       default:
         resposta = classified.resposta || 'To aqui!';
         await sendMessage(phone, resposta);
@@ -467,6 +468,17 @@ async function transcribeAudio(audioUrl) {
     console.error('Erro transcribeAudio:', error.message);
     return null;
   }
+}
+
+// ── AJUDA MENU ─────────────────────────────────────────────────────────────────
+
+async function handleAjudaMenu(user, phone, userName) {
+  const nome = userName ? `, ${userName}` : '';
+  const resposta = `Boa pergunta${nome}! Aqui vai tudo que faço por você:
+
+${MENU_CAPACIDADES}`;
+  await sendMessage(phone, resposta);
+  return resposta;
 }
 
 // ── MENU CAPACIDADES ───────────────────────────────────────────────────────────
