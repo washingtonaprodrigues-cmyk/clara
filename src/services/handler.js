@@ -4,6 +4,26 @@ const { sendMessage } = require('../services/whatsapp');
 const memory = require('../services/memory');
 const axios = require('axios');
 
+// ── MENU CAPACIDADES ───────────────────────────────────────────────────────────
+
+const MENU_CAPACIDADES = `Estou aqui pra te ajudar com o que precisar. Algumas coisas que faço por você:
+
+📅 *Compromissos e tarefas* — te lembro antes da hora, com o que precisa levar
+💊 *Remédios* — horários e controle de estoque
+🩺 *Saúde* — pressão, glicemia, humor — tudo registrado
+😴 *Sono* — acompanho seu descanso
+🏋️ *Treinos* — registro e histórico
+🛒 *Lista de mercado* — salvo e sugiro repetir quando precisar
+💸 *Gastos do mês* — controle simples e sem julgamento
+🎂 *Datas especiais* — aniversários e eventos com lembrete antecipado
+📝 *Anotações e ideias* — guardo pra você buscar quando quiser
+🎯 *Metas pessoais* — registro e acompanho com você
+🔐 *Segredos* — informações guardadas com discrição
+
+Me conta, como posso te ajudar?`;
+
+// ── HANDLE MESSAGE ─────────────────────────────────────────────────────────────
+
 async function handleMessage(phone, text, audioUrl = null) {
   try {
     const user = await memory.getOrCreateUser(phone);
@@ -62,7 +82,7 @@ async function handleMessage(phone, text, audioUrl = null) {
     // Cancela lembretes pendentes
     await cancelPendingReminders(user.id);
 
-    // Verifica se usuario ficou 48h sem interagir — manda menu de capacidades antes de processar
+    // Verifica se usuario ficou 48h sem interagir — manda menu antes de processar
     const deveVerMenu = await verificar48hSemInteracao(user.id);
     if (deveVerMenu) {
       const nome = userName ? `, ${userName}` : '';
@@ -78,14 +98,14 @@ async function handleMessage(phone, text, audioUrl = null) {
     let classified = await classify(text, history, userName, tom);
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
 
-    // Fallback manual: se o usuario pediu o menu e o classificador nao reconheceu
+    // Fallback manual: menu de capacidades
     const textLower = text.toLowerCase().trim();
     const pedidoMenu = ['menu', 'o que voce faz', 'o que você faz', 'como pode me ajudar', 'como voce pode me ajudar', 'o que tanto', 'suas funcoes', 'suas funções', 'me conta sobre voce', 'me conta sobre você', 'menu de ajuda', 'ajuda'];
     if (classified.tipo !== 'ajuda_menu' && pedidoMenu.some(p => textLower.includes(p))) {
       classified = { tipo: 'ajuda_menu' };
     }
 
-    // Fallback manual: se o usuario pediu pra anotar e o classificador nao reconheceu
+    // Fallback manual: anotacao
     const pedidoAnotacao = ['anota', 'so anota', 'salva isso', 'guarda isso', 'registra isso', 'quero lembrar', 'guarda essa', 'anota essa', 'anota isso', 'salva essa ideia'];
     if (classified.tipo !== 'anotacao' && pedidoAnotacao.some(p => textLower.includes(p))) {
       const lastUserMsg = history.filter(h => h.role === 'user').slice(-1)[0];
@@ -293,7 +313,6 @@ async function handleGoal(user, phone, data) {
 
 async function handleSpecialEvent(user, phone, data) {
   const event = await memory.saveEvent(user.id, { titulo: data.titulo, pessoa: data.pessoa, data: data.data, type: 'especial' });
-  // Se nao tem nome da pessoa, pergunta
   if (!data.pessoa) {
     const meta = JSON.parse(user.metadata || '{}');
     meta.aguardando_info_evento = { eventId: event.id, titulo: data.titulo };
@@ -370,12 +389,9 @@ async function handleMemoryQuery(user, phone, question, userName, tom) {
 async function handleNote(user, phone, data) {
   try {
     const { conteudo, titulo_sugerido, resposta } = data;
-
-    // Salva estado aguardando confirmacao do titulo
     const meta = JSON.parse(user.metadata || '{}');
     meta.aguardando_titulo_nota = { conteudo, titulo_sugerido };
     await memory.prisma.user.update({ where: { id: user.id }, data: { metadata: JSON.stringify(meta) } });
-
     await sendMessage(phone, resposta);
     return resposta;
   } catch (error) {
@@ -388,17 +404,12 @@ async function handleTituloNota(user, phone, text, meta) {
   try {
     const { conteudo, titulo_sugerido } = meta.aguardando_titulo_nota;
     const input = text.trim();
-
-    // Detecta se o usuario confirmou ou deu um titulo novo
     const confirmacoes = ['sim', 'pode', 'pode ser', 'ok', 'tá', 'ta', 'bom', 'isso', 'esse mesmo', 'beleza', 'perfeito', 'certo'];
     const confirmou = confirmacoes.some(c => input.toLowerCase() === c || input.toLowerCase().startsWith(c));
-
     const tituloFinal = confirmou ? titulo_sugerido : input;
 
-    // Salva a nota
     await memory.saveNote(user.id, tituloFinal, conteudo);
 
-    // Limpa estado
     const newMeta = JSON.parse(user.metadata || '{}');
     delete newMeta.aguardando_titulo_nota;
     await memory.prisma.user.update({ where: { id: user.id }, data: { metadata: JSON.stringify(newMeta) } });
@@ -418,8 +429,6 @@ async function handleTituloNota(user, phone, text, meta) {
 async function handleConsultaNotas(user, phone, data) {
   try {
     const { busca } = data;
-
-    // Busca por tema especifico
     if (busca) {
       const nota = await memory.getNoteByTitle(user.id, busca);
       if (!nota) {
@@ -433,7 +442,6 @@ async function handleConsultaNotas(user, phone, data) {
       return resposta;
     }
 
-    // Lista todas
     const notas = await memory.getNotes(user.id);
     if (notas.length === 0) {
       const resposta = 'Ainda nao tem nenhuma anotacao salva. Me manda uma ideia!';
@@ -455,6 +463,50 @@ async function handleConsultaNotas(user, phone, data) {
   }
 }
 
+// ── AJUDA MENU ─────────────────────────────────────────────────────────────────
+
+async function handleAjudaMenu(user, phone, userName) {
+  const nome = userName ? `, ${userName}` : '';
+  const resposta = `Boa pergunta${nome}! Aqui vai tudo que faço por você:\n\n${MENU_CAPACIDADES}`;
+  await sendMessage(phone, resposta);
+  return resposta;
+}
+
+// ── MENU 48H / SEMANAL ─────────────────────────────────────────────────────────
+
+async function verificar48hSemInteracao(userId) {
+  try {
+    const ultimaMsg = await memory.prisma.memory.findFirst({
+      where: { userId, type: 'conversa' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!ultimaMsg) return false;
+    const horasPassadas = (Date.now() - ultimaMsg.createdAt.getTime()) / (1000 * 60 * 60);
+    if (horasPassadas < 48) return false;
+    const menuRecente = await memory.prisma.memory.findFirst({
+      where: { userId, type: 'menu_enviado' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (menuRecente) {
+      const horasMenu = (Date.now() - menuRecente.createdAt.getTime()) / (1000 * 60 * 60);
+      if (horasMenu < 48) return false;
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function marcarMenuEnviado(userId) {
+  try {
+    await memory.prisma.memory.create({
+      data: { userId, type: 'menu_enviado', content: 'menu de capacidades enviado' },
+    });
+  } catch (e) {}
+}
+
+// ── AUDIO ──────────────────────────────────────────────────────────────────────
+
 async function transcribeAudio(audioUrl) {
   try {
     const audioResponse = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 15000 });
@@ -474,67 +526,6 @@ async function transcribeAudio(audioUrl) {
     console.error('Erro transcribeAudio:', error.message);
     return null;
   }
-}
-
-// ── AJUDA MENU ─────────────────────────────────────────────────────────────────
-
-async function handleAjudaMenu(user, phone, userName) {
-  const nome = userName ? `, ${userName}` : '';
-  const resposta = `Boa pergunta${nome}! Aqui vai tudo que faço por você:
-
-${MENU_CAPACIDADES}`;
-  await sendMessage(phone, resposta);
-  return resposta;
-}
-
-// ── MENU CAPACIDADES ───────────────────────────────────────────────────────────
-
-const MENU_CAPACIDADES = `Estou aqui pra te ajudar com o que precisar. Algumas coisas que faço por você:
-
-📅 *Compromissos e tarefas* — te lembro antes da hora, com o que precisa levar
-💊 *Remédios* — horários e controle de estoque
-🩺 *Saúde* — pressão, glicemia, humor — tudo registrado
-😴 *Sono* — acompanho seu descanso
-🏋️ *Treinos* — registro e histórico
-🛒 *Lista de mercado* — salvo e sugiro repetir quando precisar
-💸 *Gastos do mês* — controle simples e sem julgamento
-🎂 *Datas especiais* — aniversários e eventos com lembrete antecipado
-📝 *Anotações e ideias* — guardo pra você buscar quando quiser
-🎯 *Metas pessoais* — registro e acompanho com você
-🔐 *Segredos* — informações guardadas com discrição
-
-Me conta, como posso te ajudar?`;
-
-async function verificar48hSemInteracao(userId) {
-  try {
-    const ultimaMsg = await memory.prisma.memory.findFirst({
-      where: { userId, type: 'conversa' },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!ultimaMsg) return false; // primeiro contato — onboarding cuida disso
-    const horasPassadas = (Date.now() - ultimaMsg.createdAt.getTime()) / (1000 * 60 * 60);
-    if (horasPassadas < 48) return false;
-    // Verifica se ja mandou menu recentemente (evita spam se usuario mandar varias msgs seguidas)
-    const menuRecente = await memory.prisma.memory.findFirst({
-      where: { userId, type: 'menu_enviado' },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (menuRecente) {
-      const horasMenu = (Date.now() - menuRecente.createdAt.getTime()) / (1000 * 60 * 60);
-      if (horasMenu < 48) return false; // ja mandou menu nas ultimas 48h
-    }
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-
-async function marcarMenuEnviado(userId) {
-  try {
-    await memory.prisma.memory.create({
-      data: { userId, type: 'menu_enviado', content: 'menu de capacidades enviado' },
-    });
-  } catch (e) {}
 }
 
 module.exports = { handleMessage };
