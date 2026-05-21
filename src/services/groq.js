@@ -40,7 +40,7 @@ ${historyText ? `Historico:\n${historyText}` : ''}
 TIPOS:
 saudacao, reminder, tarefa, remedio, compra, gasto, segredo, confirmacao, preferencia_tom,
 consulta_memoria, pressao, glicemia, humor, sono, treino, mercado, meta, evento_especial,
-info_pessoa, busca_surpresa, outro
+info_pessoa, busca_surpresa, anotacao, consulta_notas, outro
 
 FORMATOS:
 
@@ -64,7 +64,19 @@ meta: {"tipo":"meta","titulo":"[meta]","prazo":"YYYY-MM-DD ou null","categoria":
 evento_especial: {"tipo":"evento_especial","titulo":"[aniversario/formatura/etc]","pessoa":null,"data":"YYYY-MM-DD","resposta":"[confirmacao + pergunta nome e idade se aniversario de outra pessoa]"}
 info_pessoa: {"tipo":"info_pessoa","nome":"[nome da pessoa]","info":"[idade/relacao/etc]","resposta":"[confirmacao natural]"}
 busca_surpresa: {"tipo":"busca_surpresa","query":"[termo]","contexto":"[evento relacionado]","resposta":"[diz que vai buscar ideias]"}
+anotacao: {"tipo":"anotacao","conteudo":"[texto completo da anotacao]","titulo_sugerido":"[3 a 5 palavras que resumem o assunto]","resposta":"[confirma e sugere o titulo]"}
+consulta_notas: {"tipo":"consulta_notas","busca":"[titulo ou tema que o usuario quer, ou null se quer listar todas]","resposta":"[vou verificar...]"}
 outro: {"tipo":"outro","resposta":"[resposta util e natural]"}
+
+REGRAS PARA anotacao:
+- Use quando usuario quiser registrar uma ideia, pensamento, referencia ou qualquer coisa para lembrar depois
+- titulo_sugerido deve ser curto: 3 a 5 palavras no maximo
+- A resposta deve mostrar o titulo sugerido e perguntar se esta bom: ex: "Anotado! Chamei de *App de Receitas* — pode ser esse titulo?"
+
+REGRAS PARA consulta_notas:
+- Use quando usuario pedir para ver, listar, buscar ou recuperar anotacoes
+- Se mencionar um tema especifico, coloque em "busca"
+- Se pedir "todas as anotacoes" ou "minhas anotacoes", deixe "busca" como null
 
 REGRA ABSOLUTA: Clara e a assistente. O usuario NUNCA e a Clara. Nunca inverta os papeis.
 APENAS JSON.`;
