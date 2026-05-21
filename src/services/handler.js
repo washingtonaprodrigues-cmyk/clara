@@ -78,8 +78,14 @@ async function handleMessage(phone, text, audioUrl = null) {
     let classified = await classify(text, history, userName, tom);
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
 
-    // Fallback manual: se o usuario pediu pra anotar e o classificador nao reconheceu
+    // Fallback manual: se o usuario pediu o menu e o classificador nao reconheceu
     const textLower = text.toLowerCase().trim();
+    const pedidoMenu = ['menu', 'o que voce faz', 'o que você faz', 'como pode me ajudar', 'como voce pode me ajudar', 'o que tanto', 'suas funcoes', 'suas funções', 'me conta sobre voce', 'me conta sobre você', 'menu de ajuda', 'ajuda'];
+    if (classified.tipo !== 'ajuda_menu' && pedidoMenu.some(p => textLower.includes(p))) {
+      classified = { tipo: 'ajuda_menu' };
+    }
+
+    // Fallback manual: se o usuario pediu pra anotar e o classificador nao reconheceu
     const pedidoAnotacao = ['anota', 'so anota', 'salva isso', 'guarda isso', 'registra isso', 'quero lembrar', 'guarda essa', 'anota essa', 'anota isso', 'salva essa ideia'];
     if (classified.tipo !== 'anotacao' && pedidoAnotacao.some(p => textLower.includes(p))) {
       const lastUserMsg = history.filter(h => h.role === 'user').slice(-1)[0];
