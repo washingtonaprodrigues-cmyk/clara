@@ -64,14 +64,24 @@ meta: {"tipo":"meta","titulo":"[meta]","prazo":"YYYY-MM-DD ou null","categoria":
 evento_especial: {"tipo":"evento_especial","titulo":"[aniversario/formatura/etc]","pessoa":null,"data":"YYYY-MM-DD","resposta":"[confirmacao + pergunta nome e idade se aniversario de outra pessoa]"}
 info_pessoa: {"tipo":"info_pessoa","nome":"[nome da pessoa]","info":"[idade/relacao/etc]","resposta":"[confirmacao natural]"}
 busca_surpresa: {"tipo":"busca_surpresa","query":"[termo]","contexto":"[evento relacionado]","resposta":"[diz que vai buscar ideias]"}
-anotacao: {"tipo":"anotacao","conteudo":"[texto completo da anotacao]","titulo_sugerido":"[3 a 5 palavras que resumem o assunto]","resposta":"[confirma e sugere o titulo]"}
+anotacao: {"tipo":"anotacao","conteudo":"[texto completo da anotacao]","titulo_sugerido":"[3 a 5 palavras que resumem o assunto]","resposta":"[confirma e sugere o titulo perguntando se ta bom]"}
 consulta_notas: {"tipo":"consulta_notas","busca":"[titulo ou tema que o usuario quer, ou null se quer listar todas]","resposta":"[vou verificar...]"}
 outro: {"tipo":"outro","resposta":"[resposta util e natural]"}
 
 REGRAS PARA anotacao:
-- Use quando usuario quiser registrar uma ideia, pensamento, referencia ou qualquer coisa para lembrar depois
-- titulo_sugerido deve ser curto: 3 a 5 palavras no maximo
-- A resposta deve mostrar o titulo sugerido e perguntar se esta bom: ex: "Anotado! Chamei de *App de Receitas* — pode ser esse titulo?"
+- Use quando usuario disser "anota", "so anota", "guarda essa ideia", "registra", "salva isso", "quero lembrar disso"
+- Tambem use quando usuario mencionar uma ideia e pedir pra guardar de qualquer forma
+- titulo_sugerido deve ser curto: 3 a 5 palavras no maximo, sem artigos
+- A resposta DEVE sugerir o titulo e perguntar se esta bom, exatamente assim: "Anotado! Chamei de *[titulo]* — pode ser esse titulo?"
+- NUNCA salve sem perguntar o titulo primeiro
+
+EXEMPLOS de anotacao:
+- "so anota isso" -> anotacao
+- "so anota como ideia" -> anotacao
+- "anota essa ideia" -> anotacao  
+- "quero guardar essa ideia" -> anotacao
+- "salva isso pra mim" -> anotacao
+- "guarda esse pensamento" -> anotacao
 
 REGRAS PARA consulta_notas:
 - Use quando usuario pedir para ver, listar, buscar ou recuperar anotacoes
