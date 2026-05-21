@@ -17,6 +17,22 @@ function isSameMinute(d1, d2) {
     d1.getMinutes() === d2.getMinutes();
 }
 
+const MENU_CAPACIDADES = `Estou aqui pra te ajudar com o que precisar. Algumas coisas que faço por você:
+
+📅 *Compromissos e tarefas* — te lembro antes da hora, com o que precisa levar
+💊 *Remédios* — horários e controle de estoque
+🩺 *Saúde* — pressão, glicemia, humor — tudo registrado
+😴 *Sono* — acompanho seu descanso
+🏋️ *Treinos* — registro e histórico
+🛒 *Lista de mercado* — salvo e sugiro repetir quando precisar
+💸 *Gastos do mês* — controle simples e sem julgamento
+🎂 *Datas especiais* — aniversários e eventos com lembrete antecipado
+📝 *Anotações e ideias* — guardo pra você buscar quando quiser
+🎯 *Metas pessoais* — registro e acompanho com você
+🔐 *Segredos* — informações guardadas com discrição
+
+Me conta, como posso te ajudar?`;
+
 // ============================================
 // LEMBRETES PONTUAIS - a cada minuto
 // ============================================
@@ -41,7 +57,6 @@ cron.schedule('* * * * *', async () => {
             where: { id: reminder.id },
             data: { attempts: 1, scheduledAt: new Date(Date.now() + 10 * 60000) },
           });
-
         } else if (reminder.attempts === 1) {
           const msgs2 = [
             `Nao quero insistir nao, mas ainda nao me avisou sobre:\n${reminder.message}\n\nSe ja resolveu pode me falar!`,
@@ -131,12 +146,13 @@ cron.schedule('* * * * *', async () => {
 
 // ============================================
 // TAREFAS - a cada 20 minutos
+// CORRIGIDO: removido completed e notified (campos excluidos do schema)
 // ============================================
 cron.schedule('*/20 * * * *', async () => {
   try {
     const now = new Date();
     const tasks = await prisma.task.findMany({
-      where: { completed: false },
+      where: { done: false },
       include: { user: true },
     });
 
@@ -154,7 +170,16 @@ cron.schedule('*/20 * * * *', async () => {
         const hours = Math.floor(diff / (1000 * 60 * 60));
         const days = Math.floor(diff / (1000 * 60 * 60 * 24));
 
-        if (task.notified) continue;
+        // Evita mandar lembrete mais de uma vez: verifica se ja mandou nas ultimas 12h
+        const jaLembrou = await prisma.reminder.findFirst({
+          where: {
+            userId: task.userId,
+            message: { contains: task.title },
+            createdAt: { gte: new Date(Date.now() - 12 * 60 * 60 * 1000) },
+          },
+        });
+        if (jaLembrou) continue;
+
         let msg = null;
 
         if (hours >= 0 && hours <= 1) {
@@ -172,7 +197,18 @@ cron.schedule('*/20 * * * *', async () => {
 
         if (msg) {
           await sendMessage(task.user.phone, msg);
-          await prisma.task.update({ where: { id: task.id }, data: { notified: true } });
+          // Marca que lembrou criando um registro de reminder
+          await prisma.reminder.create({
+            data: {
+              userId: task.userId,
+              phone: task.user.phone,
+              message: `Lembrete tarefa: ${task.title}`,
+              scheduledAt: new Date(),
+              sent: true,
+              confirmed: true,
+              attempts: 2,
+            },
+          });
         }
       } catch (e) {
         console.error('Erro task individual:', e.message);
@@ -185,12 +221,12 @@ cron.schedule('*/20 * * * *', async () => {
 
 // ============================================
 // EVENTOS ESPECIAIS - todo dia as 9h
+// CORRIGIDO: removido followedUp (campo excluido do schema)
 // ============================================
 cron.schedule('0 9 * * *', async () => {
   try {
     const now = new Date();
     const in7days = new Date(); in7days.setDate(in7days.getDate() + 7);
-    const in1day = new Date(); in1day.setDate(in1day.getDate() + 1);
 
     const events = await prisma.event.findMany({
       where: { notified: false, date: { lte: in7days } },
@@ -232,7 +268,8 @@ cron.schedule('0 9 * * *', async () => {
 });
 
 // ============================================
-// FOLLOWUP POS EVENTO - no dia seguinte
+// FOLLOWUP POS EVENTO - no dia seguinte as 10h
+// CORRIGIDO: nao usa mais followedUp — usa notified como substituto
 // ============================================
 cron.schedule('0 10 * * *', async () => {
   try {
@@ -242,7 +279,7 @@ cron.schedule('0 10 * * *', async () => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
 
     const events = await prisma.event.findMany({
-      where: { followedUp: false, date: { gte: yesterday, lt: today } },
+      where: { notified: true, date: { gte: yesterday, lt: today } },
       include: { user: true },
     });
 
@@ -254,9 +291,7 @@ cron.schedule('0 10 * * *', async () => {
         } else {
           msg += ` o ${event.title}?`;
         }
-
         await sendMessage(event.user.phone, msg);
-        await prisma.event.update({ where: { id: event.id }, data: { followedUp: true } });
       } catch (e) {
         console.error('Erro followup evento:', e.message);
       }
@@ -267,7 +302,7 @@ cron.schedule('0 10 * * *', async () => {
 });
 
 // ============================================
-// LISTA DE MERCADO - verifica recorrencia
+// LISTA DE MERCADO - toda segunda as 10h
 // ============================================
 cron.schedule('0 10 * * 1', async () => {
   try {
@@ -292,6 +327,7 @@ cron.schedule('0 10 * * 1', async () => {
 
 // ============================================
 // BOM DIA - todo dia as 8h
+// A cada 7 dias inclui o menu completo de capacidades
 // ============================================
 cron.schedule('0 8 * * *', async () => {
   try {
@@ -302,7 +338,7 @@ cron.schedule('0 8 * * *', async () => {
         const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
 
         const todayTasks = await prisma.task.findMany({
-          where: { userId: user.id, completed: false, dueDate: { gte: today, lt: tomorrow } },
+          where: { userId: user.id, done: false, dueDate: { gte: today, lt: tomorrow } },
         });
         const meds = await prisma.medication.findMany({
           where: { userId: user.id, active: true, remaining: { gt: 0 } },
@@ -328,7 +364,15 @@ cron.schedule('0 8 * * *', async () => {
           });
         }
 
-        msg += `\nEstou aqui pra te ajudar no que precisar!`;
+        // Verifica se deve incluir menu de capacidades (a cada 7 dias)
+        const deveEnviarMenu = await verificarMenuSemanal(user.id);
+        if (deveEnviarMenu) {
+          msg += `\n${MENU_CAPACIDADES}`;
+          await marcarMenuEnviado(user.id);
+        } else {
+          msg += `\nEstou aqui pra te ajudar no que precisar!`;
+        }
+
         await sendMessage(user.phone, msg.trim());
       } catch (e) {
         console.error('Erro bom dia usuario:', e.message);
@@ -338,5 +382,38 @@ cron.schedule('0 8 * * *', async () => {
     console.error('Erro job bom dia:', error.message);
   }
 });
+
+// ============================================
+// MENU APOS 48H SEM INTERACAO - a cada hora
+// Quando usuario mandar qualquer mensagem, o handler verifica isso
+// Aqui apenas marcamos o timestamp do ultimo contato via job
+// ============================================
+// A logica de 48h fica no handler.js — veja handleMessage
+
+// ============================================
+// HELPERS MENU SEMANAL
+// Usa a tabela Memory pra guardar quando mandou o menu pela ultima vez
+// ============================================
+async function verificarMenuSemanal(userId) {
+  try {
+    const ultimo = await prisma.memory.findFirst({
+      where: { userId, type: 'menu_enviado' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!ultimo) return true; // nunca mandou
+    const diasPassados = Math.floor((Date.now() - ultimo.createdAt.getTime()) / (1000 * 60 * 60 * 24));
+    return diasPassados >= 7;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function marcarMenuEnviado(userId) {
+  try {
+    await prisma.memory.create({
+      data: { userId, type: 'menu_enviado', content: 'menu de capacidades enviado' },
+    });
+  } catch (e) {}
+}
 
 console.log('Clara reminders v4 iniciado');
