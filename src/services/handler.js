@@ -65,8 +65,23 @@ async function handleMessage(phone, text, audioUrl = null) {
     const history = await memory.getConversationHistory(user.id, 8);
     await memory.saveConversationMessage(user.id, 'user', text);
 
-    const classified = await classify(text, history, userName, tom);
+    let classified = await classify(text, history, userName, tom);
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
+
+    // Fallback manual: se o usuario pediu pra anotar e o classificador nao reconheceu
+    const textLower = text.toLowerCase().trim();
+    const pedidoAnotacao = ['anota', 'so anota', 'salva isso', 'guarda isso', 'registra isso', 'quero lembrar', 'guarda essa', 'anota essa', 'anota isso', 'salva essa ideia'];
+    if (classified.tipo !== 'anotacao' && pedidoAnotacao.some(p => textLower.includes(p))) {
+      const lastUserMsg = history.filter(h => h.role === 'user').slice(-1)[0];
+      const conteudo = lastUserMsg ? lastUserMsg.content : text;
+      const palavras = conteudo.split(' ').slice(0, 5).join(' ');
+      classified = {
+        tipo: 'anotacao',
+        conteudo,
+        titulo_sugerido: palavras,
+        resposta: `Anotado! Chamei de *${palavras}* — pode ser esse titulo?`
+      };
+    }
 
     let resposta = '';
 
