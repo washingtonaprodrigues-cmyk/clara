@@ -207,6 +207,36 @@ async function getRecentWorkouts(userId, days = 7) {
   return prisma.workout.findMany({ where: { userId, createdAt: { gte: since } }, orderBy: { createdAt: 'desc' } });
 }
 
+// ── NOTAS ──────────────────────────────────────────────────────────────────────
+
+async function saveNote(userId, title, content) {
+  const note = await prisma.note.create({
+    data: { userId, title, content },
+  });
+  await saveMemory(userId, 'anotacao', `[${title}] ${content.substring(0, 80)}`);
+  return note;
+}
+
+async function getNotes(userId) {
+  return prisma.note.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+async function getNoteByTitle(userId, titulo) {
+  // Busca exata primeiro, depois parcial
+  const exact = await prisma.note.findFirst({
+    where: { userId, title: { equals: titulo, mode: 'insensitive' } },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (exact) return exact;
+  return prisma.note.findFirst({
+    where: { userId, title: { contains: titulo, mode: 'insensitive' } },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
 module.exports = {
   getOrCreateUser, saveUserPreference, getUserPreference,
   saveMemory, getRecentMemories,
@@ -217,5 +247,7 @@ module.exports = {
   saveSleepLog, saveWorkout,
   saveGroceryList, getLastGroceryList,
   saveEvent, updateEventPerson, getUpcomingEvents,
-  getRecentWorkouts, prisma,
+  getRecentWorkouts,
+  saveNote, getNotes, getNoteByTitle,
+  prisma,
 };
