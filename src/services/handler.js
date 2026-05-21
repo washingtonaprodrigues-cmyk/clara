@@ -14,17 +14,7 @@ async function handleMessage(phone, text, audioUrl = null) {
       const isFirst = await checkFirstMessage(user.id);
       if (isFirst) {
         await memory.saveConversationMessage(user.id, 'user', text || 'audio');
-        const msg = `Oi! Que bom te ver aqui
-
-Eu sou a Clara, sua assistente pessoal.
-
-Antes de comecar, como prefere que eu te trate?
-
-1 - Pode ser calorosa e natural
-2 - Prefiro que me chame pelo nome
-3 - Prefiro algo mais direto
-
-Responde com 1, 2 ou 3!`;
+        const msg = `Oi! Que bom te ver aqui\n\nEu sou a Clara, sua assistente pessoal.\n\nAntes de comecar, como prefere que eu te trate?\n\n1 - Pode ser calorosa e natural\n2 - Prefiro que me chame pelo nome\n3 - Prefiro algo mais direto\n\nResponde com 1, 2 ou 3!`;
         await sendMessage(phone, msg);
         await memory.saveConversationMessage(user.id, 'assistant', msg);
         await memory.prisma.user.update({ where: { id: user.id }, data: { metadata: JSON.stringify({ tom: 'aguardando_preferencia' }) } });
@@ -43,6 +33,11 @@ Responde com 1, 2 ou 3!`;
           const msg = `Perfeito, ${nome}! Agora sim, pode contar comigo pro que precisar.`;
           await sendMessage(phone, msg);
           await memory.saveConversationMessage(user.id, 'assistant', msg);
+          return;
+        }
+        // Aguardando confirmacao/ajuste de titulo da anotacao
+        if (meta.aguardando_titulo_nota) {
+          await handleTituloNota(user, phone, text || '', meta);
           return;
         }
         // Aguardando info de pessoa para evento
@@ -93,6 +88,8 @@ Responde com 1, 2 ou 3!`;
       case 'busca_surpresa': resposta = await handleSurpriseSearch(user, phone, classified); break;
       case 'confirmacao': resposta = await handleConfirmacao(user, phone, classified); break;
       case 'preferencia_tom': resposta = await handlePreferenciaTom(user, phone, classified); break;
+      case 'anotacao': resposta = await handleNote(user, phone, classified); break;
+      case 'consulta_notas': resposta = await handleConsultaNotas(user, phone, classified); break;
       default:
         resposta = classified.resposta || 'To aqui!';
         await sendMessage(phone, resposta);
@@ -276,7 +273,6 @@ async function handleSpecialEvent(user, phone, data) {
 
 async function handleEventPersonInfo(user, phone, text, meta) {
   try {
-    // Tenta extrair nome e idade do texto
     const parts = text.trim().split(/[\s,]+/);
     const nome = parts[0];
     const idadeMatch = text.match(/(\d+)/);
@@ -284,7 +280,6 @@ async function handleEventPersonInfo(user, phone, text, meta) {
 
     if (meta.aguardando_info_evento) {
       await memory.updateEventPerson(user.id, meta.aguardando_info_evento.eventId, nome, idade);
-      // Limpa o estado de espera
       const newMeta = JSON.parse(user.metadata || '{}');
       delete newMeta.aguardando_info_evento;
       await memory.prisma.user.update({ where: { id: user.id }, data: { metadata: JSON.stringify(newMeta) } });
@@ -308,7 +303,6 @@ async function handleSurpriseSearch(user, phone, data) {
   try {
     await sendMessage(phone, data.resposta);
     const searchResult = await searchWeb(data.query);
-    // Busca o evento relacionado pra ter contexto de pessoa e idade
     const eventMemory = await memory.prisma.event.findFirst({
       where: { userId: user.id, title: { contains: data.contexto || '' } },
       orderBy: { createdAt: 'desc' },
@@ -337,6 +331,96 @@ async function handleMemoryQuery(user, phone, question, userName, tom) {
   const resposta = await generateMemorySummary(memories, question, userName, tom);
   await sendMessage(phone, resposta);
   return resposta;
+}
+
+// ── NOTAS ──────────────────────────────────────────────────────────────────────
+
+async function handleNote(user, phone, data) {
+  try {
+    const { conteudo, titulo_sugerido, resposta } = data;
+
+    // Salva estado aguardando confirmacao do titulo
+    const meta = JSON.parse(user.metadata || '{}');
+    meta.aguardando_titulo_nota = { conteudo, titulo_sugerido };
+    await memory.prisma.user.update({ where: { id: user.id }, data: { metadata: JSON.stringify(meta) } });
+
+    await sendMessage(phone, resposta);
+    return resposta;
+  } catch (error) {
+    console.error('Erro handleNote:', error);
+    return data.resposta;
+  }
+}
+
+async function handleTituloNota(user, phone, text, meta) {
+  try {
+    const { conteudo, titulo_sugerido } = meta.aguardando_titulo_nota;
+    const input = text.trim();
+
+    // Detecta se o usuario confirmou ou deu um titulo novo
+    const confirmacoes = ['sim', 'pode', 'pode ser', 'ok', 'tá', 'ta', 'bom', 'isso', 'esse mesmo', 'beleza', 'perfeito', 'certo'];
+    const confirmou = confirmacoes.some(c => input.toLowerCase() === c || input.toLowerCase().startsWith(c));
+
+    const tituloFinal = confirmou ? titulo_sugerido : input;
+
+    // Salva a nota
+    await memory.saveNote(user.id, tituloFinal, conteudo);
+
+    // Limpa estado
+    const newMeta = JSON.parse(user.metadata || '{}');
+    delete newMeta.aguardando_titulo_nota;
+    await memory.prisma.user.update({ where: { id: user.id }, data: { metadata: JSON.stringify(newMeta) } });
+
+    const msg = confirmou
+      ? `Salvo como *${tituloFinal}*. É só pedir quando quiser ver.`
+      : `Salvo como *${tituloFinal}*. Anotado!`;
+
+    await sendMessage(phone, msg);
+    await memory.saveConversationMessage(user.id, 'assistant', msg);
+  } catch (e) {
+    console.error('Erro handleTituloNota:', e.message);
+    await sendMessage(phone, 'Tive um problema ao salvar. Pode repetir?');
+  }
+}
+
+async function handleConsultaNotas(user, phone, data) {
+  try {
+    const { busca } = data;
+
+    // Busca por tema especifico
+    if (busca) {
+      const nota = await memory.getNoteByTitle(user.id, busca);
+      if (!nota) {
+        const resposta = `Nao encontrei nenhuma anotacao sobre "${busca}". Quer ver todas?`;
+        await sendMessage(phone, resposta);
+        return resposta;
+      }
+      const dataFmt = nota.createdAt.toLocaleDateString('pt-BR');
+      const resposta = `📝 *${nota.title}*\n${nota.content}\n\n_Anotado em ${dataFmt}_`;
+      await sendMessage(phone, resposta);
+      return resposta;
+    }
+
+    // Lista todas
+    const notas = await memory.getNotes(user.id);
+    if (notas.length === 0) {
+      const resposta = 'Ainda nao tem nenhuma anotacao salva. Me manda uma ideia!';
+      await sendMessage(phone, resposta);
+      return resposta;
+    }
+
+    const lista = notas.map((n, i) => {
+      const dataFmt = n.createdAt.toLocaleDateString('pt-BR');
+      return `${i + 1}. *${n.title}* — ${dataFmt}`;
+    }).join('\n');
+
+    const resposta = `📝 Suas anotacoes:\n\n${lista}\n\nQuer ver o conteudo de alguma? Me fala o titulo.`;
+    await sendMessage(phone, resposta);
+    return resposta;
+  } catch (error) {
+    console.error('Erro handleConsultaNotas:', error);
+    return '';
+  }
 }
 
 async function transcribeAudio(audioUrl) {
