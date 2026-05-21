@@ -2,12 +2,10 @@
 generator client {
   provider = "prisma-client-js"
 }
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-
 model User {
   id          String       @id @default(cuid())
   phone       String       @unique
@@ -27,8 +25,8 @@ model User {
   groceryLists GroceryList[]
   sleepLogs   SleepLog[]
   workouts    Workout[]
+  notes       Note[]
 }
-
 model Memory {
   id        String   @id @default(cuid())
   userId    String
@@ -38,7 +36,6 @@ model Memory {
   metadata  String?
   createdAt DateTime @default(now())
 }
-
 model Medication {
   id         String   @id @default(cuid())
   userId     String
@@ -51,7 +48,6 @@ model Medication {
   active     Boolean  @default(true)
   createdAt  DateTime @default(now())
 }
-
 model Task {
   id        String    @id @default(cuid())
   userId    String
@@ -59,32 +55,28 @@ model Task {
   title     String
   dueDate   DateTime?
   dueTime   String?
-  completed Boolean   @default(false)
-  notified  Boolean   @default(false)
   items     String?
+  done      Boolean   @default(false)
   createdAt DateTime  @default(now())
 }
-
 model Expense {
   id          String   @id @default(cuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id])
   value       Float
   category    String
-  description String
+  description String?
   createdAt   DateTime @default(now())
 }
-
 model Secret {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   content   String
-  category  String
-  label     String
+  category  String?
+  label     String?
   createdAt DateTime @default(now())
 }
-
 model Purchase {
   id           String   @id @default(cuid())
   userId       String
@@ -96,7 +88,6 @@ model Purchase {
   notified     Boolean  @default(false)
   createdAt    DateTime @default(now())
 }
-
 model Reminder {
   id          String   @id @default(cuid())
   userId      String
@@ -109,65 +100,54 @@ model Reminder {
   attempts    Int      @default(0)
   createdAt   DateTime @default(now())
 }
-
 model Event {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id])
-  title       String
-  personName  String?
-  personAge   Int?
-  date        DateTime
-  type        String
-  notified    Boolean   @default(false)
-  followedUp  Boolean   @default(false)
-  createdAt   DateTime  @default(now())
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  title      String
+  personName String?
+  personAge  Int?
+  date       DateTime
+  type       String   @default("outro")
+  notified   Boolean  @default(false)
+  createdAt  DateTime @default(now())
 }
-
 model Habit {
-  id          String     @id @default(cuid())
-  userId      String
-  user        User       @relation(fields: [userId], references: [id])
-  name        String
-  category    String
-  frequency   String
-  goal        String?
-  active      Boolean    @default(true)
-  createdAt   DateTime   @default(now())
-  logs        HabitLog[]
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  name      String
+  frequency String     @default("diario")
+  active    Boolean    @default(true)
+  logs      HabitLog[]
+  createdAt DateTime   @default(now())
 }
-
 model HabitLog {
   id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
   habitId   String
   habit     Habit    @relation(fields: [habitId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  date      DateTime @default(now())
   done      Boolean  @default(true)
-  note      String?
-  createdAt DateTime @default(now())
 }
-
 model GroceryList {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   items     String
-  total     Float?
   createdAt DateTime @default(now())
 }
-
 model SleepLog {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   bedtime   String?
   wakeTime  String?
-  hours     Float?
   quality   String?
+  hours     Float?
   createdAt DateTime @default(now())
 }
-
 model Workout {
   id        String   @id @default(cuid())
   userId    String
@@ -177,4 +157,13 @@ model Workout {
   exercises String?
   note      String?
   createdAt DateTime @default(now())
+}
+model Note {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
