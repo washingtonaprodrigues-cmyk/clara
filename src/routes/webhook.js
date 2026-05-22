@@ -4,43 +4,50 @@ const router = express.Router();
 const { handleMessage } = require('../services/handler');
 const { classify } = require('../services/groq');
 
-// IMPORTANTE:
-// ajuste o caminho se seu sendMessage estiver em outro arquivo
+// AJUSTE O CAMINHO SE NECESSÁRIO
 const { sendMessage } = require('../services/whatsapp');
 
 router.post('/receive', async (req, res) => {
+
 try {
-const body = req.body;
 
 ```
+console.log('REQ BODY:', JSON.stringify(req.body, null, 2));
+
+const body = req.body;
+
 // ignora mensagens da própria Clara
 if (body.fromMe) {
   return res.json({ ok: true });
 }
 
 // ignora mensagens vazias
-if (!body.text?.message) {
+if (!body.text || !body.text.message) {
   return res.json({ ok: true });
 }
 
 const phone = body.phone;
 const message = body.text.message;
 
-console.log('Clara recebeu de ' + phone + ': ' + message);
+console.log('PHONE:', phone);
+console.log('MESSAGE:', message);
 
 // usuário
 const user = {
   id: phone,
 };
 
-// classificação IA
+console.log('ANTES CLASSIFY');
+
+// IA classifica
 const classified = await classify(message);
 
-console.log('🧠 Resultado classify:', classified);
+console.log('CLASSIFIED:', classified);
 
-// proteção extra
+// proteção
 if (!classified || !classified.tipo) {
-  console.log('⚠️ classify retornou inválido');
+
+  console.log('CLASSIFY INVALIDO');
 
   await sendMessage(
     phone,
@@ -50,7 +57,9 @@ if (!classified || !classified.tipo) {
   return res.json({ ok: true });
 }
 
-// handler principal
+console.log('ANTES HANDLER');
+
+// envia pro handler
 await handleMessage({
   user,
   phone,
@@ -59,15 +68,19 @@ await handleMessage({
   sendMessage,
 });
 
+console.log('FINALIZOU');
+
 res.json({ ok: true });
 ```
 
 } catch (error) {
-console.error('Erro no webhook:', error);
 
 ```
+console.error('ERRO COMPLETO:', error);
+
 res.status(500).json({
-  error: 'Erro interno',
+  error: error.message,
+  stack: error.stack,
 });
 ```
 
@@ -75,9 +88,11 @@ res.status(500).json({
 });
 
 router.get('/test', (req, res) => {
+
 res.json({
-status: 'Clara webhook funcionando 💛',
+status: 'Clara webhook funcionando',
 });
+
 });
 
 module.exports = router;
