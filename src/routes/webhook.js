@@ -1,98 +1,39 @@
 const express = require('express');
 const router = express.Router();
-
 const { handleMessage } = require('../services/handler');
-const { classify } = require('../services/groq');
-
-// AJUSTE O CAMINHO SE NECESSÁRIO
-const { sendMessage } = require('../services/whatsapp');
 
 router.post('/receive', async (req, res) => {
+  try {
+    const body = req.body;
 
-try {
+    // Ignora mensagens da própria Clara
+    if (body.fromMe) {
+      return res.json({ ok: true });
+    }
 
-```
-console.log('REQ BODY:', JSON.stringify(req.body, null, 2));
+    // Ignora se não tiver texto
+    if (!body.text?.message) {
+      return res.json({ ok: true });
+    }
 
-const body = req.body;
+    const phone = body.phone;
+    const text = body.text.message;
 
-// ignora mensagens da própria Clara
-if (body.fromMe) {
-  return res.json({ ok: true });
-}
+    console.log(`📩 Mensagem de ${phone}: ${text}`);
 
-// ignora mensagens vazias
-if (!body.text || !body.text.message) {
-  return res.json({ ok: true });
-}
+    // Processa em background (não bloqueia o webhook)
+    handleMessage(phone, text).catch(console.error);
 
-const phone = body.phone;
-const message = body.text.message;
-
-console.log('PHONE:', phone);
-console.log('MESSAGE:', message);
-
-// usuário
-const user = {
-  id: phone,
-};
-
-console.log('ANTES CLASSIFY');
-
-// IA classifica
-const classified = await classify(message);
-
-console.log('CLASSIFIED:', classified);
-
-// proteção
-if (!classified || !classified.tipo) {
-
-  console.log('CLASSIFY INVALIDO');
-
-  await sendMessage(
-    phone,
-    'Tive dificuldade pra entender isso 😅'
-  );
-
-  return res.json({ ok: true });
-}
-
-console.log('ANTES HANDLER');
-
-// envia pro handler
-await handleMessage({
-  user,
-  phone,
-  message,
-  classified,
-  sendMessage,
-});
-
-console.log('FINALIZOU');
-
-res.json({ ok: true });
-```
-
-} catch (error) {
-
-```
-console.error('ERRO COMPLETO:', error);
-
-res.status(500).json({
-  error: error.message,
-  stack: error.stack,
-});
-```
-
-}
+    // Responde imediatamente pro Z-API
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Erro no webhook:', error);
+    res.status(500).json({ error: 'Erro interno' });
+  }
 });
 
 router.get('/test', (req, res) => {
-
-res.json({
-status: 'Clara webhook funcionando',
-});
-
+  res.json({ status: 'Clara webhook funcionando ✅' });
 });
 
 module.exports = router;
