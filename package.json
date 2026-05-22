@@ -8,7 +8,7 @@
   "start": "node src/index.js",
   "dev": "nodemon src/index.js",
   "postinstall": "npx prisma generate"
-}
+},
   "dependencies": {
     "@prisma/client": "^5.10.0",
     "axios": "^1.6.7",
