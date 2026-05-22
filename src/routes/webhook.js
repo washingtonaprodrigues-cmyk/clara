@@ -26,7 +26,7 @@ if (!body.text?.message) {
 const phone = body.phone;
 const message = body.text.message;
 
-console.log(`💛 Clara recebeu de ${phone}: ${message}`);
+console.log('Clara recebeu de ' + phone + ': ' + message);
 
 // usuário
 const user = {
