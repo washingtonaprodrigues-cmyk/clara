@@ -1,4 +1,4 @@
-const { classify, classifyConversation, generateMemorySummary } = require('./groq');
+const { classify, generateMemorySummary } = require('./groq');
 const { sendMessage } = require('./whatsapp');
 const memory = require('./memory');
 
@@ -6,13 +6,6 @@ async function handleMessage(phone, text) {
   try {
     const user = await memory.getOrCreateUser(phone);
 
-    // Verifica se há conversa em andamento
-    const conv = await memory.getConversation(user.id);
-    if (conv) {
-      return await handleConversationStep(user, phone, text, conv);
-    }
-
-    // Classifica nova mensagem
     const classified = await classify(text);
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
 
@@ -42,14 +35,9 @@ async function handleMessage(phone, text) {
   }
 }
 
-async function handleConversationStep(user, phone, text, conv) {
-  // Implementar se precisar de fluxos multi-etapas
-  return;
-}
-
 async function handleNote(user, phone, classified) {
-  await memory.saveMemory(user.id, 'anotacao', classified.conteudo, { 
-    titulo: classified.titulo 
+  await memory.saveMemory(user.id, 'anotacao', classified.conteudo, {
+    titulo: classified.titulo,
   });
   await sendMessage(phone, classified.resposta);
 }
@@ -72,12 +60,10 @@ async function handleExpense(user, phone, classified) {
 
 async function handleQuery(user, phone, question) {
   const memories = await memory.getRecentMemories(user.id, 30);
-
   if (memories.length === 0) {
     await sendMessage(phone, 'Ainda não guardei nada pra você. Me conta algo!');
     return;
   }
-
   const answer = await generateMemorySummary(memories, question);
   await sendMessage(phone, answer);
 }
