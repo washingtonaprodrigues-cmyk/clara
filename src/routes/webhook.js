@@ -6,26 +6,39 @@ router.post('/receive', async (req, res) => {
   try {
     const body = req.body;
 
-    // Ignora mensagens da própria Clara
+    // Ignora mensagens enviadas pela própria Clara
     if (body.fromMe) {
       return res.json({ ok: true });
     }
 
-    // Ignora se não tiver texto
-    if (!body.text?.message) {
+    const phone = body.phone || body.from;
+
+    // ====================== TRATAMENTO DE LOCALIZAÇÃO ======================
+    if (body.location || body.latitude || body.longitude) {
+      const latitude = body.location?.latitude || body.latitude;
+      const longitude = body.location?.longitude || body.longitude;
+      const address = body.location?.address || body.address || null;
+
+      console.log(`📍 Localização recebida de ${phone}: ${latitude}, ${longitude}`);
+
+      // Envia para o handler com localização
+      handleMessage(phone, null, { latitude, longitude, address }).catch(console.error);
+      
       return res.json({ ok: true });
     }
 
-    const phone = body.phone;
-    const text = body.text.message;
+    // ====================== TRATAMENTO DE TEXTO ======================
+    if (body.text?.message) {
+      const text = body.text.message;
+      console.log(`📩 Mensagem de ${phone}: ${text}`);
 
-    console.log(`📩 Mensagem de ${phone}: ${text}`);
+      handleMessage(phone, text, null).catch(console.error);
+      return res.json({ ok: true });
+    }
 
-    // Processa em background (não bloqueia o webhook)
-    handleMessage(phone, text).catch(console.error);
-
-    // Responde imediatamente pro Z-API
+    // Outros tipos de mensagem (áudio, imagem, etc) - por enquanto ignoramos
     res.json({ ok: true });
+
   } catch (error) {
     console.error('Erro no webhook:', error);
     res.status(500).json({ error: 'Erro interno' });
