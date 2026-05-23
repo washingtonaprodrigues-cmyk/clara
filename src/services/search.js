@@ -10,11 +10,22 @@ async function webSearch(query) {
     console.log(`🔎 Buscando: ${query}`);
 
     const response = await tvly.search(query, {
-      maxResults: 6,
+      maxResults: 3,
       searchDepth: "basic",
     });
 
-    return response.results || response;
+    if (!response.results?.length) {
+      return null;
+    }
+
+    // limpa e resume resultados
+    const cleaned = response.results.map(result => ({
+      title: result.title,
+      content: result.content?.slice(0, 300),
+    }));
+
+    return cleaned;
+
   } catch (error) {
     console.error('Erro Tavily:', error.message);
     return null;
