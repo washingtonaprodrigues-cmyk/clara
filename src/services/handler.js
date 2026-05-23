@@ -5,13 +5,12 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 // ─────────────────────────────────────────────
-// PARSE DE DATAS RELATIVAS — com fuso Brasília
+// PARSE DE DATAS RELATIVAS — fuso Brasília
 // ─────────────────────────────────────────────
 function parseRelativeDate(text) {
   if (!text) return null;
   const t = text.toLowerCase().trim();
 
-  // Força horário de Brasília
   const nowUTC = new Date();
   const nowBRT = new Date(nowUTC.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
   const today = new Date(nowBRT);
@@ -26,13 +25,11 @@ function parseRelativeDate(text) {
     'domingo': 0, 'segunda': 1, 'terça': 2, 'terca': 2,
     'quarta': 3, 'quinta': 4, 'sexta': 5, 'sábado': 6, 'sabado': 6,
   };
-
   for (const [nome, num] of Object.entries(dias)) {
     if (t.includes(nome)) {
       const d = new Date(today);
-      const currentDay = d.getDay();
-      let diff = num - currentDay;
-      if (diff <= 0) diff += 7; // sempre próximo, nunca hoje ou passado
+      let diff = num - d.getDay();
+      if (diff <= 0) diff += 7;
       d.setDate(d.getDate() + diff);
       if (t.includes('semana que vem') || t.includes('próxima') || t.includes('proxima')) {
         d.setDate(d.getDate() + 7);
@@ -57,7 +54,6 @@ function parseRelativeDate(text) {
     const d = new Date(today); d.setDate(d.getDate() + parseInt(emDias[1])); return d;
   }
 
-  // "25/06" ou "25/06/2026"
   const diaSlash = t.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
   if (diaSlash) {
     const dia = parseInt(diaSlash[1]);
@@ -79,21 +75,16 @@ function parseRelativeDate(text) {
   return null;
 }
 
-// Extrai hora do texto: "14 horas", "às 14h", "14:30", "9h30"
 function parseHora(text) {
   if (!text) return null;
   const t = text.toLowerCase();
   let match;
-
   match = t.match(/(\d{1,2}):(\d{2})/);
   if (match) return `${match[1].padStart(2, '0')}:${match[2]}`;
-
   match = t.match(/(\d{1,2})h(\d{2})/);
   if (match) return `${match[1].padStart(2, '0')}:${match[2]}`;
-
   match = t.match(/(\d{1,2})\s*h(?:oras?)?(?!\d)/);
   if (match) return `${match[1].padStart(2, '0')}:00`;
-
   return null;
 }
 
@@ -105,6 +96,15 @@ function formatDate(date) {
   });
 }
 
+// Detecta ações por texto livre (para quando não há botões reais)
+function detectarAcaoTexto(text) {
+  const t = text.toLowerCase().trim();
+  if (/^(excluir|deletar|apagar|remove|remover)$/i.test(t)) return 'excluir';
+  if (/^(concluir|conclu[íi]do|feito|fiz|ok|done|✅)$/i.test(t)) return 'concluir';
+  if (/^(confirmar|confirmado|sim|tomei|tomado)$/i.test(t)) return 'confirmar';
+  return null;
+}
+
 // ─────────────────────────────────────────────
 // HANDLER PRINCIPAL
 // ─────────────────────────────────────────────
@@ -112,8 +112,15 @@ async function handleMessage(phone, text) {
   try {
     const user = await memory.getOrCreateUser(phone);
 
+    // Resposta de botão real (Z-API)
     if (text.startsWith('__btn__')) {
       return await handleButtonAction(user, phone, text);
+    }
+
+    // Ação por texto livre ("excluir", "feito", etc.)
+    const acaoTexto = detectarAcaoTexto(text);
+    if (acaoTexto) {
+      return await handleAcaoTexto(user, phone, acaoTexto);
     }
 
     const classified = await classify(text);
@@ -146,7 +153,55 @@ async function handleMessage(phone, text) {
 }
 
 // ─────────────────────────────────────────────
-// AÇÕES DE BOTÃO
+// AÇÃO POR TEXTO LIVRE — age na última tarefa/lembrete
+// ─────────────────────────────────────────────
+async function handleAcaoTexto(user, phone, acao) {
+  if (acao === 'excluir' || acao === 'concluir') {
+    // Última tarefa não concluída
+    const task = await prisma.task.findFirst({
+      where: { userId: user.id, done: false },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (task) {
+      await prisma.task.update({ where: { id: task.id }, data: { done: true } });
+      const msg = acao === 'concluir'
+        ? `✅ *${task.title}* marcada como concluída! Mandou bem.`
+        : `🗑️ *${task.title}* removida!`;
+      await sendMessage(phone, msg);
+      return;
+    }
+  }
+
+  if (acao === 'excluir') {
+    // Último lembrete não enviado
+    const reminder = await prisma.reminder.findFirst({
+      where: { userId: user.id, sent: false },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (reminder) {
+      await prisma.reminder.delete({ where: { id: reminder.id } });
+      await sendMessage(phone, `🗑️ Lembrete removido!`);
+      return;
+    }
+  }
+
+  if (acao === 'confirmar') {
+    const reminder = await prisma.reminder.findFirst({
+      where: { userId: user.id, sent: true, confirmed: false },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (reminder) {
+      await prisma.reminder.update({ where: { id: reminder.id }, data: { confirmed: true } });
+      await sendMessage(phone, `✅ Ótimo! Marcado como feito.`);
+      return;
+    }
+  }
+
+  await sendMessage(phone, 'Não encontrei nada recente pra isso. Pode me dar mais detalhes?');
+}
+
+// ─────────────────────────────────────────────
+// AÇÕES DE BOTÃO REAL
 // ─────────────────────────────────────────────
 async function handleButtonAction(user, phone, text) {
   const parts = text.split('__').filter(Boolean);
@@ -155,12 +210,12 @@ async function handleButtonAction(user, phone, text) {
 
   if (action === 'excluir_reminder') {
     await prisma.reminder.delete({ where: { id } }).catch(() => {});
-    await sendMessage(phone, '🗑️ Pronto, excluído! Já saiu do seu painel.');
+    await sendMessage(phone, '🗑️ Pronto, excluído!');
     return;
   }
   if (action === 'confirmar_reminder') {
     await prisma.reminder.update({ where: { id }, data: { confirmed: true, sent: true } }).catch(() => {});
-    await sendMessage(phone, '✅ Ótimo! Marcado como feito.');
+    await sendMessage(phone, '✅ Marcado como feito!');
     return;
   }
   if (action === 'excluir_task') {
@@ -182,11 +237,9 @@ async function handleButtonAction(user, phone, text) {
     const reminder = await prisma.reminder.findUnique({ where: { id } }).catch(() => null);
     if (reminder) {
       await memory.saveMemory(user.id, 'lembrete_recorrente', reminder.message, {
-        hora: reminder.scheduledAt
-          ? new Date(reminder.scheduledAt).toTimeString().slice(0, 5)
-          : null,
+        hora: reminder.scheduledAt ? new Date(reminder.scheduledAt).toTimeString().slice(0, 5) : null,
       });
-      await sendMessage(phone, '🔁 Guardei! Vou te lembrar disso todo dia no mesmo horário.');
+      await sendMessage(phone, '🔁 Vou te lembrar disso todo dia no mesmo horário.');
     } else {
       await sendMessage(phone, 'Não encontrei esse lembrete. Pode repetir?');
     }
@@ -200,9 +253,7 @@ async function handleButtonAction(user, phone, text) {
 // HANDLERS DE TIPO
 // ─────────────────────────────────────────────
 async function handleNote(user, phone, classified) {
-  await memory.saveMemory(user.id, 'anotacao', classified.conteudo, {
-    titulo: classified.titulo,
-  });
+  await memory.saveMemory(user.id, 'anotacao', classified.conteudo, { titulo: classified.titulo });
   const msg = `📝 *Anotado aqui comigo!*\n\n*${classified.titulo}*\n${classified.conteudo}`;
   await sendButtons(phone, msg, [
     { id: `__btn__excluir_note__${user.id}`, label: '🗑️ Excluir' },
@@ -210,14 +261,12 @@ async function handleNote(user, phone, classified) {
 }
 
 async function handleTask(user, phone, classified, originalText) {
-  // Sempre tenta extrair do texto original primeiro (mais confiável)
+  // Data: tenta texto original primeiro (mais confiável), fallback Groq com correção de ano
   let dueDate = parseRelativeDate(originalText);
 
-  // Fallback: usa o que o Groq retornou, mas valida o ano
   if (!dueDate && classified.data && classified.data !== 'null') {
     const parsed = new Date(classified.data);
     if (!isNaN(parsed.getTime())) {
-      // Corrige ano errado do Groq (ex: 2023 → 2026)
       const nowBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
       if (parsed.getFullYear() < nowBRT.getFullYear()) {
         parsed.setFullYear(nowBRT.getFullYear());
@@ -228,13 +277,12 @@ async function handleTask(user, phone, classified, originalText) {
 
   if (dueDate) dueDate.setHours(12, 0, 0, 0);
 
-  // Hora: tenta extrair do texto original, fallback para Groq
+  // Hora: texto original primeiro, fallback Groq
   let horaFinal = parseHora(originalText);
   if (!horaFinal && classified.hora && classified.hora !== 'null') {
     horaFinal = classified.hora;
   }
 
-  // Cria na tabela Task
   const task = await prisma.task.create({
     data: {
       userId: user.id,
@@ -249,7 +297,6 @@ async function handleTask(user, phone, classified, originalText) {
     const [h, m] = horaFinal.split(':').map(Number);
     const scheduledAt = new Date(dueDate);
     scheduledAt.setHours(h, m, 0, 0);
-
     if (scheduledAt > new Date()) {
       await prisma.reminder.create({
         data: {
@@ -265,7 +312,6 @@ async function handleTask(user, phone, classified, originalText) {
     }
   }
 
-  // Confirmação
   let msg = `✅ *Tarefa criada!*\n\n`;
   msg += `📋 ${classified.titulo}\n`;
   if (dueDate) msg += `📅 ${formatDate(dueDate)}\n`;
@@ -295,7 +341,6 @@ async function handleExpense(user, phone, classified) {
   const valorFormatado = Number(classified.valor).toLocaleString('pt-BR', {
     style: 'currency', currency: 'BRL',
   });
-
   const msg =
     `💰 *Saída registrada!*\n\n` +
     `📝 ${classified.descricao}\n` +
@@ -319,9 +364,6 @@ async function handleQuery(user, phone, question) {
   await sendMessage(phone, answer);
 }
 
-// ─────────────────────────────────────────────
-// EXPORT
-// ─────────────────────────────────────────────
 async function sendReminderWithButtons(phone, message, reminderId) {
   const msg = `🔔 *Lembrete!*\n\n${message}`;
   await sendButtons(phone, msg, [
