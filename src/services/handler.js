@@ -44,23 +44,35 @@ async function handleMessage(phone, text) {
     }
   } catch (error) {
     console.error('Erro:', error.message);
-    await sendMessage(phone, 'Entendi! Pode repetir por favor?');
+    await sendMessage(phone, 'Entendi! Pode repetir?');
   }
 }
 
-// ====================== PONTO MÚLTIPLO - VERSÃO MELHORADA ======================
+// ====================== PONTO MÚLTIPLO - RESUMO BONITO ======================
 async function handlePontoMultiplo(user, phone, acoes, originalText) {
   await sendMessage(phone, '📍 Registrando seus pontos...');
+
+  const registros = [];
 
   for (const acao of acoes) {
     let subtipo = acao.subtipo.toLowerCase();
 
-    if (subtipo.includes('cheg') || subtipo.includes('entrada')) subtipo = 'entrada';
-    else if (subtipo.includes('saí') && subtipo.includes('almo')) subtipo = 'saida_almoco';
-    else if (subtipo.includes('volt') && subtipo.includes('almo')) subtipo = 'volta_almoco';
-    else if (subtipo.includes('saí') || subtipo.includes('saindo')) subtipo = 'saida';
-
-    const hora = acao.hora || 'agora';
+    if (subtipo.includes('cheg') || subtipo.includes('entrada')) {
+      subtipo = 'entrada';
+      registros.push({ tipo: 'entrada', hora: acao.hora });
+    }
+    else if (subtipo.includes('saí') && subtipo.includes('almo')) {
+      subtipo = 'saida_almoco';
+      registros.push({ tipo: 'saida_almoco', hora: acao.hora });
+    }
+    else if (subtipo.includes('volt') && subtipo.includes('almo')) {
+      subtipo = 'volta_almoco';
+      registros.push({ tipo: 'volta_almoco', hora: acao.hora });
+    }
+    else if (subtipo.includes('saí') || subtipo.includes('saindo')) {
+      subtipo = 'saida';
+      registros.push({ tipo: 'saida', hora: acao.hora });
+    }
 
     await prisma.workLog.create({
       data: {
@@ -70,22 +82,15 @@ async function handlePontoMultiplo(user, phone, acoes, originalText) {
         date: dateBRT(),
       },
     });
-
-    await sendMessage(phone, `✅ *${subtipo.replace('_', ' ')}* registrada às *${hora}*`);
   }
 
-  // Calcula horas trabalhadas até agora
-  const resumo = await calcularHorasTrabalhadas(user.id);
-
-  let mensagemFinal = `📊 *Resumo de hoje*\n\n`;
-  mensagemFinal += `${resumo}\n\n`;
-  mensagemFinal += `A que horas você pretende sair hoje? Me fala que eu calculo quanto tempo ainda falta. 😊`;
-
-  await sendMessage(phone, mensagemFinal);
+  // Gera resumo bonito
+  const resumo = await gerarResumoBonito(user.id, registros);
+  await sendMessage(phone, resumo);
 }
 
-// ====================== CÁLCULO DE HORAS ======================
-async function calcularHorasTrabalhadas(userId) {
+// ====================== RESUMO BONITO ======================
+async function gerarResumoBonito(userId, registros) {
   const hoje = dateBRT();
   const logs = await prisma.workLog.findMany({
     where: { userId, date: hoje },
@@ -95,26 +100,35 @@ async function calcularHorasTrabalhadas(userId) {
   let entrada = null;
   let saidaAlmoco = null;
   let voltaAlmoco = null;
-  let totalMin = 0;
 
-  for (const log of logs) {
-    const hora = new Date(log.timestamp).getHours() * 60 + new Date(log.timestamp).getMinutes();
-
+  logs.forEach(log => {
+    const hora = log.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     if (log.type === 'entrada') entrada = hora;
     if (log.type === 'saida_almoco') saidaAlmoco = hora;
     if (log.type === 'volta_almoco') voltaAlmoco = hora;
-  }
+  });
 
+  let tempoManha = '—';
   if (entrada && saidaAlmoco) {
-    totalMin += saidaAlmoco - entrada;
-  }
-  if (voltaAlmoco) {
-    // Se já voltou do almoço, consideramos até agora
-    const agora = nowBRT().getHours() * 60 + nowBRT().getMinutes();
-    totalMin += agora - voltaAlmoco;
+    const [h1, m1] = entrada.split(':').map(Number);
+    const [h2, m2] = saidaAlmoco.split(':').map(Number);
+    const minutos = (h2 * 60 + m2) - (h1 * 60 + m1);
+    tempoManha = minutesToHours(minutos);
   }
 
-  return `Você já trabalhou **${minutesToHours(totalMin)}** hoje.`;
+  let texto = `✨ *Resumo do seu dia até agora*\n\n`;
+  if (entrada) texto += `🟢 Entrada: *${entrada}*\n`;
+  if (saidaAlmoco) texto += `🍽️ Saída para almoço: *${saidaAlmoco}*\n`;
+  if (tempoManha !== '—') texto += `⏱️ Tempo trabalhado pela manhã → *${tempoManha}*\n`;
+  if (voltaAlmoco) texto += `🔄 Retorno do almoço: *${voltaAlmoco}*\n\n`;
+
+  texto += `📌 Desde que você voltou, estou acompanhando normalmente.\n\n`;
+  texto += `💡 Me avisa quando for sair do trabalho que eu te mostro:\n`;
+  texto += `• Total trabalhado hoje\n`;
+  texto += `• Horas extras\n`;
+  texto += `• Resumo completo do expediente`;
+
+  return texto;
 }
 
 async function handlePonto(user, phone, subtipo) {
