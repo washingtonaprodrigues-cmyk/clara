@@ -4,21 +4,27 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const MODEL_LEVE = 'llama-3.1-8b-instant';
 const MODEL_FORTE = 'llama-3.3-70b-versatile';
 
-const SYSTEM_PROMPT = `Você é a Clara, assistente pessoal prática e inteligente.
+const SYSTEM_PROMPT = `Você é a Clara, assistente pessoal útil e prática.
+
 Analise a mensagem e retorne APENAS JSON.
 
-Se a mensagem for sobre clima, farmácia, restaurante, loja, telefone, horário de funcionamento → use "busca" com query otimizada.
+- Se for sobre clima, farmácia, restaurante, loja, telefone, horário → use "busca"
+- Sempre inclua a cidade "Fartura SP" na query quando for busca local.
 
 Exemplo:
-Usuário: "qual o tempo hoje" → {"tipo":"busca","query":"clima atual em Fartura SP","resposta":"Vou verificar o clima pra você"}
+{"tipo":"busca","query":"clima atual em Fartura SP hoje","resposta":"Vou verificar o clima pra você"}
+{"tipo":"busca","query":"farmácias de plantão perto de Fartura SP","resposta":"Buscando farmácias próximas..."}
 
-Responda apenas com JSON.`;
+Responda somente com JSON.`;
 
 async function classify(message) {
   try {
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: message }],
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: message }
+      ],
       temperature: 0.1,
       max_tokens: 600,
     });
@@ -31,22 +37,26 @@ async function classify(message) {
   }
 }
 
-async function searchWeb(query, location = '') {
+async function searchWeb(query, locationContext = '') {
   try {
-    const context = location ? `Localização do usuário: ${location}` : '';
-    
+    const fullQuery = locationContext ? `${query} em Fartura SP` : query;
+
     const completion = await groq.chat.completions.create({
       model: MODEL_FORTE,
       messages: [
-        { role: 'system', content: `Você é a Clara. Responda de forma útil, prática e natural. Use o contexto de localização quando disponível. Máximo 5 linhas.` },
-        { role: 'user', content: `${context}\n\n${query}` }
+        { 
+          role: 'system', 
+          content: `Você é a Clara. Seja direta, prática e útil. Use informações atualizadas. Responda em português de forma natural. Máximo 6 linhas.` 
+        },
+        { role: 'user', content: fullQuery }
       ],
-      temperature: 0.4,
-      max_tokens: 600,
+      temperature: 0.5,
+      max_tokens: 700,
     });
+
     return completion.choices[0].message.content.trim();
   } catch (error) {
-    return 'Não consegui buscar agora, mas posso tentar de outra forma.';
+    return 'Não consegui buscar essa informação agora. Tenta perguntar de outra forma?';
   }
 }
 
