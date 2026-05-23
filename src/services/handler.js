@@ -1,17 +1,28 @@
-const { classify, generateMemorySummary } = require('./groq');
+const { classify, searchWeb, generateMemorySummary, freeResponse, generateWorkSummary } = require('./groq');
 const { sendMessage, sendButtons } = require('./whatsapp');
 const memory = require('./memory');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+const JORNADA_MINUTOS = 8 * 60; // 8h padrão — ajuste se necessário
+
 // ─────────────────────────────────────────────
-// PARSE DE DATAS RELATIVAS — fuso Brasília
+// UTILITÁRIOS DE DATA/HORA
 // ─────────────────────────────────────────────
+function nowBRT() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+}
+
+function dateBRT() {
+  const d = nowBRT();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function parseRelativeDate(text) {
   if (!text) return null;
   const t = text.toLowerCase().trim();
-  const nowBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-  const today = new Date(nowBRT);
+  const now = nowBRT();
+  const today = new Date(now);
   today.setHours(12, 0, 0, 0);
 
   if (t.includes('hoje')) return today;
@@ -52,7 +63,7 @@ function parseRelativeDate(text) {
   if (diaSlash) {
     const dia = parseInt(diaSlash[1]);
     const mes = parseInt(diaSlash[2]) - 1;
-    let ano = diaSlash[3] ? parseInt(diaSlash[3]) : nowBRT.getFullYear();
+    let ano = diaSlash[3] ? parseInt(diaSlash[3]) : now.getFullYear();
     if (ano < 100) ano += 2000;
     const d = new Date(ano, mes, dia, 12, 0, 0);
     return isNaN(d.getTime()) ? null : d;
@@ -61,8 +72,8 @@ function parseRelativeDate(text) {
   const diaNum = t.match(/dia (\d{1,2})/);
   if (diaNum) {
     const dia = parseInt(diaNum[1]);
-    const d = new Date(nowBRT.getFullYear(), nowBRT.getMonth(), dia, 12, 0, 0);
-    if (d < nowBRT) d.setMonth(d.getMonth() + 1);
+    const d = new Date(now.getFullYear(), now.getMonth(), dia, 12, 0, 0);
+    if (d < now) d.setMonth(d.getMonth() + 1);
     return d;
   }
 
@@ -95,9 +106,18 @@ function cap(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
+function minutesToHours(min) {
+  const h = Math.floor(Math.abs(min) / 60);
+  const m = Math.abs(min) % 60;
+  return `${h}h${m > 0 ? m + 'min' : ''}`;
+}
+
+// ─────────────────────────────────────────────
+// DETECÇÃO DE AÇÃO POR TEXTO
+// ─────────────────────────────────────────────
 function detectarAcaoTexto(text) {
   const t = text.toLowerCase().trim();
-  if (/^(excluir|deletar|apagar|remover|remove)$/i.test(t)) return 'excluir';
+  if (/^(excluir|deletar|apagar|remover)$/i.test(t)) return 'excluir';
   if (/^(concluir|conclu[íi]do|feito|fiz|ok|done|✅)$/i.test(t)) return 'concluir';
   if (/^(confirmar|confirmado|sim|tomei|tomado)$/i.test(t)) return 'confirmar';
   if (/^(editar|edit|mudar|alterar|corrigir)$/i.test(t)) return 'editar';
@@ -105,7 +125,7 @@ function detectarAcaoTexto(text) {
 }
 
 // ─────────────────────────────────────────────
-// CONTEXTO DA ÚLTIMA AÇÃO
+// CONTEXTO
 // ─────────────────────────────────────────────
 async function salvarContexto(userId, tipo, id, titulo) {
   try {
@@ -128,15 +148,6 @@ async function getContexto(userId) {
 }
 
 // ─────────────────────────────────────────────
-// MENSAGEM COM BOTÕES — sem duplicar opções no texto
-// ─────────────────────────────────────────────
-async function enviarComBotoes(phone, texto, botoes) {
-  // sendButtons já adiciona os bullets como fallback quando não há botões reais
-  // então NÃO incluímos as opções no texto principal
-  await sendButtons(phone, texto, botoes);
-}
-
-// ─────────────────────────────────────────────
 // HANDLER PRINCIPAL
 // ─────────────────────────────────────────────
 async function handleMessage(phone, text) {
@@ -156,29 +167,137 @@ async function handleMessage(phone, text) {
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
 
     switch (classified.tipo) {
-      case 'anotacao':
-        await handleNote(user, phone, classified);
-        break;
-      case 'tarefa':
-        await handleTask(user, phone, classified, text);
-        break;
-      case 'gasto':
-        await handleExpense(user, phone, classified);
-        break;
-      case 'consulta':
-        await handleQuery(user, phone, text);
-        break;
-      case 'saudacao':
-        await sendMessage(phone, classified.resposta);
-        break;
+      case 'anotacao':    await handleNote(user, phone, classified); break;
+      case 'tarefa':      await handleTask(user, phone, classified, text); break;
+      case 'gasto':       await handleExpense(user, phone, classified); break;
+      case 'ponto':       await handlePonto(user, phone, classified.subtipo); break;
+      case 'busca':       await handleBusca(user, phone, classified.query, text); break;
+      case 'consulta':    await handleQuery(user, phone, text); break;
+      case 'saudacao':    await sendMessage(phone, classified.resposta); break;
       default:
-        await sendMessage(phone, classified.resposta || 'Entendi! ✓');
+        // Resposta livre com modelo forte para "outro"
+        const resp = await freeResponse(text);
+        await sendMessage(phone, resp);
     }
   } catch (error) {
     console.error('Erro handleMessage:', error.message);
     console.error('Stack:', error.stack);
     await sendMessage(phone, 'Ops, tive um probleminha aqui. Pode repetir?');
   }
+}
+
+// ─────────────────────────────────────────────
+// PONTO — registro de jornada
+// ─────────────────────────────────────────────
+async function handlePonto(user, phone, subtipo) {
+  const hoje = dateBRT();
+  const agora = nowBRT();
+  const horaAtual = `${String(agora.getHours()).padStart(2, '0')}:${String(agora.getMinutes()).padStart(2, '0')}`;
+
+  // Salva o registro
+  await prisma.workLog.create({
+    data: {
+      userId: user.id,
+      type: subtipo,
+      timestamp: agora,
+      date: hoje,
+    },
+  });
+
+  // Busca todos os logs de hoje
+  const logsHoje = await prisma.workLog.findMany({
+    where: { userId: user.id, date: hoje },
+    orderBy: { timestamp: 'asc' },
+  });
+
+  const msgs = {
+    entrada: [
+      `☀️ Bom trabalho! Entrada registrada às *${horaAtual}*. Vai com tudo! 💪`,
+      `🟢 Chegada registrada — *${horaAtual}*. Bora produzir!`,
+      `✅ Entrada às *${horaAtual}*. Hoje vai ser um bom dia!`,
+    ],
+    saida_almoco: [
+      `🍽️ Saída pro almoço às *${horaAtual}*. Aproveita!`,
+      `🥗 Vai almoçar — registrado às *${horaAtual}*. Descansa!`,
+    ],
+    volta_almoco: [
+      `🔙 Voltou do almoço às *${horaAtual}*. Bora continuar!`,
+      `✅ Retorno registrado — *${horaAtual}*. Boa tarde!`,
+    ],
+    saida: null, // calculado abaixo
+  };
+
+  if (subtipo !== 'saida') {
+    const opcoes = msgs[subtipo] || [`✅ Ponto registrado às *${horaAtual}*.`];
+    await sendMessage(phone, opcoes[Math.floor(Math.random() * opcoes.length)]);
+    return;
+  }
+
+  // SAÍDA — calcula horas trabalhadas
+  const entrada = logsHoje.find(l => l.type === 'entrada');
+  const saidaAlmoco = logsHoje.find(l => l.type === 'saida_almoco');
+  const voltaAlmoco = logsHoje.find(l => l.type === 'volta_almoco');
+
+  if (!entrada) {
+    await sendMessage(phone, `🔴 Saída registrada às *${horaAtual}*, mas não encontrei sua entrada de hoje. Tudo bem?`);
+    return;
+  }
+
+  // Calcula minutos trabalhados
+  let totalMin = 0;
+  const saidaTime = agora.getTime();
+  const entradaTime = new Date(entrada.timestamp).getTime();
+
+  if (saidaAlmoco && voltaAlmoco) {
+    // Com almoço: (entrada→saida_almoco) + (volta_almoco→saida)
+    const manha = (new Date(saidaAlmoco.timestamp).getTime() - entradaTime) / 60000;
+    const tarde = (saidaTime - new Date(voltaAlmoco.timestamp).getTime()) / 60000;
+    totalMin = Math.round(manha + tarde);
+  } else if (saidaAlmoco && !voltaAlmoco) {
+    // Saiu pro almoço mas não voltou (saiu direto)
+    totalMin = Math.round((new Date(saidaAlmoco.timestamp).getTime() - entradaTime) / 60000);
+  } else {
+    // Sem almoço registrado
+    totalMin = Math.round((saidaTime - entradaTime) / 60000);
+  }
+
+  const extraMin = totalMin - JORNADA_MINUTOS;
+  const resumo = await generateWorkSummary(logsHoje, totalMin, extraMin);
+
+  let msg = `🏁 *Fim de expediente!* Saída às *${horaAtual}*\n\n`;
+  msg += `⏱️ Hoje: *${minutesToHours(totalMin)}*\n`;
+  if (extraMin > 0) {
+    msg += `📈 +${minutesToHours(extraMin)} de hora extra\n`;
+  } else if (extraMin < 0) {
+    msg += `📉 ${minutesToHours(extraMin)} a menos que o normal\n`;
+  }
+  msg += `\n${resumo}`;
+
+  await sendMessage(phone, msg);
+
+  // Salva resumo do dia na memória
+  await memory.saveMemory(user.id, 'ponto', `Trabalhou ${minutesToHours(totalMin)} em ${hoje}`, {
+    entrada: horaAtual, totalMin, extraMin, date: hoje,
+  });
+}
+
+// ─────────────────────────────────────────────
+// BUSCA WEB
+// ─────────────────────────────────────────────
+async function handleBusca(user, phone, query, originalText) {
+  await sendMessage(phone, '🔍 Pesquisando aqui pra você...');
+
+  // Contexto do usuário para personalizar a busca
+  const recentMems = await memory.getRecentMemories(user.id, 5);
+  const ctx = recentMems.map(m => m.content).join(', ');
+
+  const searchQuery = query || originalText;
+  const result = await searchWeb(searchQuery, ctx);
+
+  await sendMessage(phone, result);
+
+  // Salva na memória que buscou
+  await memory.saveMemory(user.id, 'busca', searchQuery, { resultado: result.substring(0, 200) });
 }
 
 // ─────────────────────────────────────────────
@@ -280,7 +399,6 @@ async function handleButtonAction(user, phone, text) {
     await sendMessage(phone, '🗑️ Gasto removido!');
     return;
   }
-
   await sendMessage(phone, 'Não entendi essa ação. Pode repetir?');
 }
 
@@ -291,12 +409,8 @@ async function handleNote(user, phone, classified) {
   await memory.saveMemory(user.id, 'anotacao', classified.conteudo, { titulo: classified.titulo });
   await salvarContexto(user.id, 'note', user.id, classified.titulo);
 
-  const msg =
-    `📝 *Anotação salva!*\n\n` +
-    `📌 ${cap(classified.titulo)}\n` +
-    `💬 ${classified.conteudo}`;
-
-  await enviarComBotoes(phone, msg, [
+  const msg = `📝 *Anotação salva!*\n\n📌 ${cap(classified.titulo)}\n💬 ${classified.conteudo}`;
+  await sendButtons(phone, msg, [
     { id: `__btn__excluir_note__${user.id}`, label: '🗑️ Excluir' },
   ]);
 }
@@ -304,34 +418,30 @@ async function handleNote(user, phone, classified) {
 async function handleTask(user, phone, classified, originalText) {
   const titulo = classified.titulo;
 
-  // Data: texto original primeiro, fallback Groq
   let dueDate = parseRelativeDate(originalText);
   if (!dueDate && classified.data && classified.data !== 'null') {
     const parsed = new Date(classified.data);
     if (!isNaN(parsed.getTime())) {
-      const nowBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      if (parsed.getFullYear() < nowBRT.getFullYear()) parsed.setFullYear(nowBRT.getFullYear());
+      const now = nowBRT();
+      if (parsed.getFullYear() < now.getFullYear()) parsed.setFullYear(now.getFullYear());
       dueDate = parsed;
     }
   }
-  // Se ainda não tem data mas tem hora → assume hoje
-  const horaFinalTemp = parseHora(originalText) || (classified.hora !== 'null' ? classified.hora : null);
-  if (!dueDate && horaFinalTemp) {
-    const nowBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-    dueDate = new Date(nowBRT);
-  }
 
-  if (dueDate) dueDate.setHours(12, 0, 0, 0);
-
-  // Hora
   let horaFinal = parseHora(originalText);
   if (!horaFinal && classified.hora && classified.hora !== 'null') horaFinal = classified.hora;
+
+  // Sem data mas com hora → hoje
+  if (!dueDate && horaFinal) dueDate = nowBRT();
+  if (dueDate) dueDate.setHours(12, 0, 0, 0);
 
   const task = await prisma.task.create({
     data: { userId: user.id, title: titulo, dueDate: dueDate || null, dueTime: horaFinal || null },
   });
 
-  // Cria Reminder para o job
+  // Cria Reminder
+  let contextoTipo = 'task';
+  let contextoId = task.id;
   if (dueDate && horaFinal) {
     const [h, m] = horaFinal.split(':').map(Number);
     const scheduledAt = new Date(dueDate);
@@ -343,22 +453,20 @@ async function handleTask(user, phone, classified, originalText) {
           scheduledAt, sent: false, confirmed: false, attempts: 0,
         },
       });
-      await salvarContexto(user.id, 'reminder', reminder.id, titulo);
-    } else {
-      await salvarContexto(user.id, 'task', task.id, titulo);
+      contextoTipo = 'reminder';
+      contextoId = reminder.id;
     }
-  } else {
-    await salvarContexto(user.id, 'task', task.id, titulo);
   }
 
-  // Mensagem — sem repetir opções no texto (sendButtons já adiciona como fallback)
+  await salvarContexto(user.id, contextoTipo, contextoId, titulo);
+
   let msg = `🔔 *Lembrete criado com sucesso!*\n\n`;
   msg += `📌 ${cap(titulo)}\n`;
   if (dueDate) msg += `📅 ${cap(formatDate(dueDate))}\n`;
   if (horaFinal) msg += `⏰ ${horaFinal}\n`;
   msg += `\n💬 Vou te avisar na hora certa!`;
 
-  await enviarComBotoes(phone, msg, [
+  await sendButtons(phone, msg, [
     { id: `__btn__concluir_task__${task.id}`, label: '✅ Concluir' },
     { id: `__btn__excluir_task__${task.id}`, label: '🗑️ Excluir' },
   ]);
@@ -381,15 +489,14 @@ async function handleExpense(user, phone, classified) {
   const valorFormatado = Number(classified.valor).toLocaleString('pt-BR', {
     style: 'currency', currency: 'BRL',
   });
-
   const msg =
     `💸 *Gasto registrado!*\n\n` +
     `📌 ${cap(classified.descricao)}\n` +
     `💵 ${valorFormatado}\n` +
     `📂 ${cap(classified.categoria)}\n` +
-    `📅 ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;
+    `📅 ${nowBRT().toLocaleDateString('pt-BR')}`;
 
-  await enviarComBotoes(phone, msg, [
+  await sendButtons(phone, msg, [
     { id: `__btn__excluir_expense__${expense.id}`, label: '🗑️ Excluir' },
   ]);
 }
@@ -409,7 +516,7 @@ async function sendReminderWithButtons(phone, message, reminderId) {
     `🔔 *Hora do seu lembrete!*\n\n` +
     `📌 ${cap(message)}\n\n` +
     `💬 Conseguiu fazer?`;
-  await enviarComBotoes(phone, msg, [
+  await sendButtons(phone, msg, [
     { id: `__btn__confirmar_reminder__${reminderId}`, label: '✅ Feito!' },
     { id: `__btn__excluir_reminder__${reminderId}`, label: '🗑️ Excluir' },
   ]);
