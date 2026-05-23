@@ -7,25 +7,26 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 model User {
-  id          String       @id @default(cuid())
-  phone       String       @unique
-  name        String?
-  metadata    String?
-  createdAt   DateTime     @default(now())
-  memories    Memory[]
-  medications Medication[]
-  tasks       Task[]
-  expenses    Expense[]
-  secrets     Secret[]
-  purchases   Purchase[]
-  reminders   Reminder[]
-  events      Event[]
-  habits      Habit[]
-  habitLogs   HabitLog[]
+  id           String        @id @default(cuid())
+  phone        String        @unique
+  name         String?
+  metadata     String?
+  createdAt    DateTime      @default(now())
+  memories     Memory[]
+  medications  Medication[]
+  tasks        Task[]
+  expenses     Expense[]
+  secrets      Secret[]
+  purchases    Purchase[]
+  reminders    Reminder[]
+  events       Event[]
+  habits       Habit[]
+  habitLogs    HabitLog[]
   groceryLists GroceryList[]
-  sleepLogs   SleepLog[]
-  workouts    Workout[]
-  notes       Note[]
+  sleepLogs    SleepLog[]
+  workouts     Workout[]
+  notes        Note[]
+  workLogs     WorkLog[]
 }
 model Memory {
   id        String   @id @default(cuid())
@@ -166,4 +167,13 @@ model Note {
   content   String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+model WorkLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  type      String   // "entrada" | "saida_almoco" | "volta_almoco" | "saida"
+  timestamp DateTime @default(now())
+  date      String   // "2026-05-23" — para agrupar por dia
+  createdAt DateTime @default(now())
 }
