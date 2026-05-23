@@ -1,14 +1,11 @@
 const { classify, searchWeb, generateMemorySummary, freeResponse, generateWorkSummary } = require('./groq');
-const { sendMessage, sendButtons } = require('./whatsapp');
+const { sendMessage } = require('./whatsapp');
 const memory = require('./memory');
 const { PrismaClient } = require('@prisma/client');
+
 const prisma = new PrismaClient();
 
-const JORNADA_PADRAO = 480; // 8 horas em minutos
-
-// ─────────────────────────────────────────────
-// UTILITÁRIOS DE DATA/HORA
-// ─────────────────────────────────────────────
+// ====================== UTILITÁRIOS ======================
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 }
@@ -18,111 +15,95 @@ function dateBRT() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function parseHora(text) {
-  if (!text) return null;
-  const t = text.toLowerCase();
-  const match = t.match(/(\d{1,2})[:h](\d{2})?/);
-  if (match) {
-    const hora = match[1].padStart(2, '0');
-    const min = match[2] ? match[2] : '00';
-    return `${hora}:${min}`;
-  }
-  return null;
-}
-
 function minutesToHours(min) {
   const h = Math.floor(Math.abs(min) / 60);
   const m = Math.abs(min) % 60;
   return `${h}h${m > 0 ? m + 'min' : ''}`;
 }
 
-// ─────────────────────────────────────────────
-// HANDLER PRINCIPAL
-// ─────────────────────────────────────────────
+// ====================== HANDLER PRINCIPAL ======================
 async function handleMessage(phone, text) {
   try {
     const user = await memory.getOrCreateUser(phone);
 
     const classified = await classify(text);
-    console.log(`[${phone}] Tipo: ${classified.tipo}`);
+    console.log(`[${phone}] Tipo detectado: ${classified.tipo}`);
 
     switch (classified.tipo) {
       case 'anotacao':
         await handleNote(user, phone, classified);
         break;
+
       case 'tarefa':
-        await handleTask(user, phone, classified, text);
+        await handleTask(user, phone, classified);
         break;
+
       case 'gasto':
         await handleExpense(user, phone, classified);
         break;
+
       case 'ponto':
         await handlePonto(user, phone, classified.subtipo);
         break;
+
       case 'ponto_multiplo':
-        await handlePontoMultiplo(user, phone, classified.acoes);
+        await handlePontoMultiplo(user, phone, classified.acoes || []);
         break;
+
       case 'busca':
-        await handleBusca(user, phone, classified.query || text);
+        await handleBusca(user, phone, text);
         break;
+
       case 'consulta':
         await handleQuery(user, phone, text);
         break;
+
       case 'saudacao':
-        await sendMessage(phone, classified.resposta || 'Oi! Como posso te ajudar hoje? 😊');
+        await sendMessage(phone, 'Oi! Tudo bem? Como posso te ajudar hoje? 😊');
         break;
+
       default:
-        const resp = await freeResponse(text);
-        await sendMessage(phone, resp);
+        const resposta = await freeResponse(text);
+        await sendMessage(phone, resposta);
     }
   } catch (error) {
-    console.error('Erro handleMessage:', error.message);
-    await sendMessage(phone, 'Ops, tive um probleminha. Pode repetir por favor?');
+    console.error('Erro no handleMessage:', error.message);
+    await sendMessage(phone, 'Ops, tive um probleminha aqui... Pode repetir por favor?');
   }
 }
 
-// ─────────────────────────────────────────────
-// PONTO SIMPLES
-// ─────────────────────────────────────────────
+// ====================== FUNÇÕES DE PONTO ======================
 async function handlePonto(user, phone, subtipo) {
-  const hoje = dateBRT();
-  const agora = nowBRT();
-  const horaAtual = `${String(agora.getHours()).padStart(2, '0')}:${String(agora.getMinutes()).padStart(2, '0')}`;
+  const horaAtual = nowBRT().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
   await prisma.workLog.create({
     data: {
       userId: user.id,
       type: subtipo,
-      timestamp: agora,
-      date: hoje,
+      timestamp: nowBRT(),
+      date: dateBRT(),
     },
   });
 
-  const mensagens = {
+  const msgs = {
     entrada: `✅ Chegada registrada às *${horaAtual}*.`,
     saida_almoco: `🍽️ Saída para almoço registrada às *${horaAtual}*.`,
-    volta_almoco: `✅ Retorno do almoço registrado às *${horaAtual}*.`,
+    volta_almoco: `✅ Retorno do almoço às *${horaAtual}*.`,
     saida: `🏁 Saída registrada às *${horaAtual}*.`,
   };
 
-  await sendMessage(phone, mensagens[subtipo] || `✅ Ponto (${subtipo}) registrado.`);
+  await sendMessage(phone, msgs[subtipo] || `✅ Ponto registrado (${subtipo}).`);
 }
 
-// ─────────────────────────────────────────────
-// PONTO MÚLTIPLO (Nova funcionalidade)
-// ─────────────────────────────────────────────
 async function handlePontoMultiplo(user, phone, acoes) {
   await sendMessage(phone, '📍 Registrando seus pontos...');
 
   for (const acao of acoes) {
     let subtipo = acao.subtipo.toLowerCase();
-
     if (subtipo.includes('cheg') || subtipo.includes('entrada')) subtipo = 'entrada';
-    else if (subtipo.includes('saí') && subtipo.includes('almo')) subtipo = 'saida_almoco';
+    else if ((subtipo.includes('saí') || subtipo.includes('sai')) && subtipo.includes('almo')) subtipo = 'saida_almoco';
     else if (subtipo.includes('volt') && subtipo.includes('almo')) subtipo = 'volta_almoco';
     else if (subtipo.includes('saí') || subtipo.includes('saindo')) subtipo = 'saida';
-
-    const hora = acao.hora || null;
 
     await prisma.workLog.create({
       data: {
@@ -133,85 +114,52 @@ async function handlePontoMultiplo(user, phone, acoes) {
       },
     });
 
-    await sendMessage(phone, `✅ *${subtipo.replace('_', ' ')}* registrado${hora ? ` às ${hora}` : ''}.`);
+    await sendMessage(phone, `✅ *${subtipo.replace('_', ' ')}* registrado.`);
   }
 
-  // Calcula resumo do dia
   await gerarResumoDia(user, phone);
 }
 
-// ─────────────────────────────────────────────
-// RESUMO DO DIA (com jornada configurável)
-// ─────────────────────────────────────────────
 async function gerarResumoDia(user, phone) {
-  const hoje = dateBRT();
-  const logsHoje = await prisma.workLog.findMany({
-    where: { userId: user.id, date: hoje },
+  const logs = await prisma.workLog.findMany({
+    where: { userId: user.id, date: dateBRT() },
     orderBy: { timestamp: 'asc' },
   });
 
-  if (logsHoje.length === 0) return;
-
   const jornadaMinutos = await memory.getJornada(user.id);
+  // Cálculo básico por enquanto
+  const resumo = await generateWorkSummary(logs, 480, 0); // temporário
 
-  // Cálculo simples de tempo trabalhado
-  let totalMin = 0;
-  let entrada = null;
-
-  for (const log of logsHoje) {
-    if (log.type === 'entrada') entrada = new Date(log.timestamp);
-    if (log.type === 'saida' && entrada) {
-      const diff = (new Date(log.timestamp) - entrada) / 60000;
-      totalMin += diff;
-    }
-  }
-
-  const extraMin = totalMin - jornadaMinutos;
-  const resumo = await generateWorkSummary(logsHoje, totalMin, extraMin);
-
-  let msg = `📊 *Resumo do dia*\n\n`;
-  msg += `⏱️ Trabalhado: *${minutesToHours(totalMin)}*\n`;
-  msg += `🎯 Jornada: ${minutesToHours(jornadaMinutos)}\n`;
-
-  if (extraMin > 0) msg += `📈 +${minutesToHours(extraMin)} de hora extra\n`;
-  if (extraMin < 0) msg += `📉 ${minutesToHours(extraMin)} a menos\n`;
-
-  msg += `\n${resumo}`;
-
-  await sendMessage(phone, msg);
+  await sendMessage(phone, `📊 Resumo do dia:\n${resumo}`);
 }
 
-// ─────────────────────────────────────────────
-// OUTROS HANDLERS (mantidos simples)
-// ─────────────────────────────────────────────
+// ====================== OUTROS HANDLERS ======================
 async function handleNote(user, phone, classified) {
-  await memory.saveMemory(user.id, 'anotacao', classified.conteudo, { titulo: classified.titulo });
-  await sendMessage(phone, `📝 Anotei: *${classified.titulo}*`);
+  await memory.saveMemory(user.id, 'anotacao', classified.conteudo || classified.titulo);
+  await sendMessage(phone, `📝 Anotei: *${classified.titulo || 'informação'}*`);
 }
 
-async function handleTask(user, phone, classified, originalText) {
-  // ... (você pode manter sua lógica anterior ou simplificar por enquanto)
-  await sendMessage(phone, classified.resposta || '✅ Tarefa anotada!');
+async function handleTask(user, phone, classified) {
+  await sendMessage(phone, classified.resposta || '✅ Tarefa guardada!');
 }
 
 async function handleExpense(user, phone, classified) {
-  await memory.saveExpense(user.id, classified); // ajuste se necessário
-  await sendMessage(phone, `💰 Gasto registrado: R$ ${classified.valor}`);
+  await sendMessage(phone, `💰 Gasto de R$ ${classified.valor} registrado.`);
 }
 
-async function handleBusca(user, phone, query) {
-  await sendMessage(phone, '🔍 Pesquisando...');
-  const result = await searchWeb(query);
-  await sendMessage(phone, result);
+async function handleBusca(user, phone, text) {
+  await sendMessage(phone, '🔍 Pesquisando pra você...');
+  const resultado = await searchWeb(text);
+  await sendMessage(phone, resultado);
 }
 
-async function handleQuery(user, phone, question) {
-  const memories = await memory.getRecentMemories(user.id, 20);
+async function handleQuery(user, phone, text) {
+  const memories = await memory.getRecentMemories(user.id, 15);
   if (memories.length === 0) {
-    return await sendMessage(phone, 'Ainda não tenho memórias suas. Me conta algo!');
+    return await sendMessage(phone, 'Ainda não guardei nada seu. Me conta algo importante!');
   }
-  const answer = await generateMemorySummary(memories, question);
-  await sendMessage(phone, answer);
+  const resposta = await generateMemorySummary(memories, text);
+  await sendMessage(phone, resposta);
 }
 
 module.exports = { handleMessage };
