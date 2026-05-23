@@ -1,10 +1,95 @@
 const { classify, generateMemorySummary } = require('./groq');
-const { sendMessage } = require('./whatsapp');
+const { sendMessage, sendButtons } = require('./whatsapp');
 const memory = require('./memory');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
+// ─────────────────────────────────────────────
+// PARSE DE DATAS RELATIVAS
+// "segunda", "amanhã", "semana que vem", "dia 15", "25/06"
+// ─────────────────────────────────────────────
+function parseRelativeDate(text) {
+  if (!text) return null;
+  const t = text.toLowerCase().trim();
+  const now = new Date();
+  const today = new Date(now);
+  today.setHours(12, 0, 0, 0);
+
+  if (t.includes('hoje')) return today;
+  if (t.includes('amanhã') || t.includes('amanha')) {
+    const d = new Date(today); d.setDate(d.getDate() + 1); return d;
+  }
+
+  const dias = {
+    'domingo': 0, 'segunda': 1, 'terça': 2, 'terca': 2,
+    'quarta': 3, 'quinta': 4, 'sexta': 5, 'sábado': 6, 'sabado': 6
+  };
+  for (const [nome, num] of Object.entries(dias)) {
+    if (t.includes(nome)) {
+      const d = new Date(today);
+      let diff = (num - d.getDay() + 7) % 7 || 7;
+      d.setDate(d.getDate() + diff);
+      if (t.includes('semana que vem') || t.includes('próxima') || t.includes('proxima')) {
+        d.setDate(d.getDate() + 7);
+      }
+      return d;
+    }
+  }
+
+  if (t.includes('semana que vem')) {
+    const d = new Date(today);
+    const diff = (1 - d.getDay() + 7) % 7 || 7;
+    d.setDate(d.getDate() + diff);
+    return d;
+  }
+
+  if (t.includes('próximo mês') || t.includes('proximo mes')) {
+    const d = new Date(today); d.setDate(d.getDate() + 30); return d;
+  }
+
+  const emDias = t.match(/em (\d+) dias?/);
+  if (emDias) {
+    const d = new Date(today); d.setDate(d.getDate() + parseInt(emDias[1])); return d;
+  }
+
+  const diaSlash = t.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+  if (diaSlash) {
+    const dia = parseInt(diaSlash[1]);
+    const mes = parseInt(diaSlash[2]) - 1;
+    const ano = diaSlash[3] ? parseInt(diaSlash[3]) : now.getFullYear();
+    const d = new Date(ano < 100 ? ano + 2000 : ano, mes, dia, 12, 0, 0);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  const diaNum = t.match(/dia (\d{1,2})/);
+  if (diaNum) {
+    const dia = parseInt(diaNum[1]);
+    const d = new Date(now.getFullYear(), now.getMonth(), dia, 12, 0, 0);
+    if (d < now) d.setMonth(d.getMonth() + 1);
+    return d;
+  }
+
+  return null;
+}
+
+function formatDate(date) {
+  if (!date) return null;
+  return new Date(date).toLocaleDateString('pt-BR', {
+    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
+  });
+}
+
+// ─────────────────────────────────────────────
+// HANDLER PRINCIPAL
+// ─────────────────────────────────────────────
 async function handleMessage(phone, text) {
   try {
     const user = await memory.getOrCreateUser(phone);
+
+    // Resposta de botão
+    if (text.startsWith('__btn__')) {
+      return await handleButtonAction(user, phone, text);
+    }
 
     const classified = await classify(text);
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
@@ -14,7 +99,7 @@ async function handleMessage(phone, text) {
         await handleNote(user, phone, classified);
         break;
       case 'tarefa':
-        await handleTask(user, phone, classified);
+        await handleTask(user, phone, classified, text);
         break;
       case 'gasto':
         await handleExpense(user, phone, classified);
@@ -35,27 +120,168 @@ async function handleMessage(phone, text) {
   }
 }
 
+// ─────────────────────────────────────────────
+// AÇÕES DE BOTÃO
+// formato: __btn__ACAO__ID
+// ─────────────────────────────────────────────
+async function handleButtonAction(user, phone, text) {
+  const parts = text.split('__').filter(Boolean);
+  const action = parts[1];
+  const id = parts[2];
+
+  if (action === 'excluir_reminder') {
+    await prisma.reminder.delete({ where: { id } }).catch(() => {});
+    await sendMessage(phone, '🗑️ Pronto, excluído! Já saiu do seu painel.');
+    return;
+  }
+
+  if (action === 'confirmar_reminder') {
+    await prisma.reminder.update({ where: { id }, data: { confirmed: true, sent: true } }).catch(() => {});
+    await sendMessage(phone, '✅ Ótimo! Marcado como feito.');
+    return;
+  }
+
+  if (action === 'excluir_task') {
+    await prisma.task.update({ where: { id }, data: { done: true } }).catch(() => {});
+    await sendMessage(phone, '🗑️ Tarefa removida!');
+    return;
+  }
+
+  if (action === 'concluir_task') {
+    await prisma.task.update({ where: { id }, data: { done: true } }).catch(() => {});
+    await sendMessage(phone, '✅ Tarefa concluída! Mandou bem.');
+    return;
+  }
+
+  if (action === 'excluir_expense') {
+    await prisma.expense.delete({ where: { id } }).catch(() => {});
+    await sendMessage(phone, '🗑️ Gasto removido!');
+    return;
+  }
+
+  if (action === 'recorrente_sim') {
+    const reminder = await prisma.reminder.findUnique({ where: { id } }).catch(() => null);
+    if (reminder) {
+      await memory.saveMemory(user.id, 'lembrete_recorrente', reminder.message, {
+        hora: reminder.scheduledAt
+          ? new Date(reminder.scheduledAt).toTimeString().slice(0, 5)
+          : null,
+      });
+      await sendMessage(phone, '🔁 Guardei! Vou te lembrar disso todo dia no mesmo horário.');
+    } else {
+      await sendMessage(phone, 'Não encontrei esse lembrete. Pode repetir?');
+    }
+    return;
+  }
+
+  await sendMessage(phone, 'Não entendi essa ação. Pode repetir?');
+}
+
+// ─────────────────────────────────────────────
+// HANDLERS DE TIPO
+// ─────────────────────────────────────────────
 async function handleNote(user, phone, classified) {
   await memory.saveMemory(user.id, 'anotacao', classified.conteudo, {
     titulo: classified.titulo,
   });
-  await sendMessage(phone, classified.resposta);
+
+  const msg = `📝 *Anotado aqui comigo!*\n\n*${classified.titulo}*\n${classified.conteudo}`;
+
+  await sendButtons(phone, msg, [
+    { id: `__btn__excluir_note__${user.id}`, label: '🗑️ Excluir' },
+  ]);
 }
 
-async function handleTask(user, phone, classified) {
-  await memory.saveMemory(user.id, 'tarefa', classified.titulo, {
-    data: classified.data,
-    hora: classified.hora,
+async function handleTask(user, phone, classified, originalText) {
+  // Tenta extrair data do texto original se o Groq não retornou
+  let dataFinal = classified.data;
+  let horaFinal = classified.hora;
+
+  if (!dataFinal || dataFinal === 'null') {
+    const parsed = parseRelativeDate(originalText);
+    if (parsed) dataFinal = parsed.toISOString().split('T')[0];
+  }
+
+  // Cria na tabela Task
+  let dueDate = null;
+  if (dataFinal && dataFinal !== 'null') {
+    dueDate = new Date(dataFinal);
+    dueDate.setHours(12, 0, 0, 0);
+  }
+
+  const task = await prisma.task.create({
+    data: {
+      userId: user.id,
+      title: classified.titulo,
+      dueDate,
+      dueTime: horaFinal && horaFinal !== 'null' ? horaFinal : null,
+    },
   });
-  await sendMessage(phone, classified.resposta);
+
+  // ✅ CORREÇÃO PRINCIPAL: cria Reminder para o job de notificações disparar
+  if (dueDate && horaFinal && horaFinal !== 'null') {
+    const [h, m] = horaFinal.split(':').map(Number);
+    const scheduledAt = new Date(dueDate);
+    scheduledAt.setHours(h, m, 0, 0);
+
+    if (scheduledAt > new Date()) {
+      await prisma.reminder.create({
+        data: {
+          userId: user.id,
+          phone: user.phone,
+          message: classified.titulo,
+          scheduledAt,
+          sent: false,
+          confirmed: false,
+          attempts: 0,
+        },
+      });
+    }
+  }
+
+  // Confirmação com botões
+  let msg = `✅ *Tarefa criada!*\n\n`;
+  msg += `📋 ${classified.titulo}\n`;
+  if (dueDate) msg += `📅 ${formatDate(dueDate)}\n`;
+  if (horaFinal && horaFinal !== 'null') msg += `🕐 ${horaFinal}\n`;
+  msg += `\nVou te avisar na hora certa! 📣`;
+
+  await sendButtons(phone, msg, [
+    { id: `__btn__concluir_task__${task.id}`, label: '✅ Concluir' },
+    { id: `__btn__excluir_task__${task.id}`, label: '🗑️ Excluir' },
+  ]);
 }
 
 async function handleExpense(user, phone, classified) {
+  const expense = await prisma.expense.create({
+    data: {
+      userId: user.id,
+      value: parseFloat(classified.valor) || 0,
+      category: classified.categoria || 'outro',
+      description: classified.descricao || '',
+    },
+  });
+
   await memory.saveMemory(user.id, 'gasto', classified.descricao, {
     valor: classified.valor,
     categoria: classified.categoria,
   });
-  await sendMessage(phone, classified.resposta);
+
+  const valorFormatado = Number(classified.valor).toLocaleString('pt-BR', {
+    style: 'currency', currency: 'BRL',
+  });
+
+  const msg =
+    `💰 *Saída registrada!*\n\n` +
+    `📝 ${classified.descricao}\n` +
+    `💵 ${valorFormatado}\n` +
+    `📂 Categoria: ${classified.categoria}\n` +
+    `📅 ${new Date().toLocaleDateString('pt-BR')}\n\n` +
+    `Quer lançar mais algum gasto?`;
+
+  await sendButtons(phone, msg, [
+    { id: `__btn__excluir_expense__${expense.id}`, label: '🗑️ Excluir' },
+  ]);
 }
 
 async function handleQuery(user, phone, question) {
@@ -68,4 +294,15 @@ async function handleQuery(user, phone, question) {
   await sendMessage(phone, answer);
 }
 
-module.exports = { handleMessage };
+// ─────────────────────────────────────────────
+// EXPORT — sendReminderWithButtons usado pelo reminders.js
+// ─────────────────────────────────────────────
+async function sendReminderWithButtons(phone, message, reminderId) {
+  const msg = `🔔 *Lembrete!*\n\n${message}`;
+  await sendButtons(phone, msg, [
+    { id: `__btn__confirmar_reminder__${reminderId}`, label: '✅ Feito!' },
+    { id: `__btn__excluir_reminder__${reminderId}`, label: '🗑️ Excluir' },
+  ]);
+}
+
+module.exports = { handleMessage, sendReminderWithButtons };
