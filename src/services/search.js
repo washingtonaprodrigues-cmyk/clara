@@ -1,20 +1,20 @@
 // src/services/search.js
-const { TavilySearchResults } = require('@tavily/core');
+const { tavily } = require('@tavily/core');
 
-const tavily = new TavilySearchResults({
+const tvly = tavily({
   apiKey: process.env.TAVILY_API_KEY,
 });
 
 async function webSearch(query) {
   try {
-    console.log(`🔎 Tavily buscando: ${query}`);
+    console.log(`🔎 Buscando: ${query}`);
 
-    const results = await tavily.invoke(query, {
-      maxResults: 5,
+    const response = await tvly.search(query, {
+      maxResults: 6,
       searchDepth: "basic",
     });
 
-    return results;
+    return response.results || response;
   } catch (error) {
     console.error('Erro Tavily:', error.message);
     return null;
