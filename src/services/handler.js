@@ -5,14 +5,16 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 // ─────────────────────────────────────────────
-// PARSE DE DATAS RELATIVAS
-// "segunda", "amanhã", "semana que vem", "dia 15", "25/06"
+// PARSE DE DATAS RELATIVAS — com fuso Brasília
 // ─────────────────────────────────────────────
 function parseRelativeDate(text) {
   if (!text) return null;
   const t = text.toLowerCase().trim();
-  const now = new Date();
-  const today = new Date(now);
+
+  // Força horário de Brasília
+  const nowUTC = new Date();
+  const nowBRT = new Date(nowUTC.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const today = new Date(nowBRT);
   today.setHours(12, 0, 0, 0);
 
   if (t.includes('hoje')) return today;
@@ -22,12 +24,15 @@ function parseRelativeDate(text) {
 
   const dias = {
     'domingo': 0, 'segunda': 1, 'terça': 2, 'terca': 2,
-    'quarta': 3, 'quinta': 4, 'sexta': 5, 'sábado': 6, 'sabado': 6
+    'quarta': 3, 'quinta': 4, 'sexta': 5, 'sábado': 6, 'sabado': 6,
   };
+
   for (const [nome, num] of Object.entries(dias)) {
     if (t.includes(nome)) {
       const d = new Date(today);
-      let diff = (num - d.getDay() + 7) % 7 || 7;
+      const currentDay = d.getDay();
+      let diff = num - currentDay;
+      if (diff <= 0) diff += 7; // sempre próximo, nunca hoje ou passado
       d.setDate(d.getDate() + diff);
       if (t.includes('semana que vem') || t.includes('próxima') || t.includes('proxima')) {
         d.setDate(d.getDate() + 7);
@@ -52,22 +57,42 @@ function parseRelativeDate(text) {
     const d = new Date(today); d.setDate(d.getDate() + parseInt(emDias[1])); return d;
   }
 
+  // "25/06" ou "25/06/2026"
   const diaSlash = t.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
   if (diaSlash) {
     const dia = parseInt(diaSlash[1]);
     const mes = parseInt(diaSlash[2]) - 1;
-    const ano = diaSlash[3] ? parseInt(diaSlash[3]) : now.getFullYear();
-    const d = new Date(ano < 100 ? ano + 2000 : ano, mes, dia, 12, 0, 0);
+    let ano = diaSlash[3] ? parseInt(diaSlash[3]) : nowBRT.getFullYear();
+    if (ano < 100) ano += 2000;
+    const d = new Date(ano, mes, dia, 12, 0, 0);
     return isNaN(d.getTime()) ? null : d;
   }
 
   const diaNum = t.match(/dia (\d{1,2})/);
   if (diaNum) {
     const dia = parseInt(diaNum[1]);
-    const d = new Date(now.getFullYear(), now.getMonth(), dia, 12, 0, 0);
-    if (d < now) d.setMonth(d.getMonth() + 1);
+    const d = new Date(nowBRT.getFullYear(), nowBRT.getMonth(), dia, 12, 0, 0);
+    if (d < nowBRT) d.setMonth(d.getMonth() + 1);
     return d;
   }
+
+  return null;
+}
+
+// Extrai hora do texto: "14 horas", "às 14h", "14:30", "9h30"
+function parseHora(text) {
+  if (!text) return null;
+  const t = text.toLowerCase();
+  let match;
+
+  match = t.match(/(\d{1,2}):(\d{2})/);
+  if (match) return `${match[1].padStart(2, '0')}:${match[2]}`;
+
+  match = t.match(/(\d{1,2})h(\d{2})/);
+  if (match) return `${match[1].padStart(2, '0')}:${match[2]}`;
+
+  match = t.match(/(\d{1,2})\s*h(?:oras?)?(?!\d)/);
+  if (match) return `${match[1].padStart(2, '0')}:00`;
 
   return null;
 }
@@ -75,7 +100,8 @@ function parseRelativeDate(text) {
 function formatDate(date) {
   if (!date) return null;
   return new Date(date).toLocaleDateString('pt-BR', {
-    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
+    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+    timeZone: 'America/Sao_Paulo',
   });
 }
 
@@ -86,7 +112,6 @@ async function handleMessage(phone, text) {
   try {
     const user = await memory.getOrCreateUser(phone);
 
-    // Resposta de botão
     if (text.startsWith('__btn__')) {
       return await handleButtonAction(user, phone, text);
     }
@@ -122,7 +147,6 @@ async function handleMessage(phone, text) {
 
 // ─────────────────────────────────────────────
 // AÇÕES DE BOTÃO
-// formato: __btn__ACAO__ID
 // ─────────────────────────────────────────────
 async function handleButtonAction(user, phone, text) {
   const parts = text.split('__').filter(Boolean);
@@ -134,31 +158,26 @@ async function handleButtonAction(user, phone, text) {
     await sendMessage(phone, '🗑️ Pronto, excluído! Já saiu do seu painel.');
     return;
   }
-
   if (action === 'confirmar_reminder') {
     await prisma.reminder.update({ where: { id }, data: { confirmed: true, sent: true } }).catch(() => {});
     await sendMessage(phone, '✅ Ótimo! Marcado como feito.');
     return;
   }
-
   if (action === 'excluir_task') {
     await prisma.task.update({ where: { id }, data: { done: true } }).catch(() => {});
     await sendMessage(phone, '🗑️ Tarefa removida!');
     return;
   }
-
   if (action === 'concluir_task') {
     await prisma.task.update({ where: { id }, data: { done: true } }).catch(() => {});
     await sendMessage(phone, '✅ Tarefa concluída! Mandou bem.');
     return;
   }
-
   if (action === 'excluir_expense') {
     await prisma.expense.delete({ where: { id } }).catch(() => {});
     await sendMessage(phone, '🗑️ Gasto removido!');
     return;
   }
-
   if (action === 'recorrente_sim') {
     const reminder = await prisma.reminder.findUnique({ where: { id } }).catch(() => null);
     if (reminder) {
@@ -184,42 +203,49 @@ async function handleNote(user, phone, classified) {
   await memory.saveMemory(user.id, 'anotacao', classified.conteudo, {
     titulo: classified.titulo,
   });
-
   const msg = `📝 *Anotado aqui comigo!*\n\n*${classified.titulo}*\n${classified.conteudo}`;
-
   await sendButtons(phone, msg, [
     { id: `__btn__excluir_note__${user.id}`, label: '🗑️ Excluir' },
   ]);
 }
 
 async function handleTask(user, phone, classified, originalText) {
-  // Tenta extrair data do texto original se o Groq não retornou
-  let dataFinal = classified.data;
-  let horaFinal = classified.hora;
+  // Sempre tenta extrair do texto original primeiro (mais confiável)
+  let dueDate = parseRelativeDate(originalText);
 
-  if (!dataFinal || dataFinal === 'null') {
-    const parsed = parseRelativeDate(originalText);
-    if (parsed) dataFinal = parsed.toISOString().split('T')[0];
+  // Fallback: usa o que o Groq retornou, mas valida o ano
+  if (!dueDate && classified.data && classified.data !== 'null') {
+    const parsed = new Date(classified.data);
+    if (!isNaN(parsed.getTime())) {
+      // Corrige ano errado do Groq (ex: 2023 → 2026)
+      const nowBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      if (parsed.getFullYear() < nowBRT.getFullYear()) {
+        parsed.setFullYear(nowBRT.getFullYear());
+      }
+      dueDate = parsed;
+    }
+  }
+
+  if (dueDate) dueDate.setHours(12, 0, 0, 0);
+
+  // Hora: tenta extrair do texto original, fallback para Groq
+  let horaFinal = parseHora(originalText);
+  if (!horaFinal && classified.hora && classified.hora !== 'null') {
+    horaFinal = classified.hora;
   }
 
   // Cria na tabela Task
-  let dueDate = null;
-  if (dataFinal && dataFinal !== 'null') {
-    dueDate = new Date(dataFinal);
-    dueDate.setHours(12, 0, 0, 0);
-  }
-
   const task = await prisma.task.create({
     data: {
       userId: user.id,
       title: classified.titulo,
-      dueDate,
-      dueTime: horaFinal && horaFinal !== 'null' ? horaFinal : null,
+      dueDate: dueDate || null,
+      dueTime: horaFinal || null,
     },
   });
 
-  // ✅ CORREÇÃO PRINCIPAL: cria Reminder para o job de notificações disparar
-  if (dueDate && horaFinal && horaFinal !== 'null') {
+  // Cria Reminder para o job disparar
+  if (dueDate && horaFinal) {
     const [h, m] = horaFinal.split(':').map(Number);
     const scheduledAt = new Date(dueDate);
     scheduledAt.setHours(h, m, 0, 0);
@@ -239,11 +265,11 @@ async function handleTask(user, phone, classified, originalText) {
     }
   }
 
-  // Confirmação com botões
+  // Confirmação
   let msg = `✅ *Tarefa criada!*\n\n`;
   msg += `📋 ${classified.titulo}\n`;
   if (dueDate) msg += `📅 ${formatDate(dueDate)}\n`;
-  if (horaFinal && horaFinal !== 'null') msg += `🕐 ${horaFinal}\n`;
+  if (horaFinal) msg += `🕐 ${horaFinal}\n`;
   msg += `\nVou te avisar na hora certa! 📣`;
 
   await sendButtons(phone, msg, [
@@ -261,7 +287,6 @@ async function handleExpense(user, phone, classified) {
       description: classified.descricao || '',
     },
   });
-
   await memory.saveMemory(user.id, 'gasto', classified.descricao, {
     valor: classified.valor,
     categoria: classified.categoria,
@@ -276,7 +301,7 @@ async function handleExpense(user, phone, classified) {
     `📝 ${classified.descricao}\n` +
     `💵 ${valorFormatado}\n` +
     `📂 Categoria: ${classified.categoria}\n` +
-    `📅 ${new Date().toLocaleDateString('pt-BR')}\n\n` +
+    `📅 ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\n\n` +
     `Quer lançar mais algum gasto?`;
 
   await sendButtons(phone, msg, [
@@ -295,7 +320,7 @@ async function handleQuery(user, phone, question) {
 }
 
 // ─────────────────────────────────────────────
-// EXPORT — sendReminderWithButtons usado pelo reminders.js
+// EXPORT
 // ─────────────────────────────────────────────
 async function sendReminderWithButtons(phone, message, reminderId) {
   const msg = `🔔 *Lembrete!*\n\n${message}`;
