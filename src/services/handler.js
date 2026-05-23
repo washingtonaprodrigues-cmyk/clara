@@ -10,9 +10,7 @@ const prisma = new PrismaClient();
 function parseRelativeDate(text) {
   if (!text) return null;
   const t = text.toLowerCase().trim();
-
-  const nowUTC = new Date();
-  const nowBRT = new Date(nowUTC.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const nowBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
   const today = new Date(nowBRT);
   today.setHours(12, 0, 0, 0);
 
@@ -43,10 +41,6 @@ function parseRelativeDate(text) {
     const diff = (1 - d.getDay() + 7) % 7 || 7;
     d.setDate(d.getDate() + diff);
     return d;
-  }
-
-  if (t.includes('próximo mês') || t.includes('proximo mes')) {
-    const d = new Date(today); d.setDate(d.getDate() + 30); return d;
   }
 
   const emDias = t.match(/em (\d+) dias?/);
@@ -90,19 +84,54 @@ function parseHora(text) {
 
 function formatDate(date) {
   if (!date) return null;
-  return new Date(date).toLocaleDateString('pt-BR', {
+  const d = new Date(date);
+  return d.toLocaleDateString('pt-BR', {
     weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
     timeZone: 'America/Sao_Paulo',
   });
 }
 
-// Detecta ações por texto livre (para quando não há botões reais)
+// Capitaliza primeira letra
+function cap(str) {
+  if (!str) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+// Detecta ações por texto livre
 function detectarAcaoTexto(text) {
   const t = text.toLowerCase().trim();
-  if (/^(excluir|deletar|apagar|remove|remover)$/i.test(t)) return 'excluir';
+  if (/^(excluir|deletar|apagar|remover|remove)$/i.test(t)) return 'excluir';
   if (/^(concluir|conclu[íi]do|feito|fiz|ok|done|✅)$/i.test(t)) return 'concluir';
   if (/^(confirmar|confirmado|sim|tomei|tomado)$/i.test(t)) return 'confirmar';
+  if (/^(editar|edit|mudar|alterar|corrigir)$/i.test(t)) return 'editar';
   return null;
+}
+
+// ─────────────────────────────────────────────
+// CONTEXTO DA ÚLTIMA AÇÃO
+// Salva o último item criado/notificado para referência
+// ─────────────────────────────────────────────
+async function salvarContexto(userId, tipo, id, titulo) {
+  await prisma.memory.upsert({
+    where: { id: `ctx_${userId}` },
+    update: { type: 'contexto_ativo', content: JSON.stringify({ tipo, id, titulo }), metadata: null },
+    create: { id: `ctx_${userId}`, userId, type: 'contexto_ativo', content: JSON.stringify({ tipo, id, titulo }) },
+  }).catch(async () => {
+    // upsert com id customizado pode falhar dependendo do schema — fallback: delete + create
+    await prisma.memory.deleteMany({ where: { userId, type: 'contexto_ativo' } });
+    await prisma.memory.create({
+      data: { userId, type: 'contexto_ativo', content: JSON.stringify({ tipo, id, titulo }) },
+    });
+  });
+}
+
+async function getContexto(userId) {
+  const mem = await prisma.memory.findFirst({
+    where: { userId, type: 'contexto_ativo' },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (!mem) return null;
+  try { return JSON.parse(mem.content); } catch { return null; }
 }
 
 // ─────────────────────────────────────────────
@@ -112,12 +141,10 @@ async function handleMessage(phone, text) {
   try {
     const user = await memory.getOrCreateUser(phone);
 
-    // Resposta de botão real (Z-API)
     if (text.startsWith('__btn__')) {
       return await handleButtonAction(user, phone, text);
     }
 
-    // Ação por texto livre ("excluir", "feito", etc.)
     const acaoTexto = detectarAcaoTexto(text);
     if (acaoTexto) {
       return await handleAcaoTexto(user, phone, acaoTexto);
@@ -153,39 +180,75 @@ async function handleMessage(phone, text) {
 }
 
 // ─────────────────────────────────────────────
-// AÇÃO POR TEXTO LIVRE — age na última tarefa/lembrete
+// AÇÃO POR TEXTO LIVRE — usa contexto da última ação
 // ─────────────────────────────────────────────
 async function handleAcaoTexto(user, phone, acao) {
-  if (acao === 'excluir' || acao === 'concluir') {
-    // Última tarefa não concluída
+  const ctx = await getContexto(user.id);
+
+  if (acao === 'editar') {
+    if (ctx) {
+      await sendMessage(phone,
+        `✏️ O que você quer mudar em *"${ctx.titulo}"*?\n\nMe manda a correção assim:\n• _"muda o horário para 15h"_\n• _"muda para terça-feira"_\n• _"o título é cobrar a agência"_`
+      );
+    } else {
+      await sendMessage(phone, '✏️ O que você quer mudar? Me manda a correção que ajusto aqui mesmo.\n\nEx: _"o valor era 80"_, _"muda pra sexta às 16h"_');
+    }
+    return;
+  }
+
+  if (acao === 'excluir') {
+    // Tenta usar contexto primeiro
+    if (ctx?.tipo === 'task') {
+      const task = await prisma.task.findUnique({ where: { id: ctx.id } }).catch(() => null);
+      if (task && !task.done) {
+        await prisma.task.update({ where: { id: task.id }, data: { done: true } });
+        await sendMessage(phone, `🗑️ *"${task.title}"* removida!`);
+        return;
+      }
+    }
+    if (ctx?.tipo === 'reminder') {
+      await prisma.reminder.delete({ where: { id: ctx.id } }).catch(() => {});
+      await sendMessage(phone, `🗑️ Lembrete *"${ctx.titulo}"* removido!`);
+      return;
+    }
+    // Fallback: última tarefa aberta
     const task = await prisma.task.findFirst({
       where: { userId: user.id, done: false },
       orderBy: { createdAt: 'desc' },
     });
     if (task) {
       await prisma.task.update({ where: { id: task.id }, data: { done: true } });
-      const msg = acao === 'concluir'
-        ? `✅ *${task.title}* marcada como concluída! Mandou bem.`
-        : `🗑️ *${task.title}* removida!`;
-      await sendMessage(phone, msg);
+      await sendMessage(phone, `🗑️ *"${task.title}"* removida!`);
       return;
     }
   }
 
-  if (acao === 'excluir') {
-    // Último lembrete não enviado
-    const reminder = await prisma.reminder.findFirst({
-      where: { userId: user.id, sent: false },
+  if (acao === 'concluir') {
+    if (ctx?.tipo === 'task') {
+      const task = await prisma.task.findUnique({ where: { id: ctx.id } }).catch(() => null);
+      if (task && !task.done) {
+        await prisma.task.update({ where: { id: task.id }, data: { done: true } });
+        await sendMessage(phone, `✅ *"${task.title}"* concluída! Mandou bem. 💪`);
+        return;
+      }
+    }
+    const task = await prisma.task.findFirst({
+      where: { userId: user.id, done: false },
       orderBy: { createdAt: 'desc' },
     });
-    if (reminder) {
-      await prisma.reminder.delete({ where: { id: reminder.id } });
-      await sendMessage(phone, `🗑️ Lembrete removido!`);
+    if (task) {
+      await prisma.task.update({ where: { id: task.id }, data: { done: true } });
+      await sendMessage(phone, `✅ *"${task.title}"* concluída! Mandou bem. 💪`);
       return;
     }
   }
 
   if (acao === 'confirmar') {
+    if (ctx?.tipo === 'reminder') {
+      await prisma.reminder.update({ where: { id: ctx.id }, data: { confirmed: true, sent: true } }).catch(() => {});
+      await sendMessage(phone, `✅ Ótimo! *"${ctx.titulo}"* marcado como feito.`);
+      return;
+    }
     const reminder = await prisma.reminder.findFirst({
       where: { userId: user.id, sent: true, confirmed: false },
       orderBy: { createdAt: 'desc' },
@@ -201,7 +264,7 @@ async function handleAcaoTexto(user, phone, acao) {
 }
 
 // ─────────────────────────────────────────────
-// AÇÕES DE BOTÃO REAL
+// AÇÕES DE BOTÃO REAL (Z-API)
 // ─────────────────────────────────────────────
 async function handleButtonAction(user, phone, text) {
   const parts = text.split('__').filter(Boolean);
@@ -210,39 +273,27 @@ async function handleButtonAction(user, phone, text) {
 
   if (action === 'excluir_reminder') {
     await prisma.reminder.delete({ where: { id } }).catch(() => {});
-    await sendMessage(phone, '🗑️ Pronto, excluído!');
+    await sendMessage(phone, '🗑️ Lembrete excluído!');
     return;
   }
   if (action === 'confirmar_reminder') {
-    await prisma.reminder.update({ where: { id }, data: { confirmed: true, sent: true } }).catch(() => {});
-    await sendMessage(phone, '✅ Marcado como feito!');
+    const r = await prisma.reminder.update({ where: { id }, data: { confirmed: true, sent: true } }).catch(() => null);
+    await sendMessage(phone, `✅ ${r ? `*"${r.message}"*` : 'Item'} marcado como feito!`);
     return;
   }
   if (action === 'excluir_task') {
-    await prisma.task.update({ where: { id }, data: { done: true } }).catch(() => {});
-    await sendMessage(phone, '🗑️ Tarefa removida!');
+    const t = await prisma.task.update({ where: { id }, data: { done: true } }).catch(() => null);
+    await sendMessage(phone, `🗑️ ${t ? `*"${t.title}"*` : 'Tarefa'} removida!`);
     return;
   }
   if (action === 'concluir_task') {
-    await prisma.task.update({ where: { id }, data: { done: true } }).catch(() => {});
-    await sendMessage(phone, '✅ Tarefa concluída! Mandou bem.');
+    const t = await prisma.task.update({ where: { id }, data: { done: true } }).catch(() => null);
+    await sendMessage(phone, `✅ ${t ? `*"${t.title}"*` : 'Tarefa'} concluída! Mandou bem. 💪`);
     return;
   }
   if (action === 'excluir_expense') {
     await prisma.expense.delete({ where: { id } }).catch(() => {});
     await sendMessage(phone, '🗑️ Gasto removido!');
-    return;
-  }
-  if (action === 'recorrente_sim') {
-    const reminder = await prisma.reminder.findUnique({ where: { id } }).catch(() => null);
-    if (reminder) {
-      await memory.saveMemory(user.id, 'lembrete_recorrente', reminder.message, {
-        hora: reminder.scheduledAt ? new Date(reminder.scheduledAt).toTimeString().slice(0, 5) : null,
-      });
-      await sendMessage(phone, '🔁 Vou te lembrar disso todo dia no mesmo horário.');
-    } else {
-      await sendMessage(phone, 'Não encontrei esse lembrete. Pode repetir?');
-    }
     return;
   }
 
@@ -254,69 +305,71 @@ async function handleButtonAction(user, phone, text) {
 // ─────────────────────────────────────────────
 async function handleNote(user, phone, classified) {
   await memory.saveMemory(user.id, 'anotacao', classified.conteudo, { titulo: classified.titulo });
-  const msg = `📝 *Anotado aqui comigo!*\n\n*${classified.titulo}*\n${classified.conteudo}`;
+  const msg =
+    `📝 *Anotação salva!*\n\n` +
+    `📌 ${classified.titulo}\n` +
+    `💬 ${classified.conteudo}\n\n` +
+    `💡 Se quiser mudar algo, escreva:\n` +
+    `✏️ editar   🗑️ excluir`;
   await sendButtons(phone, msg, [
     { id: `__btn__excluir_note__${user.id}`, label: '🗑️ Excluir' },
   ]);
+  await salvarContexto(user.id, 'note', user.id, classified.titulo);
 }
 
 async function handleTask(user, phone, classified, originalText) {
-  // Data: tenta texto original primeiro (mais confiável), fallback Groq com correção de ano
-  let dueDate = parseRelativeDate(originalText);
+  // Título: usa o texto original limpo, sem deixar o Groq reescrever
+  // Remove prefixos como "segunda às 10", "amanhã", etc. para ficar só a ação
+  const titulo = classified.titulo;
 
+  // Data: texto original primeiro
+  let dueDate = parseRelativeDate(originalText);
   if (!dueDate && classified.data && classified.data !== 'null') {
     const parsed = new Date(classified.data);
     if (!isNaN(parsed.getTime())) {
       const nowBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      if (parsed.getFullYear() < nowBRT.getFullYear()) {
-        parsed.setFullYear(nowBRT.getFullYear());
-      }
+      if (parsed.getFullYear() < nowBRT.getFullYear()) parsed.setFullYear(nowBRT.getFullYear());
       dueDate = parsed;
     }
   }
-
   if (dueDate) dueDate.setHours(12, 0, 0, 0);
 
-  // Hora: texto original primeiro, fallback Groq
+  // Hora: texto original primeiro
   let horaFinal = parseHora(originalText);
-  if (!horaFinal && classified.hora && classified.hora !== 'null') {
-    horaFinal = classified.hora;
-  }
+  if (!horaFinal && classified.hora && classified.hora !== 'null') horaFinal = classified.hora;
 
   const task = await prisma.task.create({
-    data: {
-      userId: user.id,
-      title: classified.titulo,
-      dueDate: dueDate || null,
-      dueTime: horaFinal || null,
-    },
+    data: { userId: user.id, title: titulo, dueDate: dueDate || null, dueTime: horaFinal || null },
   });
 
-  // Cria Reminder para o job disparar
+  // Cria Reminder para o job
+  let reminderId = null;
   if (dueDate && horaFinal) {
     const [h, m] = horaFinal.split(':').map(Number);
     const scheduledAt = new Date(dueDate);
     scheduledAt.setHours(h, m, 0, 0);
     if (scheduledAt > new Date()) {
-      await prisma.reminder.create({
+      const reminder = await prisma.reminder.create({
         data: {
-          userId: user.id,
-          phone: user.phone,
-          message: classified.titulo,
-          scheduledAt,
-          sent: false,
-          confirmed: false,
-          attempts: 0,
+          userId: user.id, phone: user.phone, message: titulo,
+          scheduledAt, sent: false, confirmed: false, attempts: 0,
         },
       });
+      reminderId = reminder.id;
     }
   }
 
-  let msg = `✅ *Tarefa criada!*\n\n`;
-  msg += `📋 ${classified.titulo}\n`;
-  if (dueDate) msg += `📅 ${formatDate(dueDate)}\n`;
-  if (horaFinal) msg += `🕐 ${horaFinal}\n`;
-  msg += `\nVou te avisar na hora certa! 📣`;
+  // Salva contexto para referência futura
+  await salvarContexto(user.id, 'task', task.id, titulo);
+
+  // Mensagem bonita
+  let msg = `🔔 *Lembrete criado com sucesso!*\n\n`;
+  msg += `📌 ${cap(titulo)}\n`;
+  if (dueDate) msg += `📅 ${cap(formatDate(dueDate))}\n`;
+  if (horaFinal) msg += `⏰ ${horaFinal}\n`;
+  msg += `\n💬 Vou te avisar na hora certa!\n\n`;
+  msg += `💡 Se quiser mudar algo, escreva:\n`;
+  msg += `✏️ editar   ✅ concluir   🗑️ excluir`;
 
   await sendButtons(phone, msg, [
     { id: `__btn__concluir_task__${task.id}`, label: '✅ Concluir' },
@@ -334,20 +387,22 @@ async function handleExpense(user, phone, classified) {
     },
   });
   await memory.saveMemory(user.id, 'gasto', classified.descricao, {
-    valor: classified.valor,
-    categoria: classified.categoria,
+    valor: classified.valor, categoria: classified.categoria,
   });
+  await salvarContexto(user.id, 'expense', expense.id, classified.descricao);
 
   const valorFormatado = Number(classified.valor).toLocaleString('pt-BR', {
     style: 'currency', currency: 'BRL',
   });
+
   const msg =
-    `💰 *Saída registrada!*\n\n` +
-    `📝 ${classified.descricao}\n` +
+    `💸 *Gasto registrado!*\n\n` +
+    `📌 ${cap(classified.descricao)}\n` +
     `💵 ${valorFormatado}\n` +
-    `📂 Categoria: ${classified.categoria}\n` +
+    `📂 ${cap(classified.categoria)}\n` +
     `📅 ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\n\n` +
-    `Quer lançar mais algum gasto?`;
+    `💡 Se quiser mudar algo, escreva:\n` +
+    `✏️ editar   🗑️ excluir`;
 
   await sendButtons(phone, msg, [
     { id: `__btn__excluir_expense__${expense.id}`, label: '🗑️ Excluir' },
@@ -365,7 +420,11 @@ async function handleQuery(user, phone, question) {
 }
 
 async function sendReminderWithButtons(phone, message, reminderId) {
-  const msg = `🔔 *Lembrete!*\n\n${message}`;
+  const msg =
+    `🔔 *Hora do seu lembrete!*\n\n` +
+    `📌 ${cap(message)}\n\n` +
+    `💬 Conseguiu fazer?\n\n` +
+    `✅ confirmar   🗑️ excluir`;
   await sendButtons(phone, msg, [
     { id: `__btn__confirmar_reminder__${reminderId}`, label: '✅ Feito!' },
     { id: `__btn__excluir_reminder__${reminderId}`, label: '🗑️ Excluir' },
