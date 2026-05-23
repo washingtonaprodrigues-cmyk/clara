@@ -6,10 +6,10 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const MODEL_LEVE = 'llama-3.1-8b-instant';
 const MODEL_FORTE = 'llama-3.3-70b-versatile';
 
-const SYSTEM_PROMPT = `Você é a Clara, assistente pessoal prática.
-Analise a mensagem e retorne APENAS JSON.
+const SYSTEM_PROMPT = `Você é a Clara, assistente pessoal prática e útil.
+Analise a mensagem e retorne APENAS JSON válido.
 
-Se for clima, farmácia, restaurante, telefone, loja → use "busca"`;
+Se for sobre clima, farmácia, restaurante, loja, telefone → use "busca".`;
 
 async function classify(message) {
   try {
@@ -32,21 +32,19 @@ async function classify(message) {
 }
 
 async function searchWeb(query, locationContext = '') {
-  const fullQuery = locationContext 
-    ? `${query} em Fartura SP` 
-    : `${query} Fartura SP`;
+  const fullQuery = locationContext ? `${query} em Fartura SP` : `${query} Fartura SP`;
 
   const results = await webSearch(fullQuery);
 
   if (!results || results.length === 0) {
-    return "Não encontrei informações atualizadas agora.";
+    return "Não encontrei informações atualizadas agora. Tenta perguntar de outra forma?";
   }
 
-  let resposta = `Aqui o que encontrei sobre **${query}**:\n\n`;
+  let resposta = `Aqui está o que encontrei sobre **${query}** em Fartura:\n\n`;
 
   results.slice(0, 4).forEach(r => {
     if (r.title) resposta += `• ${r.title}\n`;
-    if (r.content) resposta += `${r.content.substring(0, 180)}...\n\n`;
+    if (r.content) resposta += `${r.content.substring(0, 160)}...\n\n`;
   });
 
   return resposta.trim();
@@ -57,7 +55,7 @@ async function freeResponse(message) {
     const completion = await groq.chat.completions.create({
       model: MODEL_FORTE,
       messages: [
-        { role: 'system', content: 'Você é a Clara, assistente carinhosa e útil.' },
+        { role: 'system', content: 'Você é a Clara, assistente carinhosa e prática.' },
         { role: 'user', content: message }
       ],
       temperature: 0.7,
