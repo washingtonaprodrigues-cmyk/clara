@@ -24,7 +24,6 @@ async function sendMessage(phone, message) {
   }
 }
 
-// Stub compatível — envia como texto simples com opções listadas
 async function sendButtons(phone, message, buttons) {
   const opcoes = buttons.map((b) => `• ${b.label}`).join('\n');
   return sendMessage(phone, `${message}\n\n${opcoes}`);
@@ -37,4 +36,14 @@ async function sendList(phone, message, buttonLabel, sections) {
   return sendMessage(phone, `${message}\n\n${texto}`);
 }
 
-module.exports = { sendMessage, sendButtons, sendList };
+// Nova função para enviar localização (caso precise)
+async function sendLocationRequest(phone) {
+  return sendMessage(phone, '📍 Me manda sua localização atual para eu te ajudar melhor com buscas locais (clima, farmácias, etc).');
+}
+
+module.exports = { 
+  sendMessage, 
+  sendButtons, 
+  sendList,
+  sendLocationRequest 
+};
