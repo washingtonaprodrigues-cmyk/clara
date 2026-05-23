@@ -1,21 +1,15 @@
 const Groq = require('groq-sdk');
+const { webSearch } = require('./search');
+
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const MODEL_LEVE = 'llama-3.1-8b-instant';
 const MODEL_FORTE = 'llama-3.3-70b-versatile';
 
-const SYSTEM_PROMPT = `Você é a Clara, assistente pessoal útil e prática.
-
+const SYSTEM_PROMPT = `Você é a Clara, assistente pessoal prática.
 Analise a mensagem e retorne APENAS JSON.
 
-- Se for sobre clima, farmácia, restaurante, loja, telefone, horário → use "busca"
-- Sempre inclua a cidade "Fartura SP" na query quando for busca local.
-
-Exemplo:
-{"tipo":"busca","query":"clima atual em Fartura SP hoje","resposta":"Vou verificar o clima pra você"}
-{"tipo":"busca","query":"farmácias de plantão perto de Fartura SP","resposta":"Buscando farmácias próximas..."}
-
-Responda somente com JSON.`;
+Se for clima, farmácia, restaurante, telefone, loja → use "busca"`;
 
 async function classify(message) {
   try {
@@ -38,26 +32,24 @@ async function classify(message) {
 }
 
 async function searchWeb(query, locationContext = '') {
-  try {
-    const fullQuery = locationContext ? `${query} em Fartura SP` : query;
+  const fullQuery = locationContext 
+    ? `${query} em Fartura SP` 
+    : `${query} Fartura SP`;
 
-    const completion = await groq.chat.completions.create({
-      model: MODEL_FORTE,
-      messages: [
-        { 
-          role: 'system', 
-          content: `Você é a Clara. Seja direta, prática e útil. Use informações atualizadas. Responda em português de forma natural. Máximo 6 linhas.` 
-        },
-        { role: 'user', content: fullQuery }
-      ],
-      temperature: 0.5,
-      max_tokens: 700,
-    });
+  const results = await webSearch(fullQuery);
 
-    return completion.choices[0].message.content.trim();
-  } catch (error) {
-    return 'Não consegui buscar essa informação agora. Tenta perguntar de outra forma?';
+  if (!results || results.length === 0) {
+    return "Não encontrei informações atualizadas agora.";
   }
+
+  let resposta = `Aqui o que encontrei sobre **${query}**:\n\n`;
+
+  results.slice(0, 4).forEach(r => {
+    if (r.title) resposta += `• ${r.title}\n`;
+    if (r.content) resposta += `${r.content.substring(0, 180)}...\n\n`;
+  });
+
+  return resposta.trim();
 }
 
 async function freeResponse(message) {
@@ -65,7 +57,7 @@ async function freeResponse(message) {
     const completion = await groq.chat.completions.create({
       model: MODEL_FORTE,
       messages: [
-        { role: 'system', content: 'Você é a Clara, assistente carinhosa e prática.' },
+        { role: 'system', content: 'Você é a Clara, assistente carinhosa e útil.' },
         { role: 'user', content: message }
       ],
       temperature: 0.7,
