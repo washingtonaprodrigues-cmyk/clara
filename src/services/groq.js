@@ -5,24 +5,24 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const MODEL_LEVE = 'llama-3.1-8b-instant';
 const MODEL_FORTE = 'llama-3.3-70b-versatile';
 
-// PROMPT DE CLASSIFICAÇÃO
-const SYSTEM_PROMPT = `Você é a Clara, assistente pessoal carinhosa e inteligente.
+// PROMPT MELHORADO - FOCO EM PONTO MÚLTIPLO
+const SYSTEM_PROMPT = `Você é a Clara, assistente pessoal prática e direta.
+
 Analise a mensagem e retorne APENAS JSON válido.
 
-PERSONALIDADE: Fale em primeira pessoa, tom acolhedor e natural.
+REGRAS IMPORTANTES:
+- Se a mensagem falar de "cheguei", "saí almoçar", "voltei do almoço", "saí", "fui embora" com horários → use "ponto_multiplo"
+- Seja muito sensível a frases de registro de ponto de trabalho.
 
-TIPOS:
-- anotacao
-- tarefa
-- gasto
-- saudacao
-- consulta
-- ponto
-- ponto_multiplo (quando tiver vários horários)
-- busca
-- outro
+Exemplos:
+Usuário: "Hoje cheguei 8:15, sai almoçar 12:30 e voltei 14:10"
+Resposta: {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:15"},{"subtipo":"saida_almoco","hora":"12:30"},{"subtipo":"volta_almoco","hora":"14:10"}],"resposta":"Registrando seus pontos..."}
 
-Hoje: ${new Date().toLocaleDateString('pt-BR')}`;
+Use sempre "ponto_multiplo" quando tiver 2 ou mais horários de trabalho.
+
+Outros tipos normais: anotacao, tarefa, gasto, busca, consulta, saudacao, outro.
+
+Responda SOMENTE com JSON.`;
 
 async function classify(message) {
   try {
@@ -33,7 +33,7 @@ async function classify(message) {
         { role: 'user', content: message },
       ],
       temperature: 0.1,
-      max_tokens: 600,
+      max_tokens: 700,
     });
 
     let text = completion.choices[0].message.content.trim();
@@ -41,41 +41,22 @@ async function classify(message) {
     return JSON.parse(text);
   } catch (error) {
     console.error('Erro classify:', error.message);
-    return { tipo: 'outro', resposta: 'Entendi! Pode continuar.' };
+    return { tipo: 'outro', resposta: 'Entendi!' };
   }
 }
 
+// Funções simplificadas
 async function searchWeb(query) {
   try {
     const completion = await groq.chat.completions.create({
       model: MODEL_FORTE,
-      messages: [
-        { role: 'system', content: 'Você é a Clara. Responda de forma útil e natural.' },
-        { role: 'user', content: `Pesquise sobre: ${query}` },
-      ],
+      messages: [{ role: 'user', content: `Pesquise de forma prática: ${query}` }],
       temperature: 0.4,
       max_tokens: 500,
     });
     return completion.choices[0].message.content.trim();
-  } catch (error) {
-    return 'Não consegui pesquisar agora.';
-  }
-}
-
-async function generateMemorySummary(memories, question) {
-  try {
-    const completion = await groq.chat.completions.create({
-      model: MODEL_FORTE,
-      messages: [
-        { role: 'system', content: 'Você é a Clara. Responda de forma natural.' },
-        { role: 'user', content: `Memórias:\n${memories.map(m => m.content).join('\n')}\n\nPergunta: ${question}` },
-      ],
-      temperature: 0.4,
-      max_tokens: 400,
-    });
-    return completion.choices[0].message.content.trim();
   } catch {
-    return 'Deixa eu verificar...';
+    return 'Não consegui pesquisar agora.';
   }
 }
 
@@ -84,29 +65,25 @@ async function freeResponse(message) {
     const completion = await groq.chat.completions.create({
       model: MODEL_FORTE,
       messages: [
-        { role: 'system', content: 'Você é a Clara, uma amiga inteligente e carinhosa.' },
-        { role: 'user', content: message },
+        { role: 'system', content: 'Você é a Clara, assistente carinhosa e prática. Responda de forma curta e útil.' },
+        { role: 'user', content: message }
       ],
       temperature: 0.7,
       max_tokens: 400,
     });
     return completion.choices[0].message.content.trim();
   } catch {
-    return 'Entendi! Como posso te ajudar?';
+    return 'Entendi! Como posso ajudar?';
   }
 }
 
 async function generateWorkSummary(logs, totalMinutes, extraMinutes) {
-  const horas = Math.floor(totalMinutes / 60);
-  const min = totalMinutes % 60;
-  const horasStr = `${horas}h${min > 0 ? min + 'min' : ''}`;
-  return `Hoje você trabalhou ${horasStr}.`;
+  return `Hoje você trabalhou ${Math.floor(totalMinutes/60)}h${totalMinutes%60 > 0 ? totalMinutes%60 + 'min' : ''}.`;
 }
 
 module.exports = {
   classify,
   searchWeb,
-  generateMemorySummary,
   freeResponse,
   generateWorkSummary,
 };
