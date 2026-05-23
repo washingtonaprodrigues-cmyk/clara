@@ -15,6 +15,12 @@ function dateBRT() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function minutesToHours(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h}h${m > 0 ? m + 'min' : ''}`;
+}
+
 // ====================== HANDLER PRINCIPAL ======================
 async function handleMessage(phone, text) {
   try {
@@ -32,47 +38,27 @@ async function handleMessage(phone, text) {
         await handlePonto(user, phone, classified.subtipo);
         break;
 
-      case 'anotacao':
-        await handleNote(user, phone, classified);
-        break;
-
-      case 'busca':
-        await handleBusca(user, phone, text);
-        break;
-
-      case 'consulta':
-        await handleQuery(user, phone, text);
-        break;
-
-      case 'saudacao':
-        await sendMessage(phone, 'Oi! Tudo bem por aí? 😊');
-        break;
-
       default:
         const resp = await freeResponse(text);
         await sendMessage(phone, resp);
     }
   } catch (error) {
-    console.error('Erro handleMessage:', error.message);
+    console.error('Erro:', error.message);
     await sendMessage(phone, 'Entendi! Pode repetir por favor?');
   }
 }
 
-// ====================== PONTO MÚLTIPLO - MELHORADO ======================
+// ====================== PONTO MÚLTIPLO - VERSÃO MELHORADA ======================
 async function handlePontoMultiplo(user, phone, acoes, originalText) {
-  if (!acoes || acoes.length === 0) {
-    return await sendMessage(phone, 'Não consegui entender os horários. Pode repetir?');
-  }
-
   await sendMessage(phone, '📍 Registrando seus pontos...');
 
   for (const acao of acoes) {
-    let subtipo = acao.subtipo.toLowerCase().trim();
-    
+    let subtipo = acao.subtipo.toLowerCase();
+
     if (subtipo.includes('cheg') || subtipo.includes('entrada')) subtipo = 'entrada';
     else if (subtipo.includes('saí') && subtipo.includes('almo')) subtipo = 'saida_almoco';
     else if (subtipo.includes('volt') && subtipo.includes('almo')) subtipo = 'volta_almoco';
-    else if (subtipo.includes('saí') || subtipo.includes('fui embora')) subtipo = 'saida';
+    else if (subtipo.includes('saí') || subtipo.includes('saindo')) subtipo = 'saida';
 
     const hora = acao.hora || 'agora';
 
@@ -88,35 +74,55 @@ async function handlePontoMultiplo(user, phone, acoes, originalText) {
     await sendMessage(phone, `✅ *${subtipo.replace('_', ' ')}* registrada às *${hora}*`);
   }
 
-  // Resumo final
-  await sendMessage(phone, `✅ Todos os pontos foram registrados com sucesso!\n\nQuer que eu calcule quantas horas você já trabalhou hoje?`);
+  // Calcula horas trabalhadas até agora
+  const resumo = await calcularHorasTrabalhadas(user.id);
+
+  let mensagemFinal = `📊 *Resumo de hoje*\n\n`;
+  mensagemFinal += `${resumo}\n\n`;
+  mensagemFinal += `A que horas você pretende sair hoje? Me fala que eu calculo quanto tempo ainda falta. 😊`;
+
+  await sendMessage(phone, mensagemFinal);
 }
 
-// ====================== OUTROS HANDLERS ======================
+// ====================== CÁLCULO DE HORAS ======================
+async function calcularHorasTrabalhadas(userId) {
+  const hoje = dateBRT();
+  const logs = await prisma.workLog.findMany({
+    where: { userId, date: hoje },
+    orderBy: { timestamp: 'asc' }
+  });
+
+  let entrada = null;
+  let saidaAlmoco = null;
+  let voltaAlmoco = null;
+  let totalMin = 0;
+
+  for (const log of logs) {
+    const hora = new Date(log.timestamp).getHours() * 60 + new Date(log.timestamp).getMinutes();
+
+    if (log.type === 'entrada') entrada = hora;
+    if (log.type === 'saida_almoco') saidaAlmoco = hora;
+    if (log.type === 'volta_almoco') voltaAlmoco = hora;
+  }
+
+  if (entrada && saidaAlmoco) {
+    totalMin += saidaAlmoco - entrada;
+  }
+  if (voltaAlmoco) {
+    // Se já voltou do almoço, consideramos até agora
+    const agora = nowBRT().getHours() * 60 + nowBRT().getMinutes();
+    totalMin += agora - voltaAlmoco;
+  }
+
+  return `Você já trabalhou **${minutesToHours(totalMin)}** hoje.`;
+}
+
 async function handlePonto(user, phone, subtipo) {
   const horaAtual = nowBRT().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   await prisma.workLog.create({
     data: { userId: user.id, type: subtipo, timestamp: nowBRT(), date: dateBRT() }
   });
   await sendMessage(phone, `✅ *${subtipo.replace('_', ' ')}* registrada às *${horaAtual}*`);
-}
-
-async function handleNote(user, phone, classified) {
-  await memory.saveMemory(user.id, 'anotacao', classified.conteudo || classified.titulo);
-  await sendMessage(phone, `📝 Anotei: *${classified.titulo || 'informação'}*`);
-}
-
-async function handleBusca(user, phone, text) {
-  await sendMessage(phone, '🔍 Pesquisando...');
-  const result = await searchWeb(text);
-  await sendMessage(phone, result);
-}
-
-async function handleQuery(user, phone, text) {
-  const memories = await memory.getRecentMemories(user.id, 20);
-  if (memories.length === 0) return await sendMessage(phone, 'Ainda não tenho registros seus.');
-  // Temporário
-  await sendMessage(phone, 'Deixa eu verificar suas memórias...');
 }
 
 module.exports = { handleMessage };
