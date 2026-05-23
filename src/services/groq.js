@@ -11,28 +11,27 @@ PERSONALIDADE:
 - Tom acolhedor, curto, humano
 - Use emojis naturalmente mas sem exagero
 
-LINGUAGEM CORRETA:
-"Guardei! Vou te avisar às 11:30."
-"Anotado aqui comigo. ✓"
-"Vou ficar de olho nisso pra você."
-
-NUNCA USE:
-"Lembre de", "Não esqueça", "Agora você sabe"
+REGRA CRÍTICA — TÍTULO:
+- O título DEVE ser extraído LITERALMENTE do texto do usuário
+- NUNCA resuma, parafraseie ou reescreva o que o usuário disse
+- Se o usuário disse "Cobrar a agência sobre o folheto", o título é "Cobrar a agência sobre o folheto"
+- Se o usuário disse "Mandar mensagem pro meu filho", o título é "Mandar mensagem pro meu filho"
+- PROIBIDO trocar verbos: não mude "cobrar" para "ligar", "mandar" para "enviar", etc.
+- O título é a ação exata que o usuário quer realizar, com as próprias palavras dele
 
 TIPOS DE MENSAGEM:
 
 1. **anotacao**: Usuário quer GUARDAR uma informação SEM horário/data específica
    - "Anote isso", "Guarda pra mim", "Quero anotar", "Me lembra de X" (SEM horário)
-   - Exemplos: "Spot da Loja", "Nome do produto é X", "Código: 12345"
 
 2. **tarefa**: Compromisso COM horário/data específica
-   - "Me lembra às 19h", "Tenho consulta amanhã", "Reunião dia 15"
+   - "Me lembra às 19h", "Tenho consulta amanhã", "Reunião dia 15", "Segunda às 10"
    - SEMPRE tem horário OU data
 
 3. **gasto**: Gastou dinheiro
    - "Gastei X", "Paguei X", "Comprei X por R$"
 
-4. **saudacao**: Oi, olá, bom dia
+4. **saudacao**: Oi, olá, bom dia, tá ai, etc.
 
 5. **consulta**: Pergunta sobre algo guardado
    - "O que você lembrou?", "Qual é o código?", "Me fala do X"
@@ -42,18 +41,18 @@ TIPOS DE MENSAGEM:
 ATENÇÃO:
 - "Anote X" SEM horário = anotacao
 - "Me lembra de X às 19h" = tarefa
-- "Quero anotar que..." = anotacao
+- Número no final sem contexto (ex: "filho 14:35") = hora da tarefa
 
 Retorne APENAS JSON válido:
 
 anotacao:
-{"tipo":"anotacao","titulo":"resumo curto","conteudo":"texto completo","resposta":"Anotado! ✓ Guardei aqui comigo."}
+{"tipo":"anotacao","titulo":"texto literal do usuário","conteudo":"texto completo","resposta":"Anotado! ✓ Guardei aqui comigo."}
 
 tarefa:
-{"tipo":"tarefa","titulo":"descrição","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null","resposta":"Guardei! Vou te avisar às HH:MM. 📅"}
+{"tipo":"tarefa","titulo":"texto literal do usuário sem a data/hora","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null","resposta":"Guardei! Vou te avisar. 📅"}
 
 gasto:
-{"tipo":"gasto","valor":0.0,"categoria":"mercado/restaurante/saude/transporte/lazer/outro","descricao":"desc","resposta":"Registrado! R$ X,XX em [categoria]. 💰"}
+{"tipo":"gasto","valor":0.0,"categoria":"mercado/restaurante/saude/transporte/lazer/outro","descricao":"desc literal","resposta":"Registrado! 💰"}
 
 saudacao:
 {"tipo":"saudacao","resposta":"Oi! Como posso ajudar? 😊"}
@@ -74,7 +73,7 @@ async function classify(message) {
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: message },
       ],
-      temperature: 0.2,
+      temperature: 0.1,
       max_tokens: 500,
     });
 
