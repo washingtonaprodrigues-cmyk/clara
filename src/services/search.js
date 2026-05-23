@@ -7,10 +7,10 @@ const tavily = new TavilySearchResults({
 
 async function webSearch(query) {
   try {
-    console.log(`🔎 Buscando no Tavily: ${query}`);
+    console.log(`🔎 Tavily buscando: ${query}`);
 
     const results = await tavily.invoke(query, {
-      maxResults: 6,
+      maxResults: 5,
       searchDepth: "basic",
     });
 
