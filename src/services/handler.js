@@ -84,20 +84,17 @@ function parseHora(text) {
 
 function formatDate(date) {
   if (!date) return null;
-  const d = new Date(date);
-  return d.toLocaleDateString('pt-BR', {
+  return new Date(date).toLocaleDateString('pt-BR', {
     weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
     timeZone: 'America/Sao_Paulo',
   });
 }
 
-// Capitaliza primeira letra
 function cap(str) {
   if (!str) return str;
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-// Detecta ações por texto livre
 function detectarAcaoTexto(text) {
   const t = text.toLowerCase().trim();
   if (/^(excluir|deletar|apagar|remover|remove)$/i.test(t)) return 'excluir';
@@ -109,20 +106,16 @@ function detectarAcaoTexto(text) {
 
 // ─────────────────────────────────────────────
 // CONTEXTO DA ÚLTIMA AÇÃO
-// Salva o último item criado/notificado para referência
 // ─────────────────────────────────────────────
 async function salvarContexto(userId, tipo, id, titulo) {
-  await prisma.memory.upsert({
-    where: { id: `ctx_${userId}` },
-    update: { type: 'contexto_ativo', content: JSON.stringify({ tipo, id, titulo }), metadata: null },
-    create: { id: `ctx_${userId}`, userId, type: 'contexto_ativo', content: JSON.stringify({ tipo, id, titulo }) },
-  }).catch(async () => {
-    // upsert com id customizado pode falhar dependendo do schema — fallback: delete + create
+  try {
     await prisma.memory.deleteMany({ where: { userId, type: 'contexto_ativo' } });
     await prisma.memory.create({
       data: { userId, type: 'contexto_ativo', content: JSON.stringify({ tipo, id, titulo }) },
     });
-  });
+  } catch (e) {
+    console.error('Erro salvarContexto:', e.message);
+  }
 }
 
 async function getContexto(userId) {
@@ -132,6 +125,15 @@ async function getContexto(userId) {
   });
   if (!mem) return null;
   try { return JSON.parse(mem.content); } catch { return null; }
+}
+
+// ─────────────────────────────────────────────
+// MENSAGEM COM BOTÕES — sem duplicar opções no texto
+// ─────────────────────────────────────────────
+async function enviarComBotoes(phone, texto, botoes) {
+  // sendButtons já adiciona os bullets como fallback quando não há botões reais
+  // então NÃO incluímos as opções no texto principal
+  await sendButtons(phone, texto, botoes);
 }
 
 // ─────────────────────────────────────────────
@@ -180,24 +182,20 @@ async function handleMessage(phone, text) {
 }
 
 // ─────────────────────────────────────────────
-// AÇÃO POR TEXTO LIVRE — usa contexto da última ação
+// AÇÃO POR TEXTO LIVRE
 // ─────────────────────────────────────────────
 async function handleAcaoTexto(user, phone, acao) {
   const ctx = await getContexto(user.id);
 
   if (acao === 'editar') {
-    if (ctx) {
-      await sendMessage(phone,
-        `✏️ O que você quer mudar em *"${ctx.titulo}"*?\n\nMe manda a correção assim:\n• _"muda o horário para 15h"_\n• _"muda para terça-feira"_\n• _"o título é cobrar a agência"_`
-      );
-    } else {
-      await sendMessage(phone, '✏️ O que você quer mudar? Me manda a correção que ajusto aqui mesmo.\n\nEx: _"o valor era 80"_, _"muda pra sexta às 16h"_');
-    }
+    const sobre = ctx ? `*"${ctx.titulo}"*` : 'o último item';
+    await sendMessage(phone,
+      `✏️ O que você quer mudar em ${sobre}?\n\nMe manda a correção:\n_"muda o horário para 15h"_\n_"muda para terça-feira"_`
+    );
     return;
   }
 
   if (acao === 'excluir') {
-    // Tenta usar contexto primeiro
     if (ctx?.tipo === 'task') {
       const task = await prisma.task.findUnique({ where: { id: ctx.id } }).catch(() => null);
       if (task && !task.done) {
@@ -211,7 +209,6 @@ async function handleAcaoTexto(user, phone, acao) {
       await sendMessage(phone, `🗑️ Lembrete *"${ctx.titulo}"* removido!`);
       return;
     }
-    // Fallback: última tarefa aberta
     const task = await prisma.task.findFirst({
       where: { userId: user.id, done: false },
       orderBy: { createdAt: 'desc' },
@@ -224,19 +221,11 @@ async function handleAcaoTexto(user, phone, acao) {
   }
 
   if (acao === 'concluir') {
-    if (ctx?.tipo === 'task') {
-      const task = await prisma.task.findUnique({ where: { id: ctx.id } }).catch(() => null);
-      if (task && !task.done) {
-        await prisma.task.update({ where: { id: task.id }, data: { done: true } });
-        await sendMessage(phone, `✅ *"${task.title}"* concluída! Mandou bem. 💪`);
-        return;
-      }
-    }
-    const task = await prisma.task.findFirst({
-      where: { userId: user.id, done: false },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (task) {
+    const taskId = ctx?.tipo === 'task' ? ctx.id : null;
+    const task = taskId
+      ? await prisma.task.findUnique({ where: { id: taskId } }).catch(() => null)
+      : await prisma.task.findFirst({ where: { userId: user.id, done: false }, orderBy: { createdAt: 'desc' } });
+    if (task && !task.done) {
       await prisma.task.update({ where: { id: task.id }, data: { done: true } });
       await sendMessage(phone, `✅ *"${task.title}"* concluída! Mandou bem. 💪`);
       return;
@@ -244,17 +233,12 @@ async function handleAcaoTexto(user, phone, acao) {
   }
 
   if (acao === 'confirmar') {
-    if (ctx?.tipo === 'reminder') {
-      await prisma.reminder.update({ where: { id: ctx.id }, data: { confirmed: true, sent: true } }).catch(() => {});
-      await sendMessage(phone, `✅ Ótimo! *"${ctx.titulo}"* marcado como feito.`);
-      return;
-    }
-    const reminder = await prisma.reminder.findFirst({
-      where: { userId: user.id, sent: true, confirmed: false },
-      orderBy: { createdAt: 'desc' },
-    });
+    const remId = ctx?.tipo === 'reminder' ? ctx.id : null;
+    const reminder = remId
+      ? await prisma.reminder.findUnique({ where: { id: remId } }).catch(() => null)
+      : await prisma.reminder.findFirst({ where: { userId: user.id, sent: true, confirmed: false }, orderBy: { createdAt: 'desc' } });
     if (reminder) {
-      await prisma.reminder.update({ where: { id: reminder.id }, data: { confirmed: true } });
+      await prisma.reminder.update({ where: { id: reminder.id }, data: { confirmed: true, sent: true } });
       await sendMessage(phone, `✅ Ótimo! Marcado como feito.`);
       return;
     }
@@ -264,7 +248,7 @@ async function handleAcaoTexto(user, phone, acao) {
 }
 
 // ─────────────────────────────────────────────
-// AÇÕES DE BOTÃO REAL (Z-API)
+// AÇÕES DE BOTÃO REAL
 // ─────────────────────────────────────────────
 async function handleButtonAction(user, phone, text) {
   const parts = text.split('__').filter(Boolean);
@@ -305,24 +289,22 @@ async function handleButtonAction(user, phone, text) {
 // ─────────────────────────────────────────────
 async function handleNote(user, phone, classified) {
   await memory.saveMemory(user.id, 'anotacao', classified.conteudo, { titulo: classified.titulo });
+  await salvarContexto(user.id, 'note', user.id, classified.titulo);
+
   const msg =
     `📝 *Anotação salva!*\n\n` +
-    `📌 ${classified.titulo}\n` +
-    `💬 ${classified.conteudo}\n\n` +
-    `💡 Se quiser mudar algo, escreva:\n` +
-    `✏️ editar   🗑️ excluir`;
-  await sendButtons(phone, msg, [
+    `📌 ${cap(classified.titulo)}\n` +
+    `💬 ${classified.conteudo}`;
+
+  await enviarComBotoes(phone, msg, [
     { id: `__btn__excluir_note__${user.id}`, label: '🗑️ Excluir' },
   ]);
-  await salvarContexto(user.id, 'note', user.id, classified.titulo);
 }
 
 async function handleTask(user, phone, classified, originalText) {
-  // Título: usa o texto original limpo, sem deixar o Groq reescrever
-  // Remove prefixos como "segunda às 10", "amanhã", etc. para ficar só a ação
   const titulo = classified.titulo;
 
-  // Data: texto original primeiro
+  // Data: texto original primeiro, fallback Groq
   let dueDate = parseRelativeDate(originalText);
   if (!dueDate && classified.data && classified.data !== 'null') {
     const parsed = new Date(classified.data);
@@ -332,9 +314,16 @@ async function handleTask(user, phone, classified, originalText) {
       dueDate = parsed;
     }
   }
+  // Se ainda não tem data mas tem hora → assume hoje
+  const horaFinalTemp = parseHora(originalText) || (classified.hora !== 'null' ? classified.hora : null);
+  if (!dueDate && horaFinalTemp) {
+    const nowBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    dueDate = new Date(nowBRT);
+  }
+
   if (dueDate) dueDate.setHours(12, 0, 0, 0);
 
-  // Hora: texto original primeiro
+  // Hora
   let horaFinal = parseHora(originalText);
   if (!horaFinal && classified.hora && classified.hora !== 'null') horaFinal = classified.hora;
 
@@ -343,7 +332,6 @@ async function handleTask(user, phone, classified, originalText) {
   });
 
   // Cria Reminder para o job
-  let reminderId = null;
   if (dueDate && horaFinal) {
     const [h, m] = horaFinal.split(':').map(Number);
     const scheduledAt = new Date(dueDate);
@@ -355,23 +343,22 @@ async function handleTask(user, phone, classified, originalText) {
           scheduledAt, sent: false, confirmed: false, attempts: 0,
         },
       });
-      reminderId = reminder.id;
+      await salvarContexto(user.id, 'reminder', reminder.id, titulo);
+    } else {
+      await salvarContexto(user.id, 'task', task.id, titulo);
     }
+  } else {
+    await salvarContexto(user.id, 'task', task.id, titulo);
   }
 
-  // Salva contexto para referência futura
-  await salvarContexto(user.id, 'task', task.id, titulo);
-
-  // Mensagem bonita
+  // Mensagem — sem repetir opções no texto (sendButtons já adiciona como fallback)
   let msg = `🔔 *Lembrete criado com sucesso!*\n\n`;
   msg += `📌 ${cap(titulo)}\n`;
   if (dueDate) msg += `📅 ${cap(formatDate(dueDate))}\n`;
   if (horaFinal) msg += `⏰ ${horaFinal}\n`;
-  msg += `\n💬 Vou te avisar na hora certa!\n\n`;
-  msg += `💡 Se quiser mudar algo, escreva:\n`;
-  msg += `✏️ editar   ✅ concluir   🗑️ excluir`;
+  msg += `\n💬 Vou te avisar na hora certa!`;
 
-  await sendButtons(phone, msg, [
+  await enviarComBotoes(phone, msg, [
     { id: `__btn__concluir_task__${task.id}`, label: '✅ Concluir' },
     { id: `__btn__excluir_task__${task.id}`, label: '🗑️ Excluir' },
   ]);
@@ -400,11 +387,9 @@ async function handleExpense(user, phone, classified) {
     `📌 ${cap(classified.descricao)}\n` +
     `💵 ${valorFormatado}\n` +
     `📂 ${cap(classified.categoria)}\n` +
-    `📅 ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\n\n` +
-    `💡 Se quiser mudar algo, escreva:\n` +
-    `✏️ editar   🗑️ excluir`;
+    `📅 ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;
 
-  await sendButtons(phone, msg, [
+  await enviarComBotoes(phone, msg, [
     { id: `__btn__excluir_expense__${expense.id}`, label: '🗑️ Excluir' },
   ]);
 }
@@ -423,9 +408,8 @@ async function sendReminderWithButtons(phone, message, reminderId) {
   const msg =
     `🔔 *Hora do seu lembrete!*\n\n` +
     `📌 ${cap(message)}\n\n` +
-    `💬 Conseguiu fazer?\n\n` +
-    `✅ confirmar   🗑️ excluir`;
-  await sendButtons(phone, msg, [
+    `💬 Conseguiu fazer?`;
+  await enviarComBotoes(phone, msg, [
     { id: `__btn__confirmar_reminder__${reminderId}`, label: '✅ Feito!' },
     { id: `__btn__excluir_reminder__${reminderId}`, label: '🗑️ Excluir' },
   ]);
