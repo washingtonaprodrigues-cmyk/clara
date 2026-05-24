@@ -1,4 +1,3 @@
-// src/services/search.js
 const { tavily } = require('@tavily/core');
 
 const tvly = tavily({
@@ -7,10 +6,10 @@ const tvly = tavily({
 
 async function webSearch(query) {
   try {
-    console.log(`🔎 Buscando: ${query}`);
+    console.log(`🔎 Tavily: ${query}`);
 
     const response = await tvly.search(query, {
-      maxResults: 3,
+      maxResults: 5,
       searchDepth: "basic",
     });
 
@@ -18,7 +17,6 @@ async function webSearch(query) {
       return null;
     }
 
-    // limpa e resume resultados
     const cleaned = response.results.map(result => ({
       title: result.title,
       content: result.content?.slice(0, 300),
