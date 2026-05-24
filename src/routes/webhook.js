@@ -6,47 +6,30 @@ router.post('/receive', async (req, res) => {
   try {
     const body = req.body;
 
-    // Ignora mensagens enviadas pela própria Clara
     if (body.fromMe) {
       return res.json({ ok: true });
     }
 
-    const phone = body.phone || body.from;
-
-    // ====================== TRATAMENTO DE LOCALIZAÇÃO ======================
-    if (body.location || body.latitude || body.longitude) {
-      const latitude = body.location?.latitude || body.latitude;
-      const longitude = body.location?.longitude || body.longitude;
-      const address = body.location?.address || body.address || null;
-
-      console.log(`📍 Localização recebida de ${phone}: ${latitude}, ${longitude}`);
-
-      // Envia para o handler com localização
-      handleMessage(phone, null, { latitude, longitude, address }).catch(console.error);
-      
+    if (!body.text?.message) {
       return res.json({ ok: true });
     }
 
-    // ====================== TRATAMENTO DE TEXTO ======================
-    if (body.text?.message) {
-      const text = body.text.message;
-      console.log(`📩 Mensagem de ${phone}: ${text}`);
+    const phone = body.phone;
+    const text = body.text.message;
 
-      handleMessage(phone, text, null).catch(console.error);
-      return res.json({ ok: true });
-    }
+    console.log(`📩 ${phone}: ${text}`);
 
-    // Outros tipos de mensagem (áudio, imagem, etc) - por enquanto ignoramos
+    handleMessage(phone, text).catch(console.error);
+
     res.json({ ok: true });
-
   } catch (error) {
-    console.error('Erro no webhook:', error);
+    console.error('Erro webhook:', error);
     res.status(500).json({ error: 'Erro interno' });
   }
 });
 
 router.get('/test', (req, res) => {
-  res.json({ status: 'Clara webhook funcionando ✅' });
+  res.json({ status: 'Clara funcionando ✅' });
 });
 
 module.exports = router;
