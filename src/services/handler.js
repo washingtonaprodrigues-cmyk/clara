@@ -1,4 +1,4 @@
-const { classify, searchWeb, freeResponse } = require('./groq');
+const { classify, searchWeb, freeResponse, generateMemorySummary } = require('./groq');
 const { sendMessage } = require('./whatsapp');
 const memory = require('./memory');
 const { PrismaClient } = require('@prisma/client');
@@ -35,7 +35,7 @@ async function handleMessage(phone, text, location = null) {
           updatedAt: new Date().toISOString()
         })
       );
-      return await sendMessage(phone, '✅ Localização recebida! Agora posso te ajudar melhor com clima, farmácias, restaurantes e lojas próximas.');
+      return await sendMessage(phone, '✅ Localização recebida! Agora posso te ajudar melhor com clima, farmácias e lojas próximas.');
     }
 
     // ====================== MENSAGEM DE TEXTO ======================
@@ -53,8 +53,24 @@ async function handleMessage(phone, text, location = null) {
         await handleBusca(user, phone, classified.query || text);
         break;
 
+      case 'anotacao':
+        await handleNote(user, phone, classified);
+        break;
+
+      case 'tarefa':
+        await handleTask(user, phone, classified);
+        break;
+
+      case 'gasto':
+        await handleExpense(user, phone, classified);
+        break;
+
+      case 'consulta':
+        await handleQuery(user, phone, text);
+        break;
+
       case 'saudacao':
-        await sendMessage(phone, 'Oi! Tudo bem? Como posso te ajudar hoje? 😊');
+        await sendMessage(phone, 'Oi! Tudo bem? Como posso te ajudar? 😊');
         break;
 
       default:
@@ -63,11 +79,11 @@ async function handleMessage(phone, text, location = null) {
     }
   } catch (error) {
     console.error('Erro handleMessage:', error.message);
-    await sendMessage(phone, 'Entendi! Pode repetir por favor?');
+    await sendMessage(phone, 'Ops, tive um probleminha. Pode repetir?');
   }
 }
 
-// ====================== PONTO MÚLTIPLO (mantido bom) ======================
+// ====================== PONTO MÚLTIPLO ======================
 async function handlePontoMultiplo(user, phone, acoes, originalText) {
   await sendMessage(phone, '📍 Registrando seus pontos...');
 
@@ -82,7 +98,6 @@ async function handlePontoMultiplo(user, phone, acoes, originalText) {
     else if (subtipo.includes('saí') || subtipo.includes('saindo')) subtipo = 'saida';
 
     const horaUsada = acao.hora || 'agora';
-
     const timestamp = horaUsada !== 'agora' ? convertToDateWithTime(horaUsada) : nowBRT();
 
     await prisma.workLog.create({
@@ -103,7 +118,6 @@ function convertToDateWithTime(horaStr) {
   return date;
 }
 
-// ====================== RESUMO BONITO ======================
 async function gerarResumoBonito(registros) {
   let entrada = registros.find(r => r.subtipo === 'entrada')?.hora || '—';
   let saidaAlmoco = registros.find(r => r.subtipo === 'saida_almoco')?.hora || '—';
@@ -117,38 +131,81 @@ async function gerarResumoBonito(registros) {
     tempoManha = minutesToHours(minutos);
   }
 
-  let texto = `✨ *Resumo do seu dia até agora*\n\n`;
+  let texto = `✨ *Resumo do seu dia*\n\n`;
   texto += `🟢 Entrada: *${entrada}*\n`;
-  texto += `🍽️ Saída para almoço: *${saidaAlmoco}*\n`;
-  texto += `⏱️ Tempo trabalhado pela manhã → *${tempoManha}*\n`;
-  texto += `🔄 Retorno do almoço: *${voltaAlmoco}*\n\n`;
-
-  texto += `📌 Estou acompanhando seu expediente.\n\n`;
-  texto += `💡 Me avisa quando for sair que eu te mostro o resumo completo do dia!`;
+  texto += `🍽️ Saída almoço: *${saidaAlmoco}*\n`;
+  texto += `⏱️ Manhã: *${tempoManha}*\n`;
+  texto += `🔄 Volta almoço: *${voltaAlmoco}*\n\n`;
+  texto += `💡 Me avisa quando sair!`;
 
   return texto;
 }
 
-// ====================== BUSCA COM LOCALIZAÇÃO ======================
+// ====================== BUSCA ======================
 async function handleBusca(user, phone, query) {
-  await sendMessage(phone, '🔍 Buscando informações pra você...');
+  await sendMessage(phone, '🔍 Buscando...');
 
-  // Pega última localização salva
-  const lastLocationMem = await memory.getRecentMemories(user.id, 3);
+  const lastLocationMem = await memory.getRecentMemories(user.id, 5);
   const locationMem = lastLocationMem.find(m => m.type === 'localizacao');
 
   let locationText = '';
   if (locationMem) {
     try {
       const loc = JSON.parse(locationMem.content);
-      locationText = `Localização: ${loc.latitude}, ${loc.longitude}`;
+      locationText = `${loc.latitude}, ${loc.longitude}`;
     } catch (e) {
-      locationText = locationMem.content;
+      locationText = '';
     }
   }
 
   const resultado = await searchWeb(query, locationText);
   await sendMessage(phone, resultado);
+}
+
+// ====================== ANOTAÇÃO ======================
+async function handleNote(user, phone, classified) {
+  await memory.saveMemory(user.id, 'anotacao', classified.conteudo, { 
+    titulo: classified.titulo 
+  });
+  await sendMessage(phone, 'Anotado! ✓ Guardei aqui comigo.');
+}
+
+// ====================== TAREFA ======================
+async function handleTask(user, phone, classified) {
+  await memory.saveMemory(user.id, 'tarefa', classified.titulo, {
+    data: classified.data,
+    hora: classified.hora,
+  });
+  
+  let msg = 'Guardei! 📅';
+  if (classified.hora) {
+    msg = `Vou te lembrar às *${classified.hora}*. 📅`;
+  }
+  
+  await sendMessage(phone, msg);
+}
+
+// ====================== GASTO ======================
+async function handleExpense(user, phone, classified) {
+  await memory.saveMemory(user.id, 'gasto', classified.descricao, {
+    valor: classified.valor,
+    categoria: classified.categoria,
+  });
+  
+  await sendMessage(phone, `Registrado! R$ ${classified.valor.toFixed(2)} em ${classified.categoria}. 💰`);
+}
+
+// ====================== CONSULTA ======================
+async function handleQuery(user, phone, question) {
+  const memories = await memory.getRecentMemories(user.id, 30);
+
+  if (memories.length === 0) {
+    await sendMessage(phone, 'Ainda não guardei nada pra você. Me conta algo!');
+    return;
+  }
+
+  const answer = await generateMemorySummary(memories, question);
+  await sendMessage(phone, answer);
 }
 
 module.exports = { handleMessage };
