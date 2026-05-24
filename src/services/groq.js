@@ -76,18 +76,37 @@ async function searchWeb(query, locationContext = '') {
       return "Não encontrei informações atualizadas. Pode tentar de outra forma?";
     }
 
-    let resposta = '';
-
-    if (data.answer) {
-      resposta += `${data.answer}\n\n`;
-    }
-
+    // Monta contexto para o modelo resumir
+    let contexto = '';
+    if (data.answer) contexto += `Resposta direta: ${data.answer}\n\n`;
     data.results.slice(0, 3).forEach((r) => {
-      if (r.title) resposta += `*${r.title}*\n`;
-      if (r.content) resposta += `${r.content.substring(0, 200)}...\n\n`;
+      if (r.title) contexto += `Fonte: ${r.title}\n`;
+      if (r.content) contexto += `${r.content.substring(0, 300)}\n\n`;
     });
 
-    return resposta.trim();
+    // Pede para a Clara resumir de forma natural
+    const completion = await groq.chat.completions.create({
+      model: MODEL_LEVE,
+      messages: [
+        {
+          role: 'system',
+          content: `Você é a Clara, assistente pessoal simpática e direta.
+Com base nas informações de busca, responda de forma curta, natural e amigável em português brasileiro.
+Não cite fontes, não use markdown, não repita a pergunta.
+Se for clima, diga temperatura e condição do tempo de forma simples.
+Se for telefone ou endereço, destaque a informação principal.
+Máximo 3 linhas.`,
+        },
+        {
+          role: 'user',
+          content: `Pergunta: ${query}\n\nInformações encontradas:\n${contexto}`,
+        },
+      ],
+      temperature: 0.4,
+      max_tokens: 200,
+    });
+
+    return completion.choices[0].message.content.trim();
   } catch (error) {
     console.error('Erro searchWeb:', error.message);
     return "Não consegui buscar essa informação agora.";
