@@ -44,4 +44,16 @@ async function sendReminderWithButtons(phone, message, reminderId) {
     return response.data;
   } catch (error) {
     console.error('Erro Z-API sendReminderWithButtons:', error.response?.data || error.message);
-    return sendMessage(phone, `⏰ *Lembrete*\n\n${message}\n\nResponda: *
+    return sendMessage(phone, `⏰ *Lembrete*\n\n${message}\n\nResponda: *feito*, *+10min* ou *cancelar*`);
+  }
+}
+
+async function sendLocationRequest(phone) {
+  return sendMessage(phone, '📍 Me manda sua localização para buscas locais.');
+}
+
+module.exports = {
+  sendMessage,
+  sendReminderWithButtons,
+  sendLocationRequest,
+};
