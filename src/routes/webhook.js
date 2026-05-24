@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+
 const { handleMessage } = require('../services/handler');
 
 router.post('/receive', async (req, res) => {
@@ -10,26 +11,51 @@ router.post('/receive', async (req, res) => {
       return res.json({ ok: true });
     }
 
-    if (!body.text?.message) {
+    const phone = body.phone;
+
+    // TEXTO
+    if (body.text?.message) {
+      const text = body.text.message;
+
+      console.log(`📩 ${phone}: ${text}`);
+
+      handleMessage(phone, text)
+        .catch(console.error);
+
       return res.json({ ok: true });
     }
 
-    const phone = body.phone;
-    const text = body.text.message;
+    // LOCALIZAÇÃO
+    if (body.location) {
+      console.log(`📍 Localização recebida de ${phone}`);
 
-    console.log(`📩 ${phone}: ${text}`);
+      handleMessage(
+        phone,
+        null,
+        {
+          latitude: body.location.latitude,
+          longitude: body.location.longitude,
+        }
+      ).catch(console.error);
 
-    handleMessage(phone, text).catch(console.error);
+      return res.json({ ok: true });
+    }
 
-    res.json({ ok: true });
+    return res.json({ ok: true });
+
   } catch (error) {
     console.error('Erro webhook:', error);
-    res.status(500).json({ error: 'Erro interno' });
+
+    return res.status(500).json({
+      error: 'Erro interno'
+    });
   }
 });
 
 router.get('/test', (req, res) => {
-  res.json({ status: 'Clara funcionando ✅' });
+  res.json({
+    status: 'Clara funcionando ✅'
+  });
 });
 
 module.exports = router;
