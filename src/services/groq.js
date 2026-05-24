@@ -18,7 +18,10 @@ TIPOS:
   - "saida_almoco" → saí pra almoçar, fui almoçar, saída almoço
   - "volta_almoco" → voltei do almoço, retornei do almoço
   - "saida" → saí do trabalho, fui embora, saída final
-  
+
+- cidade: quando o usuário informa sua cidade
+  {"tipo":"cidade","cidade":"nome da cidade e estado"}
+
 - busca: clima, farmácia, restaurante, loja, telefone, informações locais
   {"tipo":"busca","query":"texto da busca"}
   
@@ -50,6 +53,8 @@ EXEMPLOS PONTO:
   ]}
 
 "cheguei às 8" → {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
+"minha cidade é Carlópolis PR" → {"tipo":"cidade","cidade":"Carlópolis, Paraná"}
+"Carlópolis Paraná" → {"tipo":"cidade","cidade":"Carlópolis, Paraná"}
 "farmácia perto" → {"tipo":"busca","query":"farmácia próxima"}
 "anote que o código é 123" → {"tipo":"anotacao","titulo":"código","conteudo":"o código é 123"}
 "me lembra às 19h de buscar minha sogra" → {"tipo":"tarefa","titulo":"buscar sogra","data":null,"hora":"19:00"}
@@ -112,8 +117,8 @@ Para clima use emojis que representem o tempo:
 
 Formato ideal para clima:
 - Primeira linha: condição atual com emoji + temperatura agora
-- Segunda linha: previsão dos próximos dias resumida (ex: Seg ☀️ 22° | Ter 🌧️ 18° | Qua ⛅ 20°)
-- Terceira linha: dica rápida se necessário (ex: "Leva guarda-chuva!")
+- Segunda linha: previsão dos próximos dias (ex: Seg ☀️ 22° | Ter 🌧️ 18° | Qua ⛅ 20°)
+- Terceira linha: dica rápida se necessário (ex: "Leva guarda-chuva! ☂")
 
 Para outros tipos de busca (telefone, endereço, etc): destaque a informação principal em no máximo 2 linhas.`,
         },
