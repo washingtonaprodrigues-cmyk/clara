@@ -52,6 +52,9 @@ async function handleMessage(phone, text, location = null) {
       case 'ponto_multiplo':
         await handlePontoMultiplo(user, phone, classified.acoes, text);
         break;
+      case 'cidade':
+        await handleCidade(user, phone, classified.cidade);
+        break;
       case 'busca':
         await handleBusca(user, phone, classified.query || text);
         break;
@@ -83,10 +86,8 @@ async function handleMessage(phone, text, location = null) {
 // ====================== SAUDAÇÃO ======================
 async function handleSaudacao(user, phone) {
   const cidade = await getCidadeUsuario(user.id);
-
   if (!cidade) {
     await sendMessage(phone, 'Oi! 😊 Para te ajudar melhor com clima e buscas locais, qual é a sua cidade?');
-    await memory.saveMemory(user.id, 'aguardando', 'cidade');
   } else {
     await sendMessage(phone, 'Oi! Tudo bem? Como posso te ajudar? 😊');
   }
@@ -98,6 +99,12 @@ async function getCidadeUsuario(userId) {
   return cidadeMem ? cidadeMem.content : null;
 }
 
+// ====================== CIDADE ======================
+async function handleCidade(user, phone, cidade) {
+  await memory.saveMemory(user.id, 'cidade', cidade);
+  await sendMessage(phone, `Anotei! 📍 Vou usar *${cidade}* para buscas locais.`);
+}
+
 // ====================== PONTO MÚLTIPLO ======================
 async function handlePontoMultiplo(user, phone, acoes, originalText) {
   await sendMessage(phone, '📍 Registrando seus pontos...');
@@ -107,7 +114,6 @@ async function handlePontoMultiplo(user, phone, acoes, originalText) {
   for (const acao of acoes) {
     let subtipo = (acao.subtipo || '').toLowerCase().trim();
 
-    // Normaliza subtipo com mapeamento direto primeiro
     if (subtipo === 'entrada' || subtipo.includes('cheg') || subtipo.includes('entrei')) {
       subtipo = 'entrada';
     } else if (subtipo === 'saida_almoco' || subtipo.includes('saida_almoco') ||
@@ -225,10 +231,10 @@ async function handleBusca(user, phone, query) {
 
   const mems = await memory.getRecentMemories(user.id, 20);
 
-  // Tenta localização GPS primeiro
-  const locationMem = mems.find(m => m.type === 'localizacao');
   let locationText = '';
 
+  // Tenta GPS primeiro
+  const locationMem = mems.find(m => m.type === 'localizacao');
   if (locationMem) {
     try {
       const loc = JSON.parse(locationMem.content);
@@ -242,22 +248,22 @@ async function handleBusca(user, phone, query) {
     if (cidadeMem) locationText = cidadeMem.content;
   }
 
-  const resultado = await searchWeb(query, locationText);
+  // Substitui referências vagas pela localização real
+  let queryFinal = query;
+  if (locationText) {
+    queryFinal = query
+      .replace(/minha cidade/gi, locationText)
+      .replace(/aqui/gi, locationText)
+      .replace(/perto de mim/gi, `perto de ${locationText}`)
+      .replace(/próximo a mim/gi, `próximo a ${locationText}`);
+  }
+
+  const resultado = await searchWeb(queryFinal, locationText);
   await sendMessage(phone, resultado);
 }
 
 // ====================== ANOTAÇÃO ======================
 async function handleNote(user, phone, classified) {
-  // Verifica se é resposta de cidade
-  const aguardando = await memory.getRecentMemories(user.id, 5);
-  const esperandoCidade = aguardando.find(m => m.type === 'aguardando' && m.content === 'cidade');
-
-  if (esperandoCidade) {
-    await memory.saveMemory(user.id, 'cidade', classified.conteudo || classified.titulo);
-    await sendMessage(phone, `Anotei! Vou usar *${classified.conteudo || classified.titulo}* para buscas locais. 📍`);
-    return;
-  }
-
   await memory.saveMemory(user.id, 'anotacao', classified.conteudo, {
     titulo: classified.titulo
   });
