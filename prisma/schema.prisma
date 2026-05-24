@@ -1,4 +1,5 @@
 // Clara v4.1
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,29 +10,32 @@ datasource db {
 }
 
 model User {
-  id            String        @id @default(cuid())
-  phone         String        @unique
-  name          String?
-  metadata      String?
-  monthlyIncome Float?
-  isPremium     Boolean       @default(false)
-  blocked       Boolean       @default(false)
+  id               String        @id @default(cuid())
+  phone            String        @unique
+  name             String?
+  metadata         String?
+  monthlyIncome    Float?
+  jornadaMinutos   Int           @default(480)
 
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @default(now()) @updatedAt
+  isPremium        Boolean       @default(false)
+  blocked          Boolean       @default(false)
 
-  memories      Memory[]
-  medications   Medication[]
-  tasks         Task[]
-  expenses      Expense[]
-  purchases     Purchase[]
-  secrets       Secret[]
-  bills         Bill[]
-  reminders     Reminder[]
-  events        Event[]
-  groceryLists  GroceryList[]
-  sleepLogs     SleepLog[]
-  workouts      Workout[]
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @default(now()) @updatedAt
+
+  memories         Memory[]
+  medications      Medication[]
+  tasks            Task[]
+  expenses         Expense[]
+  purchases        Purchase[]
+  secrets          Secret[]
+  bills            Bill[]
+  reminders        Reminder[]
+  events           Event[]
+  groceryLists     GroceryList[]
+  sleepLogs        SleepLog[]
+  workouts         Workout[]
+  workLogs         WorkLog[]
 }
 
 model Memory {
@@ -45,8 +49,7 @@ model Memory {
 
   createdAt DateTime  @default(now())
 
-  // TEMPORARIAMENTE OPCIONAL
-  // Depois do primeiro db push você remove o ?
+  // TEMPORÁRIO
   updatedAt DateTime? @updatedAt
 }
 
@@ -74,7 +77,10 @@ model Task {
   title     String
   dueDate   DateTime?
   dueTime   String?
+
   completed Boolean   @default(false)
+  done      Boolean   @default(false)
+
   notified  Boolean   @default(false)
   items     String?
 
@@ -146,6 +152,7 @@ model Reminder {
   phone       String
   message     String
   scheduledAt DateTime
+
   sent        Boolean  @default(false)
   confirmed   Boolean  @default(false)
   attempts    Int      @default(0)
@@ -162,8 +169,10 @@ model Event {
   title      String
   personName String?
   personAge  Int?
+
   date       DateTime
   type       String   @default("outro")
+
   notified   Boolean  @default(false)
   followedUp Boolean  @default(false)
 
@@ -209,4 +218,26 @@ model Workout {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  userId    String?
+  content   String?
+  createdAt DateTime @default(now())
+}
+
+model WorkLog {
+  id        String   @id @default(cuid())
+
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+
+  type      String?
+  action    String?
+
+  timestamp DateTime?
+  date      String?
+
+  createdAt DateTime @default(now())
 }
