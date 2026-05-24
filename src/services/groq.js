@@ -6,10 +6,42 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const MODEL_LEVE = 'llama-3.1-8b-instant';
 const MODEL_FORTE = 'llama-3.3-70b-versatile';
 
-const SYSTEM_PROMPT = `Você é a Clara, assistente pessoal útil e prática.
-Analise a mensagem e retorne APENAS JSON válido.
+const SYSTEM_PROMPT = `Você é a Clara, assistente pessoal.
+Retorne APENAS JSON no formato correto.
 
-Se a mensagem for sobre clima, farmácia, restaurante, telefone, loja ou qualquer busca local → use "busca".`;
+TIPOS:
+- ponto_multiplo: registrar entrada/saída trabalho
+  {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
+  
+- busca: clima, farmácia, restaurante, loja, telefone, informações locais
+  {"tipo":"busca","query":"texto da busca"}
+  
+- anotacao: guardar informação SEM horário
+  {"tipo":"anotacao","titulo":"resumo","conteudo":"texto completo"}
+  
+- tarefa: compromisso COM horário/data
+  {"tipo":"tarefa","titulo":"desc","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null"}
+  
+- gasto: gastou dinheiro
+  {"tipo":"gasto","valor":0.0,"categoria":"mercado/restaurante/saude/transporte/lazer/outro","descricao":"desc"}
+  
+- saudacao: oi, olá, bom dia
+  {"tipo":"saudacao"}
+  
+- consulta: pergunta sobre algo guardado
+  {"tipo":"consulta","sobre":"tema"}
+  
+- outro: qualquer outra coisa
+  {"tipo":"outro"}
+
+EXEMPLOS:
+"cheguei às 8" → {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
+"farmácia perto" → {"tipo":"busca","query":"farmácia próxima"}
+"anote que o código é 123" → {"tipo":"anotacao","titulo":"código","conteudo":"o código é 123"}
+"me lembra às 19h de buscar minha sogra" → {"tipo":"tarefa","titulo":"buscar sogra","data":null,"hora":"19:00"}
+"gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
+"oi" → {"tipo":"saudacao"}
+`;
 
 async function classify(message) {
   try {
@@ -19,7 +51,7 @@ async function classify(message) {
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: message }
       ],
-      temperature: 0.1,
+      temperature: 0.2,
       max_tokens: 600,
     });
 
@@ -34,20 +66,21 @@ async function classify(message) {
 
 async function searchWeb(query, locationContext = '') {
   try {
-    const fullQuery = locationContext ? `${query} em Fartura SP` : `${query} Fartura SP`;
-    console.log(`🔎 Buscando Tavily: ${fullQuery}`);
+    const cidade = locationContext || 'Brasil';
+    const fullQuery = `${query} em ${cidade}`;
+    console.log(`🔎 Buscando: ${fullQuery}`);
 
     const results = await webSearch(fullQuery);
 
     if (!results || results.length === 0) {
-      return "Não encontrei informações atualizadas agora. Pode tentar de outra forma?";
+      return "Não encontrei informações atualizadas. Pode tentar de outra forma?";
     }
 
-    let resposta = `Aqui está o que encontrei sobre **${query}**:\n\n`;
+    let resposta = `Aqui está o que encontrei:\n\n`;
 
     results.slice(0, 5).forEach((r, index) => {
-      if (r.title) resposta += `${index + 1}. **${r.title}**\n`;
-      if (r.content) resposta += `${r.content.substring(0, 180)}...\n\n`;
+      if (r.title) resposta += `${index + 1}. *${r.title}*\n`;
+      if (r.content) resposta += `${r.content.substring(0, 200)}...\n\n`;
     });
 
     return resposta.trim();
@@ -62,7 +95,7 @@ async function freeResponse(message) {
     const completion = await groq.chat.completions.create({
       model: MODEL_FORTE,
       messages: [
-        { role: 'system', content: 'Você é a Clara. Seja útil, carinhosa e direta.' },
+        { role: 'system', content: 'Você é a Clara. Seja útil, natural e direta.' },
         { role: 'user', content: message }
       ],
       temperature: 0.7,
@@ -74,8 +107,39 @@ async function freeResponse(message) {
   }
 }
 
+async function generateMemorySummary(memories, question) {
+  try {
+    const memoriesText = memories
+      .map((m) => `[${m.type}] ${m.content} (${new Date(m.createdAt).toLocaleDateString('pt-BR')})`)
+      .join('\n');
+
+    const completion = await groq.chat.completions.create({
+      model: MODEL_LEVE,
+      messages: [
+        {
+          role: 'system',
+          content: `Você é a Clara, assistente com memória viva.
+Fale em primeira pessoa: "Tenho aqui", "Guardei".
+Seja concisa e natural.`,
+        },
+        {
+          role: 'user',
+          content: `Minhas memórias:\n${memoriesText}\n\nPergunta: ${question}`,
+        },
+      ],
+      temperature: 0.5,
+      max_tokens: 300,
+    });
+
+    return completion.choices[0].message.content.trim();
+  } catch (error) {
+    return 'Deixa eu verificar...';
+  }
+}
+
 module.exports = {
   classify,
   searchWeb,
   freeResponse,
+  generateMemorySummary,
 };
