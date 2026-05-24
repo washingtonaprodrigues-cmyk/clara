@@ -13,6 +13,12 @@ TIPOS:
 - ponto_multiplo: registrar entrada/saída trabalho
   {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
   
+  SUBTIPOS ACEITOS (use exatamente assim):
+  - "entrada" → chegou, entrei, cheguei
+  - "saida_almoco" → saí pra almoçar, fui almoçar, saída almoço
+  - "volta_almoco" → voltei do almoço, retornei do almoço
+  - "saida" → saí do trabalho, fui embora, saída final
+  
 - busca: clima, farmácia, restaurante, loja, telefone, informações locais
   {"tipo":"busca","query":"texto da busca"}
   
@@ -34,7 +40,15 @@ TIPOS:
 - outro: qualquer outra coisa
   {"tipo":"outro"}
 
-EXEMPLOS:
+EXEMPLOS PONTO:
+"entrei às 8:15, sai almoçar às 12:30, voltei do almoço às 14:10 e saí do trabalho às 18:05"
+→ {"tipo":"ponto_multiplo","acoes":[
+    {"subtipo":"entrada","hora":"08:15"},
+    {"subtipo":"saida_almoco","hora":"12:30"},
+    {"subtipo":"volta_almoco","hora":"14:10"},
+    {"subtipo":"saida","hora":"18:05"}
+  ]}
+
 "cheguei às 8" → {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
 "farmácia perto" → {"tipo":"busca","query":"farmácia próxima"}
 "anote que o código é 123" → {"tipo":"anotacao","titulo":"código","conteudo":"o código é 123"}
@@ -66,8 +80,9 @@ async function classify(message) {
 
 async function searchWeb(query, locationContext = '') {
   try {
-    const cidade = locationContext || 'Brasil';
-    const fullQuery = `${query} em ${cidade}`;
+    const fullQuery = locationContext
+      ? `${query} em ${locationContext}`
+      : query;
     console.log(`🔎 Buscando: ${fullQuery}`);
 
     const data = await webSearch(fullQuery);
@@ -76,7 +91,6 @@ async function searchWeb(query, locationContext = '') {
       return "Não encontrei informações atualizadas. Pode tentar de outra forma?";
     }
 
-    // Monta contexto para o modelo resumir
     let contexto = '';
     if (data.answer) contexto += `Resposta direta: ${data.answer}\n\n`;
     data.results.slice(0, 3).forEach((r) => {
@@ -84,26 +98,32 @@ async function searchWeb(query, locationContext = '') {
       if (r.content) contexto += `${r.content.substring(0, 300)}\n\n`;
     });
 
-    // Pede para a Clara resumir de forma natural
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
       messages: [
         {
           role: 'system',
           content: `Você é a Clara, assistente pessoal simpática e direta.
-Com base nas informações de busca, responda de forma curta, natural e amigável em português brasileiro.
-Não cite fontes, não use markdown, não repita a pergunta.
-Se for clima, diga temperatura e condição do tempo de forma simples.
-Se for telefone ou endereço, destaque a informação principal.
-Máximo 3 linhas.`,
+Com base nas informações de busca, responda em português brasileiro de forma natural e amigável.
+Não cite fontes, não repita a pergunta.
+
+Para clima use emojis que representem o tempo:
+☀️ sol | 🌤️ parcialmente nublado | ⛅ nublado | 🌧️ chuva | ⛈️ tempestade | 🌨️ frio/neve | 🌫️ névoa
+
+Formato ideal para clima:
+- Primeira linha: condição atual com emoji + temperatura agora
+- Segunda linha: previsão dos próximos dias resumida (ex: Seg ☀️ 22° | Ter 🌧️ 18° | Qua ⛅ 20°)
+- Terceira linha: dica rápida se necessário (ex: "Leva guarda-chuva!")
+
+Para outros tipos de busca (telefone, endereço, etc): destaque a informação principal em no máximo 2 linhas.`,
         },
         {
           role: 'user',
-          content: `Pergunta: ${query}\n\nInformações encontradas:\n${contexto}`,
+          content: `Pergunta: ${query}\nLocalização: ${locationContext || 'não informada'}\n\nInformações encontradas:\n${contexto}`,
         },
       ],
       temperature: 0.4,
-      max_tokens: 200,
+      max_tokens: 250,
     });
 
     return completion.choices[0].message.content.trim();
