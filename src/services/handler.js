@@ -68,7 +68,7 @@ async function handleMessage(phone, text, location = null) {
         await handleQuery(user, phone, text);
         break;
       case 'saudacao':
-        await sendMessage(phone, 'Oi! Tudo bem? Como posso te ajudar? 😊');
+        await handleSaudacao(user, phone);
         break;
       default:
         const resp = await freeResponse(text);
@@ -80,6 +80,24 @@ async function handleMessage(phone, text, location = null) {
   }
 }
 
+// ====================== SAUDAÇÃO ======================
+async function handleSaudacao(user, phone) {
+  const cidade = await getCidadeUsuario(user.id);
+
+  if (!cidade) {
+    await sendMessage(phone, 'Oi! 😊 Para te ajudar melhor com clima e buscas locais, qual é a sua cidade?');
+    await memory.saveMemory(user.id, 'aguardando', 'cidade');
+  } else {
+    await sendMessage(phone, 'Oi! Tudo bem? Como posso te ajudar? 😊');
+  }
+}
+
+async function getCidadeUsuario(userId) {
+  const mems = await memory.getRecentMemories(userId, 50);
+  const cidadeMem = mems.find(m => m.type === 'cidade');
+  return cidadeMem ? cidadeMem.content : null;
+}
+
 // ====================== PONTO MÚLTIPLO ======================
 async function handlePontoMultiplo(user, phone, acoes, originalText) {
   await sendMessage(phone, '📍 Registrando seus pontos...');
@@ -87,17 +105,24 @@ async function handlePontoMultiplo(user, phone, acoes, originalText) {
   const hoje = dateBRT();
 
   for (const acao of acoes) {
-    let subtipo = acao.subtipo.toLowerCase();
+    let subtipo = (acao.subtipo || '').toLowerCase().trim();
 
-    if (subtipo.includes('cheg') || subtipo.includes('entrada')) subtipo = 'entrada';
-    else if ((subtipo.includes('saí') || subtipo.includes('sai')) && subtipo.includes('almo')) subtipo = 'saida_almoco';
-    else if ((subtipo.includes('volt') || subtipo.includes('retorn')) && subtipo.includes('almo')) subtipo = 'volta_almoco';
-    else if (subtipo.includes('saí') || subtipo.includes('sai') || subtipo.includes('saida')) subtipo = 'saida';
+    // Normaliza subtipo com mapeamento direto primeiro
+    if (subtipo === 'entrada' || subtipo.includes('cheg') || subtipo.includes('entrei')) {
+      subtipo = 'entrada';
+    } else if (subtipo === 'saida_almoco' || subtipo.includes('saida_almoco') ||
+      (subtipo.includes('almo') && (subtipo.includes('sai') || subtipo.includes('saí')))) {
+      subtipo = 'saida_almoco';
+    } else if (subtipo === 'volta_almoco' || subtipo.includes('volta_almoco') ||
+      (subtipo.includes('almo') && (subtipo.includes('volt') || subtipo.includes('retorn')))) {
+      subtipo = 'volta_almoco';
+    } else if (subtipo === 'saida' || subtipo.includes('saí') || subtipo.includes('sai') || subtipo.includes('saida')) {
+      subtipo = 'saida';
+    }
 
     const horaUsada = acao.hora || 'agora';
     const timestamp = horaUsada !== 'agora' ? convertToDateWithTime(horaUsada) : nowBRT();
 
-    // Evita duplicata no mesmo minuto
     const existing = await prisma.workLog.findFirst({
       where: { userId: user.id, type: subtipo, date: hoje }
     });
@@ -114,7 +139,6 @@ async function handlePontoMultiplo(user, phone, acoes, originalText) {
     }
   }
 
-  // Busca todos os pontos do dia no banco
   const pontosHoje = await prisma.workLog.findMany({
     where: { userId: user.id, date: hoje },
     orderBy: { timestamp: 'asc' }
@@ -139,9 +163,8 @@ async function gerarResumoDoBanco(pontos, userId) {
   const voltaAlmoco = get('volta_almoco');
   const saida       = get('saida');
 
-  const jornada = await memory.getJornada(userId); // minutos, padrão 480
+  const jornada = await memory.getJornada(userId);
 
-  // Calcula tempos
   let tempoManha = null;
   let tempoTarde = null;
   let totalTrabalhado = null;
@@ -158,8 +181,6 @@ async function gerarResumoDoBanco(pontos, userId) {
   if (tempoManha !== null && tempoTarde !== null) {
     totalTrabalhado = tempoManha + tempoTarde;
     horasExtras = totalTrabalhado - jornada;
-  } else if (tempoManha !== null && !voltaAlmoco && !saida) {
-    totalTrabalhado = tempoManha;
   }
 
   let texto = `✨ *Resumo do seu dia*\n\n`;
@@ -181,10 +202,7 @@ async function gerarResumoDoBanco(pontos, userId) {
   }
 
   if (totalTrabalhado !== null) {
-    texto += `\n📊 Total trabalhado: *${minutesToHours(totalTrabalhado)}*\n`;
-  }
-
-  if (horasExtras !== null) {
+    texto += `\n📊 Total: *${minutesToHours(totalTrabalhado)}*\n`;
     if (horasExtras > 0) {
       texto += `⭐ Horas extras: *${minutesToHours(horasExtras)}*\n`;
     } else if (horasExtras < 0) {
@@ -205,17 +223,23 @@ async function gerarResumoDoBanco(pontos, userId) {
 async function handleBusca(user, phone, query) {
   await sendMessage(phone, '🔍 Buscando...');
 
-  const lastLocationMem = await memory.getRecentMemories(user.id, 5);
-  const locationMem = lastLocationMem.find(m => m.type === 'localizacao');
+  const mems = await memory.getRecentMemories(user.id, 20);
 
+  // Tenta localização GPS primeiro
+  const locationMem = mems.find(m => m.type === 'localizacao');
   let locationText = '';
+
   if (locationMem) {
     try {
       const loc = JSON.parse(locationMem.content);
       locationText = `${loc.latitude}, ${loc.longitude}`;
-    } catch (e) {
-      locationText = '';
-    }
+    } catch (e) {}
+  }
+
+  // Se não tem GPS, usa cidade salva
+  if (!locationText) {
+    const cidadeMem = mems.find(m => m.type === 'cidade');
+    if (cidadeMem) locationText = cidadeMem.content;
   }
 
   const resultado = await searchWeb(query, locationText);
@@ -224,6 +248,16 @@ async function handleBusca(user, phone, query) {
 
 // ====================== ANOTAÇÃO ======================
 async function handleNote(user, phone, classified) {
+  // Verifica se é resposta de cidade
+  const aguardando = await memory.getRecentMemories(user.id, 5);
+  const esperandoCidade = aguardando.find(m => m.type === 'aguardando' && m.content === 'cidade');
+
+  if (esperandoCidade) {
+    await memory.saveMemory(user.id, 'cidade', classified.conteudo || classified.titulo);
+    await sendMessage(phone, `Anotei! Vou usar *${classified.conteudo || classified.titulo}* para buscas locais. 📍`);
+    return;
+  }
+
   await memory.saveMemory(user.id, 'anotacao', classified.conteudo, {
     titulo: classified.titulo
   });
