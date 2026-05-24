@@ -1,3 +1,4 @@
+// Clara v4.1
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,14 +9,14 @@ datasource db {
 }
 
 model User {
-  id            String         @id @default(cuid())
-  phone         String         @unique
+  id            String        @id @default(cuid())
+  phone         String        @unique
   name          String?
+  metadata      String?
   monthlyIncome Float?
-  isPremium     Boolean        @default(false)
-  premiumUntil  DateTime?
-  blocked       Boolean        @default(false)
-  createdAt     DateTime       @default(now())
+  isPremium     Boolean       @default(false)
+  blocked       Boolean       @default(false)
+  createdAt     DateTime      @default(now())
   memories      Memory[]
   medications   Medication[]
   tasks         Task[]
@@ -23,17 +24,11 @@ model User {
   purchases     Purchase[]
   secrets       Secret[]
   bills         Bill[]
-  workLogs      WorkLog[]
-  conversation  Conversation?
-}
-
-model Conversation {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id])
-  state     String
-  context   String
-  updatedAt DateTime @updatedAt
+  reminders     Reminder[]
+  events        Event[]
+  groceryLists  GroceryList[]
+  sleepLogs     SleepLog[]
+  workouts      Workout[]
 }
 
 model Memory {
@@ -44,39 +39,32 @@ model Memory {
   content   String
   metadata  String?
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 }
 
 model Medication {
-  id              String    @id @default(cuid())
-  userId          String
-  user            User      @relation(fields: [userId], references: [id])
-  name            String
-  totalPills      Int
-  remaining       Int
-  frequency       Int
-  intervalHours   Int       @default(12)
-  times           String
-  startDate       DateTime  @default(now())
-  endDate         DateTime?
-  daysTotal       Int?
-  active          Boolean   @default(true)
-  awaitingConfirm Boolean   @default(false)
-  createdAt       DateTime  @default(now())
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  name       String
+  totalPills Int      @default(0)
+  remaining  Int      @default(0)
+  frequency  Int      @default(1)
+  times      String
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
 }
 
 model Task {
-  id              String    @id @default(cuid())
-  userId          String
-  user            User      @relation(fields: [userId], references: [id])
-  title           String
-  dueDate         DateTime?
-  dueTime         String?
-  completed       Boolean   @default(false)
-  notified        Boolean   @default(false)
-  awaitingConfirm Boolean   @default(false)
-  reminderCount   Int       @default(0)
-  createdAt       DateTime  @default(now())
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  title     String
+  dueDate   DateTime?
+  dueTime   String?
+  completed Boolean   @default(false)
+  notified  Boolean   @default(false)
+  items     String?
+  createdAt DateTime  @default(now())
 }
 
 model Expense {
@@ -107,9 +95,10 @@ model Purchase {
   user         User     @relation(fields: [userId], references: [id])
   item         String
   lastBought   DateTime @default(now())
-  avgFrequency Int?
   buyCount     Int      @default(1)
+  avgFrequency Int?
   notified     Boolean  @default(false)
+  createdAt    DateTime @default(now())
 }
 
 model Secret {
@@ -122,12 +111,60 @@ model Secret {
   createdAt DateTime @default(now())
 }
 
-model WorkLog {
+model Reminder {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  phone       String
+  message     String
+  scheduledAt DateTime
+  sent        Boolean  @default(false)
+  confirmed   Boolean  @default(false)
+  attempts    Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model Event {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  title      String
+  personName String?
+  personAge  Int?
+  date       DateTime
+  type       String   @default("outro")
+  notified   Boolean  @default(false)
+  followedUp Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+model GroceryList {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  items     String
+  total     Float?
+  createdAt DateTime @default(now())
+}
+
+model SleepLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  bedtime   String?
+  wakeTime  String?
+  hours     Float?
+  quality   String?
+  createdAt DateTime @default(now())
+}
+
+model Workout {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   type      String
-  timestamp DateTime
-  date      String
+  duration  Int?
+  exercises String?
+  note      String?
   createdAt DateTime @default(now())
 }
