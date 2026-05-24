@@ -1,7 +1,6 @@
 const cron = require('node-cron');
 const { PrismaClient } = require('@prisma/client');
-const { sendMessage, sendButtons } = require('../services/whatsapp');
-const { sendReminderWithButtons } = require('../services/handler');
+const { sendMessage, sendReminderWithButtons } = require('../services/whatsapp');
 
 const prisma = new PrismaClient();
 
@@ -9,14 +8,7 @@ function random(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function isSameMinute(d1, d2) {
-  return (
-    d1.getHours() === d2.getHours() &&
-    d1.getMinutes() === d2.getMinutes()
-  );
-}
-
-// ====================== REMINDERS ======================
+// ====================== LEMBRETES ======================
 cron.schedule('* * * * *', async () => {
   try {
     const now = new Date();
@@ -32,7 +24,6 @@ cron.schedule('* * * * *', async () => {
     for (const r of reminders) {
       if (r.attempts === 0) {
         await sendReminderWithButtons(r.phone, r.message, r.id);
-
         await prisma.reminder.update({
           where: { id: r.id },
           data: {
@@ -40,20 +31,11 @@ cron.schedule('* * * * *', async () => {
             scheduledAt: new Date(Date.now() + 10 * 60000),
           },
         });
-
       } else {
-        await sendReminderWithButtons(
-          r.phone,
-          `Ainda sobre:\n${r.message}`,
-          r.id
-        );
-
+        await sendReminderWithButtons(r.phone, `Ainda sobre:\n${r.message}`, r.id);
         await prisma.reminder.update({
           where: { id: r.id },
-          data: {
-            sent: true,
-            attempts: 2,
-          },
+          data: { sent: true, attempts: 2 },
         });
       }
     }
@@ -77,7 +59,6 @@ cron.schedule('* * * * *', async () => {
 
       for (const h of horarios) {
         const [hh, mm] = h.split(':').map(Number);
-
         if (now.getHours() !== hh || now.getMinutes() !== mm) continue;
 
         const already = await prisma.reminder.findFirst({
