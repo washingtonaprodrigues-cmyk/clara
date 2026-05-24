@@ -21,14 +21,19 @@ function minutesToHours(minutes) {
   return `${h}h${m > 0 ? m + 'min' : ''}`;
 }
 
+function horaStr(date) {
+  if (!date) return '—';
+  const d = new Date(date);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 // ====================== HANDLER PRINCIPAL ======================
 async function handleMessage(phone, text, location = null) {
   try {
     const user = await memory.getOrCreateUser(phone);
 
-    // ====================== LOCALIZAÇÃO ======================
     if (location && location.latitude) {
-      await memory.saveMemory(user.id, 'localizacao', 
+      await memory.saveMemory(user.id, 'localizacao',
         JSON.stringify({
           latitude: location.latitude,
           longitude: location.longitude,
@@ -38,7 +43,6 @@ async function handleMessage(phone, text, location = null) {
       return await sendMessage(phone, '✅ Localização recebida! Agora posso te ajudar melhor com clima, farmácias e lojas próximas.');
     }
 
-    // ====================== MENSAGEM DE TEXTO ======================
     if (!text) return;
 
     const classified = await classify(text);
@@ -48,31 +52,24 @@ async function handleMessage(phone, text, location = null) {
       case 'ponto_multiplo':
         await handlePontoMultiplo(user, phone, classified.acoes, text);
         break;
-
       case 'busca':
         await handleBusca(user, phone, classified.query || text);
         break;
-
       case 'anotacao':
         await handleNote(user, phone, classified);
         break;
-
       case 'tarefa':
         await handleTask(user, phone, classified);
         break;
-
       case 'gasto':
         await handleExpense(user, phone, classified);
         break;
-
       case 'consulta':
         await handleQuery(user, phone, text);
         break;
-
       case 'saudacao':
         await sendMessage(phone, 'Oi! Tudo bem? Como posso te ajudar? 😊');
         break;
-
       default:
         const resp = await freeResponse(text);
         await sendMessage(phone, resp);
@@ -87,27 +84,43 @@ async function handleMessage(phone, text, location = null) {
 async function handlePontoMultiplo(user, phone, acoes, originalText) {
   await sendMessage(phone, '📍 Registrando seus pontos...');
 
-  const registros = [];
+  const hoje = dateBRT();
 
   for (const acao of acoes) {
     let subtipo = acao.subtipo.toLowerCase();
 
     if (subtipo.includes('cheg') || subtipo.includes('entrada')) subtipo = 'entrada';
-    else if (subtipo.includes('saí') && subtipo.includes('almo')) subtipo = 'saida_almoco';
-    else if (subtipo.includes('volt') && subtipo.includes('almo')) subtipo = 'volta_almoco';
-    else if (subtipo.includes('saí') || subtipo.includes('saindo')) subtipo = 'saida';
+    else if ((subtipo.includes('saí') || subtipo.includes('sai')) && subtipo.includes('almo')) subtipo = 'saida_almoco';
+    else if ((subtipo.includes('volt') || subtipo.includes('retorn')) && subtipo.includes('almo')) subtipo = 'volta_almoco';
+    else if (subtipo.includes('saí') || subtipo.includes('sai') || subtipo.includes('saida')) subtipo = 'saida';
 
     const horaUsada = acao.hora || 'agora';
     const timestamp = horaUsada !== 'agora' ? convertToDateWithTime(horaUsada) : nowBRT();
 
-    await prisma.workLog.create({
-      data: { userId: user.id, type: subtipo, timestamp, date: dateBRT() }
+    // Evita duplicata no mesmo minuto
+    const existing = await prisma.workLog.findFirst({
+      where: { userId: user.id, type: subtipo, date: hoje }
     });
 
-    registros.push({ subtipo, hora: horaUsada });
+    if (existing) {
+      await prisma.workLog.update({
+        where: { id: existing.id },
+        data: { timestamp }
+      });
+    } else {
+      await prisma.workLog.create({
+        data: { userId: user.id, type: subtipo, timestamp, date: hoje }
+      });
+    }
   }
 
-  const resumo = await gerarResumoBonito(registros);
+  // Busca todos os pontos do dia no banco
+  const pontosHoje = await prisma.workLog.findMany({
+    where: { userId: user.id, date: hoje },
+    orderBy: { timestamp: 'asc' }
+  });
+
+  const resumo = await gerarResumoDoBanco(pontosHoje, user.id);
   await sendMessage(phone, resumo);
 }
 
@@ -118,25 +131,72 @@ function convertToDateWithTime(horaStr) {
   return date;
 }
 
-async function gerarResumoBonito(registros) {
-  let entrada = registros.find(r => r.subtipo === 'entrada')?.hora || '—';
-  let saidaAlmoco = registros.find(r => r.subtipo === 'saida_almoco')?.hora || '—';
-  let voltaAlmoco = registros.find(r => r.subtipo === 'volta_almoco')?.hora || '—';
+async function gerarResumoDoBanco(pontos, userId) {
+  const get = (tipo) => pontos.find(p => p.type === tipo);
 
-  let tempoManha = '—';
-  if (entrada !== '—' && saidaAlmoco !== '—') {
-    const [h1, m1] = entrada.split(':').map(Number);
-    const [h2, m2] = saidaAlmoco.split(':').map(Number);
-    const minutos = (h2 * 60 + m2) - (h1 * 60 + m1);
-    tempoManha = minutesToHours(minutos);
+  const entrada     = get('entrada');
+  const saidaAlmoco = get('saida_almoco');
+  const voltaAlmoco = get('volta_almoco');
+  const saida       = get('saida');
+
+  const jornada = await memory.getJornada(userId); // minutos, padrão 480
+
+  // Calcula tempos
+  let tempoManha = null;
+  let tempoTarde = null;
+  let totalTrabalhado = null;
+  let horasExtras = null;
+
+  if (entrada && saidaAlmoco) {
+    tempoManha = (new Date(saidaAlmoco.timestamp) - new Date(entrada.timestamp)) / 60000;
+  }
+
+  if (voltaAlmoco && saida) {
+    tempoTarde = (new Date(saida.timestamp) - new Date(voltaAlmoco.timestamp)) / 60000;
+  }
+
+  if (tempoManha !== null && tempoTarde !== null) {
+    totalTrabalhado = tempoManha + tempoTarde;
+    horasExtras = totalTrabalhado - jornada;
+  } else if (tempoManha !== null && !voltaAlmoco && !saida) {
+    totalTrabalhado = tempoManha;
   }
 
   let texto = `✨ *Resumo do seu dia*\n\n`;
-  texto += `🟢 Entrada: *${entrada}*\n`;
-  texto += `🍽️ Saída almoço: *${saidaAlmoco}*\n`;
-  texto += `⏱️ Manhã: *${tempoManha}*\n`;
-  texto += `🔄 Volta almoço: *${voltaAlmoco}*\n\n`;
-  texto += `💡 Me avisa quando sair!`;
+  texto += `🟢 Entrada: *${horaStr(entrada?.timestamp)}*\n`;
+  texto += `🍽️ Saída almoço: *${horaStr(saidaAlmoco?.timestamp)}*\n`;
+
+  if (tempoManha !== null) {
+    texto += `⏱️ Manhã: *${minutesToHours(tempoManha)}*\n`;
+  }
+
+  texto += `🔄 Volta almoço: *${horaStr(voltaAlmoco?.timestamp)}*\n`;
+
+  if (saida) {
+    texto += `🔴 Saída: *${horaStr(saida.timestamp)}*\n`;
+  }
+
+  if (tempoTarde !== null) {
+    texto += `⏱️ Tarde: *${minutesToHours(tempoTarde)}*\n`;
+  }
+
+  if (totalTrabalhado !== null) {
+    texto += `\n📊 Total trabalhado: *${minutesToHours(totalTrabalhado)}*\n`;
+  }
+
+  if (horasExtras !== null) {
+    if (horasExtras > 0) {
+      texto += `⭐ Horas extras: *${minutesToHours(horasExtras)}*\n`;
+    } else if (horasExtras < 0) {
+      texto += `⚠️ Faltam: *${minutesToHours(Math.abs(horasExtras))}*\n`;
+    } else {
+      texto += `✅ Jornada completa!\n`;
+    }
+  }
+
+  if (!saida) {
+    texto += `\n💡 Me avisa quando sair!`;
+  }
 
   return texto;
 }
@@ -164,8 +224,8 @@ async function handleBusca(user, phone, query) {
 
 // ====================== ANOTAÇÃO ======================
 async function handleNote(user, phone, classified) {
-  await memory.saveMemory(user.id, 'anotacao', classified.conteudo, { 
-    titulo: classified.titulo 
+  await memory.saveMemory(user.id, 'anotacao', classified.conteudo, {
+    titulo: classified.titulo
   });
   await sendMessage(phone, 'Anotado! ✓ Guardei aqui comigo.');
 }
@@ -176,12 +236,12 @@ async function handleTask(user, phone, classified) {
     data: classified.data,
     hora: classified.hora,
   });
-  
+
   let msg = 'Guardei! 📅';
   if (classified.hora) {
     msg = `Vou te lembrar às *${classified.hora}*. 📅`;
   }
-  
+
   await sendMessage(phone, msg);
 }
 
@@ -191,7 +251,7 @@ async function handleExpense(user, phone, classified) {
     valor: classified.valor,
     categoria: classified.categoria,
   });
-  
+
   await sendMessage(phone, `Registrado! R$ ${classified.valor.toFixed(2)} em ${classified.categoria}. 💰`);
 }
 
