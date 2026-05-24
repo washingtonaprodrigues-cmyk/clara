@@ -8,17 +8,17 @@ const prisma = new PrismaClient();
 // ====================== MENU ======================
 const MENU = `✨ *Clara online* 💜
 
-Posso te ajudar com praticamente tudo do dia a dia 😊
+Como posso ajudar no seu dia?
 
-🔔 Lembretes e tarefas
-📝 Anotações rápidas
-💰 Controle de gastos
-💊 Medicamentos e bem-estar
-📍 Registro de ponto e horas trabalhadas
-🌦️ Clima, pesquisas e informações
-💬 E até bater papo quando quiser
+⏰ *Lembretes*
+📝 *Anotações*
+💰 *Gastos*
+💊 *Saúde*
+📍 *Ponto digital*
+🔍 *Pesquisar algo*
+💬 *Conversar*
 
-Pode falar comigo naturalmente, como se estivesse conversando com uma amiga ✨
+_Pode falar comigo do seu jeito_ 😊
 
 Exemplos:
 • _"Me lembra de tomar remédio às 22h"_
@@ -26,9 +26,9 @@ Exemplos:
 • _"Vai chover amanhã?"_
 • _"Horóscopo de Libra"_
 • _"Anota um gasto de 42 reais"_
-• _"Senha do Wi-Fi"_
+• _"Senha do Wi-Fi: 12345"_
 
-Tô por aqui 💜`;
+Só dizer!! 😊`;
 
 const MENU_FOOTER = '\n\n_Digite *menu* para voltar ao início 🏠_';
 
