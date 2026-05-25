@@ -1,33 +1,11 @@
 const { classify, searchWeb, freeResponse, generateMemorySummary } = require('./groq');
-const { sendMessage, sendButtons, sendReminderWithButtons } = require('./whatsapp');
+const { sendMessage, sendButtons, sendMainMenu, sendReminderWithButtons } = require('./whatsapp');
 const memory = require('./memory');
 const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
 
-// ====================== MENU ======================
-const MENU = `✨ *Oi, eu sou a Clara.*
-
-Posso cuidar de lembretes, anotações, gastos, saúde, ponto e pesquisas rápidas.
-
-Você pode tocar em uma opção ou escrever do seu jeito:
-• _"me lembra de tomar remédio às 22h"_
-• _"gastei 42 reais no mercado"_
-• _"cheguei às 9h no trabalho"_
-• _"qual foi a senha do Wi-Fi?"_
-
-O que vamos resolver agora?`;
-
 const MENU_FOOTER = '\n\n_Digite *menu* para ver as opções 🏠_';
-
-const MENU_BUTTONS = [
-  { id: 'criar_lembrete', label: '⏰ Lembrete' },
-  { id: 'nova_anotacao', label: '📝 Anotação' },
-  { id: 'novo_gasto', label: '💰 Gasto' },
-  { id: 'bater_ponto', label: '📍 Ponto' },
-  { id: 'pesquisar', label: '🔍 Pesquisa' },
-  { id: 'conversar', label: '💬 Conversar' },
-];
 
 const BOAS_VINDAS_MODO = {
   'lembrete':  `⏰ *Lembretes*\n\nPosso te lembrar de uma reunião, uma tarefa ou qualquer compromisso que desejar!\n\nExemplos:\n• _"Me lembra às 19h de buscar minha filha"_\n• _"Lembrete amanhã às 8h de tomar remédio"_\n• _"Me lembra sexta às 18h da reunião"_\n\n_É só me dizer!_ 😊`,
@@ -97,10 +75,6 @@ function normalizar(text) {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-async function enviarMenu(phone) {
-  return sendButtons(phone, MENU, MENU_BUTTONS);
-}
-
 async function responderLivre(user, phone, text) {
   const history = await memory.getConversationHistory(user.id, 10);
   const preferences = await memory.getUserPreference(user.id);
@@ -140,7 +114,7 @@ async function handleMessage(phone, text, location = null) {
     // MENU
     if (['menu', 'inicio', 'voltar', 'comeco', 'ajuda', 'opcoes'].includes(textLower)) {
       await memory.saveMemory(user.id, 'modo_atual', '');
-      return await enviarMenu(phone);
+      return await sendMainMenu(phone);
     }
 
     // COMANDOS RÁPIDOS DE LISTAGEM
@@ -155,10 +129,9 @@ async function handleMessage(phone, text, location = null) {
       'lembretes': 'lembrete', 'lembrete': 'lembrete',
       'criar_lembrete': 'lembrete', 'novo_lembrete': 'lembrete',
       'anotacoes': 'anotacao', 'anotacao': 'anotacao', 'nova_anotacao': 'anotacao',
-      'gastos': 'gasto', 'gasto': 'gasto', 'novo_gasto': 'gasto', 'resumo_mes': 'gasto',
+      'gastos': 'gasto', 'gasto': 'gasto', 'novo_gasto': 'gasto',
       'saude': 'saude', 'novo_remedio': 'saude',
-      'ponto digital': 'ponto', 'ponto': 'ponto',
-      'bater_ponto': 'ponto', 'ver_horas_hoje': 'ponto',
+      'ponto digital': 'ponto', 'ponto': 'ponto', 'bater_ponto': 'ponto',
       'pesquisar algo': 'pesquisar', 'pesquisar': 'pesquisar', 'pesquisa': 'pesquisar',
       'conversar': 'conversar', 'bater papo': 'conversar',
     };
@@ -236,7 +209,7 @@ async function handleMessage(phone, text, location = null) {
 // ====================== SAUDAÇÃO ======================
 async function handleSaudacao(user, phone) {
   const cidade = await getCidadeUsuario(user.id);
-  await enviarMenu(phone);
+  await sendMainMenu(phone);
   if (!cidade) {
     setTimeout(async () => {
       await sendMessage(phone, '📍 _Dica: me diz sua cidade e vou buscar clima e locais pra você!_');
@@ -258,15 +231,12 @@ async function handleCidade(user, phone, cidade) {
 // ====================== PREFERÊNCIA ======================
 async function handlePreferencia(user, phone, classified) {
   await memory.saveUserPreference(user.id, classified.nome, classified.tom);
-
   const partes = [];
   if (classified.nome) partes.push(`vou te chamar de *${classified.nome}*`);
   if (classified.tom) partes.push(`vou usar um tom mais *${classified.tom}*`);
-
   const msg = partes.length
     ? `Combinado, ${partes.join(' e ')}.`
     : 'Combinado, vou lembrar dessa preferência.';
-
   await sendMessage(phone, `${msg} 😊` + MENU_FOOTER);
 }
 
@@ -478,11 +448,7 @@ async function handleExpense(user, phone, classified) {
   const categoria = classified.categoria || 'outro';
   const descricao = classified.descricao || categoria;
 
-  await memory.saveExpense(user.id, {
-    valor,
-    categoria,
-    descricao,
-  });
+  await memory.saveExpense(user.id, { valor, categoria, descricao });
 
   const categoriaIcon = {
     mercado: '🛒', restaurante: '🍽️', saude: '💊',
@@ -592,12 +558,10 @@ async function listarAnotacoes(user, phone) {
   }
 
   let texto = `📝 *Suas anotações*\n\n`;
-
   anotacoes.forEach((a) => {
     texto += `📌 _"${a.content}"_\n`;
     texto += `🗓️ ${formatarDataBR(a.createdAt)}\n\n`;
   });
-
   texto += `_${anotacoes.length} anotaç${anotacoes.length > 1 ? 'ões' : 'ão'} salva${anotacoes.length > 1 ? 's' : ''}_ 💜`;
 
   await sendButtons(phone, texto, [
@@ -634,13 +598,11 @@ async function listarGastos(user, phone) {
   };
 
   let texto = `💰 *Gastos do mês*\n\n`;
-
   gastos.forEach((g) => {
     const icon = categoriaIcon[g.category] || '📦';
     texto += `${icon} *${g.category}* — R$ ${g.value.toFixed(2)}\n`;
     texto += `🗓️ ${formatarDataBR(g.createdAt)}\n\n`;
   });
-
   texto += `───────────────\n💵 *Total: R$ ${total.toFixed(2)}*`;
 
   await sendButtons(phone, texto, [
@@ -690,7 +652,6 @@ async function listarMedicamentos(user, phone) {
   }
 
   let texto = `💊 *Seus medicamentos ativos*\n\n`;
-
   meds.forEach((m) => {
     const horarios = JSON.parse(m.times || '[]').join(', ');
     texto += `💊 *${m.name}*\n`;
