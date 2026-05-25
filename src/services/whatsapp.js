@@ -11,16 +11,6 @@ const headers = {
   'Content-Type': 'application/json',
 };
 
-function withTextOptions(message, buttons = []) {
-  if (!buttons.length) return message;
-
-  const options = buttons
-    .map((button, index) => `*${index + 1}* - ${button.label}`)
-    .join('\n');
-
-  return `${message}\n\n━━━━━━━━━━━━━━\n*Opções rápidas*\n${options}\n\n_Responda com o número ou toque em uma opção, se aparecer._`;
-}
-
 async function sendMessage(phone, message) {
   try {
     const response = await axios.post(
@@ -35,33 +25,34 @@ async function sendMessage(phone, message) {
   }
 }
 
-async function sendButtons(phone, message, buttons = []) {
-  const messageWithOptions = withTextOptions(message, buttons);
-
+async function sendButtons(phone, message, buttons) {
   try {
-    await axios.post(
+    const body = {
+      phone,
+      message,
+      buttons: buttons.map((b, i) => ({
+        id: b.id || `btn_${i}`,
+        label: b.label
+      }))
+    };
+    const response = await axios.post(
       `${BASE_URL}/send-button-actions`,
-      {
-        phone,
-        message: messageWithOptions,
-        buttons: buttons.map((button, index) => ({
-          id: button.id || `btn_${index}`,
-          label: button.label,
-        })),
-      },
+      body,
       { timeout: 15000, headers }
     );
+    return response.data;
   } catch (error) {
     console.error('Erro Z-API sendButtons:', error.response?.data || error.message);
-    return sendMessage(phone, messageWithOptions);
+    const opcoes = buttons.map(b => `• ${b.label}`).join('\n');
+    return sendMessage(phone, `${message}\n\n${opcoes}`);
   }
 }
 
 async function sendReminderWithButtons(phone, message, reminderId) {
   return sendButtons(phone, `⏰ *Lembrete*\n\n${message}`, [
-    { id: `confirm_${reminderId}`, label: '✅ Feito' },
-    { id: `snooze_${reminderId}`, label: '⏰ +10 min' },
-    { id: `cancel_${reminderId}`, label: '❌ Cancelar' },
+    { id: `confirm_${reminderId}`, label: '✅ Feito!' },
+    { id: `snooze_${reminderId}`,  label: '⏰ +10 minutos' },
+    { id: `cancel_${reminderId}`,  label: '❌ Cancelar' },
   ]);
 }
 
