@@ -1,15 +1,31 @@
+// Clara memory v4.1
+
 const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
 
+function parseDateSafely(date) {
+  if (!date) return null;
+
+  const d = new Date(date);
+
+  if (isNaN(d.getTime())) {
+    return null;
+  }
+
+  return d;
+}
+
+// ====================== USER ======================
+
 async function getOrCreateUser(phone) {
   let user = await prisma.user.findUnique({
-    where: { phone },
+    where: { phone }
   });
 
   if (!user) {
     user = await prisma.user.create({
-      data: { phone },
+      data: { phone }
     });
 
     console.log(`👤 Nova usuária: ${phone}`);
@@ -18,13 +34,84 @@ async function getOrCreateUser(phone) {
   return user;
 }
 
+// ====================== JORNADA ======================
+
+async function saveJornada(userId, minutos) {
+  return prisma.user.update({
+    where: { id: userId },
+    data: {
+      jornadaMinutos: minutos
+    }
+  });
+}
+
+async function getJornada(userId) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      jornadaMinutos: true
+    }
+  });
+
+  return user?.jornadaMinutos || 480;
+}
+
+// ====================== PREFERÊNCIAS ======================
+
+async function saveUserPreference(userId, name, tom) {
+  const data = {};
+
+  if (name) {
+    data.name = name;
+  }
+
+  if (tom) {
+    data.metadata = JSON.stringify({ tom });
+  }
+
+  return prisma.user.update({
+    where: { id: userId },
+    data
+  });
+}
+
+async function getUserPreference(userId) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId }
+  });
+
+  if (!user) {
+    return {
+      name: null,
+      tom: 'carinhoso'
+    };
+  }
+
+  let tom = 'carinhoso';
+
+  if (user.metadata) {
+    try {
+      tom = JSON.parse(user.metadata).tom || 'carinhoso';
+    } catch {}
+  }
+
+  return {
+    name: user.name,
+    tom
+  };
+}
+
+// ====================== MEMÓRIAS ======================
+
 async function saveMemory(userId, type, content, metadata = null) {
   return prisma.memory.create({
     data: {
       userId,
       type,
-      content: String(content || ''),
-      metadata: metadata ? JSON.stringify(metadata) : null,
+      content,
+      metadata: metadata
+        ? JSON.stringify(metadata)
+        : null,
     },
   });
 }
@@ -34,15 +121,17 @@ async function getRecentMemories(userId, limit = 30) {
     where: {
       userId,
       type: {
-        not: 'conversa',
-      },
+        not: 'conversa'
+      }
     },
     orderBy: {
-      createdAt: 'desc',
+      createdAt: 'desc'
     },
     take: limit,
   });
 }
+
+// ====================== CONVERSA ======================
 
 async function saveConversationMessage(userId, role, content) {
   await prisma.memory.create({
@@ -52,7 +141,7 @@ async function saveConversationMessage(userId, role, content) {
       content: JSON.stringify({
         role,
         content,
-        ts: Date.now(),
+        ts: Date.now()
       }),
     },
   });
@@ -60,20 +149,24 @@ async function saveConversationMessage(userId, role, content) {
   const msgs = await prisma.memory.findMany({
     where: {
       userId,
-      type: 'conversa',
+      type: 'conversa'
     },
     orderBy: {
-      createdAt: 'desc',
+      createdAt: 'desc'
     },
   });
 
   if (msgs.length > 30) {
+    const toDelete = msgs
+      .slice(30)
+      .map((m) => m.id);
+
     await prisma.memory.deleteMany({
       where: {
         id: {
-          in: msgs.slice(30).map((m) => m.id),
-        },
-      },
+          in: toDelete
+        }
+      }
     });
   }
 }
@@ -82,10 +175,10 @@ async function getConversationHistory(userId, limit = 8) {
   const msgs = await prisma.memory.findMany({
     where: {
       userId,
-      type: 'conversa',
+      type: 'conversa'
     },
     orderBy: {
-      createdAt: 'desc',
+      createdAt: 'desc'
     },
     take: limit,
   });
@@ -95,9 +188,10 @@ async function getConversationHistory(userId, limit = 8) {
     .map((m) => {
       try {
         const parsed = JSON.parse(m.content);
+
         return {
           role: parsed.role,
-          content: parsed.content,
+          content: parsed.content
         };
       } catch {
         return null;
@@ -106,114 +200,15 @@ async function getConversationHistory(userId, limit = 8) {
     .filter(Boolean);
 }
 
-async function saveUserPreference(userId, name, tom) {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-  });
-
-  let metadata = {};
-
-  if (user?.metadata) {
-    try {
-      metadata = JSON.parse(user.metadata);
-    } catch {
-      metadata = {};
-    }
-  }
-
-  if (tom) {
-    metadata.tom = tom;
-  }
-
-  const data = {
-    metadata: JSON.stringify(metadata),
-  };
-
-  if (name) {
-    data.name = name;
-  }
-
-  return prisma.user.update({
-    where: { id: userId },
-    data,
-  });
-}
-
-async function getUserPreference(userId) {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-  });
-
-  if (!user) {
-    return {
-      name: null,
-      tom: 'carinhoso',
-    };
-  }
-
-  let tom = 'carinhoso';
-
-  if (user.metadata) {
-    try {
-      tom = JSON.parse(user.metadata).tom || 'carinhoso';
-    } catch {
-      tom = 'carinhoso';
-    }
-  }
-
-  return {
-    name: user.name,
-    tom,
-  };
-}
-
-async function saveExpense(userId, data) {
-  const valor = Number(data.valor) || 0;
-  const categoria = data.categoria || 'outro';
-  const descricao = data.descricao || '';
-
-  const expense = await prisma.expense.create({
-    data: {
-      userId,
-      value: valor,
-      category: categoria,
-      description: descricao,
-    },
-  });
-
-  await saveMemory(userId, 'gasto', `R$ ${valor.toFixed(2)} em ${categoria}`, {
-    expenseId: expense.id,
-    valor,
-    categoria,
-    descricao,
-  });
-
-  return expense;
-}
-
-async function getMonthExpenses(userId) {
-  const start = new Date();
-  start.setDate(1);
-  start.setHours(0, 0, 0, 0);
-
-  return prisma.expense.findMany({
-    where: {
-      userId,
-      createdAt: {
-        gte: start,
-      },
-    },
-    orderBy: {
-      createdAt: 'desc',
-    },
-  });
-}
+// ====================== MEDICAMENTOS ======================
 
 async function saveMedication(userId, data) {
-  const nome = data.nome;
-  const quantidade = Number(data.quantidade) || 0;
-  const frequencia = Number(data.frequencia) || 1;
-  const horarios = data.horarios || ['08:00'];
+  const {
+    nome,
+    quantidade,
+    frequencia,
+    horarios
+  } = data;
 
   await prisma.medication.updateMany({
     where: {
@@ -221,11 +216,11 @@ async function saveMedication(userId, data) {
       active: true,
       name: {
         contains: nome,
-        mode: 'insensitive',
-      },
+        mode: 'insensitive'
+      }
     },
     data: {
-      active: false,
+      active: false
     },
   });
 
@@ -233,45 +228,196 @@ async function saveMedication(userId, data) {
     data: {
       userId,
       name: nome,
-      totalPills: quantidade,
-      remaining: quantidade,
-      frequency: frequencia,
-      times: JSON.stringify(horarios),
+      totalPills: quantidade || 0,
+      remaining: quantidade || 0,
+      frequency: frequencia || 1,
+      times: JSON.stringify(
+        horarios || ['08:00']
+      ),
     },
   });
 
-  await saveMemory(userId, 'remedio', `${nome} - ${frequencia}x por dia`, {
-    medId: med.id,
-    horarios,
-  });
+  await saveMemory(
+    userId,
+    'remedio',
+    `${nome} - ${frequencia}x por dia`,
+    {
+      medId: med.id
+    }
+  );
 
   return med;
 }
 
-async function getJornada(userId) {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      jornadaMinutos: true,
+// ====================== COMPRAS ======================
+
+async function savePurchase(userId, item) {
+  const existing =
+    await prisma.purchase.findFirst({
+      where: {
+        userId,
+        item: {
+          contains: item,
+          mode: 'insensitive'
+        }
+      },
+    });
+
+  if (existing) {
+    const daysSinceLast = Math.floor(
+      (
+        Date.now() -
+        existing.lastBought.getTime()
+      ) /
+      (1000 * 60 * 60 * 24)
+    );
+
+    const newAvg =
+      existing.avgFrequency
+        ? Math.round(
+            (
+              existing.avgFrequency +
+              daysSinceLast
+            ) / 2
+          )
+        : daysSinceLast;
+
+    const updated =
+      await prisma.purchase.update({
+        where: {
+          id: existing.id
+        },
+        data: {
+          lastBought: new Date(),
+          buyCount: existing.buyCount + 1,
+          avgFrequency: newAvg,
+          notified: false
+        },
+      });
+
+    await saveMemory(
+      userId,
+      'compra',
+      item
+    );
+
+    return {
+      purchase: updated,
+      isRecurring: true
+    };
+  }
+
+  const purchase =
+    await prisma.purchase.create({
+      data: {
+        userId,
+        item
+      }
+    });
+
+  await saveMemory(
+    userId,
+    'compra',
+    item
+  );
+
+  return {
+    purchase,
+    isRecurring: false
+  };
+}
+
+// ====================== TAREFAS ======================
+
+async function saveTask(userId, data) {
+  const {
+    titulo,
+    data: date,
+    hora
+  } = data;
+
+  let dueDate = parseDateSafely(date);
+
+  if (dueDate) {
+    dueDate.setHours(12, 0, 0, 0);
+  }
+
+  const task = await prisma.task.create({
+    data: {
+      userId,
+      title: titulo,
+      dueDate,
+      dueTime: hora || null,
     },
   });
 
-  return user?.jornadaMinutos || 480;
+  await saveMemory(
+    userId,
+    'compromisso',
+    titulo,
+    {
+      taskId: task.id
+    }
+  );
+
+  return task;
 }
 
-async function saveJornada(userId, minutos) {
-  return prisma.user.update({
-    where: { id: userId },
-    data: {
-      jornadaMinutos: minutos,
+// ====================== GASTOS ======================
+
+async function saveExpense(userId, data) {
+  const {
+    valor,
+    categoria,
+    descricao
+  } = data;
+
+  const expense =
+    await prisma.expense.create({
+      data: {
+        userId,
+        value: parseFloat(valor) || 0,
+        category: categoria || 'outro',
+        description: descricao || '',
+      },
+    });
+
+  await saveMemory(
+    userId,
+    'gasto',
+    `R$ ${valor} em ${categoria}`
+  );
+
+  return expense;
+}
+
+async function getMonthExpenses(userId) {
+  const start = new Date();
+
+  start.setDate(1);
+  start.setHours(0, 0, 0, 0);
+
+  return prisma.expense.findMany({
+    where: {
+      userId,
+      createdAt: {
+        gte: start
+      }
+    },
+    orderBy: {
+      createdAt: 'desc'
     },
   });
 }
 
 module.exports = {
-  prisma,
-
   getOrCreateUser,
+
+  saveJornada,
+  getJornada,
+
+  saveUserPreference,
+  getUserPreference,
 
   saveMemory,
   getRecentMemories,
@@ -279,14 +425,11 @@ module.exports = {
   saveConversationMessage,
   getConversationHistory,
 
-  saveUserPreference,
-  getUserPreference,
-
+  saveMedication,
+  savePurchase,
+  saveTask,
   saveExpense,
   getMonthExpenses,
 
-  saveMedication,
-
-  getJornada,
-  saveJornada,
+  prisma,
 };
