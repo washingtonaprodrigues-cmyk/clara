@@ -14,15 +14,15 @@ router.post('/receive', async (req, res) => {
 
     const phone = body.phone;
 
+    if (typeof handleMessage !== 'function') {
+      console.error('handleMessage nao foi carregado como funcao:', handlerModule);
+      return res.status(500).json({ error: 'Handler invalido' });
+    }
+
     if (body.text?.message) {
       const text = body.text.message;
 
       console.log(`📩 ${phone}: ${text}`);
-
-      if (typeof handleMessage !== 'function') {
-        console.error('handleMessage não foi carregado como função:', handlerModule);
-        return res.status(500).json({ error: 'Handler inválido' });
-      }
 
       handleMessage(phone, text).catch(console.error);
 
@@ -30,7 +30,7 @@ router.post('/receive', async (req, res) => {
     }
 
     if (body.location) {
-      console.log(`📍 Localização recebida de ${phone}`);
+      console.log(`📍 Localizacao recebida de ${phone}`);
 
       handleMessage(phone, null, {
         latitude: body.location.latitude,
