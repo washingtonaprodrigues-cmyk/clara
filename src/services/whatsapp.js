@@ -25,16 +25,15 @@ async function sendMessage(phone, message) {
   }
 }
 
-async function sendReminderWithButtons(phone, message, reminderId) {
+async function sendButtons(phone, message, buttons) {
   try {
     const body = {
       phone,
-      message: `⏰ *Lembrete*\n\n${message}`,
-      buttons: [
-        { id: `confirm_${reminderId}`, label: '✅ Feito!' },
-        { id: `snooze_${reminderId}`,  label: '⏰ +10 minutos' },
-        { id: `cancel_${reminderId}`,  label: '❌ Cancelar' },
-      ]
+      message,
+      buttons: buttons.map((b, i) => ({
+        id: b.id || `btn_${i}`,
+        label: b.label
+      }))
     };
     const response = await axios.post(
       `${BASE_URL}/send-button-actions`,
@@ -43,9 +42,18 @@ async function sendReminderWithButtons(phone, message, reminderId) {
     );
     return response.data;
   } catch (error) {
-    console.error('Erro Z-API sendReminderWithButtons:', error.response?.data || error.message);
-    return sendMessage(phone, `⏰ *Lembrete*\n\n${message}\n\nResponda: *feito*, *+10min* ou *cancelar*`);
+    console.error('Erro Z-API sendButtons:', error.response?.data || error.message);
+    const opcoes = buttons.map(b => `• ${b.label}`).join('\n');
+    return sendMessage(phone, `${message}\n\n${opcoes}`);
   }
+}
+
+async function sendReminderWithButtons(phone, message, reminderId) {
+  return sendButtons(phone, `⏰ *Lembrete*\n\n${message}`, [
+    { id: `confirm_${reminderId}`, label: '✅ Feito!' },
+    { id: `snooze_${reminderId}`,  label: '⏰ +10 minutos' },
+    { id: `cancel_${reminderId}`,  label: '❌ Cancelar' },
+  ]);
 }
 
 async function sendLocationRequest(phone) {
@@ -54,6 +62,7 @@ async function sendLocationRequest(phone) {
 
 module.exports = {
   sendMessage,
+  sendButtons,
   sendReminderWithButtons,
   sendLocationRequest,
 };
