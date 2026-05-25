@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 
-const { handleMessage } = require('../services/handler');
+const handlerModule = require('../services/handler');
+const handleMessage = handlerModule.handleMessage || handlerModule;
 
 router.post('/receive', async (req, res) => {
   try {
@@ -13,48 +14,45 @@ router.post('/receive', async (req, res) => {
 
     const phone = body.phone;
 
-    // TEXTO
     if (body.text?.message) {
       const text = body.text.message;
 
       console.log(`📩 ${phone}: ${text}`);
 
-      handleMessage(phone, text)
-        .catch(console.error);
+      if (typeof handleMessage !== 'function') {
+        console.error('handleMessage não foi carregado como função:', handlerModule);
+        return res.status(500).json({ error: 'Handler inválido' });
+      }
+
+      handleMessage(phone, text).catch(console.error);
 
       return res.json({ ok: true });
     }
 
-    // LOCALIZAÇÃO
     if (body.location) {
       console.log(`📍 Localização recebida de ${phone}`);
 
-      handleMessage(
-        phone,
-        null,
-        {
-          latitude: body.location.latitude,
-          longitude: body.location.longitude,
-        }
-      ).catch(console.error);
+      handleMessage(phone, null, {
+        latitude: body.location.latitude,
+        longitude: body.location.longitude,
+      }).catch(console.error);
 
       return res.json({ ok: true });
     }
 
     return res.json({ ok: true });
-
   } catch (error) {
-    console.error('Erro webhook:', error);
+    console.error('Erro no webhook:', error);
 
     return res.status(500).json({
-      error: 'Erro interno'
+      error: 'Erro interno',
     });
   }
 });
 
 router.get('/test', (req, res) => {
   res.json({
-    status: 'Clara funcionando ✅'
+    status: 'Clara funcionando ✅',
   });
 });
 
