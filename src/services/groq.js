@@ -114,7 +114,7 @@ async function searchWeb(query, locationContext = '') {
     const data = await webSearch(fullQuery);
 
     if (!data || !data.results || data.results.length === 0) {
-      return "Não encontrei informações atualizadas. Pode tentar de outra forma?";
+      return { text: "Não encontrei informações atualizadas. Pode tentar de outra forma?", source: null };
     }
 
     let contexto = '';
@@ -124,6 +124,35 @@ async function searchWeb(query, locationContext = '') {
       if (r.content) contexto += `${r.content.substring(0, 300)}\n\n`;
     });
 
+    // Pega a primeira URL válida como fonte
+    const sourceUrl = data.results[0]?.url || null;
+    const sourceTitle = data.results[0]?.title || null;
+
+    const isClima = /clima|tempo|chuva|temperatura|previsão|chover|calor|frio/i.test(query);
+    const isTelefone = /telefone|contato|whatsapp|ligar|falar com/i.test(query);
+    const isEndereco = /endereço|onde fica|localização|como chegar/i.test(query);
+
+    let formatInstrucao = '';
+    if (isClima) {
+      formatInstrucao = `Para clima:
+- Linha 1: emoji do tempo + cidade + temperatura atual (ex: 🌧️ Carlópolis, PR — 18°C, chuva fraca)
+- Linha 2: previsão dos próximos dias curta (ex: Seg ☀️ 22° | Ter 🌧️ 18° | Qua ⛅ 20°)
+- Linha 3: dica rápida se necessário (ex: Leva guarda-chuva! ☂️)`;
+    } else if (isTelefone) {
+      formatInstrucao = `Para telefone/contato:
+- Linha 1: nome do estabelecimento em negrito
+- Linha 2: 📞 número do telefone
+- Linha 3: endereço se disponível`;
+    } else if (isEndereco) {
+      formatInstrucao = `Para endereço:
+- Linha 1: nome do local em negrito  
+- Linha 2: 📍 endereço completo
+- Linha 3: dica de como chegar se disponível`;
+    } else {
+      formatInstrucao = `Responda de forma direta e objetiva em no máximo 4 linhas.
+Destaque a informação principal. Use emojis quando fizer sentido.`;
+    }
+
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
       messages: [
@@ -131,31 +160,29 @@ async function searchWeb(query, locationContext = '') {
           role: 'system',
           content: `Você é a Clara, assistente pessoal simpática e direta.
 Com base nas informações de busca, responda em português brasileiro de forma natural e amigável.
-Não cite fontes, não repita a pergunta.
+Não cite fontes no texto, não repita a pergunta, não use markdown com asteriscos duplos.
+Use *negrito* apenas para informações principais.
+Seja CURTA e DIRETA — máximo 4 linhas de resposta.
 
-Para clima use emojis que representem o tempo:
-☀️ sol | 🌤️ parcialmente nublado | ⛅ nublado | 🌧️ chuva | ⛈️ tempestade | 🌨️ frio/neve | 🌫️ névoa
+Emojis de clima: ☀️ sol | 🌤️ parcialmente nublado | ⛅ nublado | 🌧️ chuva | ⛈️ tempestade | 🌨️ frio | 🌫️ névoa
 
-Formato ideal para clima:
-- Primeira linha: condição atual com emoji + temperatura agora
-- Segunda linha: previsão dos próximos dias (ex: Seg ☀️ 22° | Ter 🌧️ 18° | Qua ⛅ 20°)
-- Terceira linha: dica rápida se necessário (ex: "Leva guarda-chuva! ☂")
-
-Para outros tipos de busca (telefone, endereço, etc): destaque a informação principal em no máximo 2 linhas.`,
+${formatInstrucao}`,
         },
         {
           role: 'user',
           content: `Pergunta: ${query}\nLocalização: ${locationContext || 'não informada'}\n\nInformações encontradas:\n${contexto}`,
         },
       ],
-      temperature: 0.4,
-      max_tokens: 250,
+      temperature: 0.3,
+      max_tokens: 200,
     });
 
-    return completion.choices[0].message.content.trim();
+    const text = completion.choices[0].message.content.trim();
+
+    return { text, sourceUrl, sourceTitle };
   } catch (error) {
     console.error('Erro searchWeb:', error.message);
-    return "Não consegui buscar essa informação agora.";
+    return { text: "Não consegui buscar essa informação agora.", source: null };
   }
 }
 
