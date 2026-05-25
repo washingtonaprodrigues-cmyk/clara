@@ -162,6 +162,29 @@ async function handleMessage(phone, text, location = null) {
       return await responderLivre(user, phone, text);
     }
 
+    // MODO PESQUISAR → pergunta cidade se for clima sem localização
+    if (modoAtual === 'pesquisar') {
+      const isClima = /clima|tempo|chuva|temperatura|previsão|chover|calor|frio/i.test(text);
+      if (isClima) {
+        const mems = await memory.getRecentMemories(user.id, 20);
+        const temCidade = mems.find(m => m.type === 'cidade' || m.type === 'localizacao');
+        if (!temCidade) {
+          await memory.saveMemory(user.id, 'aguardando_cidade_busca', text);
+          return await sendMessage(phone, '🌍 De qual cidade você quer saber o clima? 😊');
+        }
+      }
+
+      // Verifica se estava aguardando cidade pra busca
+      const mems = await memory.getRecentMemories(user.id, 10);
+      const aguardando = mems.find(m => m.type === 'aguardando_cidade_busca');
+      if (aguardando) {
+        // Salva como cidade e refaz a busca
+        await memory.saveMemory(user.id, 'cidade', text);
+        // Remove o aguardando
+        return await handleBusca(user, phone, aguardando.content, text);
+      }
+    }
+
     const classified = await classify(text);
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
 
@@ -347,18 +370,20 @@ async function gerarResumoDoBanco(pontos, userId) {
 }
 
 // ====================== BUSCA ======================
-async function handleBusca(user, phone, query) {
+async function handleBusca(user, phone, query, cidadeOverride = null) {
   await sendMessage(phone, '✨ _Clareando ideias..._');
 
   const mems = await memory.getRecentMemories(user.id, 20);
-  let locationText = '';
+  let locationText = cidadeOverride || '';
 
-  const locationMem = mems.find(m => m.type === 'localizacao');
-  if (locationMem) {
-    try {
-      const loc = JSON.parse(locationMem.content);
-      locationText = `${loc.latitude}, ${loc.longitude}`;
-    } catch (e) {}
+  if (!locationText) {
+    const locationMem = mems.find(m => m.type === 'localizacao');
+    if (locationMem) {
+      try {
+        const loc = JSON.parse(locationMem.content);
+        locationText = `${loc.latitude}, ${loc.longitude}`;
+      } catch (e) {}
+    }
   }
 
   if (!locationText) {
@@ -376,7 +401,18 @@ async function handleBusca(user, phone, query) {
   }
 
   const resultado = await searchWeb(queryFinal, locationText);
-  await sendMessage(phone, resultado + MENU_FOOTER);
+
+  let mensagem = resultado.text;
+
+  // Adiciona fonte se disponível
+  if (resultado.sourceUrl) {
+    mensagem += `\n\n🔗 _Fonte: ${resultado.sourceUrl}_`;
+  }
+
+  await sendButtons(phone, mensagem, [
+    { id: 'pesquisar', label: '🔍 Nova pesquisa' },
+    { id: 'menu', label: '🏠 Menu' },
+  ]);
 }
 
 // ====================== ANOTAÇÃO ======================
