@@ -5,16 +5,53 @@ const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
 
+const BASE_URL = 'https://clara-production-8128.up.railway.app';
 const MENU_FOOTER = '\n\n_Digite *menu* para ver as opções 🏠_';
 
 const BOAS_VINDAS_MODO = {
-  'lembrete':  `⏰ *Lembretes*\n\nPosso te lembrar de uma reunião, uma tarefa ou qualquer compromisso que desejar!\n\nExemplos:\n• _"Me lembra às 19h de buscar minha filha"_\n• _"Lembrete amanhã às 8h de tomar remédio"_\n• _"Me lembra sexta às 18h da reunião"_\n\n_É só me dizer!_ 😊`,
-  'anotacao':  `📝 *Anotações*\n\nGuardo qualquer informação pra você consultar quando quiser!\n\nExemplos:\n• _"Senha do Wi-Fi: 12345"_\n• _"Código do cliente: ABC123"_\n• _"Endereço da minha médica"_\n• _"Senha do cartão: 9010"_\n\n_O que quer guardar?_ 😊`,
-  'gasto':     `💰 *Gastos*\n\nRegistro tudo e te mostro um resumo certinho do mês!\n\nExemplos:\n• _"Gastei 45 reais no mercado"_\n• _"Paguei 120 no restaurante"_\n• _"Quanto gastei esse mês?"_\n\n_Me conta seu gasto!_ 💸`,
-  'saude':     `💊 *Saúde*\n\nVamos cadastrar um medicamento!\n\nQual o *nome do medicamento* que precisa de acompanhamento? 💊`,
-  'ponto':     `📍 *Ponto Digital*\n\nRegistro sua jornada e calculo horas extras!\n\nExemplos:\n• _"Entrei às 8:15"_\n• _"Saí pra almoçar às 12:30"_\n• _"Voltei do almoço às 14:10"_\n• _"Saí do trabalho às 18:05"_\n\nOu tudo de uma vez:\n_"Entrei 8h, saí almoçar 12h, voltei 13h, saí 17h"_\n\n_Pode me dizer!_ 📍`,
-  'pesquisar': `🔍 *Pesquisar*\n\nBusco qualquer coisa pra você na internet!\n\n☀️ _"Como está o tempo hoje?"_\n🔮 _"Horóscopo de Áries"_\n📞 _"Telefone da farmácia mais próxima"_\n📍 _"Endereço do Detran"_\n💵 _"Preço do dólar hoje"_\n\n_O que quer pesquisar?_ ✨`,
-  'conversar': `💬 *Conversar*\n\nAdoro uma boa conversa! Pode falar à vontade sobre qualquer assunto 😄\n\n_Pode começar!_ 🥰`,
+  'lembrete': (phone) =>
+    `⏰ *Lembretes*\n\nEscolha como prefere criar:\n\n` +
+    `📋 *Pelo formulário:*\n${BASE_URL}/forms/lembrete/${phone}\n\n` +
+    `_Ou me diga diretamente:_\n` +
+    `• _"Me lembra às 19h de buscar minha filha"_\n` +
+    `• _"Lembrete amanhã às 8h de tomar remédio"_\n\n` +
+    `_É só escolher!_ 😊`,
+
+  'anotacao': () =>
+    `📝 *Anotações*\n\nGuardo qualquer informação pra você consultar quando quiser!\n\n` +
+    `Exemplos:\n• _"Senha do Wi-Fi: 12345"_\n• _"Código do cliente: ABC123"_\n• _"Endereço da minha médica"_\n\n` +
+    `_O que quer guardar?_ 😊`,
+
+  'gasto': () =>
+    `💰 *Gastos*\n\nRegistro tudo e te mostro um resumo certinho do mês!\n\n` +
+    `Exemplos:\n• _"Gastei 45 reais no mercado"_\n• _"Paguei 120 no restaurante"_\n\n` +
+    `_Me conta seu gasto!_ 💸`,
+
+  'saude': (phone) =>
+    `💊 *Saúde*\n\nEscolha como prefere cadastrar:\n\n` +
+    `📋 *Pelo formulário:*\n${BASE_URL}/forms/remedio/${phone}\n\n` +
+    `_Ou me diga diretamente:_\n` +
+    `• _"Losartana todo dia às 8h"_\n` +
+    `• _"Vitamina C às 9h e 21h por 30 dias"_\n\n` +
+    `_É só escolher!_ 😊`,
+
+  'ponto': (phone) =>
+    `📍 *Ponto Digital*\n\nEscolha como prefere registrar:\n\n` +
+    `📋 *Pelo formulário:*\n${BASE_URL}/forms/ponto/${phone}\n\n` +
+    `_Ou me diga diretamente:_\n` +
+    `• _"Entrei às 8:15"_\n` +
+    `• _"Entrei 8h, saí almoçar 12h, voltei 13h, saí 17h"_\n\n` +
+    `_É só escolher!_ 😊`,
+
+  'pesquisar': () =>
+    `🔍 *Pesquisar*\n\nBusco qualquer coisa pra você na internet!\n\n` +
+    `☀️ _"Como está o tempo hoje?"_\n🔮 _"Horóscopo de Áries"_\n` +
+    `📞 _"Telefone da farmácia mais próxima"_\n📍 _"Endereço do Detran"_\n\n` +
+    `_O que quer pesquisar?_ ✨`,
+
+  'conversar': () =>
+    `💬 *Conversar*\n\nAdoro uma boa conversa! Pode falar à vontade sobre qualquer assunto 😄\n\n` +
+    `_Pode começar!_ 🥰`,
 };
 
 // ====================== UTILITÁRIOS ======================
@@ -76,7 +113,7 @@ async function getModoAtual(userId) {
 async function getCadastroMed(userId) {
   const mems = await memory.getRecentMemories(userId, 10);
   const m = mems.find(m => m.type === 'cadastro_med');
-  if (!m) return null;
+  if (!m || !m.content) return null;
   try { return JSON.parse(m.content); } catch { return null; }
 }
 
@@ -159,7 +196,9 @@ async function handleMessage(phone, text, location = null) {
       if (modo === 'saude') {
         await memory.saveMemory(user.id, 'cadastro_med', JSON.stringify({ etapa: 'nome' }));
       }
-      return await sendMessage(phone, BOAS_VINDAS_MODO[modo] + MENU_FOOTER);
+      const msgFn = BOAS_VINDAS_MODO[modo];
+      const msg = typeof msgFn === 'function' ? msgFn(phone) : msgFn;
+      return await sendMessage(phone, msg + MENU_FOOTER);
     }
 
     // VERIFICA MODO ATUAL
@@ -293,12 +332,10 @@ async function handleCadastroMedGuiado(user, phone, text) {
     }
 
     case 'horario_inicio': {
-      // Extrai hora do texto
       const match = text.match(/(\d{1,2})[:\s]?(\d{0,2})/);
       const hora = match ? parseInt(match[1]) : 8;
       const min = match && match[2] ? parseInt(match[2]) : 0;
 
-      // Calcula todos os horários baseado no intervalo
       const horarios = [];
       for (let i = 0; i < cadastro.frequenciaDia; i++) {
         const h = (hora + (i * cadastro.intervaloHoras)) % 24;
@@ -309,7 +346,6 @@ async function handleCadastroMedGuiado(user, phone, text) {
       const termina = new Date(nowBRT());
       termina.setDate(termina.getDate() + cadastro.dias);
 
-      // Salva no banco
       await memory.saveMedication(user.id, {
         nome: cadastro.nome,
         quantidade: totalDoses,
@@ -317,7 +353,6 @@ async function handleCadastroMedGuiado(user, phone, text) {
         horarios,
       });
 
-      // Limpa cadastro
       await memory.saveMemory(user.id, 'cadastro_med', '');
       await memory.saveMemory(user.id, 'modo_atual', '');
 
