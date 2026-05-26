@@ -62,6 +62,17 @@ function formatarDataHoraBR(date) {
   return `${dias[d.getDay()]} ${dStr} às ${hStr}`;
 }
 
+function criarDataBRT(dataStr, horaStr) {
+  // Cria data no fuso de Brasília corretamente
+  const [ano, mes, dia] = dataStr.split('-').map(Number);
+  const [hora, min] = horaStr.split(':').map(Number);
+  const d = new Date();
+  d.setFullYear(ano, mes - 1, dia);
+  d.setHours(hora, min, 0, 0);
+  // Converte para UTC considerando BRT = UTC-3
+  return new Date(d.getTime() + (d.getTimezoneOffset() + 180) * -60000);
+}
+
 async function getModoAtual(userId) {
   const mems = await memory.getRecentMemories(userId, 10);
   return mems.find(m => m.type === 'modo_atual')?.content || null;
@@ -111,20 +122,17 @@ async function handleMessage(phone, text, location = null) {
 
     const textLower = normalizar(text);
 
-    // MENU
     if (['menu', 'inicio', 'voltar', 'comeco', 'ajuda', 'opcoes'].includes(textLower)) {
       await memory.saveMemory(user.id, 'modo_atual', '');
       return await sendMainMenu(phone);
     }
 
-    // COMANDOS RÁPIDOS DE LISTAGEM
     if (['ver lembretes', 'ver_lembretes'].includes(textLower)) return await listarLembretes(user, phone);
     if (['ver anotacoes', 'ver_anotacoes'].includes(textLower)) return await listarAnotacoes(user, phone);
     if (['ver gastos', 'ver_gastos', 'resumo_mes'].includes(textLower)) return await listarGastos(user, phone);
     if (['ver horas hoje', 'ver_horas_hoje'].includes(textLower)) return await listarPontoHoje(user, phone);
     if (['ver medicamentos', 'ver_medicamentos'].includes(textLower)) return await listarMedicamentos(user, phone);
 
-    // ESCOLHA DO MODO POR PALAVRA-CHAVE
     const modoMap = {
       'lembretes': 'lembrete', 'lembrete': 'lembrete',
       'criar_lembrete': 'lembrete', 'novo_lembrete': 'lembrete',
@@ -142,10 +150,8 @@ async function handleMessage(phone, text, location = null) {
       return await sendMessage(phone, BOAS_VINDAS_MODO[modo] + MENU_FOOTER);
     }
 
-    // VERIFICA MODO ATUAL
     const modoAtual = await getModoAtual(user.id);
 
-    // MODO ANOTAÇÃO → salva direto
     if (modoAtual === 'anotacao') {
       await memory.saveMemory(user.id, 'anotacao', text, { titulo: text.substring(0, 50) });
       return await sendButtons(phone,
@@ -157,12 +163,10 @@ async function handleMessage(phone, text, location = null) {
       );
     }
 
-    // MODO CONVERSAR → responde livremente
     if (modoAtual === 'conversar') {
       return await responderLivre(user, phone, text);
     }
 
-    // MODO PESQUISAR → pergunta cidade se for clima sem localização
     if (modoAtual === 'pesquisar') {
       const isClima = /clima|tempo|chuva|temperatura|previsão|chover|calor|frio/i.test(text);
       if (isClima) {
@@ -174,13 +178,10 @@ async function handleMessage(phone, text, location = null) {
         }
       }
 
-      // Verifica se estava aguardando cidade pra busca
       const mems = await memory.getRecentMemories(user.id, 10);
       const aguardando = mems.find(m => m.type === 'aguardando_cidade_busca');
       if (aguardando) {
-        // Salva como cidade e refaz a busca
         await memory.saveMemory(user.id, 'cidade', text);
-        // Remove o aguardando
         return await handleBusca(user, phone, aguardando.content, text);
       }
     }
@@ -403,10 +404,8 @@ async function handleBusca(user, phone, query, cidadeOverride = null) {
   const resultado = await searchWeb(queryFinal, locationText);
 
   let mensagem = resultado.text;
-
-  // Adiciona fonte se disponível
   if (resultado.sourceUrl) {
-    mensagem += `\n\n🔗 _Fonte: ${resultado.sourceUrl}_`;
+    mensagem += `\n\n🔗 _${resultado.sourceUrl}_`;
   }
 
   await sendButtons(phone, mensagem, [
@@ -438,8 +437,7 @@ async function handleTask(user, phone, classified) {
   if (classified.hora) {
     try {
       const hoje = classified.data || dateBRT();
-      const [h, m] = classified.hora.split(':').map(Number);
-      const scheduledAt = new Date(`${hoje}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`);
+      const scheduledAt = criarDataBRT(hoje, classified.hora);
 
       if (!classified.data && scheduledAt < nowBRT()) {
         scheduledAt.setDate(scheduledAt.getDate() + 1);
@@ -513,21 +511,38 @@ async function handleMedication(user, phone, classified) {
     return await sendMessage(phone, 'Me diz o nome do remédio e o horário? Exemplo: _"Losartana todo dia às 8h"_' + MENU_FOOTER);
   }
 
+  const quantidade = Number(classified.quantidade) || 30;
+  const frequencia = Number(classified.frequencia) || horarios.length || 1;
+  const diasTratamento = Number(classified.dias) || 0;
+  const totalDoses = diasTratamento > 0 ? diasTratamento * frequencia : quantidade;
+  const dose = classified.dose || '1 comprimido';
+
   await memory.saveMedication(user.id, {
     nome,
-    quantidade: Number(classified.quantidade) || 0,
-    frequencia: Number(classified.frequencia) || horarios.length || 1,
+    quantidade: totalDoses,
+    frequencia,
     horarios,
   });
 
-  await sendButtons(phone,
-    `💊 *Medicamento cadastrado!*\n\n${nome}\n⏰ ${horarios.join(', ')}\n\nVou te lembrar nos horários combinados 😊`,
-    [
-      { id: 'ver_medicamentos', label: '📋 Ver medicamentos' },
-      { id: 'novo_remedio', label: '➕ Novo remédio' },
-      { id: 'menu', label: '🏠 Menu' },
-    ]
-  );
+  let resumo = `💊 *Medicamento cadastrado!*\n\n`;
+  resumo += `📋 *${nome}*\n`;
+  resumo += `💊 Dose: ${dose}\n`;
+  resumo += `⏰ Horários: ${horarios.join(', ')}\n`;
+  resumo += `🔄 ${frequencia}x por dia\n`;
+  if (diasTratamento > 0) {
+    resumo += `📅 Duração: ${diasTratamento} dias\n`;
+    resumo += `💊 Total de doses: ${totalDoses}\n`;
+    const termina = new Date(nowBRT());
+    termina.setDate(termina.getDate() + diasTratamento);
+    resumo += `🏁 Termina em: ${formatarDataBR(termina)}\n`;
+  }
+  resumo += `\nVou te lembrar em todos os horários! 😊`;
+
+  await sendButtons(phone, resumo, [
+    { id: 'ver_medicamentos', label: '📋 Ver medicamentos' },
+    { id: 'novo_remedio', label: '➕ Novo remédio' },
+    { id: 'menu', label: '🏠 Menu' },
+  ]);
 }
 
 // ====================== CONSULTA ======================
@@ -546,7 +561,7 @@ async function handleQuery(user, phone, question) {
 
 // ====================== LISTAGENS ======================
 async function listarLembretes(user, phone) {
-  const agora = new Date();
+  const agora = nowBRT();
   const reminders = await prisma.reminder.findMany({
     where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: agora } },
     orderBy: { scheduledAt: 'asc' },
@@ -607,7 +622,7 @@ async function listarAnotacoes(user, phone) {
 }
 
 async function listarGastos(user, phone) {
-  const start = new Date();
+  const start = nowBRT();
   start.setDate(1);
   start.setHours(0, 0, 0, 0);
 
@@ -692,7 +707,7 @@ async function listarMedicamentos(user, phone) {
     const horarios = JSON.parse(m.times || '[]').join(', ');
     texto += `💊 *${m.name}*\n`;
     texto += `⏰ ${horarios} — ${m.frequency}x por dia\n`;
-    texto += `💊 Restam: ${m.remaining} comprimidos\n\n`;
+    texto += `💊 Restam: ${m.remaining} comprimido${m.remaining !== 1 ? 's' : ''}\n\n`;
   });
 
   await sendButtons(phone, texto, [
