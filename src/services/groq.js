@@ -6,38 +6,48 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const MODEL_LEVE = 'llama-3.1-8b-instant';
 const MODEL_FORTE = 'llama-3.3-70b-versatile';
 
+function hojeFormatado() {
+  return new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+}
+
 const SYSTEM_PROMPT = `Você é a Clara, assistente pessoal brasileira.
 Retorne APENAS JSON no formato correto.
-Hoje é ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}.
+Hoje é ${hojeFormatado()}.
 
 REGRAS IMPORTANTES:
 - Entenda linguagem natural, mesmo com erros de digitação.
 - Se tiver valor em dinheiro, geralmente é gasto.
 - Se o usuário quer consultar algo que já guardou, use consulta.
-- Se tiver horário/data e intenção de lembrar, use tarefa.
-- Se for só uma informação para guardar, use anotacao.
+- TAREFA: quando o usuário quer FAZER algo ou ser LEMBRADO de algo. Mesmo sem horário → use tarefa (hora null).
+- ANOTACAO: apenas quando é uma INFORMAÇÃO para guardar e consultar depois. Não tem intenção de ação.
 - Se for pergunta atual/local/notícia/preço/clima/telefone/endereço, use busca.
+
+DIFERENÇA IMPORTANTE:
+- "me lembra de pagar a conta" → tarefa (ação futura)
+- "me lembra do remédio" → tarefa (ação futura)
+- "anota que a senha é 123" → anotacao (informação)
+- "guarda o endereço da médica" → anotacao (informação)
 
 TIPOS:
 - ponto_multiplo: registrar entrada/saída trabalho
   {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
   
-  SUBTIPOS ACEITOS (use exatamente assim):
+  SUBTIPOS ACEITOS:
   - "entrada" → chegou, entrei, cheguei
-  - "saida_almoco" → saí pra almoçar, fui almoçar, saída almoço
-  - "volta_almoco" → voltei do almoço, retornei do almoço
+  - "saida_almoco" → saí pra almoçar, fui almoçar
+  - "volta_almoco" → voltei do almoço, retornei
   - "saida" → saí do trabalho, fui embora, saída final
 
-- cidade: quando o usuário informa sua cidade
+- cidade: quando informa sua cidade
   {"tipo":"cidade","cidade":"nome da cidade e estado"}
 
 - busca: clima, farmácia, restaurante, loja, telefone, informações locais
   {"tipo":"busca","query":"texto da busca"}
   
-- anotacao: guardar informação SEM horário
+- anotacao: INFORMAÇÃO para guardar (não é ação)
   {"tipo":"anotacao","titulo":"resumo","conteudo":"texto completo"}
   
-- tarefa: compromisso COM horário/data
+- tarefa: ação futura OU lembrete, COM ou SEM horário
   {"tipo":"tarefa","titulo":"desc","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null"}
   
 - gasto: gastou dinheiro
@@ -52,34 +62,25 @@ TIPOS:
 - preferencia: nome do usuário ou jeito que prefere ser atendido
   {"tipo":"preferencia","nome":"nome ou null","tom":"carinhoso/direto/divertido/profissional ou null"}
   
+- onboarding: usuário respondendo nome e/ou horário de trabalho no cadastro inicial
+  {"tipo":"onboarding","nome":"nome ou null","jornada":"entrada-almoco_inicio-almoco_fim-saida ou null"}
+
 - consulta: pergunta sobre algo guardado
   {"tipo":"consulta","sobre":"tema"}
   
 - outro: qualquer outra coisa
   {"tipo":"outro"}
 
-EXEMPLOS PONTO:
-"entrei às 8:15, sai almoçar às 12:30, voltei do almoço às 14:10 e saí do trabalho às 18:05"
-→ {"tipo":"ponto_multiplo","acoes":[
-    {"subtipo":"entrada","hora":"08:15"},
-    {"subtipo":"saida_almoco","hora":"12:30"},
-    {"subtipo":"volta_almoco","hora":"14:10"},
-    {"subtipo":"saida","hora":"18:05"}
-  ]}
-
-"cheguei às 8" → {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
-"minha cidade é Carlópolis PR" → {"tipo":"cidade","cidade":"Carlópolis, Paraná"}
-"Carlópolis Paraná" → {"tipo":"cidade","cidade":"Carlópolis, Paraná"}
-"farmácia perto" → {"tipo":"busca","query":"farmácia próxima"}
-"anote que o código é 123" → {"tipo":"anotacao","titulo":"código","conteudo":"o código é 123"}
-"me lembra às 19h de buscar minha sogra" → {"tipo":"tarefa","titulo":"buscar sogra","data":null,"hora":"19:00"}
+EXEMPLOS:
+"entrei às 8:15, sai almoçar às 12:30, voltei do almoço às 14:10 e saí às 18:05"
+→ {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:15"},{"subtipo":"saida_almoco","hora":"12:30"},{"subtipo":"volta_almoco","hora":"14:10"},{"subtipo":"saida","hora":"18:05"}]}
+"me lembra de pagar a internet" → {"tipo":"tarefa","titulo":"pagar a internet","data":null,"hora":null}
+"me lembra do remédio às 22h" → {"tipo":"tarefa","titulo":"remédio","data":null,"hora":"22:00"}
+"anota que a senha do wifi é 12345" → {"tipo":"anotacao","titulo":"senha wifi","conteudo":"senha do wifi é 12345"}
 "gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
 "tomo Losartana todo dia às 8h" → {"tipo":"medicamento","nome":"Losartana","quantidade":0,"frequencia":1,"horarios":["08:00"]}
-"Vitamina C às 9h e 21h" → {"tipo":"medicamento","nome":"Vitamina C","quantidade":0,"frequencia":2,"horarios":["09:00","21:00"]}
-"quanto gastei esse mês?" → {"tipo":"consulta","sobre":"gastos"}
-"qual a senha do wi-fi?" → {"tipo":"consulta","sobre":"senha wi-fi"}
-"me chamo Ana" → {"tipo":"preferencia","nome":"Ana","tom":null}
-"seja mais direto comigo" → {"tipo":"preferencia","nome":null,"tom":"direto"}
+"me chamo Ana" → {"tipo":"onboarding","nome":"Ana","jornada":null}
+"entro 8h saio 17h almoço 12 a 13" → {"tipo":"onboarding","nome":null,"jornada":"08:00-12:00-13:00-17:00"}
 "oi" → {"tipo":"saudacao"}
 `;
 
@@ -100,21 +101,19 @@ async function classify(message) {
     return JSON.parse(text);
   } catch (error) {
     console.error('Erro classify:', error.message);
-    return { tipo: 'outro', resposta: 'Entendi!' };
+    return { tipo: 'outro' };
   }
 }
 
 async function searchWeb(query, locationContext = '') {
   try {
-    const fullQuery = locationContext
-      ? `${query} em ${locationContext}`
-      : query;
+    const fullQuery = locationContext ? `${query} em ${locationContext}` : query;
     console.log(`🔎 Buscando: ${fullQuery}`);
 
     const data = await webSearch(fullQuery);
 
     if (!data || !data.results || data.results.length === 0) {
-      return { text: "Não encontrei informações atualizadas. Pode tentar de outra forma?", source: null };
+      return { text: "Não encontrei informações atualizadas. Pode tentar de outra forma?", sourceUrl: null };
     }
 
     let contexto = '';
@@ -124,33 +123,24 @@ async function searchWeb(query, locationContext = '') {
       if (r.content) contexto += `${r.content.substring(0, 300)}\n\n`;
     });
 
-    // Pega a primeira URL válida como fonte
     const sourceUrl = data.results[0]?.url || null;
-    const sourceTitle = data.results[0]?.title || null;
 
     const isClima = /clima|tempo|chuva|temperatura|previsão|chover|calor|frio/i.test(query);
-    const isTelefone = /telefone|contato|whatsapp|ligar|falar com/i.test(query);
+    const isTelefone = /telefone|contato|whatsapp|ligar/i.test(query);
     const isEndereco = /endereço|onde fica|localização|como chegar/i.test(query);
 
     let formatInstrucao = '';
     if (isClima) {
       formatInstrucao = `Para clima:
-- Linha 1: emoji do tempo + cidade + temperatura atual (ex: 🌧️ Carlópolis, PR — 18°C, chuva fraca)
-- Linha 2: previsão dos próximos dias curta (ex: Seg ☀️ 22° | Ter 🌧️ 18° | Qua ⛅ 20°)
-- Linha 3: dica rápida se necessário (ex: Leva guarda-chuva! ☂️)`;
+- Linha 1: emoji + cidade + temperatura atual
+- Linha 2: previsão curta dos próximos dias (ex: Seg ☀️ 22° | Ter 🌧️ 18°)
+- Linha 3: dica rápida se necessário`;
     } else if (isTelefone) {
-      formatInstrucao = `Para telefone/contato:
-- Linha 1: nome do estabelecimento em negrito
-- Linha 2: 📞 número do telefone
-- Linha 3: endereço se disponível`;
+      formatInstrucao = `Para telefone: nome em negrito + 📞 número. Máximo 2 linhas.`;
     } else if (isEndereco) {
-      formatInstrucao = `Para endereço:
-- Linha 1: nome do local em negrito  
-- Linha 2: 📍 endereço completo
-- Linha 3: dica de como chegar se disponível`;
+      formatInstrucao = `Para endereço: nome em negrito + 📍 endereço. Máximo 2 linhas.`;
     } else {
-      formatInstrucao = `Responda de forma direta e objetiva em no máximo 4 linhas.
-Destaque a informação principal. Use emojis quando fizer sentido.`;
+      formatInstrucao = `Resposta direta em máximo 3 linhas. Destaque o essencial.`;
     }
 
     const completion = await groq.chat.completions.create({
@@ -158,31 +148,25 @@ Destaque a informação principal. Use emojis quando fizer sentido.`;
       messages: [
         {
           role: 'system',
-          content: `Você é a Clara, assistente pessoal simpática e direta.
-Com base nas informações de busca, responda em português brasileiro de forma natural e amigável.
-Não cite fontes no texto, não repita a pergunta, não use markdown com asteriscos duplos.
-Use *negrito* apenas para informações principais.
-Seja CURTA e DIRETA — máximo 4 linhas de resposta.
-
-Emojis de clima: ☀️ sol | 🌤️ parcialmente nublado | ⛅ nublado | 🌧️ chuva | ⛈️ tempestade | 🌨️ frio | 🌫️ névoa
-
+          content: `Você é a Clara, assistente pessoal direta e simpática.
+Responda em português brasileiro, natural e curto.
+Sem citar fontes, sem repetir a pergunta, sem markdown excessivo.
+Emojis de clima: ☀️ sol | 🌤️ parcialmente nublado | ⛅ nublado | 🌧️ chuva | ⛈️ tempestade | 🌨️ frio
 ${formatInstrucao}`,
         },
         {
           role: 'user',
-          content: `Pergunta: ${query}\nLocalização: ${locationContext || 'não informada'}\n\nInformações encontradas:\n${contexto}`,
+          content: `Pergunta: ${query}\nLocalização: ${locationContext || 'não informada'}\n\nInformações:\n${contexto}`,
         },
       ],
       temperature: 0.3,
       max_tokens: 200,
     });
 
-    const text = completion.choices[0].message.content.trim();
-
-    return { text, sourceUrl, sourceTitle };
+    return { text: completion.choices[0].message.content.trim(), sourceUrl };
   } catch (error) {
     console.error('Erro searchWeb:', error.message);
-    return { text: "Não consegui buscar essa informação agora.", source: null };
+    return { text: "Não consegui buscar essa informação agora.", sourceUrl: null };
   }
 }
 
@@ -196,22 +180,20 @@ async function freeResponse(message, history = [], preferences = {}) {
       messages: [
         {
           role: 'system',
-          content: `Você é a Clara, uma assistente pessoal no WhatsApp.
-Fale em português brasileiro, com calor humano, naturalidade e objetividade.
-Tom preferido: ${tom}. ${name}
-
-Diretrizes:
-- Responda como uma pessoa atenciosa, sem parecer texto corporativo.
-- Seja breve: normalmente 2 a 5 linhas.
-- Quando faltar informação para executar algo, faça uma pergunta simples.
-- Não invente que salvou, pesquisou ou agendou algo se essa ação não foi feita pelo sistema.
-- Evite listas longas, a menos que o usuário peça.`,
+          content: `Você é a Clara, assistente pessoal no WhatsApp.
+Fale em português brasileiro, natural e humano.
+Tom: ${tom}. ${name}
+- Seja breve: 1 a 3 linhas normalmente.
+- Nunca pareça atendimento automático.
+- Não invente ações que não foram executadas.
+- Sem listas longas, sem excesso de emojis.
+- Transmita presença e cuidado.`,
         },
         ...history,
         { role: 'user', content: message }
       ],
       temperature: 0.7,
-      max_tokens: 400,
+      max_tokens: 300,
     });
     return completion.choices[0].message.content.trim();
   } catch {
@@ -222,6 +204,7 @@ Diretrizes:
 async function generateMemorySummary(memories, question) {
   try {
     const memoriesText = memories
+      .filter(m => ['anotacao', 'tarefa', 'gasto', 'compra', 'compromisso'].includes(m.type))
       .map((m) => `[${m.type}] ${m.content} (${new Date(m.createdAt).toLocaleDateString('pt-BR')})`)
       .join('\n');
 
@@ -230,9 +213,9 @@ async function generateMemorySummary(memories, question) {
       messages: [
         {
           role: 'system',
-          content: `Você é a Clara, assistente com memória viva.
-Fale em primeira pessoa: "Tenho aqui", "Guardei".
-Seja concisa e natural.`,
+          content: `Você é a Clara. Responda de forma natural e direta.
+Use "Tenho aqui", "Guardei", "Anotei".
+Seja concisa, máximo 3 linhas.`,
         },
         {
           role: 'user',
@@ -240,18 +223,13 @@ Seja concisa e natural.`,
         },
       ],
       temperature: 0.5,
-      max_tokens: 300,
+      max_tokens: 200,
     });
 
     return completion.choices[0].message.content.trim();
-  } catch (error) {
+  } catch {
     return 'Deixa eu verificar...';
   }
 }
 
-module.exports = {
-  classify,
-  searchWeb,
-  freeResponse,
-  generateMemorySummary,
-};
+module.exports = { classify, searchWeb, freeResponse, generateMemorySummary };
