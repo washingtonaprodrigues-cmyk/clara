@@ -12,39 +12,99 @@ function random(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+// ====================== BOM DIA ======================
+cron.schedule('0 7 * * *', async () => {
+  try {
+    const now = nowBRT();
+    const hoje = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const diasSemana = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+    const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+    const dataFormatada = `${diasSemana[now.getDay()]}, ${now.getDate()} de ${meses[now.getMonth()]}`;
+
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+
+    for (const user of users) {
+      try {
+        const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
+        const fimHoje = new Date(`${hoje}T23:59:59-03:00`);
+
+        const lembretes = await prisma.reminder.findMany({
+          where: {
+            userId: user.id,
+            sent: false,
+            confirmed: false,
+            scheduledAt: { gte: inicioHoje, lte: fimHoje }
+          },
+          orderBy: { scheduledAt: 'asc' },
+          take: 5,
+        });
+
+        const nome = user.name ? `, ${user.name}` : '';
+        let msg = `Bom dia${nome} 💜\n\n☀️ ${dataFormatada}`;
+
+        if (lembretes.length > 0) {
+          msg += `\n\n📌 Você tem ${lembretes.length} lembrete${lembretes.length > 1 ? 's' : ''} hoje:`;
+          lembretes.forEach(r => {
+            const hora = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+            msg += `\n• ${r.message} às ${hora}`;
+          });
+        }
+
+        msg += `\n\nBom trabalho hoje 😊`;
+        await sendMessage(user.phone, msg);
+      } catch (e) {
+        console.error(`Erro bom dia ${user.phone}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.error('Erro cron bom dia:', e.message);
+  }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ====================== BOA NOITE ======================
+cron.schedule('0 21 * * *', async () => {
+  try {
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+
+    for (const user of users) {
+      try {
+        const nome = user.name ? `, ${user.name}` : '';
+        await sendMessage(user.phone,
+          `Boa noite${nome} 💜\n\nComo foi seu dia?\n\nSe quiser, posso te lembrar de algo amanhã 😊`
+        );
+      } catch (e) {
+        console.error(`Erro boa noite ${user.phone}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.error('Erro cron boa noite:', e.message);
+  }
+}, { timezone: 'America/Sao_Paulo' });
+
 // ====================== LEMBRETES ======================
 cron.schedule('* * * * *', async () => {
   try {
     const now = nowBRT();
 
     const reminders = await prisma.reminder.findMany({
-      where: {
-        sent: false,
-        confirmed: false,
-        scheduledAt: { lte: now }
-      },
+      where: { sent: false, confirmed: false, scheduledAt: { lte: now } },
     });
 
-    console.log(`[Cron] ${now.toLocaleTimeString('pt-BR')} — ${reminders.length} lembrete(s) pendente(s)`);
+    console.log(`[Cron] ${now.toLocaleTimeString('pt-BR')} — ${reminders.length} lembrete(s)`);
 
     for (const r of reminders) {
       if (r.attempts === 0) {
         await sendReminderWithButtons(r.phone, r.message, r.id);
         await prisma.reminder.update({
           where: { id: r.id },
-          data: {
-            attempts: 1,
-            scheduledAt: new Date(now.getTime() + 10 * 60000),
-          },
+          data: { attempts: 1, scheduledAt: new Date(now.getTime() + 10 * 60000) },
         });
-        console.log(`[Cron] Lembrete enviado: ${r.message} → ${r.phone}`);
       } else {
         await sendReminderWithButtons(r.phone, `Ainda sobre:\n${r.message}`, r.id);
         await prisma.reminder.update({
           where: { id: r.id },
           data: { sent: true, attempts: 2 },
         });
-        console.log(`[Cron] Lembrete final enviado: ${r.message} → ${r.phone}`);
       }
     }
   } catch (e) {
@@ -83,18 +143,14 @@ cron.schedule('* * * * *', async () => {
           data: {
             userId: med.userId,
             phone: med.user.phone,
-            message: `Tomou o ${med.name}?`,
+            message: `${med.name}`,
             scheduledAt: new Date(now.getTime() + 15 * 60000),
           },
         });
 
         await sendReminderWithButtons(
           med.user.phone,
-          `💊 ${random([
-            `Hora do ${med.name}`,
-            `Lembrete do ${med.name}`,
-            `Não esquece o ${med.name}`
-          ])}`,
+          `💊 ${random([`Hora do ${med.name}`, `Lembrete do ${med.name}`, `Não esquece o ${med.name}`])}`,
           reminder.id
         );
 
@@ -103,7 +159,7 @@ cron.schedule('* * * * *', async () => {
           data: { remaining: { decrement: 1 } },
         });
 
-        console.log(`[Cron] Med enviado: ${med.name} → ${med.user.phone}`);
+        console.log(`[Cron] Med: ${med.name} → ${med.user.phone}`);
       }
     }
   } catch (e) {
@@ -111,4 +167,4 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
-console.log('Reminders v4 iniciado');
+console.log('Reminders v5 iniciado');
