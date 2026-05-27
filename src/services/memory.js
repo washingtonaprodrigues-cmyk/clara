@@ -1,8 +1,10 @@
-// Clara memory v4.1
+// Clara memory v5
 
 const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
+
+// ====================== HELPERS ======================
 
 function parseDateSafely(date) {
   if (!date) return null;
@@ -131,6 +133,51 @@ async function getRecentMemories(userId, limit = 30) {
   });
 }
 
+// ====================== CONTEXTO TEMPORÁRIO ======================
+
+async function setTemporaryContext(userId, context, minutes = 10) {
+  const expiresAt = Date.now() + (minutes * 60 * 1000);
+
+  await saveMemory(
+    userId,
+    'contexto_temp',
+    JSON.stringify({
+      context,
+      expiresAt
+    })
+  );
+}
+
+async function getTemporaryContext(userId) {
+  const mems = await getRecentMemories(userId, 20);
+
+  const ctx = mems.find(
+    m => m.type === 'contexto_temp'
+  );
+
+  if (!ctx) return null;
+
+  try {
+    const parsed = JSON.parse(ctx.content);
+
+    if (Date.now() > parsed.expiresAt) {
+      return null;
+    }
+
+    return parsed.context;
+  } catch {
+    return null;
+  }
+}
+
+async function clearTemporaryContext(userId) {
+  await saveMemory(
+    userId,
+    'contexto_temp',
+    ''
+  );
+}
+
 // ====================== CONVERSA ======================
 
 async function saveConversationMessage(userId, role, content) {
@@ -156,9 +203,9 @@ async function saveConversationMessage(userId, role, content) {
     },
   });
 
-  if (msgs.length > 30) {
+  if (msgs.length > 40) {
     const toDelete = msgs
-      .slice(30)
+      .slice(40)
       .map((m) => m.id);
 
     await prisma.memory.deleteMany({
@@ -171,7 +218,7 @@ async function saveConversationMessage(userId, role, content) {
   }
 }
 
-async function getConversationHistory(userId, limit = 8) {
+async function getConversationHistory(userId, limit = 10) {
   const msgs = await prisma.memory.findMany({
     where: {
       userId,
@@ -247,84 +294,6 @@ async function saveMedication(userId, data) {
   );
 
   return med;
-}
-
-// ====================== COMPRAS ======================
-
-async function savePurchase(userId, item) {
-  const existing =
-    await prisma.purchase.findFirst({
-      where: {
-        userId,
-        item: {
-          contains: item,
-          mode: 'insensitive'
-        }
-      },
-    });
-
-  if (existing) {
-    const daysSinceLast = Math.floor(
-      (
-        Date.now() -
-        existing.lastBought.getTime()
-      ) /
-      (1000 * 60 * 60 * 24)
-    );
-
-    const newAvg =
-      existing.avgFrequency
-        ? Math.round(
-            (
-              existing.avgFrequency +
-              daysSinceLast
-            ) / 2
-          )
-        : daysSinceLast;
-
-    const updated =
-      await prisma.purchase.update({
-        where: {
-          id: existing.id
-        },
-        data: {
-          lastBought: new Date(),
-          buyCount: existing.buyCount + 1,
-          avgFrequency: newAvg,
-          notified: false
-        },
-      });
-
-    await saveMemory(
-      userId,
-      'compra',
-      item
-    );
-
-    return {
-      purchase: updated,
-      isRecurring: true
-    };
-  }
-
-  const purchase =
-    await prisma.purchase.create({
-      data: {
-        userId,
-        item
-      }
-    });
-
-  await saveMemory(
-    userId,
-    'compra',
-    item
-  );
-
-  return {
-    purchase,
-    isRecurring: false
-  };
 }
 
 // ====================== TAREFAS ======================
@@ -410,7 +379,11 @@ async function getMonthExpenses(userId) {
   });
 }
 
+// ====================== EXPORTS ======================
+
 module.exports = {
+  prisma,
+
   getOrCreateUser,
 
   saveJornada,
@@ -422,14 +395,17 @@ module.exports = {
   saveMemory,
   getRecentMemories,
 
+  setTemporaryContext,
+  getTemporaryContext,
+  clearTemporaryContext,
+
   saveConversationMessage,
   getConversationHistory,
 
   saveMedication,
-  savePurchase,
+
   saveTask,
+
   saveExpense,
   getMonthExpenses,
-
-  prisma,
 };
