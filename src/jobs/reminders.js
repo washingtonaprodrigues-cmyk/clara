@@ -1,8 +1,11 @@
 const cron = require('node-cron');
 const { PrismaClient } = require('@prisma/client');
-const { sendMessage, sendReminderHumano, sendReminderInsistencia } = require('../services/whatsapp');
+const { sendMessage } = require('../services/whatsapp');
 
 const prisma = new PrismaClient();
+
+// Lock em memória para evitar duplo disparo no mesmo minuto
+const medLocks = new Set();
 
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
@@ -25,7 +28,6 @@ cron.schedule('0 7 * * *', async () => {
 
     for (const user of users) {
       try {
-        // Evita duplicata — verifica se já mandou bom dia hoje
         const jaEnviou = await prisma.memory.findFirst({
           where: {
             userId: user.id,
@@ -40,9 +42,7 @@ cron.schedule('0 7 * * *', async () => {
 
         const lembretes = await prisma.reminder.findMany({
           where: {
-            userId: user.id,
-            sent: false,
-            confirmed: false,
+            userId: user.id, sent: false, confirmed: false,
             scheduledAt: { gte: inicioHoje, lte: fimHoje }
           },
           orderBy: { scheduledAt: 'asc' },
@@ -65,7 +65,6 @@ cron.schedule('0 7 * * *', async () => {
         msg += `\n\nBom trabalho hoje 😊`;
         await sendMessage(user.phone, msg);
 
-        // Marca como enviado
         await prisma.memory.create({
           data: { userId: user.id, type: 'bom_dia_enviado', content: hoje }
         });
@@ -88,7 +87,6 @@ cron.schedule('0 21 * * *', async () => {
 
     for (const user of users) {
       try {
-        // Evita duplicata — verifica se já mandou boa noite hoje
         const jaEnviou = await prisma.memory.findFirst({
           where: {
             userId: user.id,
@@ -103,7 +101,6 @@ cron.schedule('0 21 * * *', async () => {
           `Boa noite${nome} 💜\n\nComo foi seu dia?\n\nSe quiser, posso te lembrar de algo amanhã 😊`
         );
 
-        // Marca como enviado
         await prisma.memory.create({
           data: { userId: user.id, type: 'boa_noite_enviado', content: hoje }
         });
@@ -128,18 +125,27 @@ cron.schedule('* * * * *', async () => {
     console.log(`[Cron] ${now.toLocaleTimeString('pt-BR')} — ${reminders.length} lembrete(s)`);
 
     for (const r of reminders) {
+      const frasesPrimeira = [
+        `Ei, não esquece: ${r.message} 😊`,
+        `Oi! Só passando pra lembrar: ${r.message}`,
+        `Psiu! ${r.message} — era isso 😊`,
+        `Lembrete rápido: ${r.message} 👋`,
+      ];
+
+      const frasesSegunda = [
+        `Ainda sobre "${r.message}" — já conseguiu? 😊`,
+        `Oi! Não esqueceu de ${r.message}, né?`,
+        `Só conferindo: ${r.message} — tudo certo? 😉`,
+      ];
+
       if (r.attempts === 0) {
-        await sendReminderHumano(r.phone, r.message);
+        await sendMessage(r.phone, random(frasesPrimeira));
         await prisma.reminder.update({
           where: { id: r.id },
-          data: {
-            attempts: 1,
-            scheduledAt: new Date(now.getTime() + 10 * 60000),
-          },
+          data: { attempts: 1, scheduledAt: new Date(now.getTime() + 10 * 60000) },
         });
       } else {
-        // Segunda tentativa — só manda se não foi confirmado
-        await sendReminderInsistencia(r.phone, r.message);
+        await sendMessage(r.phone, random(frasesSegunda));
         await prisma.reminder.update({
           where: { id: r.id },
           data: { sent: true, attempts: 2 },
@@ -155,6 +161,7 @@ cron.schedule('* * * * *', async () => {
 cron.schedule('* * * * *', async () => {
   try {
     const now = nowBRT();
+    const minutoAtual = `${now.getHours()}:${now.getMinutes()}`;
 
     const meds = await prisma.medication.findMany({
       where: { active: true, remaining: { gt: 0 } },
@@ -168,26 +175,33 @@ cron.schedule('* * * * *', async () => {
         const [hh, mm] = h.split(':').map(Number);
         if (now.getHours() !== hh || now.getMinutes() !== mm) continue;
 
+        // Lock em memória — evita duplo disparo no mesmo minuto
+        const lockKey = `${med.id}-${minutoAtual}`;
+        if (medLocks.has(lockKey)) continue;
+        medLocks.add(lockKey);
+        setTimeout(() => medLocks.delete(lockKey), 90000); // limpa após 90s
+
+        // Verificação dupla no banco
         const already = await prisma.reminder.findFirst({
           where: {
             userId: med.userId,
-            message: { contains: med.name },
-            createdAt: { gte: new Date(now.getTime() - 60000) },
+            message: med.name,
+            createdAt: { gte: new Date(now.getTime() - 90000) },
           },
         });
-
         if (already) continue;
 
-        const reminder = await prisma.reminder.create({
+        await prisma.reminder.create({
           data: {
             userId: med.userId,
             phone: med.user.phone,
             message: med.name,
             scheduledAt: new Date(now.getTime() + 15 * 60000),
+            attempts: 1,
+            sent: true, // marca como enviado direto — não re-dispara pelo cron de lembretes
           },
         });
 
-        // Lembrete de remédio também humano
         const frasesMed = [
           `Ei, hora do ${med.name}! 💊`,
           `Não esquece o ${med.name} 💊`,
