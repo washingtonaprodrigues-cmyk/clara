@@ -1,5 +1,5 @@
 const { processMessage, searchWeb } = require('./groq');
-const { sendMessage, sendButtons, sendMainMenu, sendReminderWithButtons } = require('./whatsapp');
+const { sendMessage, sendButtons, sendMainMenu } = require('./whatsapp');
 const memory = require('./memory');
 const { PrismaClient } = require('@prisma/client');
 
@@ -46,7 +46,6 @@ async function handleMessage(phone, text, location = null) {
   try {
     const user = await memory.getOrCreateUser(phone);
 
-    // LOCALIZAÇÃO
     if (location && location.latitude) {
       await memory.saveMemory(user.id, 'localizacao',
         JSON.stringify({ latitude: location.latitude, longitude: location.longitude })
@@ -58,32 +57,22 @@ async function handleMessage(phone, text, location = null) {
 
     if (!text) return;
 
-    // Comando de menu explícito
     const textLower = text.trim().toLowerCase();
     if (['menu', 'ajuda', 'opcoes', 'opções'].includes(textLower)) {
       return await sendMainMenu(phone);
     }
 
-    // Monta contexto do usuário
     const context = await buildContext(user);
-
-    // Histórico de conversa
     const history = await memory.getConversationHistory(user.id, 12);
-
-    // Processa com IA
     const response = await processMessage(text, history, context);
-
-    // Extrai e executa ações
     const { cleanResponse, actions } = parseActions(response);
 
-    // Executa ações em paralelo
     for (const action of actions) {
       await executeAction(user, phone, action).catch(e =>
         console.error('Erro action:', action.type, e.message)
       );
     }
 
-    // Busca se necessário
     let finalResponse = cleanResponse;
     const buscaAction = actions.find(a => a.type === 'BUSCA');
     if (buscaAction) {
@@ -96,11 +85,8 @@ async function handleMessage(phone, text, location = null) {
       if (resultado.sourceUrl) finalResponse += `\n\n🔗 ${resultado.sourceUrl}`;
     }
 
-    // Salva no histórico
     await memory.saveConversationMessage(user.id, 'user', text);
     await memory.saveConversationMessage(user.id, 'assistant', finalResponse);
-
-    // Envia resposta
     await sendMessage(phone, finalResponse);
 
   } catch (error) {
@@ -115,7 +101,6 @@ async function buildContext(user) {
     const agora = nowBRT();
     const mems = await memory.getRecentMemories(user.id, 30);
 
-    // Cidade
     const cidadeMem = mems.find(m => m.type === 'cidade');
     const locMem = mems.find(m => m.type === 'localizacao');
     let cidade = cidadeMem?.content || '';
@@ -126,23 +111,19 @@ async function buildContext(user) {
       } catch {}
     }
 
-    // Lembretes ativos
     const lembretes = await prisma.reminder.findMany({
       where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: agora } },
       orderBy: { scheduledAt: 'asc' },
       take: 5,
     });
 
-    // Medicamentos ativos
     const medicamentos = await prisma.medication.findMany({
       where: { userId: user.id, active: true, remaining: { gt: 0 } },
       take: 5,
     });
 
-    // Anotações recentes
     const anotacoes = mems.filter(m => m.type === 'anotacao').slice(0, 5);
 
-    // Total gastos do mês
     const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1);
     const gastos = await prisma.expense.findMany({
       where: { userId: user.id, createdAt: { gte: inicioMes } }
@@ -166,17 +147,28 @@ async function buildContext(user) {
 // ====================== PARSE DE AÇÕES ======================
 function parseActions(response) {
   const actions = [];
-  const actionRegex = /<action>(.*?)<\/action>/g;
+
+  // Regex robusta — captura mesmo tags mal fechadas
+  const actionRegex = /<action>([\s\S]*?)<\/action>/gi;
   let match;
 
   while ((match = actionRegex.exec(response)) !== null) {
-    const parts = match[1].split('|');
-    const type = parts[0];
-    const data = parts.slice(1).join('|');
-    actions.push({ type, data });
+    const content = match[1].trim();
+    if (!content) continue;
+    const pipeIdx = content.indexOf('|');
+    if (pipeIdx === -1) continue;
+    const type = content.substring(0, pipeIdx).trim().toUpperCase();
+    const data = content.substring(pipeIdx + 1).trim();
+    if (type && data) actions.push({ type, data });
   }
 
-  const cleanResponse = response.replace(/<action>.*?<\/action>/g, '').trim();
+  // Remove TODAS as variações de tags do response — incluindo mal formadas
+  let cleanResponse = response
+    .replace(/<action>[\s\S]*?<\/action>/gi, '')
+    .replace(/<action>[\s\S]*/gi, '') // remove tag aberta sem fechar
+    .replace(/\s+$/, '')
+    .trim();
+
   return { cleanResponse, actions };
 }
 
@@ -203,8 +195,7 @@ async function executeAction(user, phone, action) {
       const subtipo = parts[0];
       const hora = parts[1] || horaStr(nowBRT());
       const hoje = dateBRT();
-      const isoStr = `${hoje}T${hora.padStart(5,'0')}:00-03:00`;
-      const timestamp = new Date(isoStr);
+      const timestamp = new Date(`${hoje}T${hora.padStart(5,'0')}:00-03:00`);
 
       const existing = await prisma.workLog.findFirst({
         where: { userId: user.id, type: subtipo, date: hoje }
@@ -259,10 +250,8 @@ async function executeAction(user, phone, action) {
       break;
     }
 
-    case 'BUSCA': {
-      // Tratado separadamente no handler principal
+    case 'BUSCA':
       break;
-    }
   }
 }
 
