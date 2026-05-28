@@ -43,8 +43,7 @@ async function sendButtons(phone, message, buttons) {
     return response.data;
   } catch (error) {
     console.error('Erro Z-API sendButtons:', error.response?.data || error.message);
-    const opcoes = buttons.map(b => `• ${b.label}`).join('\n');
-    return sendMessage(phone, `${message}\n\n${opcoes}`);
+    return sendMessage(phone, message);
   }
 }
 
@@ -67,7 +66,6 @@ async function sendMainMenu(phone) {
         ]
       }
     };
-
     const response = await axios.post(
       `${BASE_URL}/send-option-list`,
       body,
@@ -77,17 +75,38 @@ async function sendMainMenu(phone) {
   } catch (error) {
     console.error('Erro Z-API sendMainMenu:', error.response?.data || error.message);
     return sendMessage(phone,
-      `✨ *Clara online* 💜\n\nOi! Como posso ajudar no seu dia hoje? 😊\n\n⏰ Lembrete\n📝 Anotação\n💰 Gasto\n💊 Saúde\n📍 Ponto\n🔍 Pesquisa\n💬 Conversar\n\n_É só me dizer!_ 😊`
+      `✨ *Clara online* 💜\n\nOi! Como posso ajudar? 😊\n\n⏰ Lembrete · 📝 Anotação · 💰 Gasto\n💊 Saúde · 📍 Ponto · 🔍 Pesquisa · 💬 Conversar`
     );
   }
 }
 
+// Lembrete humano — sem template de sistema
+async function sendReminderHumano(phone, message) {
+  const frases = [
+    `Ei, não esquece: ${message} 😊`,
+    `Oi! Só passando pra lembrar: ${message}`,
+    `Lembrete rápido: ${message} 👋`,
+    `Não esquece não: ${message} 😉`,
+    `Psiu! ${message} — era isso 😊`,
+  ];
+  const texto = frases[Math.floor(Math.random() * frases.length)];
+  return sendMessage(phone, texto);
+}
+
+// Segundo lembrete (insistência) — também humano
+async function sendReminderInsistencia(phone, message) {
+  const frases = [
+    `Ainda sobre "${message}" — já conseguiu? 😊`,
+    `Oi! Ainda não esqueceu de ${message}, né?`,
+    `Só conferindo: ${message} — tudo certo? 😉`,
+  ];
+  const texto = frases[Math.floor(Math.random() * frases.length)];
+  return sendMessage(phone, texto);
+}
+
+// Mantido para compatibilidade com código antigo
 async function sendReminderWithButtons(phone, message, reminderId) {
-  return sendButtons(phone, `⏰ *Lembrete*\n\n${message}`, [
-    { id: `confirm_${reminderId}`, label: '✅ Feito!' },
-    { id: `snooze_${reminderId}`,  label: '⏰ +10 minutos' },
-    { id: `cancel_${reminderId}`,  label: '❌ Cancelar' },
-  ]);
+  return sendReminderHumano(phone, message);
 }
 
 async function sendLocationRequest(phone) {
@@ -99,5 +118,7 @@ module.exports = {
   sendButtons,
   sendMainMenu,
   sendReminderWithButtons,
+  sendReminderHumano,
+  sendReminderInsistencia,
   sendLocationRequest,
 };
