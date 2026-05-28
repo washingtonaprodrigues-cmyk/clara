@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const { PrismaClient } = require('@prisma/client');
-const { sendMessage, sendReminderWithButtons } = require('../services/whatsapp');
+const { sendMessage, sendReminderHumano, sendReminderInsistencia } = require('../services/whatsapp');
 
 const prisma = new PrismaClient();
 
@@ -25,6 +25,16 @@ cron.schedule('0 7 * * *', async () => {
 
     for (const user of users) {
       try {
+        // Evita duplicata — verifica se já mandou bom dia hoje
+        const jaEnviou = await prisma.memory.findFirst({
+          where: {
+            userId: user.id,
+            type: 'bom_dia_enviado',
+            createdAt: { gte: new Date(`${hoje}T00:00:00-03:00`) }
+          }
+        });
+        if (jaEnviou) continue;
+
         const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
         const fimHoje = new Date(`${hoje}T23:59:59-03:00`);
 
@@ -45,13 +55,20 @@ cron.schedule('0 7 * * *', async () => {
         if (lembretes.length > 0) {
           msg += `\n\n📌 Você tem ${lembretes.length} lembrete${lembretes.length > 1 ? 's' : ''} hoje:`;
           lembretes.forEach(r => {
-            const hora = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+            const hora = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', {
+              timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'
+            });
             msg += `\n• ${r.message} às ${hora}`;
           });
         }
 
         msg += `\n\nBom trabalho hoje 😊`;
         await sendMessage(user.phone, msg);
+
+        // Marca como enviado
+        await prisma.memory.create({
+          data: { userId: user.id, type: 'bom_dia_enviado', content: hoje }
+        });
       } catch (e) {
         console.error(`Erro bom dia ${user.phone}:`, e.message);
       }
@@ -64,14 +81,32 @@ cron.schedule('0 7 * * *', async () => {
 // ====================== BOA NOITE ======================
 cron.schedule('0 21 * * *', async () => {
   try {
+    const now = nowBRT();
+    const hoje = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+
     const users = await prisma.user.findMany({ where: { blocked: false } });
 
     for (const user of users) {
       try {
+        // Evita duplicata — verifica se já mandou boa noite hoje
+        const jaEnviou = await prisma.memory.findFirst({
+          where: {
+            userId: user.id,
+            type: 'boa_noite_enviado',
+            createdAt: { gte: new Date(`${hoje}T00:00:00-03:00`) }
+          }
+        });
+        if (jaEnviou) continue;
+
         const nome = user.name ? `, ${user.name}` : '';
         await sendMessage(user.phone,
           `Boa noite${nome} 💜\n\nComo foi seu dia?\n\nSe quiser, posso te lembrar de algo amanhã 😊`
         );
+
+        // Marca como enviado
+        await prisma.memory.create({
+          data: { userId: user.id, type: 'boa_noite_enviado', content: hoje }
+        });
       } catch (e) {
         console.error(`Erro boa noite ${user.phone}:`, e.message);
       }
@@ -94,13 +129,17 @@ cron.schedule('* * * * *', async () => {
 
     for (const r of reminders) {
       if (r.attempts === 0) {
-        await sendReminderWithButtons(r.phone, r.message, r.id);
+        await sendReminderHumano(r.phone, r.message);
         await prisma.reminder.update({
           where: { id: r.id },
-          data: { attempts: 1, scheduledAt: new Date(now.getTime() + 10 * 60000) },
+          data: {
+            attempts: 1,
+            scheduledAt: new Date(now.getTime() + 10 * 60000),
+          },
         });
       } else {
-        await sendReminderWithButtons(r.phone, `Ainda sobre:\n${r.message}`, r.id);
+        // Segunda tentativa — só manda se não foi confirmado
+        await sendReminderInsistencia(r.phone, r.message);
         await prisma.reminder.update({
           where: { id: r.id },
           data: { sent: true, attempts: 2 },
@@ -143,16 +182,19 @@ cron.schedule('* * * * *', async () => {
           data: {
             userId: med.userId,
             phone: med.user.phone,
-            message: `${med.name}`,
+            message: med.name,
             scheduledAt: new Date(now.getTime() + 15 * 60000),
           },
         });
 
-        await sendReminderWithButtons(
-          med.user.phone,
-          `💊 ${random([`Hora do ${med.name}`, `Lembrete do ${med.name}`, `Não esquece o ${med.name}`])}`,
-          reminder.id
-        );
+        // Lembrete de remédio também humano
+        const frasesMed = [
+          `Ei, hora do ${med.name}! 💊`,
+          `Não esquece o ${med.name} 💊`,
+          `${med.name} — tá na hora! 😊`,
+          `Psiu, ${med.name}! Pode tomar 💊`,
+        ];
+        await sendMessage(med.user.phone, random(frasesMed));
 
         await prisma.medication.update({
           where: { id: med.id },
