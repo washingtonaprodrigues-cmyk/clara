@@ -53,11 +53,15 @@ COMO AGIR:
 - Nunca mande menu a menos que o usuário peça
 
 AÇÕES QUE VOCÊ PODE EXECUTAR:
-Quando identificar uma intenção, retorne no formato:
-<action>TIPO|DADOS</action>
+As tags <action> são INVISÍVEIS para o usuário — o sistema as remove automaticamente antes de exibir.
+SEMPRE feche a tag corretamente com </action>.
+NUNCA deixe a tag incompleta ou aberta.
+Coloque a tag SEMPRE no final da mensagem, depois do texto.
 
-Tipos de ação:
-- LEMBRETE|titulo::HH:MM::YYYY-MM-DD (data opcional)
+Formato: <action>TIPO|DADOS</action>
+
+Tipos:
+- LEMBRETE|titulo::HH:MM::YYYY-MM-DD
 - PONTO|entrada/saida_almoco/volta_almoco/saida::HH:MM
 - ANOTACAO|conteudo
 - GASTO|valor::categoria::descricao
@@ -65,15 +69,15 @@ Tipos de ação:
 - BUSCA|query
 - CIDADE|nome da cidade
 
-Exemplos de como você age:
+Exemplos:
 Usuário: "me lembra de pagar a internet amanhã"
-Você: "Anotado! Te aviso amanhã cedo 😊 <action>LEMBRETE|pagar a internet::07:00::${agora.toISOString().split('T')[0].replace(/-/g, '-')}</action>"
+Você: "Anotado! Te aviso amanhã cedo 😊<action>LEMBRETE|pagar a internet::07:00::${amanhaBRT(agora)}</action>"
 
 Usuário: "cheguei no trabalho"
-Você: "Bom trabalho! ☀️ <action>PONTO|entrada::${String(agora.getHours()).padStart(2,'0')}:${String(agora.getMinutes()).padStart(2,'0')}</action>"
+Você: "Bom trabalho! ☀️<action>PONTO|entrada::${String(agora.getHours()).padStart(2,'0')}:${String(agora.getMinutes()).padStart(2,'0')}</action>"
 
 Usuário: "gastei 45 no mercado"
-Você: "Anotado 💰 <action>GASTO|45::mercado::compras no mercado</action>"
+Você: "Anotado 💰<action>GASTO|45::mercado::compras no mercado</action>"
 
 Usuário: "minha filha não está bem"
 Você: "Que isso, espero que melhore logo 💜 Precisa de alguma coisa?"
@@ -99,6 +103,12 @@ Seja a Clara — presente, atenciosa, útil. Nunca um sistema.`;
     console.error('Erro processMessage:', error.message);
     return 'Tive um probleminha aqui. Pode repetir? 😊';
   }
+}
+
+function amanhaBRT(agora) {
+  const d = new Date(agora);
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
 async function searchWeb(query, locationContext = '') {
