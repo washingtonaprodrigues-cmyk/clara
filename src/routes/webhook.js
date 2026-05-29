@@ -27,8 +27,8 @@ router.post('/status', async (req, res) => {
         const user = await prisma.user.findUnique({ where: { phone } });
         if (user) {
           const agora = Date.now();
-          const cincoMinAtras = new Date(agora - 5 * 60000);   // mínimo 5min após disparo
-          const trintaMinAtras = new Date(agora - 30 * 60000); // máximo 30min (não confirma lembretes velhos)
+          const cincoMinAtras = new Date(agora - 5 * 60000);    // mínimo 5min após disparo
+          const duasHorasAtras = new Date(agora - 2 * 60 * 60000); // máximo 2h (não confirma lembretes muito velhos)
 
           const lembretePendente = await prisma.reminder.findFirst({
             where: {
@@ -36,7 +36,7 @@ router.post('/status', async (req, res) => {
               confirmed: false,
               sent: false,
               updatedAt: {
-                gte: trintaMinAtras, // disparado nos últimos 30min
+                gte: duasHorasAtras, // disparado nas últimas 2h
                 lte: cincoMinAtras,  // mas há pelo menos 5min atrás
               }
             },
@@ -118,13 +118,13 @@ router.post('/receive', async (req, res) => {
         try {
           const user = await prisma.user.findUnique({ where: { phone } });
           if (user) {
-            const trintaMinAtras = new Date(Date.now() - 30 * 60000);
+            const duasHorasAtras = new Date(Date.now() - 2 * 60 * 60000);
             const lembretePendente = await prisma.reminder.findFirst({
               where: {
                 userId: user.id,
                 confirmed: false,
                 sent: false,
-                updatedAt: { gte: trintaMinAtras }
+                updatedAt: { gte: duasHorasAtras }
               },
               orderBy: { updatedAt: 'desc' }
             });
