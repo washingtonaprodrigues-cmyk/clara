@@ -2,13 +2,15 @@ const Groq = require('groq-sdk');
 const { webSearch } = require('./search');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const MODEL = 'llama-3.3-70b-versatile';
+
+const MODEL_HEAVY = 'llama-3.3-70b-versatile'; // conversas normais
+const MODEL_LIGHT = 'llama-3.1-8b-instant';    // reminders, meds, busca
 
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 }
 
-async function processMessage(message, history = [], context = {}) {
+async function processMessage(message, history = [], context = {}, model = MODEL_HEAVY) {
   const agora = nowBRT();
   const dataHora = agora.toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo',
@@ -92,7 +94,7 @@ Seja a Clara — presente, atenciosa, útil. Nunca um sistema.`;
     ];
 
     const completion = await groq.chat.completions.create({
-      model: MODEL,
+      model,
       messages,
       temperature: 0.7,
       max_tokens: 500,
@@ -132,7 +134,7 @@ async function searchWeb(query, locationContext = '') {
     const sourceUrl = data.results[0]?.url || null;
 
     const completion = await groq.chat.completions.create({
-      model: 'llama-3.1-8b-instant',
+      model: MODEL_LIGHT,
       messages: [
         {
           role: 'system',
@@ -160,4 +162,4 @@ Para outros: destaque a informação principal.`
   }
 }
 
-module.exports = { processMessage, searchWeb };
+module.exports = { processMessage, searchWeb, MODEL_LIGHT, MODEL_HEAVY };
