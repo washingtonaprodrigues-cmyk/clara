@@ -1,18 +1,12 @@
 const cron = require('node-cron');
 const { PrismaClient } = require('@prisma/client');
 const { sendMessage } = require('../services/whatsapp');
+const { processMessage } = require('../services/groq');
 
 const prisma = new PrismaClient();
 
-// Lock em memória para evitar duplo disparo no mesmo minuto
-const medLocks = new Set();
-
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-}
-
-function random(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
 }
 
 // ====================== BOM DIA ======================
@@ -120,36 +114,40 @@ cron.schedule('* * * * *', async () => {
 
     const reminders = await prisma.reminder.findMany({
       where: { sent: false, confirmed: false, scheduledAt: { lte: now } },
+      include: { user: true },
     });
 
     console.log(`[Cron] ${now.toLocaleTimeString('pt-BR')} — ${reminders.length} lembrete(s)`);
 
     for (const r of reminders) {
-      const frasesPrimeira = [
-        `Ei, não esquece: ${r.message} 😊`,
-        `Oi! Só passando pra lembrar: ${r.message}`,
-        `Psiu! ${r.message} — era isso 😊`,
-        `Lembrete rápido: ${r.message} 👋`,
-      ];
+      try {
+        // Gera mensagem pela IA no tom da Clara
+        const prompt = r.attempts === 0
+          ? `Você precisa lembrar o usuário sobre: "${r.message}". Mande uma mensagem curta e natural, como se fosse um lembrete de uma amiga. Máximo 1 linha.`
+          : `Você já lembrou o usuário sobre "${r.message}" e ele ainda não confirmou. Mande uma segunda mensagem curta e gentil perguntando se já conseguiu. Máximo 1 linha.`;
 
-      const frasesSegunda = [
-        `Ainda sobre "${r.message}" — já conseguiu? 😊`,
-        `Oi! Não esqueceu de ${r.message}, né?`,
-        `Só conferindo: ${r.message} — tudo certo? 😉`,
-      ];
+        const msgIA = await processMessage(prompt, [], {
+          nome: r.user?.name || null
+        });
 
-      if (r.attempts === 0) {
-        await sendMessage(r.phone, random(frasesPrimeira));
-        await prisma.reminder.update({
-          where: { id: r.id },
-          data: { attempts: 1, scheduledAt: new Date(now.getTime() + 10 * 60000) },
-        });
-      } else {
-        await sendMessage(r.phone, random(frasesSegunda));
-        await prisma.reminder.update({
-          where: { id: r.id },
-          data: { sent: true, attempts: 2 },
-        });
+        // Remove qualquer action tag que possa ter vindo
+        const msgLimpa = msgIA.replace(/<action>[\s\S]*?<\/action>/gi, '').replace(/<action>[\s\S]*/gi, '').trim();
+
+        await sendMessage(r.phone, msgLimpa);
+
+        if (r.attempts === 0) {
+          await prisma.reminder.update({
+            where: { id: r.id },
+            data: { attempts: 1, scheduledAt: new Date(now.getTime() + 10 * 60000) },
+          });
+        } else {
+          await prisma.reminder.update({
+            where: { id: r.id },
+            data: { sent: true, attempts: 2 },
+          });
+        }
+      } catch (e) {
+        console.error(`Erro enviar reminder ${r.id}:`, e.message);
       }
     }
   } catch (e) {
@@ -161,7 +159,8 @@ cron.schedule('* * * * *', async () => {
 cron.schedule('* * * * *', async () => {
   try {
     const now = nowBRT();
-    const minutoAtual = `${now.getHours()}:${now.getMinutes()}`;
+    const hoje = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const minutoChave = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
 
     const meds = await prisma.medication.findMany({
       where: { active: true, remaining: { gt: 0 } },
@@ -172,43 +171,28 @@ cron.schedule('* * * * *', async () => {
       const horarios = JSON.parse(med.times || '[]');
 
       for (const h of horarios) {
-        const [hh, mm] = h.split(':').map(Number);
-        if (now.getHours() !== hh || now.getMinutes() !== mm) continue;
+        if (h !== minutoChave) continue;
 
-        // Lock em memória — evita duplo disparo no mesmo minuto
-        const lockKey = `${med.id}-${minutoAtual}`;
-        if (medLocks.has(lockKey)) continue;
-        medLocks.add(lockKey);
-        setTimeout(() => medLocks.delete(lockKey), 90000); // limpa após 90s
-
-        // Verificação dupla no banco
-        const already = await prisma.reminder.findFirst({
-          where: {
-            userId: med.userId,
-            message: med.name,
-            createdAt: { gte: new Date(now.getTime() - 90000) },
-          },
+        // Lock no banco — verifica se já disparou neste minuto exato
+        const lockKey = `med_lock_${med.id}_${hoje}_${minutoChave}`;
+        const jaDisparou = await prisma.memory.findFirst({
+          where: { userId: med.userId, type: 'med_lock', content: lockKey }
         });
-        if (already) continue;
+        if (jaDisparou) continue;
 
-        await prisma.reminder.create({
-          data: {
-            userId: med.userId,
-            phone: med.user.phone,
-            message: med.name,
-            scheduledAt: new Date(now.getTime() + 15 * 60000),
-            attempts: 1,
-            sent: true, // marca como enviado direto — não re-dispara pelo cron de lembretes
-          },
+        // Cria lock ANTES de enviar
+        await prisma.memory.create({
+          data: { userId: med.userId, type: 'med_lock', content: lockKey }
         });
 
-        const frasesMed = [
-          `Ei, hora do ${med.name}! 💊`,
-          `Não esquece o ${med.name} 💊`,
-          `${med.name} — tá na hora! 😊`,
-          `Psiu, ${med.name}! Pode tomar 💊`,
-        ];
-        await sendMessage(med.user.phone, random(frasesMed));
+        // Gera mensagem pela IA
+        const prompt = `Você precisa lembrar o usuário de tomar o medicamento "${med.name}". Mande uma mensagem curta, natural e gentil. Máximo 1 linha.`;
+        const msgIA = await processMessage(prompt, [], {
+          nome: med.user?.name || null
+        });
+        const msgLimpa = msgIA.replace(/<action>[\s\S]*?<\/action>/gi, '').replace(/<action>[\s\S]*/gi, '').trim();
+
+        await sendMessage(med.user.phone, msgLimpa);
 
         await prisma.medication.update({
           where: { id: med.id },
