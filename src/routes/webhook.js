@@ -25,7 +25,6 @@ const PALAVRAS_FEITO = [
   'foi'
 ];
 
-// ====================== STATUS ======================
 router.post('/status', async (req, res) => {
   try {
     return res.json({ ok: true });
@@ -38,7 +37,6 @@ router.post('/status', async (req, res) => {
   }
 });
 
-// ====================== RECEIVE ======================
 router.post('/receive', async (req, res) => {
   try {
     const body = req.body;
@@ -49,7 +47,6 @@ router.post('/receive', async (req, res) => {
 
     const phone = body.phone;
 
-    // ====================== TEXTO ======================
     if (body.text && body.text.message) {
       const text = body.text.message;
 
@@ -57,15 +54,15 @@ router.post('/receive', async (req, res) => {
 
       const textoLower = text.toLowerCase().trim();
 
-      const isConfirmacao = PALAVRAS_FEITO.some(
-        p => textoLower === p
-      );
+      const isConfirmacao = PALAVRAS_FEITO.some(function(p) {
+        return textoLower === p;
+      });
 
       if (isConfirmacao) {
         try {
           const user = await prisma.user.findUnique({
             where: {
-              phone
+              phone: phone
             }
           });
 
@@ -112,7 +109,6 @@ router.post('/receive', async (req, res) => {
       });
     }
 
-    // ====================== LOCALIZACAO ======================
     if (body.location) {
       console.log('[LOCALIZACAO]', phone);
 
@@ -139,7 +135,7 @@ router.post('/receive', async (req, res) => {
   }
 });
 
-router.get('/test', (req, res) => {
+router.get('/test', function(req, res) {
   res.json({
     status: 'Clara funcionando'
   });
