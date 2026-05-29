@@ -121,7 +121,18 @@ cron.schedule('* * * * *', async () => {
 
     for (const r of reminders) {
       try {
-        // Gera mensagem pela IA no tom da Clara
+        // ✅ LOCK: evita disparos duplicados enquanto a IA processa
+        const lockKey = `reminder_lock_${r.id}_attempt_${r.attempts}`;
+        const jaDisparou = await prisma.memory.findFirst({
+          where: { userId: r.user.id, type: 'reminder_lock', content: lockKey }
+        });
+        if (jaDisparou) continue;
+
+        // Cria o lock ANTES de chamar a IA
+        await prisma.memory.create({
+          data: { userId: r.user.id, type: 'reminder_lock', content: lockKey }
+        });
+
         const prompt = r.attempts === 0
           ? `Você precisa lembrar o usuário sobre: "${r.message}". Mande uma mensagem curta e natural, como se fosse um lembrete de uma amiga. Máximo 1 linha.`
           : `Você já lembrou o usuário sobre "${r.message}" e ele ainda não confirmou. Mande uma segunda mensagem curta e gentil perguntando se já conseguiu. Máximo 1 linha.`;
@@ -130,7 +141,6 @@ cron.schedule('* * * * *', async () => {
           nome: r.user?.name || null
         });
 
-        // Remove qualquer action tag que possa ter vindo
         const msgLimpa = msgIA.replace(/<action>[\s\S]*?<\/action>/gi, '').replace(/<action>[\s\S]*/gi, '').trim();
 
         await sendMessage(r.phone, msgLimpa);
@@ -173,19 +183,16 @@ cron.schedule('* * * * *', async () => {
       for (const h of horarios) {
         if (h !== minutoChave) continue;
 
-        // Lock no banco — verifica se já disparou neste minuto exato
         const lockKey = `med_lock_${med.id}_${hoje}_${minutoChave}`;
         const jaDisparou = await prisma.memory.findFirst({
           where: { userId: med.userId, type: 'med_lock', content: lockKey }
         });
         if (jaDisparou) continue;
 
-        // Cria lock ANTES de enviar
         await prisma.memory.create({
           data: { userId: med.userId, type: 'med_lock', content: lockKey }
         });
 
-        // Gera mensagem pela IA
         const prompt = `Você precisa lembrar o usuário de tomar o medicamento "${med.name}". Mande uma mensagem curta, natural e gentil. Máximo 1 linha.`;
         const msgIA = await processMessage(prompt, [], {
           nome: med.user?.name || null
@@ -207,4 +214,4 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
-console.log('Reminders v5 iniciado');
+console.log('Reminders v6 iniciado');
