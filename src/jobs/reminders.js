@@ -121,7 +121,17 @@ cron.schedule('* * * * *', async () => {
 
     for (const r of reminders) {
       try {
-        // ✅ LOCK: evita disparos duplicados enquanto a IA processa
+        // ── Já tentou 2 vezes e usuário não confirmou → desiste ──
+        if (r.attempts >= 2) {
+          await prisma.reminder.update({
+            where: { id: r.id },
+            data: { sent: true }
+          });
+          console.log(`[Cron] Reminder ${r.id} abandonado após 2 tentativas`);
+          continue;
+        }
+
+        // ── LOCK: evita disparos duplicados enquanto a IA processa ──
         const lockKey = `reminder_lock_${r.id}_attempt_${r.attempts}`;
         const jaDisparou = await prisma.memory.findFirst({
           where: { userId: r.user.id, type: 'reminder_lock', content: lockKey }
@@ -143,14 +153,16 @@ cron.schedule('* * * * *', async () => {
 
         const msgLimpa = msgIA.replace(/<action>[\s\S]*?<\/action>/gi, '').replace(/<action>[\s\S]*/gi, '').trim();
 
-        await sendMessage(r.phone, msgLimpa);
+        await sendMessage(r.user.phone, msgLimpa);
 
         if (r.attempts === 0) {
+          // Primeira tentativa: agenda segunda para daqui 15 minutos
           await prisma.reminder.update({
             where: { id: r.id },
-            data: { attempts: 1, scheduledAt: new Date(now.getTime() + 10 * 60000) },
+            data: { attempts: 1, scheduledAt: new Date(now.getTime() + 15 * 60000) },
           });
         } else {
+          // Segunda tentativa: marca como sent, para de cobrar
           await prisma.reminder.update({
             where: { id: r.id },
             data: { sent: true, attempts: 2 },
@@ -183,6 +195,7 @@ cron.schedule('* * * * *', async () => {
       for (const h of horarios) {
         if (h !== minutoChave) continue;
 
+        // ── LOCK: evita duplicatas ──
         const lockKey = `med_lock_${med.id}_${hoje}_${minutoChave}`;
         const jaDisparou = await prisma.memory.findFirst({
           where: { userId: med.userId, type: 'med_lock', content: lockKey }
@@ -192,6 +205,15 @@ cron.schedule('* * * * *', async () => {
         await prisma.memory.create({
           data: { userId: med.userId, type: 'med_lock', content: lockKey }
         });
+
+        // ── Verifica se usuário já confirmou via texto/visto hoje ──
+        const jaConfirmou = await prisma.memory.findFirst({
+          where: { userId: med.userId, type: 'med_confirmado_hoje', content: hoje }
+        });
+        if (jaConfirmou) {
+          console.log(`[Cron] Med ${med.name} já confirmado hoje, pulando`);
+          continue;
+        }
 
         const prompt = `Você precisa lembrar o usuário de tomar o medicamento "${med.name}". Mande uma mensagem curta, natural e gentil. Máximo 1 linha.`;
         const msgIA = await processMessage(prompt, [], {
@@ -214,4 +236,4 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
-console.log('Reminders v6 iniciado');
+console.log('Reminders v7 iniciado');
