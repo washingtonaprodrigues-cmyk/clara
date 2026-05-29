@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const { PrismaClient } = require('@prisma/client');
 const { sendMessage } = require('../services/whatsapp');
-const { processMessage } = require('../services/groq');
+const { processMessage, MODEL_LIGHT } = require('../services/groq');
 
 const prisma = new PrismaClient();
 
@@ -171,7 +171,7 @@ cron.schedule('* * * * *', async () => {
 
         let msgLimpa;
         try {
-          const msgIA = await processMessage(prompt, [], { nome: r.user?.name || null });
+          const msgIA = await processMessage(prompt, [], { nome: r.user?.name || null }, MODEL_LIGHT);
           msgLimpa = msgIA.replace(/<action>[\s\S]*?<\/action>/gi, '').replace(/<action>[\s\S]*/gi, '').trim();
 
           // Se a IA retornou mensagem de erro, não avança o attempt — tenta na próxima rodada
@@ -266,7 +266,7 @@ cron.schedule('* * * * *', async () => {
         let msgLimpa;
         try {
           const prompt = `Você precisa lembrar o usuário de tomar o medicamento "${med.name}". Mande uma mensagem curta, natural e gentil. Máximo 1 linha.`;
-          const msgIA = await processMessage(prompt, [], { nome: med.user?.name || null });
+          const msgIA = await processMessage(prompt, [], { nome: med.user?.name || null }, MODEL_LIGHT);
           msgLimpa = msgIA.replace(/<action>[\s\S]*?<\/action>/gi, '').replace(/<action>[\s\S]*/gi, '').trim();
 
           if (msgLimpa.includes('Tive um probleminha') || msgLimpa.length < 3) {
