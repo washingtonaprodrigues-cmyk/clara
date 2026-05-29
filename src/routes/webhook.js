@@ -13,9 +13,7 @@ const PALAVRAS_FEITO = [
   'ok',
   'pronto',
   'done',
-  'concluído',
   'concluido',
-  'já fiz',
   'ja fiz',
   'sim',
   'certo',
@@ -25,9 +23,7 @@ const PALAVRAS_FEITO = [
   'cheguei',
   'terminei',
   'acabei',
-  'foi',
-  '👍',
-  '✅'
+  'foi'
 ];
 
 // ====================== STATUS ======================
@@ -36,6 +32,7 @@ router.post('/status', async (req, res) => {
     return res.json({ ok: true });
   } catch (error) {
     console.error('Erro webhook status:', error);
+
     return res.status(500).json({
       error: 'Erro interno'
     });
@@ -54,10 +51,10 @@ router.post('/receive', async (req, res) => {
     const phone = body.phone;
 
     // ====================== TEXTO ======================
-    if (body.text?.message) {
+    if (body.text && body.text.message) {
       const text = body.text.message;
 
-      console.log(`📩 ${phone}: ${text}`);
+      console.log('[MSG]', phone + ':', text);
 
       const textoLower = text.toLowerCase().trim();
 
@@ -96,7 +93,8 @@ router.post('/receive', async (req, res) => {
               });
 
               console.log(
-                `[Webhook] Confirmado: ${lembrete.message}`
+                '[Webhook] Confirmado:',
+                lembrete.message
               );
             }
           }
@@ -115,9 +113,9 @@ router.post('/receive', async (req, res) => {
       });
     }
 
-    // ====================== LOCALIZAÇÃO ======================
+    // ====================== LOCALIZACAO ======================
     if (body.location) {
-      console.log(`📍 Localização de ${phone}`);
+      console.log('[LOCALIZACAO]', phone);
 
       handleMessage(phone, null, {
         latitude: body.location.latitude,
@@ -132,6 +130,7 @@ router.post('/receive', async (req, res) => {
     return res.json({
       ok: true
     });
+
   } catch (error) {
     console.error('Erro webhook:', error);
 
@@ -143,8 +142,9 @@ router.post('/receive', async (req, res) => {
 
 router.get('/test', (req, res) => {
   res.json({
-    status: 'Clara funcionando ✅'
+    status: 'Clara funcionando'
   });
 });
 
 module.exports = router;
+```
