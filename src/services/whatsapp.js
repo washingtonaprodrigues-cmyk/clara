@@ -11,6 +11,18 @@ const headers = {
   'Content-Type': 'application/json',
 };
 
+async function sendTyping(phone, durationMs = 2000) {
+  try {
+    await axios.post(
+      `${BASE_URL}/typing`,
+      { phone, duration: durationMs },
+      { timeout: 5000, headers }
+    );
+  } catch (e) {
+    // silencioso — não quebra o fluxo
+  }
+}
+
 async function sendMessage(phone, message) {
   try {
     const response = await axios.post(
@@ -80,7 +92,6 @@ async function sendMainMenu(phone) {
   }
 }
 
-// Lembrete humano — sem template de sistema
 async function sendReminderHumano(phone, message) {
   const frases = [
     `Ei, não esquece: ${message} 😊`,
@@ -93,7 +104,6 @@ async function sendReminderHumano(phone, message) {
   return sendMessage(phone, texto);
 }
 
-// Segundo lembrete (insistência) — também humano
 async function sendReminderInsistencia(phone, message) {
   const frases = [
     `Ainda sobre "${message}" — já conseguiu? 😊`,
@@ -104,7 +114,6 @@ async function sendReminderInsistencia(phone, message) {
   return sendMessage(phone, texto);
 }
 
-// Mantido para compatibilidade com código antigo
 async function sendReminderWithButtons(phone, message, reminderId) {
   return sendReminderHumano(phone, message);
 }
@@ -115,6 +124,7 @@ async function sendLocationRequest(phone) {
 
 module.exports = {
   sendMessage,
+  sendTyping,
   sendButtons,
   sendMainMenu,
   sendReminderWithButtons,
