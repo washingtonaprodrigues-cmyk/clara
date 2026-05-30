@@ -142,6 +142,8 @@ async function buildContext(user) {
   }
 }
 
+const TIPOS = ['LEMBRETE', 'PONTO', 'ANOTACAO', 'GASTO', 'MEDICAMENTO', 'BUSCA', 'CIDADE'];
+
 function parseActions(response) {
   const actions = [];
   const actionRegex = /<action>([\s\S]*?)<\/action>/gi;
@@ -157,9 +159,21 @@ function parseActions(response) {
     if (type && data) actions.push({ type, data });
   }
 
+  // Captura formato cru que modelos menores cospe: PONTO|dados::dados
+  const rawRegex = new RegExp(`(${TIPOS.join('|')})\\|([^\\n<]+)`, 'gi');
+  let rawMatch;
+  while ((rawMatch = rawRegex.exec(response)) !== null) {
+    const type = rawMatch[1].toUpperCase();
+    const data = rawMatch[2].trim();
+    const jaTem = actions.some(a => a.type === type && a.data === data);
+    if (!jaTem) actions.push({ type, data });
+  }
+
   let cleanResponse = response
     .replace(/<action>[\s\S]*?<\/action>/gi, '')
     .replace(/<action>[\s\S]*/gi, '')
+    .replace(new RegExp(`(${TIPOS.join('|')})\\|[^\\n]+`, 'gi'), '')
+    .replace(/\n{3,}/g, '\n\n')
     .replace(/\s+$/, '')
     .trim();
 
