@@ -1,5 +1,5 @@
 const { processMessage, searchWeb } = require('./groq');
-const { sendMessage, sendButtons, sendMainMenu } = require('./whatsapp');
+const { sendMessage, sendButtons, sendMainMenu, sendTyping } = require('./whatsapp');
 const memory = require('./memory');
 const { PrismaClient } = require('@prisma/client');
 
@@ -62,6 +62,9 @@ async function handleMessage(phone, text, location = null) {
       return await sendMainMenu(phone);
     }
 
+    // Inicia o "digitando..." enquanto processa
+    await sendTyping(phone, 3000);
+
     const context = await buildContext(user);
     const history = await memory.getConversationHistory(user.id, 12);
     const response = await processMessage(text, history, context);
@@ -76,6 +79,8 @@ async function handleMessage(phone, text, location = null) {
     let finalResponse = cleanResponse;
     const buscaAction = actions.find(a => a.type === 'BUSCA');
     if (buscaAction) {
+      // Busca demora mais — estende o typing
+      await sendTyping(phone, 5000);
       const locationText = context.cidade || '';
       const resultado = await searchWeb(buscaAction.data, locationText);
       finalResponse = cleanResponse.replace(/\[buscando.*?\]/gi, resultado.text);
@@ -148,7 +153,6 @@ async function buildContext(user) {
 function parseActions(response) {
   const actions = [];
 
-  // Regex robusta — captura mesmo tags mal fechadas
   const actionRegex = /<action>([\s\S]*?)<\/action>/gi;
   let match;
 
@@ -162,10 +166,9 @@ function parseActions(response) {
     if (type && data) actions.push({ type, data });
   }
 
-  // Remove TODAS as variações de tags do response — incluindo mal formadas
   let cleanResponse = response
     .replace(/<action>[\s\S]*?<\/action>/gi, '')
-    .replace(/<action>[\s\S]*/gi, '') // remove tag aberta sem fechar
+    .replace(/<action>[\s\S]*/gi, '')
     .replace(/\s+$/, '')
     .trim();
 
