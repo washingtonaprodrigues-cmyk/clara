@@ -1,5 +1,5 @@
 const { processMessage, searchWeb } = require('./groq');
-const { sendMessage, sendButtons, sendMainMenu, sendTyping } = require('./whatsapp');
+const { sendMessage, sendButtons, sendMainMenu } = require('./whatsapp');
 const memory = require('./memory');
 const { PrismaClient } = require('@prisma/client');
 
@@ -41,7 +41,6 @@ function formatarDataBR(date) {
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
 }
 
-// ====================== HANDLER PRINCIPAL ======================
 async function handleMessage(phone, text, location = null) {
   try {
     const user = await memory.getOrCreateUser(phone);
@@ -62,9 +61,6 @@ async function handleMessage(phone, text, location = null) {
       return await sendMainMenu(phone);
     }
 
-    // Inicia o "digitando..." enquanto processa
-    await sendTyping(phone, 3000);
-
     const context = await buildContext(user);
     const history = await memory.getConversationHistory(user.id, 12);
     const response = await processMessage(text, history, context);
@@ -79,8 +75,6 @@ async function handleMessage(phone, text, location = null) {
     let finalResponse = cleanResponse;
     const buscaAction = actions.find(a => a.type === 'BUSCA');
     if (buscaAction) {
-      // Busca demora mais — estende o typing
-      await sendTyping(phone, 5000);
       const locationText = context.cidade || '';
       const resultado = await searchWeb(buscaAction.data, locationText);
       finalResponse = cleanResponse.replace(/\[buscando.*?\]/gi, resultado.text);
@@ -100,7 +94,6 @@ async function handleMessage(phone, text, location = null) {
   }
 }
 
-// ====================== CONTEXTO DO USUÁRIO ======================
 async function buildContext(user) {
   try {
     const agora = nowBRT();
@@ -149,10 +142,8 @@ async function buildContext(user) {
   }
 }
 
-// ====================== PARSE DE AÇÕES ======================
 function parseActions(response) {
   const actions = [];
-
   const actionRegex = /<action>([\s\S]*?)<\/action>/gi;
   let match;
 
@@ -175,7 +166,6 @@ function parseActions(response) {
   return { cleanResponse, actions };
 }
 
-// ====================== EXECUTA AÇÕES ======================
 async function executeAction(user, phone, action) {
   const { type, data } = action;
 
@@ -199,7 +189,6 @@ async function executeAction(user, phone, action) {
       const hora = parts[1] || horaStr(nowBRT());
       const hoje = dateBRT();
       const timestamp = new Date(`${hoje}T${hora.padStart(5,'0')}:00-03:00`);
-
       const existing = await prisma.workLog.findFirst({
         where: { userId: user.id, type: subtipo, date: hoje }
       });
@@ -232,7 +221,6 @@ async function executeAction(user, phone, action) {
       const intervalo = parseInt(parts[2]) || 8;
       const dias = parseInt(parts[3]) || 7;
       const horaInicio = parts[4] || '08:00';
-
       const freqDia = Math.round(24 / intervalo);
       const [h, m] = horaInicio.split(':').map(Number);
       const horarios = [];
@@ -241,7 +229,6 @@ async function executeAction(user, phone, action) {
         horarios.push(`${String(hh).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
       }
       const totalDoses = dias * freqDia;
-
       await memory.saveMedication(user.id, {
         nome, quantidade: totalDoses, frequencia: freqDia, horarios
       });
