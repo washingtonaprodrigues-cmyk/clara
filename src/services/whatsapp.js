@@ -11,18 +11,6 @@ const headers = {
   'Content-Type': 'application/json',
 };
 
-async function sendTyping(phone, durationMs = 2000) {
-  try {
-    await axios.post(
-      `${BASE_URL}/typing`,
-      { phone, duration: durationMs },
-      { timeout: 5000, headers }
-    );
-  } catch (e) {
-    // silencioso — não quebra o fluxo
-  }
-}
-
 async function sendMessage(phone, message) {
   try {
     const response = await axios.post(
@@ -124,7 +112,6 @@ async function sendLocationRequest(phone) {
 
 module.exports = {
   sendMessage,
-  sendTyping,
   sendButtons,
   sendMainMenu,
   sendReminderWithButtons,
