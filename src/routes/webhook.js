@@ -1,22 +1,48 @@
-require('dotenv').config();
 const express = require('express');
-const app = express();
+const router = express.Router();
+const { handleMessage } = require('../services/handler');
 
-app.use(express.json());
+router.post('/receive', async (req, res) => {
+  console.log('📨 WEBHOOK RECEBIDO:', JSON.stringify(req.body, null, 2));
 
-const webhookRoutes = require('./routes/webhook');
-const formsRoutes = require('./routes/forms');
+  try {
+    const body = req.body;
 
-app.use('/webhook', webhookRoutes);
-app.use('/forms', formsRoutes);
+    if (body.fromMe) {
+      return res.json({ ok: true });
+    }
 
-app.get('/', (req, res) => {
-  res.json({ status: 'Clara online 💛', version: '1.0.0' });
+    const phone = body.phone;
+
+    // TEXTO
+    if (body.text?.message) {
+      const text = body.text.message;
+      console.log(`📩 ${phone}: ${text}`);
+      handleMessage(phone, text).catch(console.error);
+      return res.json({ ok: true });
+    }
+
+    // LOCALIZAÇÃO
+    if (body.location) {
+      console.log(`📍 Localização recebida de ${phone}`);
+      handleMessage(phone, null, {
+        latitude: body.location.latitude,
+        longitude: body.location.longitude,
+      }).catch(console.error);
+      return res.json({ ok: true });
+    }
+
+    console.log('⚠️ Payload não reconhecido:', Object.keys(body));
+    return res.json({ ok: true });
+
+  } catch (error) {
+    console.error('Erro webhook:', error);
+    return res.status(500).json({ error: 'Erro interno' });
+  }
 });
 
-require('./jobs/reminders');
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`✅ Clara rodando na porta ${PORT}`);
+router.get('/test', (req, res) => {
+  res.json({ status: 'Clara funcionando ✅' });
 });
+
+module.exports = router;
