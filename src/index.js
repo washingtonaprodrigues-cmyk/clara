@@ -4,7 +4,10 @@ const app = express();
 
 app.use(express.json());
 
+const webhookRoutes = require('./routes/webhook');
 const formsRoutes = require('./routes/forms');
+
+app.use('/webhook', webhookRoutes);
 app.use('/forms', formsRoutes);
 
 app.get('/', (req, res) => {
