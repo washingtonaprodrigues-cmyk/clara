@@ -2,10 +2,21 @@ const Groq = require('groq-sdk');
 const { webSearch } = require('./search');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const MODEL = 'llama-3.3-70b-versatile';
+const MODEL_PRIMARY = 'llama-3.3-70b-versatile';
+const MODEL_FALLBACK = 'llama-3.1-8b-instant';
 
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+}
+
+async function callGroq(messages, model, maxTokens = 500) {
+  const completion = await groq.chat.completions.create({
+    model,
+    messages,
+    temperature: 0.7,
+    max_tokens: maxTokens,
+  });
+  return completion.choices[0].message.content.trim();
 }
 
 async function processMessage(message, history = [], context = {}) {
@@ -74,7 +85,7 @@ Usuário: "me lembra de pagar a internet amanhã"
 Você: "Anotado! Te aviso amanhã cedo 😊<action>LEMBRETE|pagar a internet::07:00::${amanhaBRT(agora)}</action>"
 
 Usuário: "cheguei no trabalho"
-Você: "Bom trabalho! ☀️<action>PONTO|entrada::${String(agora.getHours()).padStart(2,'0')}:${String(agora.getMinutes()).padStart(2,'0')}</action>"
+Você: "Bom trabalho! ☀<action>PONTO|entrada::${String(agora.getHours()).padStart(2,'0')}:${String(agora.getMinutes()).padStart(2,'0')}</action>"
 
 Usuário: "gastei 45 no mercado"
 Você: "Anotado 💰<action>GASTO|45::mercado::compras no mercado</action>"
@@ -84,22 +95,25 @@ Você: "Que isso, espero que melhore logo 💜 Precisa de alguma coisa?"
 
 Seja a Clara — presente, atenciosa, útil. Nunca um sistema.`;
 
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...history,
+    { role: 'user', content: message }
+  ];
+
   try {
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...history,
-      { role: 'user', content: message }
-    ];
-
-    const completion = await groq.chat.completions.create({
-      model: MODEL,
-      messages,
-      temperature: 0.7,
-      max_tokens: 500,
-    });
-
-    return completion.choices[0].message.content.trim();
+    return await callGroq(messages, MODEL_PRIMARY);
   } catch (error) {
+    const is429 = error.message?.includes('429') || error.status === 429;
+    if (is429) {
+      console.warn('⚠️ Groq 429 no modelo principal, tentando fallback...');
+      try {
+        return await callGroq(messages, MODEL_FALLBACK);
+      } catch (fallbackError) {
+        console.error('Erro processMessage (fallback):', fallbackError.message);
+        return 'Tive um probleminha aqui. Pode repetir? 😊';
+      }
+    }
     console.error('Erro processMessage:', error.message);
     return 'Tive um probleminha aqui. Pode repetir? 😊';
   }
@@ -132,7 +146,7 @@ async function searchWeb(query, locationContext = '') {
     const sourceUrl = data.results[0]?.url || null;
 
     const completion = await groq.chat.completions.create({
-      model: 'llama-3.1-8b-instant',
+      model: MODEL_FALLBACK,
       messages: [
         {
           role: 'system',
