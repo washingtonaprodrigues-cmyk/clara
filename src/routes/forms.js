@@ -17,7 +17,6 @@ function dateBRT() {
 function criarDataBRT(dataStr, horaStr) {
   const [ano, mes, dia] = dataStr.split('-').map(Number);
   const [hora, min] = horaStr.split(':').map(Number);
-  // Cria como string ISO com offset BRT (-03:00)
   const isoStr = `${ano}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}T${String(hora).padStart(2,'0')}:${String(min).padStart(2,'0')}:00-03:00`;
   return new Date(isoStr);
 }
@@ -42,6 +41,59 @@ const CSS_BASE = `
   .tip { font-size: 12px; color: #aaa; margin-top: 4px; }
   .resumo { border-radius: 10px; padding: 14px; margin-bottom: 16px; display: none; font-size: 13px; line-height: 1.6; }
 `;
+
+// ====================== LISTAGEM: LEMBRETES ======================
+router.get('/lembretes/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const user = await memory.getOrCreateUser(phone);
+    const agora = nowBRT();
+    const lembretes = await prisma.reminder.findMany({
+      where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: agora } },
+      orderBy: { scheduledAt: 'asc' },
+      take: 20,
+    });
+    res.json(lembretes);
+  } catch (e) {
+    console.error('Erro GET lembretes:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== LISTAGEM: REMÉDIOS ======================
+router.get('/remedios/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const user = await memory.getOrCreateUser(phone);
+    const medicamentos = await prisma.medication.findMany({
+      where: { userId: user.id, active: true },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+    res.json(medicamentos);
+  } catch (e) {
+    console.error('Erro GET remedios:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== LISTAGEM: GASTOS ======================
+router.get('/gastos/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const user = await memory.getOrCreateUser(phone);
+    const inicioMes = new Date(nowBRT().getFullYear(), nowBRT().getMonth(), 1);
+    const gastos = await prisma.expense.findMany({
+      where: { userId: user.id, createdAt: { gte: inicioMes } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    res.json(gastos);
+  } catch (e) {
+    console.error('Erro GET gastos:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ====================== LEMBRETE ======================
 router.get('/lembrete/:phone', (req, res) => {
