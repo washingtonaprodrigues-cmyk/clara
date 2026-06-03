@@ -83,6 +83,14 @@ EXEMPLOS PONTO:
 "qual a senha do wi-fi?" → {"tipo":"consulta","sobre":"senha wi-fi"}
 "me chamo Ana" → {"tipo":"preferencia","nome":"Ana","tom":null}
 "seja mais direto comigo" → {"tipo":"preferencia","nome":null,"tom":"direto"}
+"seja divertida" → {"tipo":"preferencia","nome":null,"tom":"divertido"}
+"modo divertido" → {"tipo":"preferencia","nome":null,"tom":"divertido"}
+"seja sarcástica" → {"tipo":"preferencia","nome":null,"tom":"sarcastico"}
+"modo sarcástico" → {"tipo":"preferencia","nome":null,"tom":"sarcastico"}
+"sem filtro" → {"tipo":"preferencia","nome":null,"tom":"sarcastico"}
+"pode falar o que pensa" → {"tipo":"preferencia","nome":null,"tom":"sarcastico"}
+"volta a ser simpática" → {"tipo":"preferencia","nome":null,"tom":"carinhoso"}
+"modo normal" → {"tipo":"preferencia","nome":null,"tom":"carinhoso"}
 "oi" → {"tipo":"saudacao"}
 `;
 
