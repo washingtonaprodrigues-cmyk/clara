@@ -457,6 +457,7 @@
         <div class="empty"><span class="empty-icon">🧾</span>Sem gastos registrados</div>
       </div>
     </div>
+    <button class="add-btn" onclick="openModalGasto()">＋ Registrar gasto</button>
   </div>
 
 </div><!-- /content -->
@@ -527,6 +528,40 @@
   </div>
 </div>
 
+<!-- MODAL GASTO -->
+<div class="modal-overlay" id="modal-gasto">
+  <div class="modal">
+    <div class="modal-title">💰 Registrar gasto</div>
+    <div class="modal-field">
+      <label>Valor (R$)</label>
+      <input type="number" id="m-valor" placeholder="Ex: 45.90" step="0.01" min="0" />
+    </div>
+    <div class="modal-row">
+      <div class="modal-field">
+        <label>Categoria</label>
+        <select id="m-categoria">
+          <option value="alimentacao">🍔 Alimentação</option>
+          <option value="mercado">🛒 Mercado</option>
+          <option value="transporte">🚗 Transporte</option>
+          <option value="saude">💊 Saúde</option>
+          <option value="lazer">🎮 Lazer</option>
+          <option value="moradia">🏠 Moradia</option>
+          <option value="educacao">📚 Educação</option>
+          <option value="outro">📦 Outro</option>
+        </select>
+      </div>
+      <div class="modal-field">
+        <label>Descrição (opcional)</label>
+        <input type="text" id="m-descricao" placeholder="Ex: almoço no trabalho" />
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-gasto')">Cancelar</button>
+      <button class="btn-save" id="save-gasto" onclick="saveGasto()">Registrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
@@ -554,8 +589,9 @@
 
   // ── PHONE ──
   function setPhone(){
-    const val = document.getElementById('phone-input').value.trim().replace(/\D/g,'');
+    let val = document.getElementById('phone-input').value.trim().replace(/\D/g,'');
     if(!val || val.length < 10){ showToast('Número inválido ⚠️'); return; }
+    if(!val.startsWith('55')) val = '55' + val;
     currentPhone = val;
     document.getElementById('phone-display').textContent = val;
     document.getElementById('phone-setup').style.display = 'none';
@@ -794,6 +830,35 @@
       } else { showToast('Erro ao salvar ⚠️'); }
     } catch(e){ showToast('Erro de conexão ⚠️'); }
     btn.textContent='Cadastrar'; btn.disabled=false;
+  }
+
+  function openModalGasto(){
+    if(!currentPhone){ showToast('Informe seu número no Chat primeiro 💬'); return; }
+    document.getElementById('m-valor').value = '';
+    document.getElementById('m-descricao').value = '';
+    document.getElementById('modal-gasto').classList.add('open');
+  }
+
+  async function saveGasto(){
+    const valor     = parseFloat(document.getElementById('m-valor').value);
+    const categoria = document.getElementById('m-categoria').value;
+    const descricao = document.getElementById('m-descricao').value.trim() || categoria;
+    if(!valor || valor <= 0){ showToast('Informe o valor ⚠️'); return; }
+    const btn = document.getElementById('save-gasto');
+    btn.textContent='Salvando...'; btn.disabled=true;
+    try {
+      const res = await fetch(`/forms/gasto/${currentPhone}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ valor, categoria, descricao })
+      });
+      if(res.ok){
+        closeModal('modal-gasto');
+        showToast('Gasto registrado! ✅');
+        loadFinanceiro();
+      } else { showToast('Erro ao salvar ⚠️'); }
+    } catch(e){ showToast('Erro de conexão ⚠️'); }
+    btn.textContent='Registrar'; btn.disabled=false;
   }
 </script>
 </body>
