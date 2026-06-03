@@ -109,6 +109,31 @@ router.post('/gasto/:phone', async (req, res) => {
   }
 });
 
+// ====================== PREFERÊNCIA: GET ======================
+router.get('/preferencia/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const user = await memory.getOrCreateUser(phone);
+    const pref = await memory.getUserPreference(user.id);
+    res.json(pref);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== PREFERÊNCIA: POST ======================
+router.post('/preferencia/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const { nome, tom } = req.body;
+    const user = await memory.getOrCreateUser(phone);
+    await memory.saveUserPreference(user.id, nome || null, tom || null);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== LEMBRETE ======================
 router.get('/lembrete/:phone', (req, res) => {
   const { phone } = req.params;
