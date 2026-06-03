@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { processMessage } = require('../services/groq');
+const { freeResponse } = require('../services/groq');
 const memory = require('../services/memory');
 
 router.post('/:phone', async (req, res) => {
@@ -11,7 +11,8 @@ router.post('/:phone', async (req, res) => {
 
     const user = await memory.getOrCreateUser(phone);
     const history = await memory.getConversationHistory(user.id, 10);
-    const response = await processMessage(message, history, {});
+    const preferences = await memory.getUserPreference(user.id);
+    const response = await freeResponse(message, history, preferences);
 
     await memory.saveConversationMessage(user.id, 'user', message);
     await memory.saveConversationMessage(user.id, 'assistant', response);
