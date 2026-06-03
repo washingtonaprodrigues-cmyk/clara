@@ -349,6 +349,30 @@
 
     select option { background: var(--surface2); }
 
+
+    /* ── MOOD SELECTOR ── */
+    .mood-bar {
+      display: flex; gap: 6px; padding: 10px 16px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      flex-shrink: 0; overflow-x: auto; scrollbar-width: none;
+    }
+    .mood-bar::-webkit-scrollbar { display: none; }
+    .mood-btn {
+      display: flex; align-items: center; gap: 5px;
+      padding: 5px 12px; border-radius: 20px;
+      border: 1px solid var(--border);
+      background: none; color: var(--text2);
+      font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500;
+      cursor: pointer; white-space: nowrap; transition: all .15s;
+      flex-shrink: 0;
+    }
+    .mood-btn:hover { color: var(--text); border-color: var(--accent); }
+    .mood-btn.active { color: #fff; border-color: transparent; }
+    .mood-btn.active.m-simpatica  { background: #7c3aed; }
+    .mood-btn.active.m-direta     { background: #2563eb; }
+    .mood-btn.active.m-divertida  { background: #d97706; }
+    .mood-btn.active.m-sarcastica { background: #dc2626; }
+    .mood-label { font-size: 10px; color: var(--text3); padding: 0 16px 6px; flex-shrink: 0; align-self: center; }
     /* ── TOAST ── */
     .toast {
       position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -391,6 +415,16 @@
     <span class="nav-icon">💰</span> Financeiro
   </button>
 </nav>
+
+
+<!-- MOOD BAR -->
+<div class="mood-bar" id="mood-bar" style="display:none">
+  <span class="mood-label">Modo:</span>
+  <button class="mood-btn m-simpatica active" onclick="setMood('carinhoso')" data-mood="carinhoso">🥰 Simpática</button>
+  <button class="mood-btn m-direta" onclick="setMood('direto')" data-mood="direto">🎯 Direta</button>
+  <button class="mood-btn m-divertida" onclick="setMood('divertido')" data-mood="divertido">🎉 Divertida</button>
+  <button class="mood-btn m-sarcastica" onclick="setMood('sarcastico')" data-mood="sarcastico">😈 Sarcástica</button>
+</div>
 
 <!-- CONTENT -->
 <div class="content">
@@ -598,9 +632,11 @@
     document.getElementById('chat-msg').disabled  = false;
     document.getElementById('send-btn').disabled  = false;
     document.getElementById('status-dot').classList.remove('off');
+    document.getElementById('mood-bar').style.display = 'flex';
     chatHistory = [];
     document.getElementById('messages').innerHTML = '';
     addMsg('bot','Olá! Sou a Clara 💛 Como posso te ajudar hoje?');
+    loadMood();
   }
 
   function changePhone(){
@@ -610,6 +646,7 @@
     document.getElementById('chat-msg').disabled = true;
     document.getElementById('send-btn').disabled = true;
     document.getElementById('status-dot').classList.add('off');
+    document.getElementById('mood-bar').style.display = 'none';
     document.getElementById('phone-input').value = '';
   }
 
@@ -859,6 +896,35 @@
       } else { showToast('Erro ao salvar ⚠️'); }
     } catch(e){ showToast('Erro de conexão ⚠️'); }
     btn.textContent='Registrar'; btn.disabled=false;
+  }
+
+  // ── MOOD ──
+  async function loadMood(){
+    try {
+      const res = await fetch(`/forms/preferencia/${currentPhone}`);
+      const data = await res.json();
+      if(data.tom) applyMood(data.tom);
+    } catch(e){}
+  }
+
+  function applyMood(tom){
+    document.querySelectorAll('.mood-btn').forEach(b=>{
+      b.classList.toggle('active', b.dataset.mood === tom);
+    });
+  }
+
+  async function setMood(tom){
+    if(!currentPhone){ showToast('Informe seu número primeiro 💬'); return; }
+    applyMood(tom);
+    try {
+      await fetch(`/forms/preferencia/${currentPhone}`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ tom })
+      });
+      const nomes = { carinhoso:'Simpática 🥰', direto:'Direta 🎯', divertido:'Divertida 🎉', sarcastico:'Sarcástica 😈' };
+      showToast(`Modo ${nomes[tom]} ativado!`);
+    } catch(e){ showToast('Erro ao salvar modo ⚠️'); }
   }
 </script>
 </body>
