@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clara — Painel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0f0f13;
+      --surface: #18181f;
+      --surface2: #22222c;
+      --border: rgba(255,255,255,0.07);
+      --accent: #c084fc;
+      --accent2: #7c3aed;
+      --green: #4ade80;
+      --amber: #fbbf24;
+      --red: #f87171;
+      --text: #f1f0f5;
+      --text2: #9490a8;
+      --text3: #5a5670;
+      --radius: 14px;
+      --radius-sm: 8px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    /* ── TOPBAR ── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 12px; }
+    .logo {
+      font-family: 'DM Serif Display', serif;
+      font-size: 22px;
+      color: var(--accent);
+      letter-spacing: -0.5px;
+    }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+      flex-shrink: 0;
+    }
+    .status-dot.off { background: var(--text3); box-shadow: none; }
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
+    .phone-tag {
+      font-size: 12px; color: var(--text2);
+      background: var(--surface2);
+      padding: 4px 10px; border-radius: 20px;
+      border: 1px solid var(--border);
+    }
+    .btn-sm {
+      font-size: 12px; font-weight: 500;
+      padding: 5px 12px; border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text2);
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .btn-sm:hover { color: var(--text); border-color: var(--accent); }
+
+    /* ── NAV ── */
+    .nav {
+      display: flex;
+      gap: 2px;
+      padding: 10px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      flex-shrink: 0;
+      scrollbar-width: none;
+    }
+    .nav::-webkit-scrollbar { display: none; }
+    .nav-btn {
+      display: flex; align-items: center; gap: 7px;
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      border: none; background: none;
+      color: var(--text2);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px; font-weight: 500;
+      cursor: pointer; white-space: nowrap;
+      transition: all .15s;
+    }
+    .nav-btn:hover { color: var(--text); background: var(--surface2); }
+    .nav-btn.active {
+      color: var(--accent);
+      background: rgba(192,132,252,0.1);
+    }
+    .nav-icon { font-size: 16px; }
+
+    /* ── CONTENT ── */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--surface2) transparent;
+    }
+    .section { display: none; }
+    .section.active { display: block; }
+
+    /* ── PHONE SETUP ── */
+    .setup-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+      display: flex; gap: 10px; align-items: flex-end;
+    }
+    .setup-card .field { flex: 1; }
+    .setup-card label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+    .setup-card input {
+      width: 100%; padding: 9px 12px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); color: var(--text);
+      font-family: 'DM Sans', sans-serif; font-size: 14px;
+    }
+    .setup-card input:focus { outline: none; border-color: var(--accent); }
+    .btn-primary {
+      padding: 9px 18px;
+      background: var(--accent2); color: #fff;
+      border: none; border-radius: var(--radius-sm);
+      font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
+      transition: opacity .15s;
+    }
+    .btn-primary:hover { opacity: .85; }
+
+    /* ── CHAT ── */
+    .chat-wrap {
+      display: flex; flex-direction: column;
+      height: calc(100dvh - 190px);
+      min-height: 300px;
+    }
+    .messages {
+      flex: 1; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 10px;
+      padding-bottom: 12px;
+      scrollbar-width: thin; scrollbar-color: var(--surface2) transparent;
+    }
+    .msg {
+      max-width: 78%;
+      padding: 11px 15px;
+      border-radius: 16px;
+      font-size: 14px; line-height: 1.55;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: var(--accent2);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .msg.bot {
+      align-self: flex-start;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-bottom-left-radius: 4px;
+    }
+    .msg.bot.loading { color: var(--text3); font-style: italic; }
+    .chat-input-row {
+      display: flex; gap: 8px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+    .chat-input-row input {
+      flex: 1; padding: 11px 15px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; color: var(--text);
+      font-family: 'DM Sans', sans-serif; font-size: 14px;
+    }
+    .chat-input-row input:focus { outline: none; border-color: var(--accent); }
+    .chat-input-row input:disabled { opacity: .4; }
+    .send-btn {
+      padding: 11px 16px;
+      background: var(--accent2); color: #fff;
+      border: none; border-radius: 12px;
+      font-size: 18px; cursor: pointer;
+      transition: opacity .15s;
+    }
+    .send-btn:hover { opacity: .85; }
+    .send-btn:disabled { opacity: .3; cursor: default; }
+
+    /* ── CARDS ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+    .card-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 13px; font-weight: 500; color: var(--text2);
+      display: flex; align-items: center; gap: 7px;
+    }
+    .card-title-icon { font-size: 16px; }
+    .section-label {
+      font-family: 'DM Serif Display', serif;
+      font-size: 20px; color: var(--text);
+      margin-bottom: 18px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .section-label span { font-size: 22px; }
+
+    /* ── METRICS ── */
+    .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .metric {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+    }
+    .metric-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+    .metric-value { font-size: 20px; font-weight: 600; color: var(--text); }
+    .metric-sub { font-size: 11px; color: var(--text3); margin-top: 4px; }
+
+    /* ── ITEM ROWS ── */
+    .item-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .item-row:last-child { border-bottom: none; }
+    .item-label { font-size: 14px; font-weight: 500; color: var(--text); }
+    .item-sub { font-size: 12px; color: var(--text2); margin-top: 3px; }
+
+    /* ── BADGES ── */
+    .badge {
+      font-size: 11px; font-weight: 600;
+      padding: 3px 9px; border-radius: 20px;
+      white-space: nowrap;
+    }
+    .badge-purple { background: rgba(192,132,252,.15); color: var(--accent); }
+    .badge-green  { background: rgba(74,222,128,.12); color: var(--green); }
+    .badge-amber  { background: rgba(251,191,36,.12); color: var(--amber); }
+    .badge-red    { background: rgba(248,113,113,.12); color: var(--red); }
+
+    /* ── ADD BTN ── */
+    .add-btn {
+      width: 100%; padding: 11px;
+      border: 1px dashed var(--border);
+      border-radius: var(--radius-sm);
+      background: none; color: var(--text2);
+      font-family: 'DM Sans', sans-serif; font-size: 13px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+      margin-top: 4px; transition: all .15s;
+    }
+    .add-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(192,132,252,.05); }
+
+    /* ── EMPTY ── */
+    .empty {
+      text-align: center; padding: 36px 16px;
+      color: var(--text3); font-size: 14px;
+    }
+    .empty-icon { font-size: 28px; display: block; margin-bottom: 8px; opacity: .4; }
+
+    /* ── PROGRESS BAR ── */
+    .prog-wrap { height: 4px; background: var(--surface2); border-radius: 2px; margin-top: 6px; }
+    .prog-fill  { height: 100%; border-radius: 2px; transition: width .3s; }
+
+    /* ── LOADING SPINNER ── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      margin: 0 auto;
+    }
+
+    /* ── MODAL ── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.6); backdrop-filter: blur(4px);
+      z-index: 100; display: none;
+      align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px;
+      width: 100%; max-width: 400px;
+    }
+    .modal-title {
+      font-family: 'DM Serif Display', serif;
+      font-size: 18px; color: var(--text);
+      margin-bottom: 20px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .modal-field { margin-bottom: 14px; }
+    .modal-field label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+    .modal-field input,
+    .modal-field select,
+    .modal-field textarea {
+      width: 100%; padding: 10px 12px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); color: var(--text);
+      font-family: 'DM Sans', sans-serif; font-size: 14px;
+    }
+    .modal-field textarea { resize: none; height: 70px; }
+    .modal-field input:focus,
+    .modal-field select:focus,
+    .modal-field textarea:focus { outline: none; border-color: var(--accent); }
+    .modal-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 20px; }
+    .btn-cancel {
+      flex: 1; padding: 10px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); color: var(--text2);
+      font-family: 'DM Sans', sans-serif; font-size: 14px; cursor: pointer;
+      transition: all .15s;
+    }
+    .btn-cancel:hover { color: var(--text); }
+    .btn-save {
+      flex: 2; padding: 10px;
+      background: var(--accent2); border: none;
+      border-radius: var(--radius-sm); color: #fff;
+      font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: opacity .15s;
+    }
+    .btn-save:hover { opacity: .85; }
+    .btn-save:disabled { opacity: .4; cursor: default; }
+
+    select option { background: var(--surface2); }
+
+    /* ── TOAST ── */
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 10px 20px; border-radius: 20px;
+      font-size: 13px; color: var(--text);
+      z-index: 200; opacity: 0; pointer-events: none;
+      transition: opacity .2s;
+      white-space: nowrap;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="status-dot off" id="status-dot"></div>
+    <div class="logo">Clara</div>
+  </div>
+  <div class="topbar-right">
+    <span class="phone-tag" id="phone-display">sem número</span>
+    <button class="btn-sm" onclick="changePhone()">Trocar</button>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav class="nav">
+  <button class="nav-btn active" onclick="setTab('chat')" data-tab="chat">
+    <span class="nav-icon">💬</span> Chat
+  </button>
+  <button class="nav-btn" onclick="setTab('lembretes')" data-tab="lembretes">
+    <span class="nav-icon">⏰</span> Lembretes
+  </button>
+  <button class="nav-btn" onclick="setTab('remedios')" data-tab="remedios">
+    <span class="nav-icon">💊</span> Remédios
+  </button>
+  <button class="nav-btn" onclick="setTab('financeiro')" data-tab="financeiro">
+    <span class="nav-icon">💰</span> Financeiro
+  </button>
+</nav>
+
+<!-- CONTENT -->
+<div class="content">
+
+  <!-- ── CHAT ── -->
+  <div id="tab-chat" class="section active">
+    <div id="phone-setup" class="setup-card">
+      <div class="field">
+        <label>Seu número WhatsApp (com DDD, sem +55)</label>
+        <input type="tel" id="phone-input" placeholder="Ex: 11999998888" />
+      </div>
+      <button class="btn-primary" onclick="setPhone()">Entrar</button>
+    </div>
+    <div class="chat-wrap">
+      <div class="messages" id="messages">
+        <div class="msg bot">Oi! Informe seu número acima para começarmos 💛</div>
+      </div>
+      <div class="chat-input-row">
+        <input type="text" id="chat-msg" placeholder="Mensagem para a Clara..." disabled
+          onkeydown="if(event.key==='Enter')sendChat()" />
+        <button class="send-btn" id="send-btn" onclick="sendChat()" disabled>➤</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── LEMBRETES ── -->
+  <div id="tab-lembretes" class="section">
+    <div class="section-label"><span>⏰</span> Lembretes</div>
+    <div id="lembretes-list">
+      <div class="card"><div class="empty"><span class="empty-icon">🔔</span>Nenhum lembrete pendente</div></div>
+    </div>
+    <button class="add-btn" onclick="openModalLembrete()">＋ Novo lembrete</button>
+  </div>
+
+  <!-- ── REMÉDIOS ── -->
+  <div id="tab-remedios" class="section">
+    <div class="section-label"><span>💊</span> Medicamentos</div>
+    <div id="remedios-list">
+      <div class="card"><div class="empty"><span class="empty-icon">💊</span>Nenhum medicamento cadastrado</div></div>
+    </div>
+    <button class="add-btn" onclick="openModalRemedio()">＋ Cadastrar remédio</button>
+  </div>
+
+  <!-- ── FINANCEIRO ── -->
+  <div id="tab-financeiro" class="section">
+    <div class="section-label"><span>💰</span> Financeiro</div>
+    <div class="metrics-grid">
+      <div class="metric">
+        <div class="metric-label">Total este mês</div>
+        <div class="metric-value" id="total-mes">R$ 0</div>
+        <div class="metric-sub" id="qtd-gastos">0 lançamentos</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Maior categoria</div>
+        <div class="metric-value" id="maior-cat" style="font-size:15px">—</div>
+        <div class="metric-sub" id="maior-cat-val"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="card-title-icon">📋</span> Lançamentos do mês</div>
+      </div>
+      <div id="gastos-list">
+        <div class="empty"><span class="empty-icon">🧾</span>Sem gastos registrados</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /content -->
+
+<!-- MODAL LEMBRETE -->
+<div class="modal-overlay" id="modal-lembrete">
+  <div class="modal">
+    <div class="modal-title">⏰ Novo lembrete</div>
+    <div class="modal-field">
+      <label>O que você quer lembrar?</label>
+      <textarea id="m-titulo" placeholder="Ex: Tomar remédio, pagar conta..."></textarea>
+    </div>
+    <div class="modal-row">
+      <div class="modal-field">
+        <label>Data</label>
+        <input type="date" id="m-data" />
+      </div>
+      <div class="modal-field">
+        <label>Horário</label>
+        <input type="time" id="m-hora" />
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-lembrete')">Cancelar</button>
+      <button class="btn-save" id="save-lembrete" onclick="saveLembrete()">Criar lembrete</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL REMÉDIO -->
+<div class="modal-overlay" id="modal-remedio">
+  <div class="modal">
+    <div class="modal-title">💊 Cadastrar remédio</div>
+    <div class="modal-field">
+      <label>Nome do medicamento</label>
+      <input type="text" id="m-nome" placeholder="Ex: Losartana, Vitamina C..." />
+    </div>
+    <div class="modal-row">
+      <div class="modal-field">
+        <label>Dose</label>
+        <input type="text" id="m-dose" placeholder="Ex: 1 comp" />
+      </div>
+      <div class="modal-field">
+        <label>A cada quantas horas</label>
+        <select id="m-intervalo">
+          <option value="4">4 horas</option>
+          <option value="6">6 horas</option>
+          <option value="8">8 horas</option>
+          <option value="12" selected>12 horas</option>
+          <option value="24">24h (1x/dia)</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-row">
+      <div class="modal-field">
+        <label>Por quantos dias</label>
+        <input type="number" id="m-dias" placeholder="Ex: 7" min="1" max="365" />
+      </div>
+      <div class="modal-field">
+        <label>Primeira dose</label>
+        <input type="time" id="m-horario-inicio" />
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-remedio')">Cancelar</button>
+      <button class="btn-save" id="save-remedio" onclick="saveRemedio()">Cadastrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+  let currentPhone = '';
+  let chatHistory  = [];
+
+  // ── HELPERS ──
+  function pad(n){ return String(n).padStart(2,'0'); }
+
+  function showToast(msg, dur=2500){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(()=>t.classList.remove('show'), dur);
+  }
+
+  function nowLocal(){
+    const n = new Date();
+    const data = `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`;
+    const hora = `${pad(n.getHours())}:${pad(n.getMinutes())}`;
+    return { data, hora };
+  }
+
+  function brl(v){ return 'R$ ' + Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  // ── PHONE ──
+  function setPhone(){
+    const val = document.getElementById('phone-input').value.trim().replace(/\D/g,'');
+    if(!val || val.length < 10){ showToast('Número inválido ⚠️'); return; }
+    currentPhone = val;
+    document.getElementById('phone-display').textContent = val;
+    document.getElementById('phone-setup').style.display = 'none';
+    document.getElementById('chat-msg').disabled  = false;
+    document.getElementById('send-btn').disabled  = false;
+    document.getElementById('status-dot').classList.remove('off');
+    chatHistory = [];
+    document.getElementById('messages').innerHTML = '';
+    addMsg('bot','Olá! Sou a Clara 💛 Como posso te ajudar hoje?');
+  }
+
+  function changePhone(){
+    currentPhone = '';
+    document.getElementById('phone-display').textContent = 'sem número';
+    document.getElementById('phone-setup').style.display = 'flex';
+    document.getElementById('chat-msg').disabled = true;
+    document.getElementById('send-btn').disabled = true;
+    document.getElementById('status-dot').classList.add('off');
+    document.getElementById('phone-input').value = '';
+  }
+
+  // ── TABS ──
+  function setTab(tab){
+    document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+    document.getElementById('tab-'+tab).classList.add('active');
+    document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+    if(tab==='lembretes' && currentPhone) loadLembretes();
+    if(tab==='remedios'  && currentPhone) loadRemedios();
+    if(tab==='financeiro'&& currentPhone) loadFinanceiro();
+  }
+
+  // ── CHAT ──
+  function addMsg(role, text){
+    const el = document.createElement('div');
+    el.className = 'msg '+role;
+    el.textContent = text;
+    const msgs = document.getElementById('messages');
+    msgs.appendChild(el);
+    msgs.scrollTop = msgs.scrollHeight;
+    return el;
+  }
+
+  async function sendChat(){
+    const input = document.getElementById('chat-msg');
+    const text  = input.value.trim();
+    if(!text || !currentPhone) return;
+    input.value = '';
+    addMsg('user', text);
+    chatHistory.push({role:'user',content:text});
+    const loading = addMsg('bot','digitando...');
+    loading.classList.add('loading');
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          model:'claude-sonnet-4-20250514',
+          max_tokens:1000,
+          system:`Você é a Clara, assistente pessoal simpática e carinhosa em português brasileiro.
+Você ajuda com lembretes, medicamentos, finanças e buscas.
+Para criar itens, oriente o usuário a usar as abas do painel.
+Seja breve, amigável e use emojis com moderação.`,
+          messages: chatHistory
+        })
+      });
+      const data  = await res.json();
+      const reply = data.content?.map(c=>c.text||'').join('') || 'Pode repetir? 😊';
+      loading.classList.remove('loading');
+      loading.textContent = reply;
+      chatHistory.push({role:'assistant',content:reply});
+      if(chatHistory.length>20) chatHistory = chatHistory.slice(-20);
+    } catch(e){
+      loading.textContent = 'Erro de conexão. Tente novamente.';
+      loading.classList.remove('loading');
+    }
+  }
+
+  // ── LEMBRETES ──
+  async function loadLembretes(){
+    const el = document.getElementById('lembretes-list');
+    el.innerHTML = '<div class="card"><div style="text-align:center;padding:20px"><div class="spinner"></div></div></div>';
+    try {
+      const res  = await fetch(`/forms/lembretes/${currentPhone}`);
+      const data = await res.json();
+      if(!data.length){
+        el.innerHTML = '<div class="card"><div class="empty"><span class="empty-icon">🔔</span>Nenhum lembrete pendente</div></div>';
+        return;
+      }
+      let html = '<div class="card">';
+      data.forEach(r=>{
+        const d = new Date(r.scheduledAt);
+        const fmt = d.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',dateStyle:'short',timeStyle:'short'});
+        html += `<div class="item-row">
+          <div>
+            <div class="item-label">${r.message}</div>
+            <div class="item-sub">${fmt}</div>
+          </div>
+          <span class="badge badge-purple">pendente</span>
+        </div>`;
+      });
+      html += '</div>';
+      el.innerHTML = html;
+    } catch(e){
+      el.innerHTML = '<div class="card"><div class="empty"><span class="empty-icon">⚠️</span>Erro ao carregar</div></div>';
+    }
+  }
+
+  // ── REMÉDIOS ──
+  async function loadRemedios(){
+    const el = document.getElementById('remedios-list');
+    el.innerHTML = '<div class="card"><div style="text-align:center;padding:20px"><div class="spinner"></div></div></div>';
+    try {
+      const res  = await fetch(`/forms/remedios/${currentPhone}`);
+      const data = await res.json();
+      if(!data.length){
+        el.innerHTML = '<div class="card"><div class="empty"><span class="empty-icon">💊</span>Nenhum medicamento cadastrado</div></div>';
+        return;
+      }
+      let html = '<div class="card">';
+      data.forEach(r=>{
+        const pct = r.totalPills > 0 ? Math.round((r.remaining/r.totalPills)*100) : 0;
+        const badgeClass = pct>50?'badge-green':pct>20?'badge-amber':'badge-red';
+        const barColor   = pct>50?'var(--green)':pct>20?'var(--amber)':'var(--red)';
+        let times = [];
+        try { times = JSON.parse(r.times); } catch {}
+        html += `<div class="item-row">
+          <div style="flex:1;min-width:0">
+            <div class="item-label">${r.name}</div>
+            <div class="item-sub">${times.join(', ')} · ${r.remaining} doses restantes</div>
+            <div class="prog-wrap"><div class="prog-fill" style="width:${pct}%;background:${barColor}"></div></div>
+          </div>
+          <span class="badge ${badgeClass}" style="margin-left:12px">${pct}%</span>
+        </div>`;
+      });
+      html += '</div>';
+      el.innerHTML = html;
+    } catch(e){
+      el.innerHTML = '<div class="card"><div class="empty"><span class="empty-icon">⚠️</span>Erro ao carregar</div></div>';
+    }
+  }
+
+  // ── FINANCEIRO ──
+  async function loadFinanceiro(){
+    try {
+      const res  = await fetch(`/forms/gastos/${currentPhone}`);
+      const data = await res.json();
+      const total = data.reduce((a,g)=>a+g.value,0);
+      document.getElementById('total-mes').textContent   = brl(total);
+      document.getElementById('qtd-gastos').textContent  = data.length+' lançamentos';
+      const cats = {};
+      data.forEach(g=>{ cats[g.category]=(cats[g.category]||0)+g.value; });
+      const maior = Object.entries(cats).sort((a,b)=>b[1]-a[1])[0];
+      if(maior){
+        document.getElementById('maior-cat').textContent     = maior[0];
+        document.getElementById('maior-cat-val').textContent = brl(maior[1]);
+      }
+      const el = document.getElementById('gastos-list');
+      if(!data.length){ el.innerHTML='<div class="empty"><span class="empty-icon">🧾</span>Sem gastos registrados</div>'; return; }
+      let html = '';
+      data.slice(0,15).forEach(g=>{
+        const d = new Date(g.createdAt).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
+        html += `<div class="item-row">
+          <div>
+            <div class="item-label">${g.description||g.category}</div>
+            <div class="item-sub">${g.category} · ${d}</div>
+          </div>
+          <span style="font-size:14px;font-weight:600;color:var(--text)">${brl(g.value)}</span>
+        </div>`;
+      });
+      el.innerHTML = html;
+    } catch(e){
+      document.getElementById('gastos-list').innerHTML='<div class="empty"><span class="empty-icon">⚠️</span>Erro ao carregar</div>';
+    }
+  }
+
+  // ── MODALS ──
+  function openModalLembrete(){
+    if(!currentPhone){ showToast('Informe seu número no Chat primeiro 💬'); return; }
+    const { data, hora } = nowLocal();
+    document.getElementById('m-data').value = data;
+    document.getElementById('m-hora').value = hora;
+    document.getElementById('m-titulo').value = '';
+    document.getElementById('modal-lembrete').classList.add('open');
+  }
+
+  function openModalRemedio(){
+    if(!currentPhone){ showToast('Informe seu número no Chat primeiro 💬'); return; }
+    const { hora } = nowLocal();
+    document.getElementById('m-horario-inicio').value = hora;
+    document.getElementById('m-nome').value = '';
+    document.getElementById('m-dose').value = '';
+    document.getElementById('m-dias').value = '';
+    document.getElementById('modal-remedio').classList.add('open');
+  }
+
+  function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+
+  document.querySelectorAll('.modal-overlay').forEach(el=>{
+    el.addEventListener('click', e=>{ if(e.target===el) el.classList.remove('open'); });
+  });
+
+  async function saveLembrete(){
+    const titulo = document.getElementById('m-titulo').value.trim();
+    const data   = document.getElementById('m-data').value;
+    const hora   = document.getElementById('m-hora').value;
+    if(!titulo){ showToast('Descreva o lembrete ⚠️'); return; }
+    if(!hora)  { showToast('Informe o horário ⚠️');  return; }
+    const btn = document.getElementById('save-lembrete');
+    btn.textContent='Salvando...'; btn.disabled=true;
+    try {
+      const res = await fetch(`/forms/lembrete/${currentPhone}`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({titulo, data, hora})
+      });
+      if(res.ok){
+        closeModal('modal-lembrete');
+        showToast('Lembrete criado! ✅');
+        loadLembretes();
+      } else { showToast('Erro ao salvar ⚠️'); }
+    } catch(e){ showToast('Erro de conexão ⚠️'); }
+    btn.textContent='Criar lembrete'; btn.disabled=false;
+  }
+
+  async function saveRemedio(){
+    const nome          = document.getElementById('m-nome').value.trim();
+    const dose          = document.getElementById('m-dose').value.trim();
+    const intervalo     = parseInt(document.getElementById('m-intervalo').value);
+    const dias          = parseInt(document.getElementById('m-dias').value) || 0;
+    const horarioInicio = document.getElementById('m-horario-inicio').value;
+    if(!nome)         { showToast('Informe o nome do medicamento ⚠️'); return; }
+    if(!horarioInicio){ showToast('Informe o horário da primeira dose ⚠️'); return; }
+    const btn = document.getElementById('save-remedio');
+    btn.textContent='Salvando...'; btn.disabled=true;
+    try {
+      const res = await fetch(`/forms/remedio/${currentPhone}`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({nome, dose, intervalo, dias, horarioInicio})
+      });
+      if(res.ok){
+        closeModal('modal-remedio');
+        showToast('Remédio cadastrado! ✅');
+        loadRemedios();
+      } else { showToast('Erro ao salvar ⚠️'); }
+    } catch(e){ showToast('Erro de conexão ⚠️'); }
+    btn.textContent='Cadastrar'; btn.disabled=false;
+  }
+</script>
+</body>
+</html>
