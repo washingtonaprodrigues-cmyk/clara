@@ -7,9 +7,11 @@ app.use(express.json());
 
 const webhookRoutes = require('./routes/webhook');
 const formsRoutes   = require('./routes/forms');
+const chatRoutes    = require('./routes/chat');
 
 app.use('/webhook', webhookRoutes);
 app.use('/forms',   formsRoutes);
+app.use('/chat',    chatRoutes);
 
 app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/dashboard.html'));
