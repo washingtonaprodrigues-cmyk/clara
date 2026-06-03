@@ -107,7 +107,7 @@ async function responderLivre(user, phone, text) {
   const resp = await freeResponse(text, history, preferences);
   await memory.saveConversationMessage(user.id, 'user', text);
   await memory.saveConversationMessage(user.id, 'assistant', resp);
-  return sendMessage(phone, resp + MENU_FOOTER);
+  return sendMessage(phone, resp);
 }
 
 async function responderNaoEntendi(phone) {
@@ -130,7 +130,7 @@ async function handleMessage(phone, text, location = null) {
       await memory.saveMemory(user.id, 'localizacao',
         JSON.stringify({ latitude: location.latitude, longitude: location.longitude, updatedAt: new Date().toISOString() })
       );
-      return await sendMessage(phone, '✅ Localização recebida! Agora posso te ajudar melhor com clima, farmácias e lojas próximas.' + MENU_FOOTER);
+      return await sendMessage(phone, '✅ Localização recebida! Agora posso te ajudar melhor com clima, farmácias e lojas próximas.');
     }
 
     if (!text) return;
@@ -166,7 +166,7 @@ async function handleMessage(phone, text, location = null) {
     if (modoMap[textLower]) {
       const modo = modoMap[textLower];
       await memory.saveMemory(user.id, 'modo_atual', modo);
-      return await sendMessage(phone, BOAS_VINDAS_MODO[modo] + MENU_FOOTER);
+      return await sendMessage(phone, BOAS_VINDAS_MODO[modo]);
     }
 
     // VERIFICA MODO ATUAL
@@ -192,41 +192,13 @@ async function handleMessage(phone, text, location = null) {
     const classified = await classify(text);
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
 
-    switch (classified.tipo) {
-      case 'ponto_multiplo':
-        await handlePontoMultiplo(user, phone, classified.acoes, text);
-        break;
-      case 'cidade':
-        await handleCidade(user, phone, classified.cidade);
-        break;
-      case 'busca':
-        await handleBusca(user, phone, classified.query || text);
-        break;
-      case 'anotacao':
-        await handleNote(user, phone, classified);
-        break;
-      case 'tarefa':
-        await handleTask(user, phone, classified);
-        break;
-      case 'gasto':
-        await handleExpense(user, phone, classified);
-        break;
-      case 'medicamento':
-        await handleMedication(user, phone, classified);
-        break;
-      case 'consulta':
-        await handleQuery(user, phone, text);
-        break;
-      case 'saudacao':
-        await handleSaudacao(user, phone);
-        break;
-      case 'preferencia':
-        await handlePreferencia(user, phone, classified);
-        break;
-      default:
-        if (text.length < 4) return await responderNaoEntendi(phone);
-        await responderLivre(user, phone, text);
-    }
+    // Executa ações nos bastidores sem interromper a conversa
+    executeAction(user, phone, classified, text).catch(e =>
+      console.error('Erro executeAction:', e.message)
+    );
+
+    // Sempre responde livremente com a personalidade da Clara
+    await responderLivre(user, phone, text);
   } catch (error) {
     console.error('Erro handleMessage:', error.message);
     await sendMessage(phone, 'Ops, tive um probleminha. Pode repetir?');
@@ -252,7 +224,7 @@ async function getCidadeUsuario(userId) {
 // ====================== CIDADE ======================
 async function handleCidade(user, phone, cidade) {
   await memory.saveMemory(user.id, 'cidade', cidade);
-  await sendMessage(phone, `Anotei! 📍 Vou usar *${cidade}* para buscas locais.` + MENU_FOOTER);
+  await sendMessage(phone, `Anotei! 📍 Vou usar *${cidade}* para buscas locais.`);
 }
 
 // ====================== PREFERÊNCIA ======================
@@ -267,7 +239,7 @@ async function handlePreferencia(user, phone, classified) {
     ? `Combinado, ${partes.join(' e ')}.`
     : 'Combinado, vou lembrar dessa preferência.';
 
-  await sendMessage(phone, `${msg} 😊` + MENU_FOOTER);
+  await sendMessage(phone, `${msg} 😊`);
 }
 
 // ====================== PONTO MÚLTIPLO ======================
@@ -406,7 +378,7 @@ async function handleBusca(user, phone, query) {
   }
 
   const resultado = await searchWeb(queryFinal, locationText);
-  await sendMessage(phone, resultado + MENU_FOOTER);
+  await sendMessage(phone, resultado);
 }
 
 // ====================== ANOTAÇÃO ======================
@@ -459,7 +431,7 @@ async function handleTask(user, phone, classified) {
       );
     } catch (e) {
       console.error('Erro criar reminder:', e.message);
-      await sendMessage(phone, `Guardei! Vou te lembrar às *${classified.hora}*. ⏰` + MENU_FOOTER);
+      await sendMessage(phone, `Guardei! Vou te lembrar às *${classified.hora}*. ⏰`);
     }
   } else {
     await sendButtons(phone,
@@ -508,7 +480,7 @@ async function handleMedication(user, phone, classified) {
     : ['08:00'];
 
   if (!nome) {
-    return await sendMessage(phone, 'Me diz o nome do remédio e o horário? Exemplo: _"Losartana todo dia às 8h"_' + MENU_FOOTER);
+    return await sendMessage(phone, 'Me diz o nome do remédio e o horário? Exemplo: _"Losartana todo dia às 8h"_');
   }
 
   await memory.saveMedication(user.id, {
@@ -534,12 +506,12 @@ async function handleQuery(user, phone, question) {
   const memories = await memory.getRecentMemories(user.id, 30);
 
   if (memories.length === 0) {
-    await sendMessage(phone, 'Ainda não guardei nada pra você. Me conta algo!' + MENU_FOOTER);
+    await sendMessage(phone, 'Ainda não guardei nada pra você. Me conta algo!');
     return;
   }
 
   const answer = await generateMemorySummary(memories, question);
-  await sendMessage(phone, answer + MENU_FOOTER);
+  await sendMessage(phone, answer);
 }
 
 // ====================== LISTAGENS ======================
@@ -702,6 +674,73 @@ async function listarMedicamentos(user, phone) {
     { id: 'novo_remedio', label: '➕ Novo remédio' },
     { id: 'menu', label: '🏠 Menu' },
   ]);
+}
+
+// ====================== EXECUÇÃO DE AÇÕES (bastidores) ======================
+async function executeAction(user, phone, classified, originalText) {
+  switch (classified.tipo) {
+    case 'ponto_multiplo':
+      await salvarPontoSilencioso(user, classified.acoes);
+      break;
+    case 'cidade':
+      await memory.saveMemory(user.id, 'cidade', classified.cidade);
+      break;
+    case 'anotacao':
+      await memory.saveMemory(user.id, 'anotacao', classified.conteudo || classified.titulo || originalText, { titulo: classified.titulo });
+      break;
+    case 'tarefa':
+      await salvarTarefaSilenciosa(user, phone, classified);
+      break;
+    case 'gasto':
+      await memory.saveExpense(user.id, {
+        valor: classified.valor,
+        categoria: classified.categoria || 'outro',
+        descricao: classified.descricao || classified.categoria,
+      });
+      break;
+    case 'medicamento':
+      if (classified.nome) {
+        await memory.saveMedication(user.id, {
+          nome: classified.nome,
+          quantidade: classified.quantidade || 0,
+          frequencia: classified.frequencia || 1,
+          horarios: classified.horarios || ['08:00'],
+        });
+      }
+      break;
+    case 'preferencia':
+      await memory.saveUserPreference(user.id, classified.nome, classified.tom);
+      break;
+  }
+}
+
+async function salvarPontoSilencioso(user, acoes) {
+  const hoje = dateBRT();
+  for (const acao of acoes) {
+    let subtipo = (acao.subtipo || '').toLowerCase().trim();
+    if (subtipo.includes('entrada') || subtipo.includes('cheg')) subtipo = 'entrada';
+    else if (subtipo.includes('saida_almoco') || (subtipo.includes('almo') && subtipo.includes('sai'))) subtipo = 'saida_almoco';
+    else if (subtipo.includes('volta_almoco') || (subtipo.includes('almo') && subtipo.includes('volt'))) subtipo = 'volta_almoco';
+    else if (subtipo.includes('saida') || subtipo.includes('saí')) subtipo = 'saida';
+    const timestamp = acao.hora ? convertToDateWithTime(acao.hora) : nowBRT();
+    const existing = await prisma.workLog.findFirst({ where: { userId: user.id, type: subtipo, date: hoje } });
+    if (existing) {
+      await prisma.workLog.update({ where: { id: existing.id }, data: { timestamp } });
+    } else {
+      await prisma.workLog.create({ data: { userId: user.id, type: subtipo, timestamp, date: hoje } });
+    }
+  }
+}
+
+async function salvarTarefaSilenciosa(user, phone, classified) {
+  await memory.saveMemory(user.id, 'tarefa', classified.titulo, { data: classified.data, hora: classified.hora });
+  if (classified.hora) {
+    const hoje = classified.data || dateBRT();
+    const [h, m] = classified.hora.split(':').map(Number);
+    const scheduledAt = new Date(`\${hoje}T\${String(h).padStart(2,'0')}:\${String(m).padStart(2,'0')}:00`);
+    if (!classified.data && scheduledAt < nowBRT()) scheduledAt.setDate(scheduledAt.getDate() + 1);
+    await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
+  }
 }
 
 module.exports = { handleMessage };
