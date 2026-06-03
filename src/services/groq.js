@@ -2,130 +2,112 @@ const Groq = require('groq-sdk');
 const { webSearch } = require('./search');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const MODEL_PRIMARY = 'llama-3.3-70b-versatile';
-const MODEL_FALLBACK = 'llama-3.1-8b-instant';
 
-function nowBRT() {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+const MODEL_LEVE = 'llama-3.1-8b-instant';
+const MODEL_FORTE = 'llama-3.3-70b-versatile';
+
+function hoje() {
+  return new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 }
 
-async function callGroq(messages, model, maxTokens = 500) {
-  const completion = await groq.chat.completions.create({
-    model,
-    messages,
-    temperature: 0.7,
-    max_tokens: maxTokens,
-  });
-  return completion.choices[0].message.content.trim();
-}
+const SYSTEM_PROMPT = () => `Você é a Clara, assistente pessoal brasileira.
+Retorne APENAS JSON no formato correto.
+Hoje é ${hoje()}.
 
-async function processMessage(message, history = [], context = {}) {
-  const agora = nowBRT();
-  const dataHora = agora.toLocaleString('pt-BR', {
-    timeZone: 'America/Sao_Paulo',
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  });
+REGRAS IMPORTANTES:
+- Entenda linguagem natural, mesmo com erros de digitação.
+- Se tiver valor em dinheiro, geralmente é gasto.
+- Se o usuário quer consultar algo que já guardou, use consulta.
+- Se tiver horário/data e intenção de lembrar, use tarefa.
+- Se for só uma informação para guardar, use anotacao.
+- Se for pergunta atual/local/notícia/preço/clima/telefone/endereço, use busca.
 
-  const { nome, cidade, lembretes, medicamentos, anotacoes, gastosMes } = context;
+TIPOS:
+- ponto_multiplo: registrar entrada/saída trabalho
+  {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
+  
+  SUBTIPOS ACEITOS (use exatamente assim):
+  - "entrada" → chegou, entrei, cheguei
+  - "saida_almoco" → saí pra almoçar, fui almoçar, saída almoço
+  - "volta_almoco" → voltei do almoço, retornei do almoço
+  - "saida" → saí do trabalho, fui embora, saída final
 
-  const systemPrompt = `Você é a Clara, assistente pessoal no WhatsApp.
-Agora são ${dataHora}.
-${nome ? `Você está conversando com ${nome}.` : ''}
-${cidade ? `Cidade do usuário: ${cidade}.` : ''}
+- cidade: quando o usuário informa sua cidade
+  {"tipo":"cidade","cidade":"nome da cidade e estado"}
 
-Você é companheira, inteligente e natural. Fala português brasileiro informal.
-Nunca parece um sistema ou chatbot corporativo.
-Responde como uma pessoa atenciosa que acompanha a rotina do usuário.
+- busca: clima, farmácia, restaurante, loja, telefone, informações locais
+  {"tipo":"busca","query":"texto da busca"}
+  
+- anotacao: guardar informação SEM horário
+  {"tipo":"anotacao","titulo":"resumo","conteudo":"texto completo"}
+  
+- tarefa: compromisso COM horário/data
+  {"tipo":"tarefa","titulo":"desc","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null"}
+  
+- gasto: gastou dinheiro
+  {"tipo":"gasto","valor":0.0,"categoria":"mercado/restaurante/saude/transporte/lazer/outro","descricao":"desc"}
 
-CONTEXTO DO USUÁRIO:
-${lembretes?.length ? `Lembretes ativos: ${lembretes.map(r => `"${r.message}" (${r.scheduledAt})`).join(', ')}` : 'Sem lembretes ativos.'}
-${medicamentos?.length ? `Medicamentos: ${medicamentos.map(m => `${m.name} às ${m.times}`).join(', ')}` : 'Sem medicamentos.'}
-${anotacoes?.length ? `Anotações recentes: ${anotacoes.map(a => `"${a.content}"`).join(', ')}` : ''}
-${gastosMes ? `Gastos do mês: R$ ${gastosMes.toFixed(2)}` : ''}
+- medicamento: remédio, vitamina ou tratamento recorrente
+  {"tipo":"medicamento","nome":"nome","quantidade":0,"frequencia":1,"horarios":["08:00"]}
+  
+- saudacao: oi, olá, bom dia
+  {"tipo":"saudacao"}
 
-SUAS CAPACIDADES (age nos bastidores, sem anunciar):
-- Salvar lembretes e avisar no horário
-- Registrar ponto de trabalho e calcular horas
-- Guardar anotações e consultar depois
-- Registrar gastos e fazer resumos
-- Cadastrar medicamentos e lembrar nos horários
-- Buscar informações na internet (clima, telefones, endereços)
-- Conversar sobre qualquer assunto
+- preferencia: nome do usuário ou jeito que prefere ser atendido
+  {"tipo":"preferencia","nome":"nome ou null","tom":"carinhoso/direto/divertido/profissional ou null"}
+  
+- consulta: pergunta sobre algo guardado
+  {"tipo":"consulta","sobre":"tema"}
+  
+- outro: qualquer outra coisa
+  {"tipo":"outro"}
 
-COMO AGIR:
-- Quando identificar uma ação, execute-a E responda naturalmente na mesma mensagem
-- Nunca diga "estou salvando" ou "registrei no sistema" — seja natural
-- Se precisar de mais info para executar, pergunte de forma conversacional
-- Mantenha o fio da conversa — lembre do que foi dito antes
-- Se a pessoa estiver passando por algo difícil, seja humana primeiro
-- Respostas curtas na maioria das vezes (1-3 linhas)
-- Sem listas, sem markdown, sem emojis em excesso
-- Nunca mande menu a menos que o usuário peça
+EXEMPLOS PONTO:
+"entrei às 8:15, sai almoçar às 12:30, voltei do almoço às 14:10 e saí do trabalho às 18:05"
+→ {"tipo":"ponto_multiplo","acoes":[
+    {"subtipo":"entrada","hora":"08:15"},
+    {"subtipo":"saida_almoco","hora":"12:30"},
+    {"subtipo":"volta_almoco","hora":"14:10"},
+    {"subtipo":"saida","hora":"18:05"}
+  ]}
 
-AÇÕES QUE VOCÊ PODE EXECUTAR:
-As tags <action> são INVISÍVEIS para o usuário — o sistema as remove automaticamente antes de exibir.
-SEMPRE feche a tag corretamente com </action>.
-NUNCA deixe a tag incompleta ou aberta.
-Coloque a tag SEMPRE no final da mensagem, depois do texto.
+"cheguei às 8" → {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
+"minha cidade é Carlópolis PR" → {"tipo":"cidade","cidade":"Carlópolis, Paraná"}
+"farmácia perto" → {"tipo":"busca","query":"farmácia próxima"}
+"anote que o código é 123" → {"tipo":"anotacao","titulo":"código","conteudo":"o código é 123"}
+"me lembra às 19h de buscar minha sogra" → {"tipo":"tarefa","titulo":"buscar sogra","data":null,"hora":"19:00"}
+"gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
+"tomo Losartana todo dia às 8h" → {"tipo":"medicamento","nome":"Losartana","quantidade":0,"frequencia":1,"horarios":["08:00"]}
+"Vitamina C às 9h e 21h" → {"tipo":"medicamento","nome":"Vitamina C","quantidade":0,"frequencia":2,"horarios":["09:00","21:00"]}
+"quanto gastei esse mês?" → {"tipo":"consulta","sobre":"gastos"}
+"qual a senha do wi-fi?" → {"tipo":"consulta","sobre":"senha wi-fi"}
+"me chamo Ana" → {"tipo":"preferencia","nome":"Ana","tom":null}
+"seja mais direto comigo" → {"tipo":"preferencia","nome":null,"tom":"direto"}
+"oi" → {"tipo":"saudacao"}
+`;
 
-Formato: <action>TIPO|DADOS</action>
-
-Tipos:
-- LEMBRETE|titulo::HH:MM::YYYY-MM-DD
-- PONTO|entrada/saida_almoco/volta_almoco/saida::HH:MM
-- ANOTACAO|conteudo
-- GASTO|valor::categoria::descricao
-- MEDICAMENTO|nome::dose::intervalo_horas::dias::HH:MM
-- BUSCA|query
-- CIDADE|nome da cidade
-
-Exemplos:
-Usuário: "me lembra de pagar a internet amanhã"
-Você: "Anotado! Te aviso amanhã cedo 😊<action>LEMBRETE|pagar a internet::07:00::${amanhaBRT(agora)}</action>"
-
-Usuário: "cheguei no trabalho"
-Você: "Bom trabalho! ☀<action>PONTO|entrada::${String(agora.getHours()).padStart(2,'0')}:${String(agora.getMinutes()).padStart(2,'0')}</action>"
-
-Usuário: "gastei 45 no mercado"
-Você: "Anotado 💰<action>GASTO|45::mercado::compras no mercado</action>"
-
-Usuário: "minha filha não está bem"
-Você: "Que isso, espero que melhore logo 💜 Precisa de alguma coisa?"
-
-Seja a Clara — presente, atenciosa, útil. Nunca um sistema.`;
-
-  const messages = [
-    { role: 'system', content: systemPrompt },
-    ...history,
-    { role: 'user', content: message }
-  ];
-
+async function classify(message) {
   try {
-    return await callGroq(messages, MODEL_PRIMARY);
+    const completion = await groq.chat.completions.create({
+      model: MODEL_LEVE,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT() },
+        { role: 'user', content: message }
+      ],
+      temperature: 0.2,
+      max_tokens: 600,
+    });
+
+    let text = completion.choices[0].message.content.trim();
+    text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    return JSON.parse(text);
   } catch (error) {
-    const is429 = error.message?.includes('429') || error.status === 429;
-    if (is429) {
-      console.warn('⚠️ Groq 429 no modelo principal, tentando fallback...');
-      try {
-        return await callGroq(messages, MODEL_FALLBACK);
-      } catch (fallbackError) {
-        console.error('Erro processMessage (fallback):', fallbackError.message);
-        return 'Tive um probleminha aqui. Pode repetir? 😊';
-      }
-    }
-    console.error('Erro processMessage:', error.message);
-    return 'Tive um probleminha aqui. Pode repetir? 😊';
+    console.error('Erro classify:', error.message);
+    return { tipo: 'outro', resposta: 'Entendi!' };
   }
 }
 
-function amanhaBRT(agora) {
-  const d = new Date(agora);
-  d.setDate(d.getDate() + 1);
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-
-async function searchWeb(query, locationContext = '') {
+async function searchWebGroq(query, locationContext = '') {
   try {
     const fullQuery = locationContext ? `${query} em ${locationContext}` : query;
     console.log(`🔎 Buscando: ${fullQuery}`);
@@ -133,45 +115,117 @@ async function searchWeb(query, locationContext = '') {
     const data = await webSearch(fullQuery);
 
     if (!data || !data.results || data.results.length === 0) {
-      return { text: "Não encontrei nada atualizado sobre isso.", sourceUrl: null };
+      return "Não encontrei informações atualizadas. Pode tentar de outra forma?";
     }
 
     let contexto = '';
-    if (data.answer) contexto += `${data.answer}\n\n`;
-    data.results.slice(0, 3).forEach(r => {
-      if (r.title) contexto += `${r.title}\n`;
+    if (data.answer) contexto += `Resposta direta: ${data.answer}\n\n`;
+    data.results.slice(0, 3).forEach((r) => {
+      if (r.title) contexto += `Fonte: ${r.title}\n`;
       if (r.content) contexto += `${r.content.substring(0, 300)}\n\n`;
     });
 
-    const sourceUrl = data.results[0]?.url || null;
-
     const completion = await groq.chat.completions.create({
-      model: MODEL_FALLBACK,
+      model: MODEL_LEVE,
       messages: [
         {
           role: 'system',
-          content: `Você é a Clara. Responda em português brasileiro, natural e direto.
-Máximo 3 linhas. Sem citar fontes no texto.
-Para clima: emoji + cidade + temperatura + previsão curta.
-Para outros: destaque a informação principal.`
+          content: `Você é a Clara, assistente pessoal simpática e direta.
+Com base nas informações de busca, responda em português brasileiro de forma natural e amigável.
+Não cite fontes, não repita a pergunta.
+
+Para clima use emojis que representem o tempo:
+☀️ sol | 🌤️ parcialmente nublado | ⛅ nublado | 🌧️ chuva | ⛈️ tempestade | 🌨️ frio/neve | 🌫️ névoa
+
+Formato ideal para clima:
+- Primeira linha: condição atual com emoji + temperatura agora
+- Segunda linha: previsão dos próximos dias (ex: Seg ☀️ 22° | Ter 🌧️ 18° | Qua ⛅ 20°)
+- Terceira linha: dica rápida se necessário (ex: "Leva guarda-chuva! ☂")
+
+Para outros tipos de busca: destaque a informação principal em no máximo 2 linhas.`,
         },
         {
           role: 'user',
-          content: `Pergunta: ${query}\nLocalização: ${locationContext || 'não informada'}\n\nInformações:\n${contexto}`
-        }
+          content: `Pergunta: ${query}\nLocalização: ${locationContext || 'não informada'}\n\nInformações encontradas:\n${contexto}`,
+        },
       ],
-      temperature: 0.3,
-      max_tokens: 150,
+      temperature: 0.4,
+      max_tokens: 250,
     });
 
-    return {
-      text: completion.choices[0].message.content.trim(),
-      sourceUrl
-    };
+    return completion.choices[0].message.content.trim();
   } catch (error) {
-    console.error('Erro searchWeb:', error.message);
-    return { text: "Não consegui buscar isso agora.", sourceUrl: null };
+    console.error('Erro searchWebGroq:', error.message);
+    return "Não consegui buscar essa informação agora.";
   }
 }
 
-module.exports = { processMessage, searchWeb };
+async function freeResponse(message, history = [], preferences = {}) {
+  try {
+    const name = preferences?.name ? `O nome da pessoa é ${preferences.name}.` : '';
+    const tom = preferences?.tom || 'carinhoso';
+
+    const completion = await groq.chat.completions.create({
+      model: MODEL_FORTE,
+      messages: [
+        {
+          role: 'system',
+          content: `Você é a Clara, uma assistente pessoal no WhatsApp.
+Fale em português brasileiro, com calor humano, naturalidade e objetividade.
+Tom preferido: ${tom}. ${name}
+
+Diretrizes:
+- Responda como uma pessoa atenciosa, sem parecer texto corporativo.
+- Seja breve: normalmente 2 a 5 linhas.
+- Quando faltar informação para executar algo, faça uma pergunta simples.
+- Não invente que salvou, pesquisou ou agendou algo se essa ação não foi feita pelo sistema.
+- Evite listas longas, a menos que o usuário peça.`,
+        },
+        ...history,
+        { role: 'user', content: message }
+      ],
+      temperature: 0.7,
+      max_tokens: 400,
+    });
+    return completion.choices[0].message.content.trim();
+  } catch {
+    return 'Entendi! Como posso te ajudar?';
+  }
+}
+
+async function generateMemorySummary(memories, question) {
+  try {
+    const memoriesText = memories
+      .map((m) => `[${m.type}] ${m.content} (${new Date(m.createdAt).toLocaleDateString('pt-BR')})`)
+      .join('\n');
+
+    const completion = await groq.chat.completions.create({
+      model: MODEL_LEVE,
+      messages: [
+        {
+          role: 'system',
+          content: `Você é a Clara, assistente com memória viva.
+Fale em primeira pessoa: "Tenho aqui", "Guardei".
+Seja concisa e natural.`,
+        },
+        {
+          role: 'user',
+          content: `Minhas memórias:\n${memoriesText}\n\nPergunta: ${question}`,
+        },
+      ],
+      temperature: 0.5,
+      max_tokens: 300,
+    });
+
+    return completion.choices[0].message.content.trim();
+  } catch (error) {
+    return 'Deixa eu verificar...';
+  }
+}
+
+module.exports = {
+  classify,
+  searchWeb: searchWebGroq,
+  freeResponse,
+  generateMemorySummary,
+};
