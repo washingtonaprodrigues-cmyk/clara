@@ -605,30 +605,19 @@
     if(!text || !currentPhone) return;
     input.value = '';
     addMsg('user', text);
-    chatHistory.push({role:'user',content:text});
     const loading = addMsg('bot','digitando...');
     loading.classList.add('loading');
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          model:'claude-sonnet-4-20250514',
-          max_tokens:1000,
-          system:`Você é a Clara, assistente pessoal simpática e carinhosa em português brasileiro.
-Você ajuda com lembretes, medicamentos, finanças e buscas.
-Para criar itens, oriente o usuário a usar as abas do painel.
-Seja breve, amigável e use emojis com moderação.`,
-          messages: chatHistory
-        })
+      const res = await fetch(`/chat/${currentPhone}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text })
       });
       const data  = await res.json();
-      const reply = data.content?.map(c=>c.text||'').join('') || 'Pode repetir? 😊';
+      const reply = data.reply || 'Pode repetir? 😊';
       loading.classList.remove('loading');
       loading.textContent = reply;
-      chatHistory.push({role:'assistant',content:reply});
-      if(chatHistory.length>20) chatHistory = chatHistory.slice(-20);
     } catch(e){
       loading.textContent = 'Erro de conexão. Tente novamente.';
       loading.classList.remove('loading');
