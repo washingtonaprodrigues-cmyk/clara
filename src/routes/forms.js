@@ -95,6 +95,20 @@ router.get('/gastos/:phone', async (req, res) => {
   }
 });
 
+// ====================== REGISTRAR GASTO ======================
+router.post('/gasto/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const { valor, categoria, descricao } = req.body;
+    const user = await memory.getOrCreateUser(phone);
+    await memory.saveExpense(user.id, { valor, categoria, descricao });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro POST gasto:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== LEMBRETE ======================
 router.get('/lembrete/:phone', (req, res) => {
   const { phone } = req.params;
