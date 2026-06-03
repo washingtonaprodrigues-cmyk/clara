@@ -1,4 +1,5 @@
-process.on('uncaughtException', (err) => {
+// v2
+process.on('uncaughtException', ...
   console.error('❌ ERRO FATAL:', err.message);
   console.error(err.stack);
   process.exit(1);
