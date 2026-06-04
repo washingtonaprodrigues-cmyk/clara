@@ -95,6 +95,21 @@ router.get('/gastos/:phone', async (req, res) => {
   }
 });
 
+// ====================== CONCLUIR LEMBRETE ======================
+router.post('/lembrete-concluir/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.reminder.update({
+      where: { id },
+      data: { sent: true, confirmed: true }
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro concluir lembrete:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== REGISTRAR GASTO ======================
 router.post('/gasto/:phone', async (req, res) => {
   try {
