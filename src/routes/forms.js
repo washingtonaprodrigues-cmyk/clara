@@ -95,6 +95,49 @@ router.get('/gastos/:phone', async (req, res) => {
   }
 });
 
+// ====================== LISTAGEM: MEMÓRIAS ======================
+router.get('/memorias/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const user = await memory.getOrCreateUser(phone);
+    const mems = await memory.getRecentMemories(user.id, 50);
+    res.json(mems);
+  } catch (e) {
+    console.error('Erro GET memorias:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== REMÉDIO TOMADO ======================
+router.post('/remedio-tomado/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.medication.update({
+      where: { id },
+      data: { remaining: { decrement: 1 } }
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro remedio-tomado:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== LIMPAR CONVERSA ======================
+router.post('/conversa-limpar/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const user = await memory.getOrCreateUser(phone);
+    await prisma.memory.deleteMany({
+      where: { userId: user.id, type: 'conversa' }
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro limpar conversa:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== CONCLUIR LEMBRETE ======================
 router.post('/lembrete-concluir/:id', async (req, res) => {
   try {
