@@ -5,6 +5,7 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const MODEL_LEVE = 'llama-3.1-8b-instant';
 const MODEL_FORTE = 'llama-3.3-70b-versatile';
+const MODEL_PRIVADO = 'mixtral-8x7b-32768';
 
 function hoje() {
   return new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
@@ -217,7 +218,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     const tom = preferences?.tom || 'carinhoso';
 
     const completion = await groq.chat.completions.create({
-      model: MODEL_FORTE,
+      model: privateMode ? MODEL_PRIVADO : MODEL_FORTE,
       messages: [
         { role: 'system', content: buildPersonality(tom, name, privateMode) },
         ...history,
