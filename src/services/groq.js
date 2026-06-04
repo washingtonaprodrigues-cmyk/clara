@@ -5,7 +5,7 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const MODEL_LEVE = 'llama-3.1-8b-instant';
 const MODEL_FORTE = 'llama-3.3-70b-versatile';
-const MODEL_PRIVADO = 'gemma2-9b-it';
+const MODEL_PRIVADO = 'nousresearch/hermes-3-llama-3.1-70b';
 
 function hoje() {
   return new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
@@ -217,18 +217,45 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     const name = preferences?.name || null;
     const tom = preferences?.tom || 'carinhoso';
 
+    // Modo privado: usa OpenRouter com modelo sem guardrails
+    if (privateMode) {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://clara-production-949e.up.railway.app',
+          'X-Title': 'Clara IA',
+        },
+        body: JSON.stringify({
+          model: MODEL_PRIVADO,
+          messages: [
+            { role: 'system', content: buildPersonality(tom, name, true) },
+            ...history,
+            { role: 'user', content: message }
+          ],
+          temperature: 0.95,
+          max_tokens: 600,
+        }),
+      });
+      const data = await response.json();
+      return data.choices?.[0]?.message?.content?.trim() || 'Pode repetir? 😊';
+    }
+
+    // Modo normal: usa Groq
     const completion = await groq.chat.completions.create({
-      model: privateMode ? MODEL_PRIVADO : MODEL_FORTE,
+      model: MODEL_FORTE,
       messages: [
-        { role: 'system', content: buildPersonality(tom, name, privateMode) },
+        { role: 'system', content: buildPersonality(tom, name, false) },
         ...history,
         { role: 'user', content: message }
       ],
-      temperature: privateMode ? 0.95 : tom === 'sarcastico' ? 0.9 : 0.7,
+      temperature: tom === 'sarcastico' ? 0.9 : 0.7,
       max_tokens: 400,
     });
     return completion.choices[0].message.content.trim();
-  } catch {
+  } catch (e) {
+    console.error('Erro freeResponse:', e.message);
     return 'Entendi! Como posso te ajudar?';
   }
 }
