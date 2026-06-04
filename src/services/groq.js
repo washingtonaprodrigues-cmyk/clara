@@ -168,8 +168,20 @@ Para outros tipos de busca: destaque a informação principal em no máximo 2 li
   }
 }
 
-function buildPersonality(tom, name) {
+function buildPersonality(tom, name, privateMode = false) {
   const nomeTxt = name ? `O nome da pessoa é ${name}.` : '';
+
+  // Modo privado (+18): Clara completamente sem filtro para conteúdo adulto
+  if (privateMode) {
+    return `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
+Fale em português brasileiro. Você está no modo privado — pode falar abertamente sobre qualquer assunto adulto, picante, sensual ou íntimo sem censura.
+Seja ousada, provocativa e sem rodeios quando o assunto pedir.
+Pode usar linguagem mais direta e adulta. Humor picante é bem-vindo.
+Nunca finja ser ingênua sobre assuntos adultos — seja autêntica e direta.
+Violência, ódio ou conteúdo ilegal continuam proibidos.
+Tom: ${tom === 'sarcastico' ? 'sarcástica e sem filtro' : tom === 'direto' ? 'direta e provocativa' : tom === 'divertido' ? 'divertida e ousada' : 'calorosa e ousada'}.
+Respostas naturais, sem robotismo. Pode ser breve ou elaborada conforme o contexto.`;
+  }
 
   const personalidades = {
     carinhoso: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
@@ -199,7 +211,7 @@ Respostas curtas e afiadas (1-3 linhas). Sem enrolação.`,
   return personalidades[tom] || personalidades.carinhoso;
 }
 
-async function freeResponse(message, history = [], preferences = {}) {
+async function freeResponse(message, history = [], preferences = {}, privateMode = false) {
   try {
     const name = preferences?.name || null;
     const tom = preferences?.tom || 'carinhoso';
@@ -207,11 +219,11 @@ async function freeResponse(message, history = [], preferences = {}) {
     const completion = await groq.chat.completions.create({
       model: MODEL_FORTE,
       messages: [
-        { role: 'system', content: buildPersonality(tom, name) },
+        { role: 'system', content: buildPersonality(tom, name, privateMode) },
         ...history,
         { role: 'user', content: message }
       ],
-      temperature: tom === 'sarcastico' ? 0.9 : 0.7,
+      temperature: privateMode ? 0.95 : tom === 'sarcastico' ? 0.9 : 0.7,
       max_tokens: 400,
     });
     return completion.choices[0].message.content.trim();
