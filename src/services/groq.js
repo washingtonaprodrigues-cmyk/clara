@@ -5,7 +5,7 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const MODEL_LEVE = 'llama-3.1-8b-instant';
 const MODEL_FORTE = 'llama-3.3-70b-versatile';
-const MODEL_PRIVADO = 'mixtral-8x7b-32768';
+const MODEL_PRIVADO = 'gemma2-9b-it';
 
 function hoje() {
   return new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
