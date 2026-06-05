@@ -298,6 +298,156 @@ select option{background:var(--s2)}
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--s3);border-radius:2px}
+
+/* ══ MOBILE RESPONSIVE ══ */
+@media (max-width: 768px) {
+  /* Layout: sidebar vira bottom nav */
+  body { flex-direction: column; }
+  
+  .sb {
+    width: 100%;
+    height: auto;
+    flex-direction: column;
+    border-right: none;
+    border-bottom: none;
+    order: 2;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    height: auto;
+  }
+  
+  /* Esconde elementos da sidebar no mobile */
+  .sb-logo, .sb-new, .sb-section, .sb-foot { display: none !important; }
+  
+  /* Nav vira bottom tab bar */
+  .sb-nav {
+    display: flex;
+    flex-direction: row;
+    padding: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-top: 1px solid var(--border);
+    background: var(--s1);
+  }
+  .sb-nav::-webkit-scrollbar { display: none; }
+  
+  .sb-item {
+    flex: 1;
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px 6px 14px;
+    border-radius: 0;
+    font-size: 10px;
+    min-width: 60px;
+    text-align: center;
+    justify-content: center;
+    align-items: center;
+  }
+  .sb-item.active {
+    background: none;
+    color: var(--accent);
+  }
+  .sb-item-icon { width: auto; font-size: 20px; }
+  .sb-badge {
+    position: absolute;
+    top: 6px;
+    right: calc(50% - 20px);
+    font-size: 9px;
+    padding: 1px 4px;
+    min-width: 14px;
+  }
+
+  /* Main ocupa tela toda menos bottom nav */
+  .main {
+    order: 1;
+    height: calc(100dvh - 64px);
+    overflow: hidden;
+  }
+
+  /* Chat topbar mobile */
+  .chat-topbar { padding: 10px 14px; }
+  .chat-info h2 { font-size: 14px; }
+  .topbar-btn { font-size: 10px; padding: 4px 8px; }
+
+  /* Phone setup */
+  .phone-setup { margin: 12px 14px; padding: 12px 14px; flex-direction: column; gap: 8px; }
+  .ps-btn { width: 100%; }
+
+  /* Memory strip */
+  .memory-strip { padding: 6px 14px; }
+
+  /* Messages */
+  .msgs { padding: 12px 14px; gap: 12px; }
+  .msg-bot-body { max-width: 85%; }
+  .msg-bubble { font-size: 13px; padding: 10px 13px; }
+
+  /* Chat input */
+  .chat-input-area { padding: 10px 14px; }
+  .quick-chips { gap: 5px; }
+  .qchip { font-size: 10px; padding: 4px 10px; }
+
+  /* Page headers */
+  .page-header { padding: 14px 16px 12px; gap: 10px; }
+  .ph-title { font-size: 17px; }
+  .ph-sub { display: none; }
+  .ph-icon { width: 36px; height: 36px; font-size: 17px; }
+  .btn-primary { font-size: 12px; padding: 7px 12px; }
+  .btn-outline { font-size: 12px; padding: 7px 10px; }
+
+  /* Lembretes */
+  .rem-tabs { padding: 0 14px; overflow-x: auto; scrollbar-width: none; }
+  .rem-tab { padding: 10px 12px; font-size: 12px; white-space: nowrap; }
+  .rem-body { padding: 14px 14px; }
+  .rem-item { padding: 12px 12px; }
+
+  /* Remédios */
+  .med-stats { grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 14px; }
+  .med-stat-val { font-size: 18px; }
+  .med-body { padding: 0 14px 14px; }
+  .med-card { padding: 14px; }
+  .med-next { flex-direction: column; gap: 10px; align-items: flex-start; }
+  .med-take-btn { width: 100%; justify-content: center; }
+
+  /* Financeiro */
+  .fin-stats { grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 14px; }
+  .fin-stat-val { font-size: 15px; }
+  .fin-body { grid-template-columns: 1fr; overflow-y: auto; }
+  .fin-left { padding: 0 14px 14px; }
+  .fin-right { padding: 0 14px 14px; border-left: none; border-top: 1px solid var(--border); }
+
+  /* Memórias */
+  .mem-search { padding: 10px 14px; }
+  .mem-body { padding: 12px 14px; }
+  .mem-grid { grid-template-columns: 1fr; }
+
+  /* Modais */
+  .modal { padding: 20px 16px; border-radius: 20px 20px 0 0; }
+  .overlay { align-items: flex-end; padding: 0; }
+  .mf-row { grid-template-columns: 1fr; }
+
+  /* Private indicator */
+  .private-indicator { padding: 6px 14px; font-size: 10px; }
+
+  /* PWA banner */
+  .pwa-banner { bottom: 74px; }
+
+  /* Welcome */
+  .welcome { padding: 24px 16px; }
+  .welcome-title { font-size: 22px; }
+  .quick-actions { gap: 8px; }
+  .qa-btn { padding: 9px 12px; font-size: 12px; }
+}
+
+/* Notch/safe area para iPhone */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  @media (max-width: 768px) {
+    .sb-nav { padding-bottom: env(safe-area-inset-bottom); }
+    .main { height: calc(100dvh - 64px - env(safe-area-inset-bottom)); }
+  }
+}
 </style>
 </head>
 <body>
