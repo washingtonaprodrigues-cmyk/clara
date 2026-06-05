@@ -75,8 +75,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);displ
 .ps-btn{padding:8px 16px;background:var(--accent);border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:opacity .15s}
 .ps-btn:hover{opacity:.85}
 
-/* memory strip */
-.memory-strip{padding:8px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:rgba(139,92,246,.04);flex-shrink:0;overflow-x:auto;scrollbar-width:none}
+/* memory strip — CORRIGIDO: começa oculta, só aparece com dados reais */
+.memory-strip{padding:8px 24px;border-bottom:1px solid var(--border);display:none;align-items:center;gap:8px;background:rgba(139,92,246,.04);flex-shrink:0;overflow-x:auto;scrollbar-width:none}
 .memory-strip::-webkit-scrollbar{display:none}
 .mem-label{font-size:11px;color:var(--text3);font-weight:500;white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:5px}
 .mem-chip{background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.25);color:#C4B5FD;font-size:11px;padding:3px 10px;border-radius:20px;white-space:nowrap;flex-shrink:0;cursor:pointer;transition:all .15s}
@@ -273,6 +273,7 @@ select option{background:var(--s2)}
 /* private mode */
 .private-indicator{display:none;align-items:center;gap:6px;padding:6px 24px;background:rgba(239,68,68,.06);border-bottom:1px solid rgba(239,68,68,.15);font-size:11px;color:var(--red);flex-shrink:0}
 .private-indicator.on{display:flex}
+
 /* PWA install banner */
 .pwa-banner{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid rgba(139,92,246,.3);border-radius:var(--r);padding:14px 18px;display:none;align-items:center;gap:12px;z-index:150;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:340px;width:calc(100% - 40px)}
 .pwa-banner.show{display:flex}
@@ -285,29 +286,26 @@ select option{background:var(--s2)}
 .pwa-dismiss-btn{padding:7px 10px;background:none;border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text3);font-family:"Inter",sans-serif;font-size:12px;cursor:pointer}
 
 /* ══ COFRE ══ */
-.cofre-grid { display: flex; flex-direction: column; gap: 10px; }
-.cofre-card {
-  background: var(--s2); border: 1px solid var(--border);
-  border-left: 3px solid var(--accent); border-radius: var(--r);
-  padding: 16px; transition: all .15s;
-}
-.cofre-card:hover { border-color: rgba(139,92,246,.4); }
-.cofre-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.cofre-card-name { font-size: 15px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; }
-.cofre-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: rgba(239,68,68,.12); color: #FCA5A5; }
-.cofre-card-actions { display: flex; gap: 6px; }
-.cofre-action-btn { width: 28px; height: 28px; border-radius: 7px; background: none; border: none; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; transition: all .15s; opacity: .5; }
-.cofre-action-btn:hover { background: var(--s3); opacity: 1; }
-.cofre-field { margin-bottom: 6px; font-size: 12px; color: var(--text3); display: flex; align-items: center; gap: 6px; }
-.cofre-field-label { color: var(--text3); min-width: 50px; }
-.cofre-field-value { color: var(--text2); font-family: monospace; letter-spacing: .5px; }
-.cofre-hidden { color: var(--text3); letter-spacing: 2px; }
-.cofre-toggle { background: none; border: none; cursor: pointer; font-size: 12px; opacity: .5; transition: opacity .15s; }
-.cofre-toggle:hover { opacity: 1; }
-.cofre-date { font-size: 10px; color: var(--text3); margin-top: 8px; }
-.cofre-category { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-.cofre-cat-btn { padding: 6px 12px; background: var(--s3); border: 1px solid var(--border); border-radius: 20px; font-size: 12px; color: var(--text2); cursor: pointer; transition: all .15s; font-family: 'Inter', sans-serif; }
-.cofre-cat-btn.active { background: rgba(139,92,246,.2); border-color: rgba(139,92,246,.4); color: var(--accent3); }
+.cofre-grid{display:flex;flex-direction:column;gap:10px}
+.cofre-card{background:var(--s2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r);padding:16px;transition:all .15s}
+.cofre-card:hover{border-color:rgba(139,92,246,.4)}
+.cofre-card-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.cofre-card-name{font-size:15px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px}
+.cofre-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:6px;background:rgba(239,68,68,.12);color:#FCA5A5}
+.cofre-card-actions{display:flex;gap:6px}
+.cofre-action-btn{width:28px;height:28px;border-radius:7px;background:none;border:none;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s;opacity:.5}
+.cofre-action-btn:hover{background:var(--s3);opacity:1}
+.cofre-field{margin-bottom:6px;font-size:12px;color:var(--text3);display:flex;align-items:center;gap:6px}
+.cofre-field-label{color:var(--text3);min-width:50px}
+.cofre-field-value{color:var(--text2);font-family:monospace;letter-spacing:.5px}
+.cofre-hidden{color:var(--text3);letter-spacing:2px}
+.cofre-toggle{background:none;border:none;cursor:pointer;font-size:12px;opacity:.5;transition:opacity .15s}
+.cofre-toggle:hover{opacity:1}
+.cofre-date{font-size:10px;color:var(--text3);margin-top:8px}
+.cofre-category{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.cofre-cat-btn{padding:6px 12px;background:var(--s3);border:1px solid var(--border);border-radius:20px;font-size:12px;color:var(--text2);cursor:pointer;transition:all .15s;font-family:'Inter',sans-serif}
+.cofre-cat-btn.active{background:rgba(139,92,246,.2);border-color:rgba(139,92,246,.4);color:var(--accent3)}
+
 /* toast */
 .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid var(--border2);padding:10px 20px;border-radius:20px;font-size:12px;color:var(--text);z-index:200;opacity:0;pointer-events:none;transition:all .25s;white-space:nowrap;box-shadow:0 8px 30px rgba(0,0,0,.4)}
 .toast.show{opacity:1}
@@ -326,9 +324,8 @@ select option{background:var(--s2)}
 
 /* ══ MOBILE RESPONSIVE ══ */
 @media (max-width: 768px) {
-  /* Layout: sidebar vira bottom nav */
   body { flex-direction: column; }
-  
+
   .sb {
     width: 100%;
     height: auto;
@@ -341,13 +338,10 @@ select option{background:var(--s2)}
     left: 0;
     right: 0;
     z-index: 50;
-    height: auto;
   }
-  
-  /* Esconde elementos da sidebar no mobile */
+
   .sb-logo, .sb-new, .sb-section, .sb-foot { display: none !important; }
-  
-  /* Nav vira bottom tab bar */
+
   .sb-nav {
     display: flex;
     flex-direction: row;
@@ -356,9 +350,11 @@ select option{background:var(--s2)}
     scrollbar-width: none;
     border-top: 1px solid var(--border);
     background: var(--s1);
+    /* CORRIGIDO: safe-area para iPhone com home indicator */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   .sb-nav::-webkit-scrollbar { display: none; }
-  
+
   .sb-item {
     flex: 1;
     flex-direction: column;
@@ -385,37 +381,35 @@ select option{background:var(--s2)}
     min-width: 14px;
   }
 
-  /* Main ocupa tela toda menos bottom nav */
+  /* CORRIGIDO: altura considera nav (64px) + safe-area do iPhone */
   .main {
     order: 1;
-    height: calc(100dvh - 64px);
+    height: calc(100dvh - 64px - env(safe-area-inset-bottom, 0px));
     overflow: hidden;
   }
 
-  /* Chat topbar mobile */
   .chat-topbar { padding: 10px 14px; }
   .chat-info h2 { font-size: 14px; }
   .topbar-btn { font-size: 10px; padding: 4px 8px; }
 
-  /* Phone setup */
   .phone-setup { margin: 12px 14px; padding: 12px 14px; flex-direction: column; gap: 8px; }
   .ps-btn { width: 100%; }
 
-  /* Memory strip */
   .memory-strip { padding: 6px 14px; }
 
-  /* Messages */
   .msgs { padding: 12px 14px; gap: 12px; }
   .msg-bot-body { max-width: 85%; }
   .msg-bubble { font-size: 13px; padding: 10px 13px; }
 
-  /* Chat input */
-  .chat-input-area { padding: 10px 14px 12px; }
+  /* CORRIGIDO: input area com padding inferior seguro para não ficar atrás do home indicator */
+  .chat-input-area {
+    padding: 10px 14px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 12px));
+  }
   .quick-chips { gap: 5px; }
   .qchip { font-size: 10px; padding: 4px 10px; }
   .input-footer { display: none; }
 
-  /* Page headers */
   .page-header { padding: 14px 16px 12px; gap: 10px; }
   .ph-title { font-size: 17px; }
   .ph-sub { display: none; }
@@ -423,13 +417,11 @@ select option{background:var(--s2)}
   .btn-primary { font-size: 12px; padding: 7px 12px; }
   .btn-outline { font-size: 12px; padding: 7px 10px; }
 
-  /* Lembretes */
   .rem-tabs { padding: 0 14px; overflow-x: auto; scrollbar-width: none; }
   .rem-tab { padding: 10px 12px; font-size: 12px; white-space: nowrap; }
   .rem-body { padding: 14px 14px; }
   .rem-item { padding: 12px 12px; }
 
-  /* Remédios */
   .med-stats { grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 14px; }
   .med-stat-val { font-size: 18px; }
   .med-body { padding: 0 14px 14px; }
@@ -437,42 +429,28 @@ select option{background:var(--s2)}
   .med-next { flex-direction: column; gap: 10px; align-items: flex-start; }
   .med-take-btn { width: 100%; justify-content: center; }
 
-  /* Financeiro */
   .fin-stats { grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 14px; }
   .fin-stat-val { font-size: 15px; }
   .fin-body { grid-template-columns: 1fr; overflow-y: auto; }
   .fin-left { padding: 0 14px 14px; }
   .fin-right { padding: 0 14px 14px; border-left: none; border-top: 1px solid var(--border); }
 
-  /* Memórias */
   .mem-search { padding: 10px 14px; }
   .mem-body { padding: 12px 14px; }
   .mem-grid { grid-template-columns: 1fr; }
 
-  /* Modais */
   .modal { padding: 20px 16px; border-radius: 20px 20px 0 0; }
   .overlay { align-items: flex-end; padding: 0; }
   .mf-row { grid-template-columns: 1fr; }
 
-  /* Private indicator */
   .private-indicator { padding: 6px 14px; font-size: 10px; }
 
-  /* PWA banner */
   .pwa-banner { bottom: 74px; }
 
-  /* Welcome */
   .welcome { padding: 24px 16px; }
   .welcome-title { font-size: 22px; }
   .quick-actions { gap: 8px; }
   .qa-btn { padding: 9px 12px; font-size: 12px; }
-}
-
-/* Notch/safe area para iPhone */
-@supports (padding-bottom: env(safe-area-inset-bottom)) {
-  @media (max-width: 768px) {
-    .sb-nav { padding-bottom: env(safe-area-inset-bottom); }
-    .main { height: calc(100dvh - 64px - env(safe-area-inset-bottom)); }
-  }
 }
 </style>
 </head>
@@ -527,6 +505,7 @@ select option{background:var(--s2)}
     <div class="private-indicator" id="private-indicator">
       🔒 <strong>Modo privado ativo</strong> — o histórico será apagado ao iniciar nova conversa. Sem limite de mensagens.
     </div>
+
     <div id="phone-setup" class="phone-setup">
       <div class="ps-field">
         <label>Número WhatsApp (com DDD, sem +55)</label>
@@ -535,7 +514,8 @@ select option{background:var(--s2)}
       <button class="ps-btn" onclick="setPhone()">Entrar</button>
     </div>
 
-    <div class="memory-strip" id="memory-strip" style="display:none">
+    <!-- CORRIGIDO: memory-strip começa oculta (display:none no CSS), só aparece via JS quando há dados -->
+    <div class="memory-strip" id="memory-strip">
       <span class="mem-label">🧠 Memória ativa</span>
       <div id="mem-chips" style="display:flex;gap:6px"></div>
     </div>
@@ -730,6 +710,7 @@ select option{background:var(--s2)}
     <button class="pwa-dismiss-btn" onclick="dismissPWA()">✕</button>
   </div>
 </div>
+
 <!-- MODAL COFRE -->
 <div class="overlay" id="modal-cofre">
   <div class="modal">
@@ -802,11 +783,12 @@ function setPhone(){
   document.getElementById('chat-online-status').style.color='var(--green)';
   document.getElementById('sb-phone').textContent=v;
   document.getElementById('sb-status').textContent='Online agora';
-  document.getElementById('memory-strip').style.display='flex';
+  // CORRIGIDO: NÃO mostra memory-strip aqui — vai aparecer só via loadMemChips() se houver dados
   document.getElementById('quick-chips').style.display='flex';
   document.getElementById('welcome').innerHTML='<div class="welcome-title">Olá! Sou a Clara ✨</div><div class="welcome-sub">Como posso te ajudar hoje?</div>';
   loadAll();loadMood();loadMemChips();
 }
+
 function changePhone(){
   phone='';
   document.getElementById('phone-display').textContent='';
@@ -816,6 +798,7 @@ function changePhone(){
   document.getElementById('chat-online-status').textContent='Aguardando número';
   document.getElementById('chat-online-status').style.color='var(--text3)';
   document.getElementById('sb-status').textContent='Aguardando número';
+  // CORRIGIDO: esconde a strip ao trocar número
   document.getElementById('memory-strip').style.display='none';
   document.getElementById('quick-chips').style.display='none';
   document.getElementById('phone-input').value='';
@@ -833,6 +816,7 @@ function goTo(p){
   if(p==='financeiro')renderFin();
   if(p==='cofre')renderCofre();
 }
+
 async function togglePrivate(){
   privateMode = !privateMode;
   const btn = document.getElementById('private-btn');
@@ -864,10 +848,8 @@ async function loadAll(){
     fetch(`/forms/memorias/${phone}`).then(x=>x.json()).catch(()=>[]),
   ]);
   allReminders=l; allMeds=r; allGastos=g; allMems=m;
-  // badges
   if(l.length){document.getElementById('badge-rem').textContent=l.length;document.getElementById('badge-rem').style.display='';}
   if(r.length){document.getElementById('badge-med').textContent=r.length;document.getElementById('badge-med').style.display='';}
-  // update today tab count
   const today=new Date().toDateString();
   const todayCount=l.filter(x=>new Date(x.scheduledAt).toDateString()===today).length;
   document.getElementById('rtab-today').textContent=todayCount||'0';
@@ -934,13 +916,27 @@ async function loadMood(){
   try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();if(d.tom)currentMood=d.tom;}catch{}
 }
 
-// ── MEM CHIPS ──
+// ── MEM CHIPS — CORRIGIDO: só mostra a strip quando há dados reais ──
 async function loadMemChips(){
+  const strip=document.getElementById('memory-strip');
+  const el=document.getElementById('mem-chips');
   try{
-    const r=await fetch(`/forms/lembretes/${phone}`);const d=await r.json();
-    const el=document.getElementById('mem-chips');
+    const r=await fetch(`/forms/lembretes/${phone}`);
+    const d=await r.json();
+    // Sem dados: esconde a strip completamente
+    if(!d||!d.length){
+      strip.style.display='none';
+      el.innerHTML='';
+      return;
+    }
+    // Com dados: monta os chips e exibe
     el.innerHTML=d.slice(0,4).map(x=>`<span class="mem-chip">${x.message.substring(0,25)}</span>`).join('');
-  }catch{}
+    strip.style.display='flex';
+  }catch{
+    // Em caso de erro, esconde a strip
+    strip.style.display='none';
+    el.innerHTML='';
+  }
 }
 
 // ── REMINDERS ──
@@ -960,7 +956,6 @@ function renderReminders(){
   if(remTab==='next')items=allReminders.filter(x=>new Date(x.scheduledAt)>now&&new Date(x.scheduledAt).toDateString()!==today);
   if(remTab==='done')items=[];
   if(!items.length){el.innerHTML='<div class="empty-state"><span class="empty-icon">✅</span><div class="empty-text">Nenhum lembrete aqui</div></div>';return;}
-  // Group by date
   const groups={};
   items.forEach(r=>{
     const d=new Date(r.scheduledAt);
@@ -1009,7 +1004,6 @@ function renderMeds(){
   const el=document.getElementById('med-body');
   if(!allMeds.length){el.innerHTML='<div class="empty-state"><span class="empty-icon">💊</span><div class="empty-text">Nenhum medicamento cadastrado</div></div>';return;}
   document.getElementById('ms-active').textContent=allMeds.length;
-  // find next dose
   const now=new Date();
   const hm=`${pad(now.getHours())}:${pad(now.getMinutes())}`;
   let nextDose=null,nextMed=null;
@@ -1066,7 +1060,6 @@ function renderFin(){
   document.getElementById('fs-max').textContent=brl(Math.max(...vals));
   document.getElementById('fs-count').textContent=allGastos.length;
 
-  // Bar chart by day
   const byDay={};
   allGastos.forEach(g=>{
     const d=new Date(g.createdAt).getDate();
@@ -1076,9 +1069,8 @@ function renderFin(){
   const data=labels.map(d=>byDay[d]||0);
   if(barChart)barChart.destroy();
   const ctx1=document.getElementById('chart-bar').getContext('2d');
-  barChart=new Chart(ctx1,{type:'bar',data:{labels,datasets:[{data,backgroundColor:'rgba(139,92,246,.5)',borderColor:'rgba(139,92,246,.8)',borderWidth:1,borderRadius:4}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4B5563',font:{size:10}},grid:{display:false}},y:{ticks:{color:'#4B5563',font:{size:10},callback:v=>'R$'+v},grid:{color:'rgba(255,255,255,.04)'}}}}}); 
+  barChart=new Chart(ctx1,{type:'bar',data:{labels,datasets:[{data,backgroundColor:'rgba(139,92,246,.5)',borderColor:'rgba(139,92,246,.8)',borderWidth:1,borderRadius:4}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4B5563',font:{size:10}},grid:{display:false}},y:{ticks:{color:'#4B5563',font:{size:10},callback:v=>'R$'+v},grid:{color:'rgba(255,255,255,.04)'}}}}});
 
-  // Donut by category
   const byCat={};
   allGastos.forEach(g=>{byCat[g.category]=(byCat[g.category]||0)+g.value;});
   const catEntries=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
@@ -1093,7 +1085,6 @@ function renderFin(){
       <span class="cat-pct">${Math.round(v/total*100)}%</span>
     </div>`).join('');
 
-  // List items
   document.getElementById('fin-items').innerHTML=allGastos.slice(0,10).map(g=>`
     <div class="fin-item">
       <div class="fin-cat-dot" style="background:${CAT_COLORS[g.category]||'#6B7280'}"></div>
@@ -1107,7 +1098,6 @@ function renderFin(){
 
 // ── COFRE ──
 let cofreData = [];
-let cofreFilter = '';
 
 async function renderCofre(){
   const el = document.getElementById('cofre-body');
@@ -1300,7 +1290,6 @@ let deferredPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   deferredPrompt = e;
-  // Android: mostra banner nativo
   setTimeout(() => document.getElementById('pwa-banner').classList.add('show'), 3000);
 });
 
@@ -1321,14 +1310,12 @@ function dismissPWA(){
   localStorage.setItem('pwa-dismissed','1');
 }
 
-// Registrar Service Worker
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('/sw.js')
     .then(reg => console.log('SW registrado:', reg.scope))
     .catch(err => console.log('SW erro:', err));
 }
 
-// iOS: mostra banner após 3s se não instalado e não dispensado
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
 const isStandalone = window.navigator.standalone === true;
 if(isIOS && !isStandalone && !localStorage.getItem('pwa-dismissed')){
