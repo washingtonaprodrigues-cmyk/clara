@@ -23,51 +23,73 @@
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden}
-body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);display:flex;height:100dvh;font-size:14px}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column;height:100dvh;font-size:14px}
 
-/* ── SIDEBAR ── */
-.sb{width:256px;flex-shrink:0;background:var(--s1);border-right:1px solid var(--border);display:flex;flex-direction:column;height:100vh;overflow:hidden}
-.sb-logo{padding:20px 16px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)}
-.sb-logo-icon{width:34px;height:34px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;box-shadow:0 0 20px var(--glow)}
-.sb-logo-text{font-family:'Playfair Display',serif;font-size:20px;letter-spacing:-.3px}
-.sb-logo-sub{font-size:10px;color:var(--text3);margin-top:1px}
-.sb-new{margin:12px;padding:9px 14px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:7px;transition:opacity .15s;box-shadow:0 4px 15px var(--glow)}
-.sb-new:hover{opacity:.85}
-.sb-nav{padding:4px 8px;flex:1;overflow-y:auto}
-.sb-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r-sm);cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;transition:all .15s;position:relative}
-.sb-item:hover{background:var(--s2);color:var(--text)}
-.sb-item.active{background:rgba(139,92,246,.15);color:#C4B5FD}
-.sb-item-icon{font-size:16px;width:20px;text-align:center;flex-shrink:0}
-.sb-badge{margin-left:auto;background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;min-width:18px;text-align:center}
-.sb-section{padding:12px 12px 4px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.7px}
-.sb-foot{padding:12px;border-top:1px solid var(--border);margin-top:auto}
-.sb-user{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-sm);cursor:pointer;transition:background .15s}
-.sb-user:hover{background:var(--s2)}
-.sb-avatar{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
-.sb-user-info{flex:1;min-width:0}
-.sb-user-name{font-size:13px;font-weight:500;color:var(--text)}
-.sb-user-status{font-size:10px;color:var(--green);display:flex;align-items:center;gap:4px}
-.sb-user-status::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);flex-shrink:0}
+/* ── TOPBAR ── */
+.topbar{display:flex;align-items:center;gap:10px;padding:0 16px;height:54px;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0;position:relative;z-index:20}
+.menu-btn{width:34px;height:34px;border-radius:var(--r-sm);background:none;border:1px solid var(--border);color:var(--text2);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.menu-btn:hover{background:var(--s2);color:var(--text);border-color:var(--border2)}
+.topbar-avatar{width:34px;height:34px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;box-shadow:0 0 12px var(--glow)}
+.topbar-info{flex:1;min-width:0}
+.topbar-name{font-size:14px;font-weight:600;color:var(--text);line-height:1.2}
+.topbar-status{font-size:10px;color:var(--green);display:flex;align-items:center;gap:4px}
+.topbar-status::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green)}
+.topbar-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.new-chat-btn{display:flex;align-items:center;gap:6px;padding:7px 13px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:opacity .15s;box-shadow:0 4px 12px var(--glow);white-space:nowrap}
+.new-chat-btn:hover{opacity:.85}
+.lock-btn{width:34px;height:34px;border-radius:var(--r-sm);background:none;border:1px solid var(--border);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.lock-btn:hover{background:var(--s2);border-color:var(--border2)}
+.lock-btn.private{color:var(--red);border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.06)}
+
+/* ── DRAWER ── */
+.drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:40;opacity:0;pointer-events:none;transition:opacity .2s}
+.drawer-overlay.open{opacity:1;pointer-events:all}
+.drawer{position:fixed;top:0;left:0;width:260px;height:100%;background:var(--s1);border-right:1px solid var(--border2);z-index:50;transform:translateX(-100%);transition:transform .22s ease;display:flex;flex-direction:column;overflow:hidden}
+.drawer.open{transform:translateX(0)}
+.drawer-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.drawer-logo{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 0 12px var(--glow);flex-shrink:0}
+.drawer-logo-text{font-family:'Playfair Display',serif;font-size:18px}
+.drawer-logo-sub{font-size:10px;color:var(--text3);margin-top:1px}
+.drawer-close{margin-left:auto;width:28px;height:28px;border-radius:7px;background:rgba(255,255,255,.06);border:none;color:var(--text3);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.drawer-close:hover{background:rgba(255,255,255,.1);color:var(--text2)}
+.drawer-user{padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0}
+.drawer-user-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-sm);cursor:pointer;transition:background .15s}
+.drawer-user-row:hover{background:var(--s2)}
+.drawer-avatar{width:34px;height:34px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.drawer-user-name{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drawer-user-status{font-size:10px;color:var(--green);display:flex;align-items:center;gap:4px;margin-top:1px}
+.drawer-user-status::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--green);flex-shrink:0}
+.drawer-body{flex:1;overflow-y:auto;padding:8px}
+.drawer-section{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;padding:10px 10px 5px}
+.drawer-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r-sm);cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;transition:all .15s;position:relative}
+.drawer-item:hover{background:var(--s2);color:var(--text)}
+.drawer-item.active{background:rgba(139,92,246,.15);color:#C4B5FD}
+.drawer-item-icon{font-size:16px;width:20px;text-align:center;flex-shrink:0}
+.drawer-badge{margin-left:auto;background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;min-width:18px;text-align:center}
+.drawer-sep{height:1px;background:var(--border);margin:6px 8px}
+
+/* personalidade */
+.drawer-personality{padding:8px 10px 14px}
+.dp-title{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px;padding:0 2px}
+.dp-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.dp-btn{padding:7px 8px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text2);font-family:'Inter',sans-serif;font-size:11px;cursor:pointer;transition:all .15s;text-align:center;line-height:1.4}
+.dp-btn:hover{border-color:rgba(139,92,246,.3);color:var(--text)}
+.dp-btn.active{background:rgba(139,92,246,.15);border-color:rgba(139,92,246,.4);color:#C4B5FD}
+.dp-btn-icon{display:block;font-size:14px;margin-bottom:2px}
+
+/* ── PRIVATE BAR ── */
+.private-bar{display:none;align-items:center;gap:6px;padding:5px 16px;background:rgba(239,68,68,.06);border-bottom:1px solid rgba(239,68,68,.15);font-size:11px;color:var(--red);flex-shrink:0}
+.private-bar.on{display:flex}
 
 /* ── MAIN ── */
-.main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.main{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden}
 
 /* ── PAGES ── */
 .page{display:none;flex:1;flex-direction:column;min-height:0;overflow:hidden}
 .page.active{display:flex}
 
-/* ══ CHAT PAGE ══ */
-.chat-topbar{padding:14px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--s1);flex-shrink:0}
-.chat-avatar{width:38px;height:38px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;box-shadow:0 0 15px var(--glow)}
-.chat-info h2{font-size:15px;font-weight:600}
-.chat-online{font-size:11px;color:var(--green);display:flex;align-items:center;gap:4px}
-.chat-online::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green)}
-.chat-topbar-right{margin-left:auto;display:flex;align-items:center;gap:8px}
-.topbar-btn{padding:5px 12px;background:var(--s2);border:1px solid var(--border);border-radius:6px;color:var(--text2);font-family:'Inter',sans-serif;font-size:11px;cursor:pointer;transition:all .15s}
-.topbar-btn:hover{color:var(--text);border-color:var(--border2)}
-
-/* phone setup */
-.phone-setup{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:14px 18px;margin:16px 24px;display:flex;gap:10px;align-items:flex-end;flex-shrink:0}
+/* ══ PHONE SETUP ══ */
+.phone-setup{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:14px 18px;margin:16px 20px;display:flex;gap:10px;align-items:flex-end;flex-shrink:0}
 .ps-field{flex:1}
 .ps-field label{display:block;font-size:11px;color:var(--text2);margin-bottom:5px;font-weight:500}
 .ps-field input{width:100%;padding:8px 12px;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none;transition:border .15s}
@@ -75,15 +97,15 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);displ
 .ps-btn{padding:8px 16px;background:var(--accent);border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:opacity .15s}
 .ps-btn:hover{opacity:.85}
 
-/* memory strip — CORRIGIDO: começa oculta, só aparece com dados reais */
-.memory-strip{padding:8px 24px;border-bottom:1px solid var(--border);display:none;align-items:center;gap:8px;background:rgba(139,92,246,.04);flex-shrink:0;overflow-x:auto;scrollbar-width:none}
+/* memory strip */
+.memory-strip{padding:7px 20px;border-bottom:1px solid var(--border);display:none;align-items:center;gap:8px;background:rgba(139,92,246,.04);flex-shrink:0;overflow-x:auto;scrollbar-width:none}
 .memory-strip::-webkit-scrollbar{display:none}
-.mem-label{font-size:11px;color:var(--text3);font-weight:500;white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:5px}
+.mem-label{font-size:11px;color:var(--text3);font-weight:500;white-space:nowrap;flex-shrink:0}
 .mem-chip{background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.25);color:#C4B5FD;font-size:11px;padding:3px 10px;border-radius:20px;white-space:nowrap;flex-shrink:0;cursor:pointer;transition:all .15s}
 .mem-chip:hover{background:rgba(139,92,246,.25)}
 
 /* messages */
-.msgs{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:16px;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
+.msgs{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:14px;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
 .msg-group{display:flex;flex-direction:column;gap:4px}
 .msg-group.user{align-items:flex-end}
 .msg-group.bot{align-items:flex-start;flex-direction:row;gap:10px}
@@ -95,7 +117,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);displ
 .msg-group.bot.loading .msg-bubble{color:var(--text3);font-style:italic}
 .msg-time{font-size:10px;color:var(--text3);padding:0 4px}
 
-/* smart cards in chat */
+/* smart cards */
 .smart-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-top:4px;max-width:280px}
 .sc-header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .sc-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
@@ -107,17 +129,13 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);displ
 .sc-main{font-size:15px;font-weight:600;color:var(--text);margin-bottom:4px}
 .sc-sub{font-size:12px;color:var(--text3)}
 
-/* welcome screen */
+/* welcome */
 .welcome{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;text-align:center}
 .welcome-title{font-family:'Playfair Display',serif;font-size:28px;color:var(--text);margin-bottom:8px}
 .welcome-sub{font-size:14px;color:var(--text2);margin-bottom:32px}
-.quick-actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:500px}
-.qa-btn{display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;font-size:13px;color:var(--text2);transition:all .15s;font-family:'Inter',sans-serif}
-.qa-btn:hover{border-color:rgba(139,92,246,.4);color:var(--text);background:rgba(139,92,246,.08)}
-.qa-btn-icon{font-size:16px}
 
 /* input */
-.chat-input-area{padding:16px 24px;background:var(--s1);border-top:1px solid var(--border);flex-shrink:0}
+.chat-input-area{padding:14px 20px;background:var(--s1);border-top:1px solid var(--border);flex-shrink:0}
 .quick-chips{display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;scrollbar-width:none}
 .quick-chips::-webkit-scrollbar{display:none}
 .qchip{padding:5px 12px;background:var(--s2);border:1px solid var(--border);border-radius:20px;font-size:11px;color:var(--text2);cursor:pointer;white-space:nowrap;transition:all .15s;font-family:'Inter',sans-serif}
@@ -127,39 +145,39 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);displ
 .input-box textarea{flex:1;background:none;border:none;color:var(--text);font-family:'Inter',sans-serif;font-size:14px;outline:none;resize:none;max-height:120px;line-height:1.5}
 .input-box textarea::placeholder{color:var(--text3)}
 .input-box textarea:disabled{opacity:.4}
-.input-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
-.ia-btn{width:32px;height:32px;background:none;border:none;color:var(--text3);font-size:16px;cursor:pointer;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:all .15s}
-.ia-btn:hover{background:var(--s3);color:var(--text2)}
-.send-btn{width:36px;height:36px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:#fff;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;box-shadow:0 4px 12px var(--glow)}
+.input-actions{display:flex;align-items:center;flex-shrink:0}
+.send-btn{width:38px;height:38px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;box-shadow:0 4px 12px var(--glow)}
 .send-btn:hover{transform:scale(1.05)}
 .send-btn:disabled{opacity:.3;cursor:default;transform:none}
-.input-footer{text-align:center;font-size:10px;color:var(--text3);margin-top:8px;display:flex;align-items:center;justify-content:center;gap:5px}
+.input-footer{text-align:center;font-size:10px;color:var(--text3);margin-top:7px;display:flex;align-items:center;justify-content:center;gap:5px}
 
 /* ══ PAGE HEADER ══ */
-.page-header{padding:20px 28px 16px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0;display:flex;align-items:center;gap:16px}
-.ph-icon{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.page-header{padding:18px 24px 14px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0;display:flex;align-items:center;gap:14px}
+.ph-back{width:32px;height:32px;border-radius:var(--r-sm);background:none;border:1px solid var(--border);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.ph-back:hover{background:var(--s2);color:var(--text);border-color:var(--border2)}
+.ph-icon{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
 .ph-icon.reminder{background:rgba(139,92,246,.2)}
 .ph-icon.med{background:rgba(239,68,68,.15)}
 .ph-icon.fin{background:rgba(245,158,11,.15)}
 .ph-icon.mem{background:rgba(59,130,246,.15)}
-.ph-title{font-size:20px;font-weight:700;color:var(--text)}
+.ph-title{font-size:19px;font-weight:700;color:var(--text)}
 .ph-sub{font-size:12px;color:var(--text3);margin-top:2px}
 .ph-actions{margin-left:auto;display:flex;gap:8px}
-.btn-primary{padding:8px 16px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:opacity .15s;box-shadow:0 4px 12px var(--glow)}
+.btn-primary{padding:8px 15px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:opacity .15s;box-shadow:0 4px 12px var(--glow)}
 .btn-primary:hover{opacity:.85}
-.btn-outline{padding:8px 14px;background:none;border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-family:'Inter',sans-serif;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .15s}
+.btn-outline{padding:8px 13px;background:none;border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-family:'Inter',sans-serif;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .15s}
 .btn-outline:hover{color:var(--text);border-color:rgba(139,92,246,.4)}
 
-/* ══ LEMBRETES PAGE ══ */
-.rem-tabs{display:flex;gap:0;padding:0 28px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0}
-.rem-tab{padding:12px 16px;font-size:13px;font-weight:500;color:var(--text3);border-bottom:2px solid transparent;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:6px}
+/* ══ LEMBRETES ══ */
+.rem-tabs{display:flex;gap:0;padding:0 24px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0}
+.rem-tab{padding:11px 15px;font-size:13px;font-weight:500;color:var(--text3);border-bottom:2px solid transparent;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:6px}
 .rem-tab:hover{color:var(--text2)}
 .rem-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
 .rem-tab-count{background:rgba(139,92,246,.2);color:var(--accent);font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px}
-.rem-body{flex:1;overflow-y:auto;padding:20px 28px;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
-.rem-date-group{margin-bottom:24px}
+.rem-body{flex:1;overflow-y:auto;padding:18px 24px;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
+.rem-date-group{margin-bottom:22px}
 .rem-date-label{font-size:12px;font-weight:600;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px}
-.rem-item{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;transition:all .15s}
+.rem-item{display:flex;align-items:center;gap:12px;padding:13px 15px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;transition:all .15s}
 .rem-item:hover{border-color:var(--border2)}
 .rem-item.done{opacity:.5}
 .rem-check{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--border2);background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}
@@ -177,16 +195,15 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);displ
 .rem-badge{font-size:11px;font-weight:500;padding:3px 10px;border-radius:8px}
 .rem-badge.today{background:rgba(139,92,246,.15);color:#C4B5FD}
 .rem-badge.tomorrow{background:rgba(245,158,11,.15);color:var(--amber)}
-.rem-badge.done{background:rgba(34,197,94,.1);color:var(--green)}
 
-/* ══ REMÉDIOS PAGE ══ */
-.med-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:20px 28px;flex-shrink:0}
-.med-stat{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px}
-.med-stat-label{font-size:11px;color:var(--text3);margin-bottom:6px;display:flex;align-items:center;gap:5px}
+/* ══ REMÉDIOS ══ */
+.med-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:18px 24px;flex-shrink:0}
+.med-stat{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:13px 15px}
+.med-stat-label{font-size:11px;color:var(--text3);margin-bottom:6px}
 .med-stat-val{font-size:22px;font-weight:700;color:var(--text)}
 .med-stat-sub{font-size:11px;color:var(--text3);margin-top:3px}
-.med-body{flex:1;overflow-y:auto;padding:0 28px 20px;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
-.med-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px;transition:all .15s}
+.med-body{flex:1;overflow-y:auto;padding:0 24px 18px;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
+.med-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:15px;margin-bottom:12px;transition:all .15s}
 .med-card:hover{border-color:var(--border2)}
 .med-card-top{display:flex;align-items:center;gap:12px;margin-bottom:12px}
 .med-pill-icon{width:42px;height:42px;background:rgba(239,68,68,.12);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
@@ -195,63 +212,65 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);displ
 .med-active-badge{margin-left:auto;background:rgba(34,197,94,.1);color:var(--green);font-size:11px;font-weight:600;padding:3px 10px;border-radius:8px}
 .med-details{display:flex;gap:16px;margin-bottom:12px;font-size:12px;color:var(--text2)}
 .med-detail{display:flex;align-items:center;gap:5px}
-.med-next{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.15);border-radius:var(--r-sm)}
+.med-next{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.15);border-radius:var(--r-sm)}
 .med-next-label{font-size:11px;color:var(--text3)}
 .med-next-time{font-size:18px;font-weight:700;color:var(--accent)}
 .med-next-sub{font-size:11px;color:var(--text3)}
-.med-take-btn{padding:8px 16px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 4px 12px var(--glow);transition:opacity .15s}
+.med-take-btn{padding:8px 15px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 4px 12px var(--glow);transition:opacity .15s}
 .med-take-btn:hover{opacity:.85}
 .med-progress{margin-top:10px}
 .med-prog-row{display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:5px}
 .prog-bar{height:4px;background:var(--s3);border-radius:2px}
 .prog-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .3s}
 
-/* ══ FINANCEIRO PAGE ══ */
-.fin-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;padding:16px 28px;flex-shrink:0}
-.fin-stat{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px}
-.fin-stat-label{font-size:10px;color:var(--text3);margin-bottom:4px;display:flex;align-items:center;gap:4px;text-transform:uppercase;letter-spacing:.4px}
+/* ══ FINANCEIRO ══ */
+.fin-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;padding:14px 24px;flex-shrink:0}
+.fin-stat{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:11px 13px}
+.fin-stat-label{font-size:10px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
 .fin-stat-val{font-size:18px;font-weight:700;color:var(--text)}
 .fin-stat-sub{font-size:10px;color:var(--text3);margin-top:2px}
-.fin-body{flex:1;display:grid;grid-template-columns:1fr 340px;gap:0;overflow:hidden}
-.fin-left{overflow-y:auto;padding:0 0 20px 28px;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
-.fin-right{overflow-y:auto;padding:0 28px 20px 16px;border-left:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
-.fin-section-title{font-size:13px;font-weight:600;color:var(--text2);margin:16px 0 10px;display:flex;align-items:center;justify-content:space-between}
-.fin-chart-wrap{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px}
-.fin-item{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:8px}
+.fin-body{flex:1;display:grid;grid-template-columns:1fr 320px;gap:0;overflow:hidden}
+.fin-left{overflow-y:auto;padding:0 0 18px 24px;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
+.fin-right{overflow-y:auto;padding:0 24px 18px 14px;border-left:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
+.fin-section-title{font-size:13px;font-weight:600;color:var(--text2);margin:14px 0 10px}
+.fin-chart-wrap{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:12px}
+.fin-item{display:flex;align-items:center;gap:12px;padding:11px 13px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:8px}
 .fin-cat-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .fin-item-info{flex:1;min-width:0}
 .fin-item-name{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fin-item-meta{font-size:11px;color:var(--text3);margin-top:2px}
 .fin-item-val{font-size:14px;font-weight:600;color:var(--red);flex-shrink:0}
-.fin-item-val.income{color:var(--green)}
-.donut-wrap{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.donut-wrap{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:12px}
 .cat-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px}
 .cat-row:last-child{border-bottom:none}
 .cat-name{flex:1;color:var(--text2);display:flex;align-items:center;gap:6px}
 .cat-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .cat-val{font-weight:600;color:var(--text)}
 .cat-pct{color:var(--text3);min-width:32px;text-align:right}
-.budget-box{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:16px}
-.budget-title{font-size:13px;font-weight:600;color:var(--text2);margin-bottom:12px}
-.budget-row{display:flex;justify-content:space-between;font-size:12px;color:var(--text3);margin-bottom:6px}
-.budget-val{font-weight:600;color:var(--text)}
 
-/* ══ MEMÓRIAS PAGE ══ */
-.mem-search{padding:16px 28px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;gap:10px}
-.mem-search input{flex:1;padding:9px 14px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none;transition:border .15s}
-.mem-search input:focus{border-color:var(--accent)}
-.mem-body{flex:1;overflow-y:auto;padding:16px 28px;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
-.mem-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.mem-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:all .15s;cursor:pointer}
-.mem-card:hover{border-color:var(--border2);transform:translateY(-1px)}
-.mem-card-top{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px}
-.mem-icon{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
-.mem-card-title{font-size:13px;font-weight:600;color:var(--text);flex:1;line-height:1.4}
-.mem-tag{font-size:10px;font-weight:600;padding:2px 8px;border-radius:6px;white-space:nowrap}
-.mem-desc{font-size:12px;color:var(--text3);line-height:1.5;margin-bottom:10px}
-.mem-date{font-size:10px;color:var(--text3)}
+/* ══ COFRE ══ */
+.cofre-search{padding:14px 24px;border-bottom:1px solid var(--border);flex-shrink:0}
+.cofre-search input{width:100%;padding:9px 14px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none;transition:border .15s}
+.cofre-search input:focus{border-color:var(--accent)}
+.cofre-body-wrap{flex:1;overflow-y:auto;padding:14px 24px;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
+.cofre-grid{display:flex;flex-direction:column;gap:10px}
+.cofre-card{background:var(--s2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r);padding:15px;transition:all .15s}
+.cofre-card:hover{border-color:rgba(139,92,246,.4)}
+.cofre-card-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.cofre-card-name{font-size:15px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px}
+.cofre-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:6px;background:rgba(239,68,68,.12);color:#FCA5A5}
+.cofre-card-actions{display:flex;gap:6px}
+.cofre-action-btn{width:28px;height:28px;border-radius:7px;background:none;border:none;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s;opacity:.5}
+.cofre-action-btn:hover{background:var(--s3);opacity:1}
+.cofre-field{margin-bottom:6px;font-size:12px;color:var(--text3);display:flex;align-items:center;gap:6px}
+.cofre-field-label{color:var(--text3);min-width:50px}
+.cofre-field-value{color:var(--text2);font-family:monospace;letter-spacing:.5px}
+.cofre-hidden{color:var(--text3);letter-spacing:2px}
+.cofre-toggle{background:none;border:none;cursor:pointer;font-size:12px;opacity:.5;transition:opacity .15s}
+.cofre-toggle:hover{opacity:1}
+.cofre-date{font-size:10px;color:var(--text3);margin-top:8px}
 
-/* ══ MODAL ══ */
+/* ══ MODAIS ══ */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
 .overlay.open{display:flex}
 .modal{background:var(--s2);border:1px solid var(--border2);border-radius:16px;padding:24px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
@@ -270,41 +289,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);displ
 .btn-save:disabled{opacity:.4;cursor:default}
 select option{background:var(--s2)}
 
-/* private mode */
-.private-indicator{display:none;align-items:center;gap:6px;padding:6px 24px;background:rgba(239,68,68,.06);border-bottom:1px solid rgba(239,68,68,.15);font-size:11px;color:var(--red);flex-shrink:0}
-.private-indicator.on{display:flex}
-
-/* PWA install banner */
-.pwa-banner{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid rgba(139,92,246,.3);border-radius:var(--r);padding:14px 18px;display:none;align-items:center;gap:12px;z-index:150;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:340px;width:calc(100% - 40px)}
-.pwa-banner.show{display:flex}
-.pwa-banner-icon{font-size:24px;flex-shrink:0}
-.pwa-banner-text{flex:1}
-.pwa-banner-title{font-size:13px;font-weight:600;color:var(--text)}
-.pwa-banner-sub{font-size:11px;color:var(--text3);margin-top:2px}
-.pwa-banner-btns{display:flex;gap:6px;flex-shrink:0}
-.pwa-install-btn{padding:7px 12px;background:var(--accent);border:none;border-radius:var(--r-sm);color:#fff;font-family:"Inter",sans-serif;font-size:12px;font-weight:600;cursor:pointer}
-.pwa-dismiss-btn{padding:7px 10px;background:none;border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text3);font-family:"Inter",sans-serif;font-size:12px;cursor:pointer}
-
-/* ══ COFRE ══ */
-.cofre-grid{display:flex;flex-direction:column;gap:10px}
-.cofre-card{background:var(--s2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r);padding:16px;transition:all .15s}
-.cofre-card:hover{border-color:rgba(139,92,246,.4)}
-.cofre-card-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-.cofre-card-name{font-size:15px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px}
-.cofre-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:6px;background:rgba(239,68,68,.12);color:#FCA5A5}
-.cofre-card-actions{display:flex;gap:6px}
-.cofre-action-btn{width:28px;height:28px;border-radius:7px;background:none;border:none;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s;opacity:.5}
-.cofre-action-btn:hover{background:var(--s3);opacity:1}
-.cofre-field{margin-bottom:6px;font-size:12px;color:var(--text3);display:flex;align-items:center;gap:6px}
-.cofre-field-label{color:var(--text3);min-width:50px}
-.cofre-field-value{color:var(--text2);font-family:monospace;letter-spacing:.5px}
-.cofre-hidden{color:var(--text3);letter-spacing:2px}
-.cofre-toggle{background:none;border:none;cursor:pointer;font-size:12px;opacity:.5;transition:opacity .15s}
-.cofre-toggle:hover{opacity:1}
-.cofre-date{font-size:10px;color:var(--text3);margin-top:8px}
-.cofre-category{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
-.cofre-cat-btn{padding:6px 12px;background:var(--s3);border:1px solid var(--border);border-radius:20px;font-size:12px;color:var(--text2);cursor:pointer;transition:all .15s;font-family:'Inter',sans-serif}
-.cofre-cat-btn.active{background:rgba(139,92,246,.2);border-color:rgba(139,92,246,.4);color:var(--accent3)}
+/* trocar número modal */
+.phone-modal-content{display:flex;flex-direction:column;gap:12px}
+.phone-current{font-size:13px;color:var(--text2);padding:8px 12px;background:var(--s3);border-radius:var(--r-sm);border:1px solid var(--border)}
+.phone-current span{color:var(--text);font-weight:500}
 
 /* toast */
 .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid var(--border2);padding:10px 20px;border-radius:20px;font-size:12px;color:var(--text);z-index:200;opacity:0;pointer-events:none;transition:all .25s;white-space:nowrap;box-shadow:0 8px 30px rgba(0,0,0,.4)}
@@ -317,226 +305,264 @@ select option{background:var(--s2)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;margin:20px auto}
 
+/* PWA banner */
+.pwa-banner{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid rgba(139,92,246,.3);border-radius:var(--r);padding:13px 16px;display:none;align-items:center;gap:12px;z-index:150;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:340px;width:calc(100% - 40px)}
+.pwa-banner.show{display:flex}
+.pwa-banner-icon{font-size:24px;flex-shrink:0}
+.pwa-banner-text{flex:1}
+.pwa-banner-title{font-size:13px;font-weight:600;color:var(--text)}
+.pwa-banner-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.pwa-dismiss-btn{padding:7px 10px;background:none;border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text3);font-family:'Inter',sans-serif;font-size:12px;cursor:pointer;flex-shrink:0}
+
 /* scrollbars */
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--s3);border-radius:2px}
 
-/* ══ MOBILE RESPONSIVE ══ */
-@media (max-width: 768px) {
-  body { flex-direction: column; }
+/* ══ MOBILE ══ */
+/* bottom nav — oculta no desktop */
+.bottom-nav{display:none}
 
-  .sb {
-    width: 100%;
-    height: auto;
-    flex-direction: column;
-    border-right: none;
-    border-bottom: none;
-    order: 2;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 50;
+@media(max-width:768px){
+  /* topbar */
+  .topbar{padding:0 12px;height:50px}
+  .topbar-name{font-size:13px}
+  .topbar-status{font-size:9px}
+  .new-chat-btn span{display:none}
+  .new-chat-btn{padding:6px 10px;font-size:11px}
+  .lock-btn{width:30px;height:30px;font-size:14px}
+  .menu-btn{width:30px;height:30px;font-size:17px}
+  .topbar-avatar{width:30px;height:30px;font-size:13px}
+
+  /* private bar */
+  .private-bar{padding:4px 12px;font-size:10px}
+
+  /* main reserva espaço pra bottom nav */
+  .main{
+    flex:1;min-height:0;overflow:hidden;
+    padding-bottom:calc(56px + env(safe-area-inset-bottom,0px));
   }
 
-  .sb-logo, .sb-new, .sb-section, .sb-foot { display: none !important; }
-
-  .sb-nav {
-    display: flex;
-    flex-direction: row;
-    padding: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-    border-top: 1px solid var(--border);
-    background: var(--s1);
-    /* CORRIGIDO: safe-area para iPhone com home indicator */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-  .sb-nav::-webkit-scrollbar { display: none; }
-
-  .sb-item {
-    flex: 1;
-    flex-direction: column;
-    gap: 3px;
-    padding: 10px 6px 14px;
-    border-radius: 0;
-    font-size: 10px;
-    min-width: 60px;
-    text-align: center;
-    justify-content: center;
-    align-items: center;
-  }
-  .sb-item.active {
-    background: none;
-    color: var(--accent);
-  }
-  .sb-item-icon { width: auto; font-size: 20px; }
-  .sb-badge {
-    position: absolute;
-    top: 6px;
-    right: calc(50% - 20px);
-    font-size: 9px;
-    padding: 1px 4px;
-    min-width: 14px;
+  /* page chat com layout fixo */
+  #page-chat{display:flex;flex-direction:column;height:100%;overflow:hidden}
+  #page-chat .msgs{flex:1;min-height:0;overflow-y:auto;padding:10px 12px;gap:10px}
+  #page-chat .chat-input-area{
+    flex-shrink:0;padding:8px 12px;
+    padding-bottom:max(10px,env(safe-area-inset-bottom,10px));
   }
 
-  /* CORRIGIDO: altura total menos nav fixa + safe-area iPhone */
-  .main {
-    order: 1;
-    height: calc(100dvh - 64px - env(safe-area-inset-bottom, 0px));
-    max-height: calc(100dvh - 64px - env(safe-area-inset-bottom, 0px));
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
+  /* phone setup */
+  .phone-setup{margin:10px 12px;padding:12px;flex-direction:column;gap:8px}
+  .ps-btn{width:100%}
+
+  /* memory strip */
+  .memory-strip{padding:5px 12px}
+
+  /* mensagens */
+  .msg-bot-body{max-width:88%}
+  .msg-bubble{font-size:13px;padding:9px 13px}
+  .msg-bot-avatar{width:26px;height:26px;font-size:12px}
+
+  /* chips */
+  .quick-chips{gap:5px;margin-bottom:8px}
+  .qchip{font-size:10px;padding:4px 10px}
+
+  /* input */
+  .input-box{padding:8px 8px 8px 13px;border-radius:var(--r-sm)}
+  .input-box textarea{font-size:13px}
+  .send-btn{width:34px;height:34px;font-size:14px;border-radius:8px}
+  .input-footer{display:none}
+
+  /* page header páginas internas */
+  .page-header{padding:11px 12px 9px;gap:9px}
+  .ph-title{font-size:15px}
+  .ph-sub{display:none}
+  .ph-icon{width:34px;height:34px;font-size:16px}
+  .ph-back{width:28px;height:28px;font-size:15px}
+  .btn-primary{font-size:11px;padding:6px 10px}
+  .btn-outline{font-size:11px;padding:6px 9px}
+
+  /* lembretes */
+  .rem-tabs{padding:0 12px;overflow-x:auto;scrollbar-width:none}
+  .rem-tab{padding:9px 10px;font-size:11px;white-space:nowrap}
+  .rem-body{padding:10px 12px}
+  .rem-item{padding:10px 11px}
+
+  /* remédios */
+  .med-stats{grid-template-columns:1fr 1fr;gap:7px;padding:10px 12px}
+  .med-stat-val{font-size:17px}
+  .med-body{padding:0 12px 12px}
+  .med-card{padding:12px}
+  .med-next{flex-direction:column;gap:8px;align-items:flex-start}
+  .med-take-btn{width:100%;justify-content:center}
+
+  /* financeiro */
+  .fin-stats{grid-template-columns:1fr 1fr;gap:7px;padding:10px 12px}
+  .fin-stat-val{font-size:14px}
+  .fin-body{grid-template-columns:1fr;overflow-y:auto}
+  .fin-left{padding:0 12px 12px}
+  .fin-right{padding:0 12px 12px;border-left:none;border-top:1px solid var(--border)}
+
+  /* cofre */
+  .cofre-search{padding:9px 12px}
+  .cofre-body-wrap{padding:10px 12px}
+
+  /* modais — bottom sheet com safe-area */
+  .overlay{align-items:flex-end;padding:0}
+  .modal{
+    border-radius:20px 20px 0 0;
+    padding:20px 16px;
+    padding-bottom:max(20px,env(safe-area-inset-bottom,20px));
+    max-height:90dvh;overflow-y:auto;
   }
+  .mf-row{grid-template-columns:1fr}
 
-  /* CORRIGIDO: garante que o chat page ocupa exatamente o espaço do main */
-  #page-chat {
-    height: 100%;
-    max-height: 100%;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
+  /* welcome */
+  .welcome{padding:20px 16px}
+  .welcome-title{font-size:20px}
+  .welcome-sub{font-size:13px}
+
+  /* pwa banner acima da nav */
+  .pwa-banner{bottom:calc(62px + env(safe-area-inset-bottom,0px))}
+
+  /* drawer mais largo no mobile */
+  .drawer{width:280px}
+
+  /* ── BOTTOM NAV ── */
+  .bottom-nav{
+    display:flex;
+    position:fixed;
+    bottom:0;left:0;right:0;
+    height:calc(56px + env(safe-area-inset-bottom,0px));
+    padding-bottom:env(safe-area-inset-bottom,0px);
+    background:var(--s1);
+    border-top:1px solid var(--border);
+    z-index:30;
   }
-
-  /* CORRIGIDO: mensagens ocupam o espaço restante, input nunca é cortado */
-  #page-chat .msgs {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
+  .bn-item{
+    flex:1;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+    gap:3px;cursor:pointer;
+    color:var(--text3);font-size:9px;font-weight:500;
+    padding-bottom:2px;transition:color .15s;
+    position:relative;border:none;background:none;
+    font-family:'Inter',sans-serif;
   }
-
-  /* CORRIGIDO: input area nunca comprime, padding seguro para home indicator */
-  #page-chat .chat-input-area {
-    flex-shrink: 0;
-    padding: 10px 14px;
-    padding-bottom: max(12px, env(safe-area-inset-bottom, 12px));
+  .bn-item.active{color:var(--accent)}
+  .bn-item-icon{font-size:20px;line-height:1}
+  .bn-badge{
+    position:absolute;top:5px;right:calc(50% - 19px);
+    background:var(--accent);color:#fff;
+    font-size:9px;font-weight:700;
+    padding:1px 4px;border-radius:7px;
+    min-width:14px;text-align:center;line-height:14px;
   }
-
-  .chat-topbar { padding: 10px 14px; }
-  .chat-info h2 { font-size: 14px; }
-  .topbar-btn { font-size: 10px; padding: 4px 8px; }
-
-  .phone-setup { margin: 12px 14px; padding: 12px 14px; flex-direction: column; gap: 8px; }
-  .ps-btn { width: 100%; }
-
-  .memory-strip { padding: 6px 14px; }
-
-  .msgs { padding: 12px 14px; gap: 12px; }
-  .msg-bot-body { max-width: 85%; }
-  .msg-bubble { font-size: 13px; padding: 10px 13px; }
-
-  .quick-chips { gap: 5px; }
-  .qchip { font-size: 10px; padding: 4px 10px; }
-  .input-footer { display: none; }
-
-  .page-header { padding: 14px 16px 12px; gap: 10px; }
-  .ph-title { font-size: 17px; }
-  .ph-sub { display: none; }
-  .ph-icon { width: 36px; height: 36px; font-size: 17px; }
-  .btn-primary { font-size: 12px; padding: 7px 12px; }
-  .btn-outline { font-size: 12px; padding: 7px 10px; }
-
-  .rem-tabs { padding: 0 14px; overflow-x: auto; scrollbar-width: none; }
-  .rem-tab { padding: 10px 12px; font-size: 12px; white-space: nowrap; }
-  .rem-body { padding: 14px 14px; }
-  .rem-item { padding: 12px 12px; }
-
-  .med-stats { grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 14px; }
-  .med-stat-val { font-size: 18px; }
-  .med-body { padding: 0 14px 14px; }
-  .med-card { padding: 14px; }
-  .med-next { flex-direction: column; gap: 10px; align-items: flex-start; }
-  .med-take-btn { width: 100%; justify-content: center; }
-
-  .fin-stats { grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 14px; }
-  .fin-stat-val { font-size: 15px; }
-  .fin-body { grid-template-columns: 1fr; overflow-y: auto; }
-  .fin-left { padding: 0 14px 14px; }
-  .fin-right { padding: 0 14px 14px; border-left: none; border-top: 1px solid var(--border); }
-
-  .mem-search { padding: 10px 14px; }
-  .mem-body { padding: 12px 14px; }
-  .mem-grid { grid-template-columns: 1fr; }
-
-  .modal { padding: 20px 16px; border-radius: 20px 20px 0 0; }
-  .overlay { align-items: flex-end; padding: 0; }
-  .mf-row { grid-template-columns: 1fr; }
-
-  .private-indicator { padding: 6px 14px; font-size: 10px; }
-
-  .pwa-banner { bottom: 74px; }
-
-  .welcome { padding: 24px 16px; }
-  .welcome-title { font-size: 22px; }
-  .quick-actions { gap: 8px; }
-  .qa-btn { padding: 9px 12px; font-size: 12px; }
 }
 </style>
 </head>
 <body>
 
-<!-- SIDEBAR -->
-<aside class="sb">
-  <div class="sb-logo">
-    <div class="sb-logo-icon">✨</div>
+<!-- TOPBAR -->
+<header class="topbar">
+  <button class="menu-btn" onclick="openDrawer()" aria-label="Menu">☰</button>
+  <div class="topbar-avatar">✨</div>
+  <div class="topbar-info">
+    <div class="topbar-name">Clara</div>
+    <div class="topbar-status" id="topbar-status">Aguardando número</div>
+  </div>
+  <div class="topbar-right">
+    <button class="new-chat-btn" onclick="newChat()">＋ <span>Nova conversa</span></button>
+    <button class="lock-btn" id="lock-btn" onclick="togglePrivate()" title="Modo privado" aria-label="Alternar modo privado">🔓</button>
+  </div>
+</header>
+
+<!-- PRIVATE BAR -->
+<div class="private-bar" id="private-bar">
+  🔒 <strong>Modo privado ativo</strong> — histórico não é salvo
+</div>
+
+<!-- DRAWER OVERLAY -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
+
+<!-- DRAWER -->
+<nav class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div class="drawer-logo">✨</div>
     <div>
-      <div class="sb-logo-text">Clara</div>
-      <div class="sb-logo-sub">Sua assistente pessoal</div>
+      <div class="drawer-logo-text">Clara</div>
+      <div class="drawer-logo-sub">Sua assistente pessoal</div>
+    </div>
+    <button class="drawer-close" onclick="closeDrawer()" aria-label="Fechar menu">✕</button>
+  </div>
+
+  <div class="drawer-user">
+    <div class="drawer-user-row" onclick="openModal('modal-phone')">
+      <div class="drawer-avatar">✨</div>
+      <div style="flex:1;min-width:0">
+        <div class="drawer-user-name" id="drawer-phone">Nenhum número</div>
+        <div class="drawer-user-status" id="drawer-status">Aguardando número</div>
+      </div>
+      <span style="font-size:11px;color:var(--text3)">trocar</span>
     </div>
   </div>
-  <button class="sb-new" onclick="newChat()">＋ Nova conversa</button>
-  <div class="sb-nav">
-    <div class="sb-item active" onclick="goTo('chat')" data-page="chat"><span class="sb-item-icon">💬</span> Conversar</div>
-    <div class="sb-item" onclick="goTo('lembretes')" data-page="lembretes"><span class="sb-item-icon">📅</span> Lembretes <span class="sb-badge" id="badge-rem" style="display:none">0</span></div>
-    <div class="sb-item" onclick="goTo('remedios')" data-page="remedios"><span class="sb-item-icon">💊</span> Remédios <span class="sb-badge" id="badge-med" style="display:none">0</span></div>
-    <div class="sb-item" onclick="goTo('financeiro')" data-page="financeiro"><span class="sb-item-icon">💰</span> Financeiro</div>
-    <div class="sb-item" onclick="goTo('cofre')" data-page="cofre"><span class="sb-item-icon">🔐</span> Cofre</div>
-  </div>
-  <div class="sb-foot">
-    <div class="sb-user">
-      <div class="sb-avatar">✨</div>
-      <div class="sb-user-info">
-        <div class="sb-user-name" id="sb-phone">Clara</div>
-        <div class="sb-user-status" id="sb-status">Aguardando número</div>
+
+  <div class="drawer-body">
+    <div class="drawer-section">Navegação</div>
+    <div class="drawer-item active" onclick="navTo('chat')" data-nav="chat">
+      <span class="drawer-item-icon">💬</span> Conversar
+    </div>
+    <div class="drawer-item" onclick="navTo('lembretes')" data-nav="lembretes">
+      <span class="drawer-item-icon">📅</span> Lembretes
+      <span class="drawer-badge" id="badge-rem" style="display:none">0</span>
+    </div>
+    <div class="drawer-item" onclick="navTo('remedios')" data-nav="remedios">
+      <span class="drawer-item-icon">💊</span> Remédios
+      <span class="drawer-badge" id="badge-med" style="display:none">0</span>
+    </div>
+    <div class="drawer-item" onclick="navTo('financeiro')" data-nav="financeiro">
+      <span class="drawer-item-icon">💰</span> Financeiro
+    </div>
+    <div class="drawer-item" onclick="navTo('cofre')" data-nav="cofre">
+      <span class="drawer-item-icon">🔐</span> Cofre
+    </div>
+
+    <div class="drawer-sep"></div>
+
+    <!-- Personalidade -->
+    <div class="drawer-personality">
+      <div class="dp-title">Personalidade da Clara</div>
+      <div class="dp-grid">
+        <button class="dp-btn active" data-tom="carinhoso" onclick="setPersonalidade(this)">
+          <span class="dp-btn-icon">🥰</span>Simpática
+        </button>
+        <button class="dp-btn" data-tom="direto" onclick="setPersonalidade(this)">
+          <span class="dp-btn-icon">🎯</span>Direta
+        </button>
+        <button class="dp-btn" data-tom="sarcastico" onclick="setPersonalidade(this)">
+          <span class="dp-btn-icon">😈</span>Sarcástica
+        </button>
+        <button class="dp-btn" data-tom="divertido" onclick="setPersonalidade(this)">
+          <span class="dp-btn-icon">🎉</span>Informal
+        </button>
       </div>
     </div>
   </div>
-</aside>
+</nav>
 
 <!-- MAIN -->
 <main class="main">
 
-  <!-- ══ CHAT PAGE ══ -->
+  <!-- ══ CHAT ══ -->
   <div class="page active" id="page-chat">
-    <div class="chat-topbar">
-      <div class="chat-avatar">✨</div>
-      <div class="chat-info">
-        <h2>Clara</h2>
-        <div class="chat-online" id="chat-online-status">Aguardando número</div>
-      </div>
-      <div class="chat-topbar-right">
-        <span style="font-size:11px;color:var(--text3)" id="phone-display"></span>
-        <button class="topbar-btn" id="private-btn" onclick="togglePrivate()" title="Modo privado">🔓 Público</button>
-        <button class="topbar-btn" onclick="changePhone()">Trocar número</button>
-      </div>
-    </div>
-
-    <div class="private-indicator" id="private-indicator">
-      🔒 <strong>Modo privado ativo</strong> — o histórico será apagado ao iniciar nova conversa. Sem limite de mensagens.
-    </div>
-
     <div id="phone-setup" class="phone-setup">
       <div class="ps-field">
         <label>Número WhatsApp (com DDD, sem +55)</label>
-        <input type="tel" id="phone-input" placeholder="Ex: 43999998888"/>
+        <input type="tel" id="phone-input" placeholder="Ex: 43999998888" onkeydown="if(event.key==='Enter')setPhone()"/>
       </div>
       <button class="ps-btn" onclick="setPhone()">Entrar</button>
     </div>
 
-    <!-- memory-strip: só aparece após enviar/receber mensagem, nunca na tela inicial -->
-    <div class="memory-strip" id="memory-strip" style="display:none">
+    <div class="memory-strip" id="memory-strip">
       <span class="mem-label">🧠 Memória ativa</span>
       <div id="mem-chips" style="display:flex;gap:6px"></div>
     </div>
@@ -554,15 +580,13 @@ select option{background:var(--s2)}
         <span class="qchip" onclick="chipSend('Criar um lembrete')">📅 Criar lembrete</span>
         <span class="qchip" onclick="chipSend('Registrar um gasto')">💰 Registrar gasto</span>
         <span class="qchip" onclick="chipSend('Adicionar remédio')">💊 Adicionar remédio</span>
-        <span class="qchip" onclick="chipSend('Como estou hoje?')">📊 Meu resumo</span>
-        <span class="qchip" onclick="chipSend('O que tenho para hoje?')">📋 Ver agenda</span>
+        <span class="qchip" onclick="chipSend('Guardar no cofre')">🔐 Guardar no cofre</span>
       </div>
       <div class="input-box">
         <textarea id="chat-msg" rows="1" placeholder="Pergunte ou peça algo para a Clara..." disabled
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"
           oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
         <div class="input-actions">
-          <button class="ia-btn" title="Emojis" onclick="showToast('Em breve! 😊')">😊</button>
           <button class="send-btn" id="send-btn" onclick="sendChat()" disabled>➤</button>
         </div>
       </div>
@@ -570,13 +594,14 @@ select option{background:var(--s2)}
     </div>
   </div>
 
-  <!-- ══ LEMBRETES PAGE ══ -->
+  <!-- ══ LEMBRETES ══ -->
   <div class="page" id="page-lembretes">
     <div class="page-header">
+      <button class="ph-back" onclick="navTo('chat')" aria-label="Voltar">←</button>
       <div class="ph-icon reminder">📅</div>
-      <div><div class="ph-title">Lembretes</div><div class="ph-sub">Organize sua rotina e nunca esqueça nada.</div></div>
+      <div><div class="ph-title">Lembretes</div><div class="ph-sub">Nunca esqueça nada importante.</div></div>
       <div class="ph-actions">
-        <button class="btn-primary" onclick="openModal('modal-lembrete')">＋ Novo lembrete</button>
+        <button class="btn-primary" onclick="openModal('modal-lembrete')">＋ Novo</button>
       </div>
     </div>
     <div class="rem-tabs">
@@ -585,18 +610,17 @@ select option{background:var(--s2)}
       <div class="rem-tab" onclick="setRemTab('next')" data-rtab="next">Próximos</div>
       <div class="rem-tab" onclick="setRemTab('done')" data-rtab="done">Concluídos</div>
     </div>
-    <div class="rem-body" id="rem-body">
-      <div class="spin"></div>
-    </div>
+    <div class="rem-body" id="rem-body"><div class="spin"></div></div>
   </div>
 
-  <!-- ══ REMÉDIOS PAGE ══ -->
+  <!-- ══ REMÉDIOS ══ -->
   <div class="page" id="page-remedios">
     <div class="page-header">
+      <button class="ph-back" onclick="navTo('chat')" aria-label="Voltar">←</button>
       <div class="ph-icon med">💊</div>
-      <div><div class="ph-title">Remédios</div><div class="ph-sub">Gerencie seus medicamentos e nunca perca uma dose.</div></div>
+      <div><div class="ph-title">Remédios</div><div class="ph-sub">Nunca perca uma dose.</div></div>
       <div class="ph-actions">
-        <button class="btn-primary" onclick="openModal('modal-remedio')">＋ Adicionar remédio</button>
+        <button class="btn-primary" onclick="openModal('modal-remedio')">＋ Novo</button>
       </div>
     </div>
     <div class="med-stats" id="med-stats">
@@ -608,16 +632,17 @@ select option{background:var(--s2)}
     <div class="med-body" id="med-body"><div class="spin"></div></div>
   </div>
 
-  <!-- ══ FINANCEIRO PAGE ══ -->
+  <!-- ══ FINANCEIRO ══ -->
   <div class="page" id="page-financeiro">
     <div class="page-header">
+      <button class="ph-back" onclick="navTo('chat')" aria-label="Voltar">←</button>
       <div class="ph-icon fin">💰</div>
-      <div><div class="ph-title">Financeiro</div><div class="ph-sub">Acompanhe seus gastos e mantenha suas finanças em dia.</div></div>
+      <div><div class="ph-title">Financeiro</div><div class="ph-sub">Controle seus gastos.</div></div>
       <div class="ph-actions">
-        <button class="btn-primary" onclick="openModal('modal-gasto')">＋ Registrar gasto</button>
+        <button class="btn-primary" onclick="openModal('modal-gasto')">＋ Novo</button>
       </div>
     </div>
-    <div class="fin-stats" id="fin-stats">
+    <div class="fin-stats">
       <div class="fin-stat"><div class="fin-stat-label">📊 Total no mês</div><div class="fin-stat-val" id="fs-total">R$ 0</div></div>
       <div class="fin-stat"><div class="fin-stat-label">📈 Média diária</div><div class="fin-stat-val" id="fs-avg">R$ 0</div></div>
       <div class="fin-stat"><div class="fin-stat-label">⬇️ Menor gasto</div><div class="fin-stat-val" id="fs-min">—</div></div>
@@ -632,33 +657,52 @@ select option{background:var(--s2)}
         <div id="fin-items"></div>
       </div>
       <div class="fin-right">
-        <div class="fin-section-title">Gastos por categoria</div>
+        <div class="fin-section-title">Por categoria</div>
         <div class="donut-wrap"><canvas id="chart-donut" height="160"></canvas></div>
         <div id="cat-list"></div>
       </div>
     </div>
   </div>
 
-  <!-- ══ COFRE PAGE ══ -->
+  <!-- ══ COFRE ══ -->
   <div class="page" id="page-cofre">
     <div class="page-header">
+      <button class="ph-back" onclick="navTo('chat')" aria-label="Voltar">←</button>
       <div class="ph-icon mem" style="background:rgba(239,68,68,.12)">🔐</div>
       <div><div class="ph-title">Cofre</div><div class="ph-sub">Suas senhas e segredos protegidos.</div></div>
       <div class="ph-actions">
-        <button class="btn-primary" onclick="openModal('modal-cofre')">＋ Novo segredo</button>
+        <button class="btn-primary" onclick="openModal('modal-cofre')">＋ Novo</button>
       </div>
     </div>
-    <div class="mem-search">
-      <input type="text" id="cofre-search" placeholder="🔍 Buscar no cofre..." oninput="filterCofre(this.value)"/>
+    <div class="cofre-search">
+      <input type="text" id="cofre-search-input" placeholder="🔍 Buscar no cofre..." oninput="filterCofre(this.value)"/>
     </div>
-    <div class="mem-body" id="cofre-body">
-      <div class="spin"></div>
-    </div>
+    <div class="cofre-body-wrap" id="cofre-body"><div class="spin"></div></div>
   </div>
 
 </main>
 
-<!-- MODALS -->
+<!-- ══ MODAIS ══ -->
+
+<!-- Trocar número -->
+<div class="overlay" id="modal-phone">
+  <div class="modal">
+    <div class="modal-title">📱 Trocar número</div>
+    <div class="phone-modal-content">
+      <div class="phone-current">Número atual: <span id="phone-current-display">—</span></div>
+      <div class="mf">
+        <label>Novo número (com DDD, sem +55)</label>
+        <input type="tel" id="phone-new-input" placeholder="Ex: 43999998888"/>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-phone')">Cancelar</button>
+      <button class="btn-save" onclick="changePhone()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Lembrete -->
 <div class="overlay" id="modal-lembrete">
   <div class="modal">
     <div class="modal-title">📅 Novo lembrete</div>
@@ -674,6 +718,7 @@ select option{background:var(--s2)}
   </div>
 </div>
 
+<!-- Remédio -->
 <div class="overlay" id="modal-remedio">
   <div class="modal">
     <div class="modal-title">💊 Cadastrar remédio</div>
@@ -699,6 +744,7 @@ select option{background:var(--s2)}
   </div>
 </div>
 
+<!-- Gasto -->
 <div class="overlay" id="modal-gasto">
   <div class="modal">
     <div class="modal-title">💰 Registrar gasto</div>
@@ -721,18 +767,7 @@ select option{background:var(--s2)}
   </div>
 </div>
 
-<div class="pwa-banner" id="pwa-banner">
-  <div class="pwa-banner-icon">✨</div>
-  <div class="pwa-banner-text">
-    <div class="pwa-banner-title">Instalar Clara no iPhone</div>
-    <div class="pwa-banner-sub">Toque em compartilhar → "Adicionar à tela de início"</div>
-  </div>
-  <div class="pwa-banner-btns">
-    <button class="pwa-dismiss-btn" onclick="dismissPWA()">✕</button>
-  </div>
-</div>
-
-<!-- MODAL COFRE -->
+<!-- Cofre -->
 <div class="overlay" id="modal-cofre">
   <div class="modal">
     <div class="modal-title">🔐 Novo segredo</div>
@@ -772,12 +807,43 @@ select option{background:var(--s2)}
   </div>
 </div>
 
+<!-- PWA banner -->
+<div class="pwa-banner" id="pwa-banner">
+  <div class="pwa-banner-icon">✨</div>
+  <div class="pwa-banner-text">
+    <div class="pwa-banner-title">Instalar Clara no iPhone</div>
+    <div class="pwa-banner-sub">Toque em compartilhar → "Adicionar à tela de início"</div>
+  </div>
+  <button class="pwa-dismiss-btn" onclick="dismissPWA()">✕</button>
+</div>
+
+<!-- BOTTOM NAV (mobile/PWA) -->
+<nav class="bottom-nav" id="bottom-nav">
+  <button class="bn-item active" data-bn="chat" onclick="navTo('chat')">
+    <span class="bn-item-icon">💬</span>Chat
+  </button>
+  <button class="bn-item" data-bn="lembretes" onclick="navTo('lembretes')">
+    <span class="bn-item-icon">📅</span>Lembretes
+    <span class="bn-badge" id="bnbadge-rem" style="display:none">0</span>
+  </button>
+  <button class="bn-item" data-bn="remedios" onclick="navTo('remedios')">
+    <span class="bn-item-icon">💊</span>Remédios
+    <span class="bn-badge" id="bnbadge-med" style="display:none">0</span>
+  </button>
+  <button class="bn-item" data-bn="financeiro" onclick="navTo('financeiro')">
+    <span class="bn-item-icon">💰</span>Finanças
+  </button>
+  <button class="bn-item" data-bn="cofre" onclick="navTo('cofre')">
+    <span class="bn-item-icon">🔐</span>Cofre
+  </button>
+</nav>
+
 <div class="toast" id="toast"></div>
 
 <script>
 // ── STATE ──
-let privateMode = false;
-let phone='', allReminders=[], allMeds=[], allGastos=[], allMems=[];
+let privateMode=false, phone='';
+let allReminders=[], allMeds=[], allGastos=[];
 let barChart=null, donutChart=null, remTab='all';
 const CAT_COLORS={alimentacao:'#F59E0B',mercado:'#10B981',transporte:'#3B82F6',saude:'#EF4444',lazer:'#A855F7',moradia:'#EC4899',educacao:'#06B6D4',outro:'#6B7280'};
 const CAT_ICONS={alimentacao:'🍔',mercado:'🛒',transporte:'🚗',saude:'💊',lazer:'🎮',moradia:'🏠',educacao:'📚',outro:'📦'};
@@ -790,47 +856,62 @@ function fmtDT(d){try{return new Date(d).toLocaleString('pt-BR',{timeZone:'Ameri
 function fmtD(d){try{return new Date(d).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});}catch{return'—';}}
 function showToast(m,d=2500){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),d);}
 
+// ── DRAWER ──
+function openDrawer(){
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('drawer-overlay').classList.add('open');
+}
+function closeDrawer(){
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawer-overlay').classList.remove('open');
+}
+
 // ── PHONE ──
 function setPhone(){
   let v=document.getElementById('phone-input').value.trim().replace(/\D/g,'');
   if(!v||v.length<10){showToast('Número inválido ⚠️');return;}
   if(!v.startsWith('55'))v='55'+v;
   phone=v;
-  document.getElementById('phone-display').textContent=v;
-  document.getElementById('phone-setup').style.display='none';
-  document.getElementById('chat-msg').disabled=false;
-  document.getElementById('send-btn').disabled=false;
-  document.getElementById('chat-online-status').textContent='Online agora';
-  document.getElementById('chat-online-status').style.color='var(--green)';
-  document.getElementById('sb-phone').textContent=v;
-  document.getElementById('sb-status').textContent='Online agora';
-  // CORRIGIDO: NÃO mostra memory-strip aqui — vai aparecer só via loadMemChips() se houver dados
-  document.getElementById('quick-chips').style.display='flex';
-  document.getElementById('welcome').innerHTML='<div class="welcome-title">Olá! Sou a Clara ✨</div><div class="welcome-sub">Como posso te ajudar hoje?</div>';
+  applyPhone();
   loadAll();loadMood();loadMemChips();
 }
 
 function changePhone(){
-  phone='';
-  document.getElementById('phone-display').textContent='';
-  document.getElementById('phone-setup').style.display='flex';
-  document.getElementById('chat-msg').disabled=true;
-  document.getElementById('send-btn').disabled=true;
-  document.getElementById('chat-online-status').textContent='Aguardando número';
-  document.getElementById('chat-online-status').style.color='var(--text3)';
-  document.getElementById('sb-status').textContent='Aguardando número';
-  // CORRIGIDO: esconde a strip ao trocar número
+  let v=document.getElementById('phone-new-input').value.trim().replace(/\D/g,'');
+  if(!v||v.length<10){showToast('Número inválido ⚠️');return;}
+  if(!v.startsWith('55'))v='55'+v;
+  phone=v;
+  applyPhone();
+  closeModal('modal-phone');
+  loadAll();loadMood();loadMemChips();
   document.getElementById('memory-strip').style.display='none';
-  document.getElementById('quick-chips').style.display='none';
-  document.getElementById('phone-input').value='';
+}
+
+function applyPhone(){
+  document.getElementById('phone-setup').style.display='none';
+  document.getElementById('chat-msg').disabled=false;
+  document.getElementById('send-btn').disabled=false;
+  document.getElementById('topbar-status').textContent='Online agora';
+  document.getElementById('topbar-status').style.color='var(--green)';
+  document.getElementById('drawer-phone').textContent=phone;
+  document.getElementById('drawer-status').textContent='Online agora';
+  document.getElementById('phone-current-display').textContent=phone;
+  document.getElementById('phone-new-input').value='';
+  document.getElementById('quick-chips').style.display='flex';
+  document.getElementById('welcome').innerHTML='<div class="welcome-title">Olá! Sou a Clara ✨</div><div class="welcome-sub">Como posso te ajudar hoje?</div>';
 }
 
 // ── NAVIGATION ──
-function goTo(p){
+function navTo(p){
+  closeDrawer();
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
-  document.querySelectorAll('.sb-item').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('[data-nav]').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('[data-bn]').forEach(x=>x.classList.remove('active'));
   document.getElementById('page-'+p).classList.add('active');
-  document.querySelector(`[data-page="${p}"]`).classList.add('active');
+  const navItem=document.querySelector(`[data-nav="${p}"]`);
+  if(navItem)navItem.classList.add('active');
+  const bnItem=document.querySelector(`[data-bn="${p}"]`);
+  if(bnItem)bnItem.classList.add('active');
   if(!phone)return;
   if(p==='lembretes')renderReminders();
   if(p==='remedios')renderMeds();
@@ -838,39 +919,70 @@ function goTo(p){
   if(p==='cofre')renderCofre();
 }
 
-async function togglePrivate(){
-  privateMode = !privateMode;
-  const btn = document.getElementById('private-btn');
-  const ind = document.getElementById('private-indicator');
-  btn.textContent = privateMode ? '🔒 Privado' : '🔓 Público';
-  btn.style.color = privateMode ? 'var(--red)' : '';
-  btn.style.borderColor = privateMode ? 'rgba(239,68,68,.3)' : '';
-  ind.classList.toggle('on', privateMode);
-  showToast(privateMode ? '🔒 Modo privado ativado' : '🔓 Modo público ativado');
+// ── PRIVATE MODE ──
+function togglePrivate(){
+  privateMode=!privateMode;
+  const btn=document.getElementById('lock-btn');
+  const bar=document.getElementById('private-bar');
+  btn.textContent=privateMode?'🔒':'🔓';
+  btn.classList.toggle('private',privateMode);
+  bar.classList.toggle('on',privateMode);
+  showToast(privateMode?'🔒 Modo privado ativado':'🔓 Modo público ativado');
 }
 
+// ── NEW CHAT ──
 async function newChat(){
-  if(privateMode && phone){
-    try{ await fetch(`/forms/conversa-limpar/${phone}`, {method:'POST'}); }catch{}
+  if(privateMode&&phone){
+    try{await fetch(`/forms/conversa-limpar/${phone}`,{method:'POST'});}catch{}
     showToast('🔒 Histórico apagado');
   }
-  goTo('chat');
+  navTo('chat');
   document.getElementById('msgs').innerHTML='<div style="flex:1"></div>';
-  if(phone) addMsg('bot','Nova conversa! O que posso fazer por você? 💛');
+  if(phone)addMsg('bot','Nova conversa! O que posso fazer por você? 💛');
+}
+
+// ── PERSONALIDADE ──
+async function setPersonalidade(btn){
+  document.querySelectorAll('.dp-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const tom=btn.dataset.tom;
+  if(!phone){showToast('Informe seu número primeiro');return;}
+  try{
+    await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tom})});
+    const labels={carinhoso:'Simpática',direto:'Direta',sarcastico:'Sarcástica',divertido:'Informal'};
+    showToast(`Clara agora é ${labels[tom]} ${btn.querySelector('.dp-btn-icon').textContent}`);
+  }catch{showToast('Erro ao salvar preferência ⚠️');}
+}
+
+async function loadMood(){
+  try{
+    const r=await fetch(`/forms/preferencia/${phone}`);
+    const d=await r.json();
+    if(d.tom){
+      document.querySelectorAll('.dp-btn').forEach(b=>b.classList.toggle('active',b.dataset.tom===d.tom));
+    }
+  }catch{}
 }
 
 // ── LOAD ALL ──
 async function loadAll(){
   if(!phone)return;
-  const [l,r,g,m]=await Promise.all([
+  const[l,r,g]=await Promise.all([
     fetch(`/forms/lembretes/${phone}`).then(x=>x.json()).catch(()=>[]),
     fetch(`/forms/remedios/${phone}`).then(x=>x.json()).catch(()=>[]),
     fetch(`/forms/gastos/${phone}`).then(x=>x.json()).catch(()=>[]),
-    fetch(`/forms/memorias/${phone}`).then(x=>x.json()).catch(()=>[]),
   ]);
-  allReminders=l; allMeds=r; allGastos=g; allMems=m;
+  allReminders=l;allMeds=r;allGastos=g;
+  // badges drawer
   if(l.length){document.getElementById('badge-rem').textContent=l.length;document.getElementById('badge-rem').style.display='';}
+  else{document.getElementById('badge-rem').style.display='none';}
   if(r.length){document.getElementById('badge-med').textContent=r.length;document.getElementById('badge-med').style.display='';}
+  else{document.getElementById('badge-med').style.display='none';}
+  // badges bottom nav
+  const bnr=document.getElementById('bnbadge-rem');
+  const bnm=document.getElementById('bnbadge-med');
+  if(bnr){bnr.textContent=l.length;bnr.style.display=l.length?'':'none';}
+  if(bnm){bnm.textContent=r.length;bnm.style.display=r.length?'':'none';}
   const today=new Date().toDateString();
   const todayCount=l.filter(x=>new Date(x.scheduledAt).toDateString()===today).length;
   document.getElementById('rtab-today').textContent=todayCount||'0';
@@ -880,7 +992,7 @@ async function loadAll(){
 function addMsg(role,text,card=null){
   const msgs=document.getElementById('msgs');
   const welcome=document.getElementById('welcome');
-  if(welcome&&role==='bot'){welcome.remove();}
+  if(welcome&&role==='bot')welcome.remove();
   const grp=document.createElement('div');
   grp.className='msg-group '+role;
   if(role==='bot'){
@@ -888,9 +1000,9 @@ function addMsg(role,text,card=null){
     const body=document.createElement('div');body.className='msg-bot-body';
     const b=document.createElement('div');b.className='msg-bubble';b.textContent=text;
     body.appendChild(b);
-    if(card){body.appendChild(buildCard(card));}
+    if(card)body.appendChild(buildCard(card));
     grp.appendChild(av);grp.appendChild(body);
-  } else {
+  }else{
     const b=document.createElement('div');b.className='msg-bubble';b.textContent=text;
     const t=document.createElement('div');t.className='msg-time';
     const n=new Date();t.textContent=pad(n.getHours())+':'+pad(n.getMinutes());
@@ -918,48 +1030,32 @@ async function sendChat(){
   try{
     const res=await fetch(`/chat/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,privateMode})});
     const data=await res.json();
-    const bubble=grp.querySelector('.msg-bubble');
-    bubble.textContent=data.reply||'Pode repetir? 😊';
+    grp.querySelector('.msg-bubble').textContent=data.reply||'Pode repetir? 😊';
     grp.classList.remove('loading');
     setTimeout(()=>{loadAll();loadMemChips();},1200);
-  }catch(e){
+  }catch{
     grp.querySelector('.msg-bubble').textContent='Erro de conexão. Tente novamente.';
     grp.classList.remove('loading');
   }
 }
 
-function chipSend(t){document.getElementById('chat-msg').value=t;sendChat();}
-
-// ── MOOD ──
-let currentMood='carinhoso';
-const moodLabels={carinhoso:'🥰 Simpática',direto:'🎯 Direta',divertido:'🎉 Divertida',sarcastico:'😈 Sarcástica'};
-async function loadMood(){
-  try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();if(d.tom)currentMood=d.tom;}catch{}
+function chipSend(t){
+  if(t==='Guardar no cofre'){navTo('cofre');setTimeout(()=>openModal('modal-cofre'),100);return;}
+  document.getElementById('chat-msg').value=t;sendChat();
 }
 
-// ── MEM CHIPS — só mostra a strip quando há dados E a conversa já começou ──
+// ── MEM CHIPS ──
 async function loadMemChips(){
   const strip=document.getElementById('memory-strip');
   const el=document.getElementById('mem-chips');
-  // Não mostra se a tela de boas-vindas ainda está visível
-  if(document.getElementById('welcome')){
-    strip.style.display='none';
-    return;
-  }
+  if(document.getElementById('welcome')){strip.style.display='none';return;}
   try{
     const r=await fetch(`/forms/lembretes/${phone}`);
     const d=await r.json();
-    if(!d||!d.length){
-      strip.style.display='none';
-      el.innerHTML='';
-      return;
-    }
+    if(!d||!d.length){strip.style.display='none';el.innerHTML='';return;}
     el.innerHTML=d.slice(0,4).map(x=>`<span class="mem-chip">${x.message.substring(0,25)}</span>`).join('');
     strip.style.display='flex';
-  }catch{
-    strip.style.display='none';
-    el.innerHTML='';
-  }
+  }catch{strip.style.display='none';el.innerHTML='';}
 }
 
 // ── REMINDERS ──
@@ -968,11 +1064,11 @@ function setRemTab(t){
   document.querySelectorAll('.rem-tab').forEach(x=>x.classList.toggle('active',x.dataset.rtab===t));
   renderReminders();
 }
+
 function renderReminders(){
   const el=document.getElementById('rem-body');
   if(!allReminders.length){el.innerHTML='<div class="empty-state"><span class="empty-icon">📅</span><div class="empty-text">Nenhum lembrete ainda</div></div>';return;}
-  const now=new Date();
-  const today=now.toDateString();
+  const now=new Date();const today=now.toDateString();
   const tomorrow=new Date(now);tomorrow.setDate(tomorrow.getDate()+1);
   let items=allReminders;
   if(remTab==='today')items=allReminders.filter(x=>new Date(x.scheduledAt).toDateString()===today);
@@ -982,8 +1078,7 @@ function renderReminders(){
   const groups={};
   items.forEach(r=>{
     const d=new Date(r.scheduledAt);
-    let label=d.toDateString()===today?`Hoje • ${pad(d.getDate())} de ${['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'][d.getMonth()]}`:
-      d.toDateString()===tomorrow.toDateString()?'Amanhã':fmtD(r.scheduledAt);
+    let label=d.toDateString()===today?`Hoje • ${pad(d.getDate())} de ${['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'][d.getMonth()]}`:d.toDateString()===tomorrow.toDateString()?'Amanhã':fmtD(r.scheduledAt);
     if(!groups[label])groups[label]=[];
     groups[label].push(r);
   });
@@ -997,7 +1092,7 @@ function renderReminders(){
         const t=new Date(r.scheduledAt);
         return `<div class="rem-item" id="ri-${r.id}">
           <div class="rem-check" onclick="doneReminder('${r.id}')"></div>
-          <button class="rem-bell on" onclick="toggleBell('${r.id}',this)" title="Notificação ativa">🔔</button>
+          <button class="rem-bell on" onclick="toggleBell('${r.id}',this)">🔔</button>
           <div class="rem-body-content">
             <div class="rem-title">${r.message}</div>
             <div class="rem-meta"><span class="rem-time-badge">${pad(t.getHours())}:${pad(t.getMinutes())}</span>${badge}</div>
@@ -1016,6 +1111,7 @@ async function doneReminder(id){
   try{await fetch(`/forms/lembrete-concluir/${id}`,{method:'POST'});showToast('Lembrete concluído ✅');setTimeout(()=>{allReminders=allReminders.filter(x=>x.id!==id);renderReminders();loadAll();},600);}
   catch{showToast('Erro ao concluir ⚠️');}
 }
+
 function toggleBell(id,btn){
   const on=btn.classList.toggle('on');
   btn.textContent=on?'🔔':'🔕';
@@ -1027,8 +1123,7 @@ function renderMeds(){
   const el=document.getElementById('med-body');
   if(!allMeds.length){el.innerHTML='<div class="empty-state"><span class="empty-icon">💊</span><div class="empty-text">Nenhum medicamento cadastrado</div></div>';return;}
   document.getElementById('ms-active').textContent=allMeds.length;
-  const now=new Date();
-  const hm=`${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const now=new Date();const hm=`${pad(now.getHours())}:${pad(now.getMinutes())}`;
   let nextDose=null,nextMed=null;
   allMeds.forEach(m=>{
     let times=[];try{times=JSON.parse(m.times);}catch{}
@@ -1082,32 +1177,23 @@ function renderFin(){
   document.getElementById('fs-min').textContent=brl(Math.min(...vals));
   document.getElementById('fs-max').textContent=brl(Math.max(...vals));
   document.getElementById('fs-count').textContent=allGastos.length;
-
   const byDay={};
-  allGastos.forEach(g=>{
-    const d=new Date(g.createdAt).getDate();
-    byDay[d]=(byDay[d]||0)+g.value;
-  });
+  allGastos.forEach(g=>{const d=new Date(g.createdAt).getDate();byDay[d]=(byDay[d]||0)+g.value;});
   const labels=Array.from({length:31},(_,i)=>i+1);
   const data=labels.map(d=>byDay[d]||0);
   if(barChart)barChart.destroy();
-  const ctx1=document.getElementById('chart-bar').getContext('2d');
-  barChart=new Chart(ctx1,{type:'bar',data:{labels,datasets:[{data,backgroundColor:'rgba(139,92,246,.5)',borderColor:'rgba(139,92,246,.8)',borderWidth:1,borderRadius:4}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4B5563',font:{size:10}},grid:{display:false}},y:{ticks:{color:'#4B5563',font:{size:10},callback:v=>'R$'+v},grid:{color:'rgba(255,255,255,.04)'}}}}});
-
+  barChart=new Chart(document.getElementById('chart-bar').getContext('2d'),{type:'bar',data:{labels,datasets:[{data,backgroundColor:'rgba(139,92,246,.5)',borderColor:'rgba(139,92,246,.8)',borderWidth:1,borderRadius:4}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4B5563',font:{size:10}},grid:{display:false}},y:{ticks:{color:'#4B5563',font:{size:10},callback:v=>'R$'+v},grid:{color:'rgba(255,255,255,.04)'}}}}});
   const byCat={};
   allGastos.forEach(g=>{byCat[g.category]=(byCat[g.category]||0)+g.value;});
   const catEntries=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
   if(donutChart)donutChart.destroy();
-  const ctx2=document.getElementById('chart-donut').getContext('2d');
-  donutChart=new Chart(ctx2,{type:'doughnut',data:{labels:catEntries.map(([k])=>k),datasets:[{data:catEntries.map(([,v])=>v),backgroundColor:catEntries.map(([k])=>CAT_COLORS[k]||'#6B7280'),borderWidth:0}]},options:{responsive:true,cutout:'65%',plugins:{legend:{display:false}}}});
-
+  donutChart=new Chart(document.getElementById('chart-donut').getContext('2d'),{type:'doughnut',data:{labels:catEntries.map(([k])=>k),datasets:[{data:catEntries.map(([,v])=>v),backgroundColor:catEntries.map(([k])=>CAT_COLORS[k]||'#6B7280'),borderWidth:0}]},options:{responsive:true,cutout:'65%',plugins:{legend:{display:false}}}});
   document.getElementById('cat-list').innerHTML=catEntries.map(([k,v])=>`
     <div class="cat-row">
       <span class="cat-name"><span class="cat-dot" style="background:${CAT_COLORS[k]||'#6B7280'}"></span>${CAT_ICONS[k]||'📦'} ${k}</span>
       <span class="cat-val">${brl(v)}</span>
       <span class="cat-pct">${Math.round(v/total*100)}%</span>
     </div>`).join('');
-
   document.getElementById('fin-items').innerHTML=allGastos.slice(0,10).map(g=>`
     <div class="fin-item">
       <div class="fin-cat-dot" style="background:${CAT_COLORS[g.category]||'#6B7280'}"></div>
@@ -1120,42 +1206,33 @@ function renderFin(){
 }
 
 // ── COFRE ──
-let cofreData = [];
+let cofreData=[];
 
 async function renderCofre(){
-  const el = document.getElementById('cofre-body');
-  el.innerHTML = '<div class="spin"></div>';
-  try {
-    const res = await fetch(`/forms/cofre/${phone}`);
-    cofreData = await res.json();
-    displayCofre(cofreData);
-  } catch(e) {
-    el.innerHTML = '<div class="empty-state"><span class="empty-icon">🔐</span><div class="empty-text">Nenhum segredo salvo ainda</div></div>';
-  }
+  const el=document.getElementById('cofre-body');
+  el.innerHTML='<div class="spin"></div>';
+  try{const res=await fetch(`/forms/cofre/${phone}`);cofreData=await res.json();displayCofre(cofreData);}
+  catch{el.innerHTML='<div class="empty-state"><span class="empty-icon">🔐</span><div class="empty-text">Nenhum segredo salvo ainda</div></div>';}
 }
 
-function displayCofre(items) {
-  const el = document.getElementById('cofre-body');
-  if(!items.length){
-    el.innerHTML = '<div class="empty-state"><span class="empty-icon">🔐</span><div class="empty-text">Nenhum segredo salvo ainda<br><small style="color:var(--text3);margin-top:6px;display:block">Clique em + Novo segredo para começar</small></div></div>';
-    return;
-  }
-  const tipoIcon = {senha:'🔑',cartao:'💳',nota:'📝',outro:'📦'};
-  el.innerHTML = '<div class="cofre-grid">' + items.map(item => {
-    let data = {};
-    try { data = JSON.parse(item.content); } catch {}
-    const icon = tipoIcon[data.tipo] || '🔐';
-    let fields = '';
-    if(data.tipo === 'senha'){
-      if(data.email) fields += `<div class="cofre-field"><span class="cofre-field-label">Usuário:</span><span class="cofre-field-value">${data.email}</span></div>`;
-      if(data.senha) fields += `<div class="cofre-field"><span class="cofre-field-label">Senha:</span><span class="cofre-hidden" id="pwd-${item.id}">••••••••</span><button class="cofre-toggle" onclick="togglePwd('${item.id}','${btoa(data.senha)}')">👁</button></div>`;
-      if(data.url) fields += `<div class="cofre-field"><span class="cofre-field-label">URL:</span><a href="${data.url}" target="_blank" style="color:var(--accent);font-size:12px">${data.url.substring(0,30)}</a></div>`;
-    } else if(data.tipo === 'cartao'){
-      if(data.num) fields += `<div class="cofre-field"><span class="cofre-field-label">Número:</span><span class="cofre-hidden" id="pwd-${item.id}">•••• •••• •••• ••••</span><button class="cofre-toggle" onclick="togglePwd('${item.id}','${btoa(data.num)}')">👁</button></div>`;
-      if(data.val) fields += `<div class="cofre-field"><span class="cofre-field-label">Validade:</span><span class="cofre-field-value">${data.val}</span></div>`;
-    } else if(data.tipo === 'nota' || data.tipo === 'outro'){
-      const txt = data.nota || data.outro || '';
-      fields += `<div class="cofre-field"><span class="cofre-hidden" id="pwd-${item.id}">••••••••••••</span><button class="cofre-toggle" onclick="togglePwd('${item.id}','${btoa(txt)}')">👁</button></div>`;
+function displayCofre(items){
+  const el=document.getElementById('cofre-body');
+  if(!items.length){el.innerHTML='<div class="empty-state"><span class="empty-icon">🔐</span><div class="empty-text">Nenhum segredo salvo ainda<br><small style="color:var(--text3);margin-top:6px;display:block">Clique em + Novo para começar</small></div></div>';return;}
+  const tipoIcon={senha:'🔑',cartao:'💳',nota:'📝',outro:'📦'};
+  el.innerHTML='<div class="cofre-grid">'+items.map(item=>{
+    let data={};try{data=JSON.parse(item.content);}catch{}
+    const icon=tipoIcon[data.tipo]||'🔐';
+    let fields='';
+    if(data.tipo==='senha'){
+      if(data.email)fields+=`<div class="cofre-field"><span class="cofre-field-label">Usuário:</span><span class="cofre-field-value">${data.email}</span></div>`;
+      if(data.senha)fields+=`<div class="cofre-field"><span class="cofre-field-label">Senha:</span><span class="cofre-hidden" id="pwd-${item.id}">••••••••</span><button class="cofre-toggle" onclick="togglePwd('${item.id}','${btoa(data.senha)}')">👁</button></div>`;
+      if(data.url)fields+=`<div class="cofre-field"><span class="cofre-field-label">URL:</span><a href="${data.url}" target="_blank" style="color:var(--accent);font-size:12px">${data.url.substring(0,30)}</a></div>`;
+    }else if(data.tipo==='cartao'){
+      if(data.num)fields+=`<div class="cofre-field"><span class="cofre-field-label">Número:</span><span class="cofre-hidden" id="pwd-${item.id}">•••• •••• •••• ••••</span><button class="cofre-toggle" onclick="togglePwd('${item.id}','${btoa(data.num)}')">👁</button></div>`;
+      if(data.val)fields+=`<div class="cofre-field"><span class="cofre-field-label">Validade:</span><span class="cofre-field-value">${data.val}</span></div>`;
+    }else if(data.tipo==='nota'||data.tipo==='outro'){
+      const txt=data.nota||data.outro||'';
+      fields+=`<div class="cofre-field"><span class="cofre-hidden" id="pwd-${item.id}">••••••••••••</span><button class="cofre-toggle" onclick="togglePwd('${item.id}','${btoa(txt)}')">👁</button></div>`;
     }
     return `<div class="cofre-card">
       <div class="cofre-card-top">
@@ -1168,96 +1245,62 @@ function displayCofre(items) {
       ${fields}
       <div class="cofre-date">Salvo em ${fmtD(item.createdAt)}</div>
     </div>`;
-  }).join('') + '</div>';
+  }).join('')+'</div>';
 }
 
-function togglePwd(id, b64){
-  const el = document.getElementById('pwd-'+id);
-  if(!el) return;
-  const decoded = atob(b64);
-  if(el.classList.contains('cofre-hidden')){
-    el.textContent = decoded;
-    el.classList.remove('cofre-hidden');
-    el.classList.add('cofre-field-value');
-  } else {
-    el.textContent = '••••••••';
-    el.classList.add('cofre-hidden');
-    el.classList.remove('cofre-field-value');
-  }
+function togglePwd(id,b64){
+  const el=document.getElementById('pwd-'+id);if(!el)return;
+  const decoded=atob(b64);
+  if(el.classList.contains('cofre-hidden')){el.textContent=decoded;el.classList.remove('cofre-hidden');el.classList.add('cofre-field-value');}
+  else{el.textContent='••••••••';el.classList.add('cofre-hidden');el.classList.remove('cofre-field-value');}
 }
 
-function copyCofre(id, dataStr){
-  try {
-    const data = JSON.parse(dataStr);
-    const txt = data.senha || data.num || data.nota || data.outro || '';
-    navigator.clipboard.writeText(txt);
-    showToast('Copiado! 📋');
-  } catch { showToast('Erro ao copiar'); }
+function copyCofre(id,dataStr){
+  try{const data=JSON.parse(dataStr);const txt=data.senha||data.num||data.nota||data.outro||'';navigator.clipboard.writeText(txt);showToast('Copiado! 📋');}
+  catch{showToast('Erro ao copiar');}
 }
 
 async function deleteCofre(id){
-  if(!confirm('Excluir este segredo?')) return;
-  try {
-    await fetch(`/forms/cofre/${id}`, {method:'DELETE'});
-    showToast('Excluído ✅');
-    renderCofre();
-  } catch { showToast('Erro ao excluir ⚠️'); }
+  if(!confirm('Excluir este segredo?'))return;
+  try{await fetch(`/forms/cofre/${id}`,{method:'DELETE'});showToast('Excluído ✅');renderCofre();}
+  catch{showToast('Erro ao excluir ⚠️');}
 }
 
 function filterCofre(v){
-  const filtered = v ? cofreData.filter(i => {
-    let data = {}; try { data = JSON.parse(i.content); } catch {}
-    return (data.nome||'').toLowerCase().includes(v.toLowerCase());
-  }) : cofreData;
+  const filtered=v?cofreData.filter(i=>{let data={};try{data=JSON.parse(i.content);}catch{}return(data.nome||'').toLowerCase().includes(v.toLowerCase());}):cofreData;
   displayCofre(filtered);
 }
 
 function updateCofreFields(){
-  const tipo = document.getElementById('cofre-tipo').value;
-  ['senha','cartao','nota','outro'].forEach(t => {
-    document.getElementById('cofre-fields-'+t).style.display = t===tipo?'block':'none';
-  });
+  const tipo=document.getElementById('cofre-tipo').value;
+  ['senha','cartao','nota','outro'].forEach(t=>{document.getElementById('cofre-fields-'+t).style.display=t===tipo?'block':'none';});
 }
 
 async function saveCofre(){
-  const tipo = document.getElementById('cofre-tipo').value;
-  const nome = document.getElementById('cofre-nome').value.trim();
-  if(!nome){ showToast('Informe o nome ⚠️'); return; }
-  let data = { tipo, nome };
-  if(tipo==='senha'){
-    data.email = document.getElementById('cofre-email').value.trim();
-    data.senha = document.getElementById('cofre-senha').value;
-    data.url = document.getElementById('cofre-url').value.trim();
-  } else if(tipo==='cartao'){
-    data.num = document.getElementById('cofre-cartao-num').value.trim();
-    data.val = document.getElementById('cofre-cartao-val').value.trim();
-    data.cvv = document.getElementById('cofre-cartao-cvv').value;
-    data.titular = document.getElementById('cofre-cartao-nome').value.trim();
-  } else if(tipo==='nota'){
-    data.nota = document.getElementById('cofre-nota-txt').value.trim();
-  } else {
-    data.outro = document.getElementById('cofre-outro-txt').value.trim();
-  }
-  const btn = document.getElementById('sc-btn');
-  btn.textContent='Salvando...'; btn.disabled=true;
-  try {
-    const res = await fetch(`/forms/cofre/${phone}`, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ conteudo: JSON.stringify(data) })
-    });
-    if(res.ok){ closeModal('modal-cofre'); showToast('Segredo salvo! 🔐'); renderCofre(); }
+  const tipo=document.getElementById('cofre-tipo').value;
+  const nome=document.getElementById('cofre-nome').value.trim();
+  if(!nome){showToast('Informe o nome ⚠️');return;}
+  let data={tipo,nome};
+  if(tipo==='senha'){data.email=document.getElementById('cofre-email').value.trim();data.senha=document.getElementById('cofre-senha').value;data.url=document.getElementById('cofre-url').value.trim();}
+  else if(tipo==='cartao'){data.num=document.getElementById('cofre-cartao-num').value.trim();data.val=document.getElementById('cofre-cartao-val').value.trim();data.cvv=document.getElementById('cofre-cartao-cvv').value;data.titular=document.getElementById('cofre-cartao-nome').value.trim();}
+  else if(tipo==='nota'){data.nota=document.getElementById('cofre-nota-txt').value.trim();}
+  else{data.outro=document.getElementById('cofre-outro-txt').value.trim();}
+  const btn=document.getElementById('sc-btn');btn.textContent='Salvando...';btn.disabled=true;
+  try{
+    const res=await fetch(`/forms/cofre/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conteudo:JSON.stringify(data)})});
+    if(res.ok){closeModal('modal-cofre');showToast('Segredo salvo! 🔐');renderCofre();}
     else showToast('Erro ao salvar ⚠️');
-  } catch { showToast('Erro de conexão ⚠️'); }
-  btn.textContent='Salvar'; btn.disabled=false;
+  }catch{showToast('Erro de conexão ⚠️');}
+  btn.textContent='Salvar';btn.disabled=false;
 }
 
-// ── MODALS ──
+// ── MODAIS ──
 function openModal(id){
-  if(!phone){showToast('Informe seu número primeiro 💬');return;}
+  if(id!=='modal-phone'&&!phone){showToast('Informe seu número primeiro 💬');return;}
   if(id==='modal-lembrete'){const{data,hora}=nowLocal();document.getElementById('ml-data').value=data;document.getElementById('ml-hora').value=hora;document.getElementById('ml-titulo').value='';}
   if(id==='modal-remedio'){const{hora}=nowLocal();document.getElementById('mr-inicio').value=hora;document.getElementById('mr-nome').value='';document.getElementById('mr-dias').value='';}
   if(id==='modal-gasto'){document.getElementById('mg-valor').value='';document.getElementById('mg-desc').value='';}
+  if(id==='modal-phone'){document.getElementById('phone-current-display').textContent=phone||'—';}
   document.getElementById(id).classList.add('open');
 }
 function closeModal(id){document.getElementById(id).classList.remove('open');}
@@ -1308,42 +1351,14 @@ async function saveGasto(){
 }
 
 // ── PWA ──
-let deferredPrompt = null;
-
-window.addEventListener('beforeinstallprompt', e => {
-  e.preventDefault();
-  deferredPrompt = e;
-  setTimeout(() => document.getElementById('pwa-banner').classList.add('show'), 3000);
-});
-
-window.addEventListener('appinstalled', () => {
-  document.getElementById('pwa-banner').classList.remove('show');
-  showToast('Clara instalada com sucesso! 🎉');
-});
-
-function installPWA(){
-  if(deferredPrompt){
-    deferredPrompt.prompt();
-    deferredPrompt.userChoice.then(()=>{ deferredPrompt=null; document.getElementById('pwa-banner').classList.remove('show'); });
-  }
-}
-
-function dismissPWA(){
-  document.getElementById('pwa-banner').classList.remove('show');
-  localStorage.setItem('pwa-dismissed','1');
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('/sw.js')
-    .then(reg => console.log('SW registrado:', reg.scope))
-    .catch(err => console.log('SW erro:', err));
-}
-
-const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-const isStandalone = window.navigator.standalone === true;
-if(isIOS && !isStandalone && !localStorage.getItem('pwa-dismissed')){
-  setTimeout(() => document.getElementById('pwa-banner').classList.add('show'), 3000);
-}
+let deferredPrompt=null;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;setTimeout(()=>document.getElementById('pwa-banner').classList.add('show'),3000);});
+window.addEventListener('appinstalled',()=>{document.getElementById('pwa-banner').classList.remove('show');showToast('Clara instalada! 🎉');});
+function dismissPWA(){document.getElementById('pwa-banner').classList.remove('show');localStorage.setItem('pwa-dismissed','1');}
+if('serviceWorker'in navigator){navigator.serviceWorker.register('/sw.js').then(r=>console.log('SW:',r.scope)).catch(e=>console.log('SW erro:',e));}
+const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+const isStandalone=window.navigator.standalone===true;
+if(isIOS&&!isStandalone&&!localStorage.getItem('pwa-dismissed')){setTimeout(()=>document.getElementById('pwa-banner').classList.add('show'),3000);}
 </script>
 </body>
 </html>
