@@ -283,6 +283,31 @@ select option{background:var(--s2)}
 .pwa-banner-btns{display:flex;gap:6px;flex-shrink:0}
 .pwa-install-btn{padding:7px 12px;background:var(--accent);border:none;border-radius:var(--r-sm);color:#fff;font-family:"Inter",sans-serif;font-size:12px;font-weight:600;cursor:pointer}
 .pwa-dismiss-btn{padding:7px 10px;background:none;border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text3);font-family:"Inter",sans-serif;font-size:12px;cursor:pointer}
+
+/* ══ COFRE ══ */
+.cofre-grid { display: flex; flex-direction: column; gap: 10px; }
+.cofre-card {
+  background: var(--s2); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent); border-radius: var(--r);
+  padding: 16px; transition: all .15s;
+}
+.cofre-card:hover { border-color: rgba(139,92,246,.4); }
+.cofre-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.cofre-card-name { font-size: 15px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.cofre-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: rgba(239,68,68,.12); color: #FCA5A5; }
+.cofre-card-actions { display: flex; gap: 6px; }
+.cofre-action-btn { width: 28px; height: 28px; border-radius: 7px; background: none; border: none; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; transition: all .15s; opacity: .5; }
+.cofre-action-btn:hover { background: var(--s3); opacity: 1; }
+.cofre-field { margin-bottom: 6px; font-size: 12px; color: var(--text3); display: flex; align-items: center; gap: 6px; }
+.cofre-field-label { color: var(--text3); min-width: 50px; }
+.cofre-field-value { color: var(--text2); font-family: monospace; letter-spacing: .5px; }
+.cofre-hidden { color: var(--text3); letter-spacing: 2px; }
+.cofre-toggle { background: none; border: none; cursor: pointer; font-size: 12px; opacity: .5; transition: opacity .15s; }
+.cofre-toggle:hover { opacity: 1; }
+.cofre-date { font-size: 10px; color: var(--text3); margin-top: 8px; }
+.cofre-category { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.cofre-cat-btn { padding: 6px 12px; background: var(--s3); border: 1px solid var(--border); border-radius: 20px; font-size: 12px; color: var(--text2); cursor: pointer; transition: all .15s; font-family: 'Inter', sans-serif; }
+.cofre-cat-btn.active { background: rgba(139,92,246,.2); border-color: rgba(139,92,246,.4); color: var(--accent3); }
 /* toast */
 .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid var(--border2);padding:10px 20px;border-radius:20px;font-size:12px;color:var(--text);z-index:200;opacity:0;pointer-events:none;transition:all .25s;white-space:nowrap;box-shadow:0 8px 30px rgba(0,0,0,.4)}
 .toast.show{opacity:1}
@@ -385,9 +410,10 @@ select option{background:var(--s2)}
   .msg-bubble { font-size: 13px; padding: 10px 13px; }
 
   /* Chat input */
-  .chat-input-area { padding: 10px 14px; }
+  .chat-input-area { padding: 10px 14px 12px; }
   .quick-chips { gap: 5px; }
   .qchip { font-size: 10px; padding: 4px 10px; }
+  .input-footer { display: none; }
 
   /* Page headers */
   .page-header { padding: 14px 16px 12px; gap: 10px; }
@@ -467,7 +493,7 @@ select option{background:var(--s2)}
     <div class="sb-item" onclick="goTo('lembretes')" data-page="lembretes"><span class="sb-item-icon">📅</span> Lembretes <span class="sb-badge" id="badge-rem" style="display:none">0</span></div>
     <div class="sb-item" onclick="goTo('remedios')" data-page="remedios"><span class="sb-item-icon">💊</span> Remédios <span class="sb-badge" id="badge-med" style="display:none">0</span></div>
     <div class="sb-item" onclick="goTo('financeiro')" data-page="financeiro"><span class="sb-item-icon">💰</span> Financeiro</div>
-    <div class="sb-item" onclick="goTo('memorias')" data-page="memorias"><span class="sb-item-icon">🧠</span> Memórias</div>
+    <div class="sb-item" onclick="goTo('cofre')" data-page="cofre"><span class="sb-item-icon">🔐</span> Cofre</div>
   </div>
   <div class="sb-foot">
     <div class="sb-user">
@@ -612,14 +638,21 @@ select option{background:var(--s2)}
     </div>
   </div>
 
-  <!-- ══ MEMÓRIAS PAGE ══ -->
-  <div class="page" id="page-memorias">
+  <!-- ══ COFRE PAGE ══ -->
+  <div class="page" id="page-cofre">
     <div class="page-header">
-      <div class="ph-icon mem">🧠</div>
-      <div><div class="ph-title">Memórias</div><div class="ph-sub">A Clara aprende com você para te ajudar melhor.</div></div>
+      <div class="ph-icon mem" style="background:rgba(239,68,68,.12)">🔐</div>
+      <div><div class="ph-title">Cofre</div><div class="ph-sub">Suas senhas e segredos protegidos.</div></div>
+      <div class="ph-actions">
+        <button class="btn-primary" onclick="openModal('modal-cofre')">＋ Novo segredo</button>
+      </div>
     </div>
-    <div class="mem-search"><input type="text" id="mem-search-input" placeholder="🔍 Buscar memórias..." oninput="filterMems(this.value)"/></div>
-    <div class="mem-body"><div class="mem-grid" id="mem-grid"><div class="spin"></div></div></div>
+    <div class="mem-search">
+      <input type="text" id="cofre-search" placeholder="🔍 Buscar no cofre..." oninput="filterCofre(this.value)"/>
+    </div>
+    <div class="mem-body" id="cofre-body">
+      <div class="spin"></div>
+    </div>
   </div>
 
 </main>
@@ -697,6 +730,46 @@ select option{background:var(--s2)}
     <button class="pwa-dismiss-btn" onclick="dismissPWA()">✕</button>
   </div>
 </div>
+<!-- MODAL COFRE -->
+<div class="overlay" id="modal-cofre">
+  <div class="modal">
+    <div class="modal-title">🔐 Novo segredo</div>
+    <div class="mf">
+      <label>Tipo</label>
+      <select id="cofre-tipo" onchange="updateCofreFields()">
+        <option value="senha">🔑 Senha / Login</option>
+        <option value="cartao">💳 Cartão</option>
+        <option value="nota">📝 Nota secreta</option>
+        <option value="outro">📦 Outro</option>
+      </select>
+    </div>
+    <div class="mf"><label>Nome</label><input type="text" id="cofre-nome" placeholder="Ex: Gmail, Netflix, Banco..."/></div>
+    <div id="cofre-fields-senha">
+      <div class="mf"><label>Email / Usuário</label><input type="text" id="cofre-email" placeholder="seu@email.com"/></div>
+      <div class="mf"><label>Senha</label><input type="password" id="cofre-senha" placeholder="••••••••"/></div>
+      <div class="mf"><label>URL (opcional)</label><input type="text" id="cofre-url" placeholder="https://..."/></div>
+    </div>
+    <div id="cofre-fields-cartao" style="display:none">
+      <div class="mf"><label>Número do cartão</label><input type="text" id="cofre-cartao-num" placeholder="•••• •••• •••• ••••"/></div>
+      <div class="mf-row">
+        <div class="mf"><label>Validade</label><input type="text" id="cofre-cartao-val" placeholder="MM/AA"/></div>
+        <div class="mf"><label>CVV</label><input type="password" id="cofre-cartao-cvv" placeholder="•••"/></div>
+      </div>
+      <div class="mf"><label>Titular</label><input type="text" id="cofre-cartao-nome" placeholder="Nome no cartão"/></div>
+    </div>
+    <div id="cofre-fields-nota" style="display:none">
+      <div class="mf"><label>Conteúdo</label><textarea id="cofre-nota-txt" placeholder="Escreva sua nota secreta..."></textarea></div>
+    </div>
+    <div id="cofre-fields-outro" style="display:none">
+      <div class="mf"><label>Conteúdo</label><textarea id="cofre-outro-txt" placeholder="Qualquer informação importante..."></textarea></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('modal-cofre')">Cancelar</button>
+      <button class="btn-save" id="sc-btn" onclick="saveCofre()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -758,7 +831,7 @@ function goTo(p){
   if(p==='lembretes')renderReminders();
   if(p==='remedios')renderMeds();
   if(p==='financeiro')renderFin();
-  if(p==='memorias')renderMems();
+  if(p==='cofre')renderCofre();
 }
 async function togglePrivate(){
   privateMode = !privateMode;
@@ -1032,26 +1105,139 @@ function renderFin(){
     </div>`).join('');
 }
 
-// ── MEMÓRIAS ──
-const MEM_COLORS={anotacao:{bg:'rgba(59,130,246,.15)',color:'#60A5FA',tag:'Anotação'},tarefa:{bg:'rgba(139,92,246,.15)',color:'#A78BFA',tag:'Tarefa'},gasto:{bg:'rgba(245,158,11,.15)',color:'#FCD34D',tag:'Finanças'},remedio:{bg:'rgba(239,68,68,.12)',color:'#FCA5A5',tag:'Saúde'},cidade:{bg:'rgba(34,197,94,.1)',color:'#86EFAC',tag:'Local'}};
-function renderMems(filter=''){
-  const el=document.getElementById('mem-grid');
-  const items=filter?allMems.filter(m=>m.content.toLowerCase().includes(filter.toLowerCase())):allMems;
-  if(!items.length){el.innerHTML='<div class="empty-state" style="grid-column:1/-1"><span class="empty-icon">🧠</span><div class="empty-text">Nenhuma memória encontrada</div></div>';return;}
-  const cfg=t=>MEM_COLORS[t]||{bg:'rgba(107,114,128,.15)',color:'#9CA3AF',tag:'Outro'};
-  el.innerHTML=items.slice(0,18).map(m=>{
-    const c=cfg(m.type);
-    return `<div class="mem-card">
-      <div class="mem-card-top">
-        <div class="mem-icon" style="background:${c.bg}">🧠</div>
-        <div class="mem-card-title">${m.content.substring(0,60)}${m.content.length>60?'...':''}</div>
-      </div>
-      <div style="margin-top:8px"><span class="mem-tag" style="background:${c.bg};color:${c.color}">${c.tag}</span></div>
-      <div class="mem-date" style="margin-top:8px">${fmtD(m.createdAt)}</div>
-    </div>`;
-  }).join('');
+// ── COFRE ──
+let cofreData = [];
+let cofreFilter = '';
+
+async function renderCofre(){
+  const el = document.getElementById('cofre-body');
+  el.innerHTML = '<div class="spin"></div>';
+  try {
+    const res = await fetch(`/forms/cofre/${phone}`);
+    cofreData = await res.json();
+    displayCofre(cofreData);
+  } catch(e) {
+    el.innerHTML = '<div class="empty-state"><span class="empty-icon">🔐</span><div class="empty-text">Nenhum segredo salvo ainda</div></div>';
+  }
 }
-function filterMems(v){renderMems(v);}
+
+function displayCofre(items) {
+  const el = document.getElementById('cofre-body');
+  if(!items.length){
+    el.innerHTML = '<div class="empty-state"><span class="empty-icon">🔐</span><div class="empty-text">Nenhum segredo salvo ainda<br><small style="color:var(--text3);margin-top:6px;display:block">Clique em + Novo segredo para começar</small></div></div>';
+    return;
+  }
+  const tipoIcon = {senha:'🔑',cartao:'💳',nota:'📝',outro:'📦'};
+  el.innerHTML = '<div class="cofre-grid">' + items.map(item => {
+    let data = {};
+    try { data = JSON.parse(item.content); } catch {}
+    const icon = tipoIcon[data.tipo] || '🔐';
+    let fields = '';
+    if(data.tipo === 'senha'){
+      if(data.email) fields += `<div class="cofre-field"><span class="cofre-field-label">Usuário:</span><span class="cofre-field-value">${data.email}</span></div>`;
+      if(data.senha) fields += `<div class="cofre-field"><span class="cofre-field-label">Senha:</span><span class="cofre-hidden" id="pwd-${item.id}">••••••••</span><button class="cofre-toggle" onclick="togglePwd('${item.id}','${btoa(data.senha)}')">👁</button></div>`;
+      if(data.url) fields += `<div class="cofre-field"><span class="cofre-field-label">URL:</span><a href="${data.url}" target="_blank" style="color:var(--accent);font-size:12px">${data.url.substring(0,30)}</a></div>`;
+    } else if(data.tipo === 'cartao'){
+      if(data.num) fields += `<div class="cofre-field"><span class="cofre-field-label">Número:</span><span class="cofre-hidden" id="pwd-${item.id}">•••• •••• •••• ••••</span><button class="cofre-toggle" onclick="togglePwd('${item.id}','${btoa(data.num)}')">👁</button></div>`;
+      if(data.val) fields += `<div class="cofre-field"><span class="cofre-field-label">Validade:</span><span class="cofre-field-value">${data.val}</span></div>`;
+    } else if(data.tipo === 'nota' || data.tipo === 'outro'){
+      const txt = data.nota || data.outro || '';
+      fields += `<div class="cofre-field"><span class="cofre-hidden" id="pwd-${item.id}">••••••••••••</span><button class="cofre-toggle" onclick="togglePwd('${item.id}','${btoa(txt)}')">👁</button></div>`;
+    }
+    return `<div class="cofre-card">
+      <div class="cofre-card-top">
+        <div class="cofre-card-name">${icon} ${data.nome||'Sem nome'} <span class="cofre-badge">🔒 Protegido</span></div>
+        <div class="cofre-card-actions">
+          <button class="cofre-action-btn" onclick="copyCofre('${item.id}',${JSON.stringify(JSON.stringify(data))})" title="Copiar">📋</button>
+          <button class="cofre-action-btn" onclick="deleteCofre('${item.id}')" title="Excluir" style="color:var(--red)">🗑</button>
+        </div>
+      </div>
+      ${fields}
+      <div class="cofre-date">Salvo em ${fmtD(item.createdAt)}</div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function togglePwd(id, b64){
+  const el = document.getElementById('pwd-'+id);
+  if(!el) return;
+  const decoded = atob(b64);
+  if(el.classList.contains('cofre-hidden')){
+    el.textContent = decoded;
+    el.classList.remove('cofre-hidden');
+    el.classList.add('cofre-field-value');
+  } else {
+    el.textContent = '••••••••';
+    el.classList.add('cofre-hidden');
+    el.classList.remove('cofre-field-value');
+  }
+}
+
+function copyCofre(id, dataStr){
+  try {
+    const data = JSON.parse(dataStr);
+    const txt = data.senha || data.num || data.nota || data.outro || '';
+    navigator.clipboard.writeText(txt);
+    showToast('Copiado! 📋');
+  } catch { showToast('Erro ao copiar'); }
+}
+
+async function deleteCofre(id){
+  if(!confirm('Excluir este segredo?')) return;
+  try {
+    await fetch(`/forms/cofre/${id}`, {method:'DELETE'});
+    showToast('Excluído ✅');
+    renderCofre();
+  } catch { showToast('Erro ao excluir ⚠️'); }
+}
+
+function filterCofre(v){
+  const filtered = v ? cofreData.filter(i => {
+    let data = {}; try { data = JSON.parse(i.content); } catch {}
+    return (data.nome||'').toLowerCase().includes(v.toLowerCase());
+  }) : cofreData;
+  displayCofre(filtered);
+}
+
+function updateCofreFields(){
+  const tipo = document.getElementById('cofre-tipo').value;
+  ['senha','cartao','nota','outro'].forEach(t => {
+    document.getElementById('cofre-fields-'+t).style.display = t===tipo?'block':'none';
+  });
+}
+
+async function saveCofre(){
+  const tipo = document.getElementById('cofre-tipo').value;
+  const nome = document.getElementById('cofre-nome').value.trim();
+  if(!nome){ showToast('Informe o nome ⚠️'); return; }
+  let data = { tipo, nome };
+  if(tipo==='senha'){
+    data.email = document.getElementById('cofre-email').value.trim();
+    data.senha = document.getElementById('cofre-senha').value;
+    data.url = document.getElementById('cofre-url').value.trim();
+  } else if(tipo==='cartao'){
+    data.num = document.getElementById('cofre-cartao-num').value.trim();
+    data.val = document.getElementById('cofre-cartao-val').value.trim();
+    data.cvv = document.getElementById('cofre-cartao-cvv').value;
+    data.titular = document.getElementById('cofre-cartao-nome').value.trim();
+  } else if(tipo==='nota'){
+    data.nota = document.getElementById('cofre-nota-txt').value.trim();
+  } else {
+    data.outro = document.getElementById('cofre-outro-txt').value.trim();
+  }
+  const btn = document.getElementById('sc-btn');
+  btn.textContent='Salvando...'; btn.disabled=true;
+  try {
+    const res = await fetch(`/forms/cofre/${phone}`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ conteudo: JSON.stringify(data) })
+    });
+    if(res.ok){ closeModal('modal-cofre'); showToast('Segredo salvo! 🔐'); renderCofre(); }
+    else showToast('Erro ao salvar ⚠️');
+  } catch { showToast('Erro de conexão ⚠️'); }
+  btn.textContent='Salvar'; btn.disabled=false;
+}
 
 // ── MODALS ──
 function openModal(id){
