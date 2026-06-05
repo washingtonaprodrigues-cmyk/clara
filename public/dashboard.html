@@ -4,6 +4,12 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>Clara</title>
+<link rel="manifest" href="/manifest.json"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Clara"/>
+<meta name="theme-color" content="#8B5CF6"/>
+<link rel="apple-touch-icon" href="/icons/icon-192.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,600;1,500&display=swap" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
@@ -267,6 +273,16 @@ select option{background:var(--s2)}
 /* private mode */
 .private-indicator{display:none;align-items:center;gap:6px;padding:6px 24px;background:rgba(239,68,68,.06);border-bottom:1px solid rgba(239,68,68,.15);font-size:11px;color:var(--red);flex-shrink:0}
 .private-indicator.on{display:flex}
+/* PWA install banner */
+.pwa-banner{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid rgba(139,92,246,.3);border-radius:var(--r);padding:14px 18px;display:none;align-items:center;gap:12px;z-index:150;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:340px;width:calc(100% - 40px)}
+.pwa-banner.show{display:flex}
+.pwa-banner-icon{font-size:24px;flex-shrink:0}
+.pwa-banner-text{flex:1}
+.pwa-banner-title{font-size:13px;font-weight:600;color:var(--text)}
+.pwa-banner-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.pwa-banner-btns{display:flex;gap:6px;flex-shrink:0}
+.pwa-install-btn{padding:7px 12px;background:var(--accent);border:none;border-radius:var(--r-sm);color:#fff;font-family:"Inter",sans-serif;font-size:12px;font-weight:600;cursor:pointer}
+.pwa-dismiss-btn{padding:7px 10px;background:none;border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text3);font-family:"Inter",sans-serif;font-size:12px;cursor:pointer}
 /* toast */
 .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid var(--border2);padding:10px 20px;border-radius:20px;font-size:12px;color:var(--text);z-index:200;opacity:0;pointer-events:none;transition:all .25s;white-space:nowrap;box-shadow:0 8px 30px rgba(0,0,0,.4)}
 .toast.show{opacity:1}
@@ -521,6 +537,16 @@ select option{background:var(--s2)}
   </div>
 </div>
 
+<div class="pwa-banner" id="pwa-banner">
+  <div class="pwa-banner-icon">✨</div>
+  <div class="pwa-banner-text">
+    <div class="pwa-banner-title">Instalar Clara no iPhone</div>
+    <div class="pwa-banner-sub">Toque em compartilhar → "Adicionar à tela de início"</div>
+  </div>
+  <div class="pwa-banner-btns">
+    <button class="pwa-dismiss-btn" onclick="dismissPWA()">✕</button>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -930,6 +956,47 @@ async function saveGasto(){
     else showToast('Erro ao salvar ⚠️');
   }catch{showToast('Erro de conexão ⚠️');}
   btn.textContent='Registrar';btn.disabled=false;
+}
+
+// ── PWA ──
+let deferredPrompt = null;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  // Android: mostra banner nativo
+  setTimeout(() => document.getElementById('pwa-banner').classList.add('show'), 3000);
+});
+
+window.addEventListener('appinstalled', () => {
+  document.getElementById('pwa-banner').classList.remove('show');
+  showToast('Clara instalada com sucesso! 🎉');
+});
+
+function installPWA(){
+  if(deferredPrompt){
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(()=>{ deferredPrompt=null; document.getElementById('pwa-banner').classList.remove('show'); });
+  }
+}
+
+function dismissPWA(){
+  document.getElementById('pwa-banner').classList.remove('show');
+  localStorage.setItem('pwa-dismissed','1');
+}
+
+// Registrar Service Worker
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/sw.js')
+    .then(reg => console.log('SW registrado:', reg.scope))
+    .catch(err => console.log('SW erro:', err));
+}
+
+// iOS: mostra banner após 3s se não instalado e não dispensado
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isStandalone = window.navigator.standalone === true;
+if(isIOS && !isStandalone && !localStorage.getItem('pwa-dismissed')){
+  setTimeout(() => document.getElementById('pwa-banner').classList.add('show'), 3000);
 }
 </script>
 </body>
