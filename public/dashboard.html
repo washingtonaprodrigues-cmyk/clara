@@ -381,11 +381,37 @@ select option{background:var(--s2)}
     min-width: 14px;
   }
 
-  /* CORRIGIDO: altura considera nav (64px) + safe-area do iPhone */
+  /* CORRIGIDO: altura total menos nav fixa + safe-area iPhone */
   .main {
     order: 1;
     height: calc(100dvh - 64px - env(safe-area-inset-bottom, 0px));
+    max-height: calc(100dvh - 64px - env(safe-area-inset-bottom, 0px));
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* CORRIGIDO: garante que o chat page ocupa exatamente o espaço do main */
+  #page-chat {
+    height: 100%;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* CORRIGIDO: mensagens ocupam o espaço restante, input nunca é cortado */
+  #page-chat .msgs {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  /* CORRIGIDO: input area nunca comprime, padding seguro para home indicator */
+  #page-chat .chat-input-area {
+    flex-shrink: 0;
+    padding: 10px 14px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 12px));
   }
 
   .chat-topbar { padding: 10px 14px; }
@@ -401,11 +427,6 @@ select option{background:var(--s2)}
   .msg-bot-body { max-width: 85%; }
   .msg-bubble { font-size: 13px; padding: 10px 13px; }
 
-  /* CORRIGIDO: input area com padding inferior seguro para não ficar atrás do home indicator */
-  .chat-input-area {
-    padding: 10px 14px;
-    padding-bottom: max(12px, env(safe-area-inset-bottom, 12px));
-  }
   .quick-chips { gap: 5px; }
   .qchip { font-size: 10px; padding: 4px 10px; }
   .input-footer { display: none; }
@@ -514,8 +535,8 @@ select option{background:var(--s2)}
       <button class="ps-btn" onclick="setPhone()">Entrar</button>
     </div>
 
-    <!-- CORRIGIDO: memory-strip começa oculta (display:none no CSS), só aparece via JS quando há dados -->
-    <div class="memory-strip" id="memory-strip">
+    <!-- memory-strip: só aparece após enviar/receber mensagem, nunca na tela inicial -->
+    <div class="memory-strip" id="memory-strip" style="display:none">
       <span class="mem-label">🧠 Memória ativa</span>
       <div id="mem-chips" style="display:flex;gap:6px"></div>
     </div>
@@ -916,24 +937,26 @@ async function loadMood(){
   try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();if(d.tom)currentMood=d.tom;}catch{}
 }
 
-// ── MEM CHIPS — CORRIGIDO: só mostra a strip quando há dados reais ──
+// ── MEM CHIPS — só mostra a strip quando há dados E a conversa já começou ──
 async function loadMemChips(){
   const strip=document.getElementById('memory-strip');
   const el=document.getElementById('mem-chips');
+  // Não mostra se a tela de boas-vindas ainda está visível
+  if(document.getElementById('welcome')){
+    strip.style.display='none';
+    return;
+  }
   try{
     const r=await fetch(`/forms/lembretes/${phone}`);
     const d=await r.json();
-    // Sem dados: esconde a strip completamente
     if(!d||!d.length){
       strip.style.display='none';
       el.innerHTML='';
       return;
     }
-    // Com dados: monta os chips e exibe
     el.innerHTML=d.slice(0,4).map(x=>`<span class="mem-chip">${x.message.substring(0,25)}</span>`).join('');
     strip.style.display='flex';
   }catch{
-    // Em caso de erro, esconde a strip
     strip.style.display='none';
     el.innerHTML='';
   }
