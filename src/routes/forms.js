@@ -95,6 +95,50 @@ router.get('/gastos/:phone', async (req, res) => {
   }
 });
 
+// ====================== COFRE: GET ======================
+router.get('/cofre/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const user = await memory.getOrCreateUser(phone);
+    const itens = await prisma.memory.findMany({
+      where: { userId: user.id, type: 'cofre' },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(itens);
+  } catch (e) {
+    console.error('Erro GET cofre:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== COFRE: POST ======================
+router.post('/cofre/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const { conteudo } = req.body;
+    const user = await memory.getOrCreateUser(phone);
+    const item = await prisma.memory.create({
+      data: { userId: user.id, type: 'cofre', content: conteudo }
+    });
+    res.json({ ok: true, id: item.id });
+  } catch (e) {
+    console.error('Erro POST cofre:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== COFRE: DELETE ======================
+router.delete('/cofre/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.memory.delete({ where: { id } });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro DELETE cofre:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== LISTAGEM: MEMÓRIAS ======================
 router.get('/memorias/:phone', async (req, res) => {
   try {
