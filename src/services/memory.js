@@ -98,6 +98,9 @@ async function clearTemporaryContext(userId) {
 // ====================== CONVERSA ======================
 
 async function saveConversationMessage(userId, role, content, privateMode = false) {
+  // Modo privado: não salva nada no banco para proteger a privacidade do usuário
+  if (privateMode) return;
+
   await prisma.memory.create({
     data: {
       userId,
@@ -105,9 +108,6 @@ async function saveConversationMessage(userId, role, content, privateMode = fals
       content: JSON.stringify({ role, content, ts: Date.now() }),
     },
   });
-
-  // Modo privado: sem limite de mensagens
-  if (privateMode) return;
 
   // Modo normal: limite de 40 mensagens
   const msgs = await prisma.memory.findMany({
