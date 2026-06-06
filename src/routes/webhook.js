@@ -7,6 +7,9 @@ router.post('/', async (req, res) => {
   try {
     const body = req.body;
 
+    // LOG COMPLETO para debug
+    console.log('PAYLOAD:', JSON.stringify(body).slice(0, 600));
+
     // Ignora mensagens enviadas pela própria Clara
     if (body.fromMe === true) return res.json({ ok: true });
     if (body.wasSentByApi === true) return res.json({ ok: true });
