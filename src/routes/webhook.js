@@ -7,21 +7,23 @@ router.post('/', async (req, res) => {
   try {
     const body = req.body;
 
-    if (body.message?.fromMe === true) return res.json({ ok: true });
-    if (body.message?.wasSentByApi === true) return res.json({ ok: true });
-    if (body.message?.isGroup === true) return res.json({ ok: true });
+    // Ignora mensagens enviadas pela própria Clara
+    if (body.fromMe === true) return res.json({ ok: true });
+    if (body.wasSentByApi === true) return res.json({ ok: true });
+    if (body.isGroup === true) return res.json({ ok: true });
 
-    const phone = body.message?.sender_pn?.replace('@s.whatsapp.net', '')
-      || body.chat?.phone?.replace(/\D/g, '');
+    // Extrai phone — formato real do UazAPI: "5543920003604@s.whatsapp.net"
+    const phone = (body.sender || body.owner || '')
+      .replace('@s.whatsapp.net', '')
+      .replace(/\D/g, '');
 
     if (!phone) {
       console.log('⚠️ Webhook sem phone:', JSON.stringify(body).slice(0, 300));
       return res.json({ ok: true });
     }
 
-    const text = body.message?.content?.text
-      || body.message?.text
-      || '';
+    // Extrai texto — campo "text" direto no payload
+    const text = body.text || body.message?.text || body.message?.content?.text || '';
 
     console.log(`📨 WEBHOOK UazAPI: ${phone} — texto: ${text.slice(0, 80)}`);
 
@@ -30,12 +32,15 @@ router.post('/', async (req, res) => {
       return res.json({ ok: true });
     }
 
-    if (body.message?.mediaType === 'audio') {
+    // Áudio
+    if (body.mediaType === 'audio' || body.messageType === 'audioMessage') {
       sendMessage(phone, 'Por enquanto não consigo ouvir áudios, mas pode digitar que respondo na hora! 😊').catch(console.error);
       return res.json({ ok: true });
     }
 
-    if (['image', 'video', 'document'].includes(body.message?.mediaType)) {
+    // Imagem, vídeo, documento
+    if (['image', 'video', 'document'].includes(body.mediaType) ||
+        ['imageMessage', 'videoMessage', 'documentMessage'].includes(body.messageType)) {
       sendMessage(phone, 'Por enquanto não consigo ver fotos, vídeos ou arquivos — mas se escrever pra mim eu ajudo! 😊').catch(console.error);
       return res.json({ ok: true });
     }
