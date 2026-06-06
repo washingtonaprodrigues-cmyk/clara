@@ -4,31 +4,28 @@ const path = require('path');
 const app = express();
 
 app.use(express.json());
-
-// Servir arquivos estáticos da pasta public
 app.use(express.static(path.join(__dirname, '../public')));
 
 const webhookRoutes = require('./routes/webhook');
 const formsRoutes   = require('./routes/forms');
 const chatRoutes    = require('./routes/chat');
+const pushRoutes    = require('./routes/push');
 
 app.use('/webhook', webhookRoutes);
 app.use('/forms',   formsRoutes);
 app.use('/chat',    chatRoutes);
+app.use('/push',    pushRoutes);
 
-// Service Worker
 app.get('/sw.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.sendFile(path.join(__dirname, '../public/sw.js'));
 });
 
-// Manifest
 app.get('/manifest.json', (req, res) => {
   res.setHeader('Content-Type', 'application/manifest+json');
   res.sendFile(path.join(__dirname, '../public/manifest.json'));
 });
 
-// Dashboard
 app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/dashboard.html'));
 });
