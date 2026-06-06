@@ -9,30 +9,17 @@ const headers = {
 };
 
 async function sendMessage(phone, message) {
-  // Tenta os 3 formatos possíveis do UazAPI
-  const tentativas = [
-    { chatid: `${phone}@s.whatsapp.net`, text: message },
-    { chatid: phone, text: message },
-    { phone: phone, text: message },
-    { number: phone, text: message },
-    { chatid: `${phone}@s.whatsapp.net`, message: message },
-  ];
-
-  for (const body of tentativas) {
-    try {
-      console.log('🔄 Tentando body:', JSON.stringify(body));
-      const response = await axios.post(
-        `${BASE_URL}/send/text`,
-        body,
-        { timeout: 15000, headers }
-      );
-      console.log('✅ Sucesso com body:', JSON.stringify(body));
-      return response.data;
-    } catch (error) {
-      console.log('❌ Falhou:', JSON.stringify(body), '→', error.response?.data);
-    }
+  try {
+    const response = await axios.post(
+      `${BASE_URL}/send/text`,
+      { number: phone, text: message },
+      { timeout: 15000, headers }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Erro UazAPI sendMessage:', error.response?.data || error.message);
+    throw error;
   }
-  throw new Error('Todos os formatos falharam');
 }
 
 async function sendButtons(phone, message, buttons) {
