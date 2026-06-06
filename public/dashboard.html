@@ -49,6 +49,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .tb-icon-btn{width:36px;height:36px;background:var(--s2);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;transition:all .15s}
 .tb-icon-btn:hover{border-color:var(--border2)}
 
+.tb-nova{padding:7px 14px;background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.25);border-radius:20px;color:#C4B5FD;font-family:'Inter',sans-serif;font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .2s;letter-spacing:.1px}
+.tb-nova:hover{background:rgba(139,92,246,.22);border-color:rgba(139,92,246,.45);color:#fff}
+.tb-nova:active{transform:scale(.95)}
 /* ── DRAWER OVERLAY ── */
 .drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:40;opacity:0;pointer-events:none;transition:opacity .25s;backdrop-filter:blur(2px)}
 .drawer-overlay.open{opacity:1;pointer-events:all}
@@ -80,12 +83,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .private-banner{background:rgba(239,68,68,.08);border-bottom:1px solid rgba(239,68,68,.2);padding:6px 16px;font-size:11px;color:var(--red);display:none;align-items:center;gap:6px;flex-shrink:0}
 .private-banner.on{display:flex}
 
-/* ── MEMORY STRIP ── */
-.mem-strip{padding:7px 16px;border-bottom:1px solid var(--border);display:none;align-items:center;gap:6px;background:rgba(139,92,246,.04);overflow-x:auto;scrollbar-width:none;flex-shrink:0}
-.mem-strip::-webkit-scrollbar{display:none}
-.mem-strip.on{display:flex}
-.mem-strip-label{font-size:10px;color:var(--text3);font-weight:500;white-space:nowrap;flex-shrink:0}
-.mem-chip{background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.2);color:#C4B5FD;font-size:10px;padding:3px 9px;border-radius:12px;white-space:nowrap;flex-shrink:0}
+
 
 /* ── CHAT ── */
 .msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
@@ -310,7 +308,7 @@ select option{background:var(--s2)}
       </div>
     </div>
     <div class="topbar-right">
-      <button class="tb-btn" id="nova-btn" onclick="newChat()">＋ Nova conversa</button>
+      <button class="tb-nova" onclick="newChat()">＋ Nova conversa</button>
       <div class="tb-icon-btn" id="private-btn" onclick="togglePrivate()" title="Modo privado">🔓</div>
     </div>
   </div>
@@ -349,7 +347,7 @@ select option{background:var(--s2)}
     <!-- ══ CHAT ══ -->
     <div class="page active" id="page-chat">
       <div class="private-banner" id="priv-banner">🔒 <strong>Modo privado</strong> — histórico apagado ao iniciar nova conversa</div>
-      <div class="mem-strip" id="mem-strip"><span class="mem-strip-label">🧠</span><div id="mem-chips"></div></div>
+
       <div id="phone-setup-wrap">
         <div class="phone-setup">
           <div class="ps-field">
@@ -509,8 +507,8 @@ select option{background:var(--s2)}
             </div>
           </div>
           <div class="pref-field">
-            <label>Jornada total (horas)</label>
-            <input type="number" id="pref-jornada" value="8" min="1" max="12" step="0.5"/>
+            <label>Jornada total (calculada automaticamente)</label>
+            <input type="text" id="pref-jornada" readonly style="color:var(--accent);font-weight:600;background:rgba(139,92,246,.08);border-color:rgba(139,92,246,.2)" value="8h"/>
           </div>
         </div>
         <div style="padding:16px">
@@ -616,8 +614,8 @@ select option{background:var(--s2)}
     <div class="modal-handle"></div>
     <div class="modal-title">⚙️ Configurar jornada</div>
     <div class="mf-row">
-      <div class="mf"><label>Horário de entrada</label><input type="time" id="pc-entrada" value="08:00"/></div>
-      <div class="mf"><label>Horário de saída</label><input type="time" id="pc-saida" value="17:00"/></div>
+      <div class="mf"><label>Horário de entrada</label><input type="time" id="pc-entrada" value="08:00" oninput="calcJornada('pc')"/></div>
+      <div class="mf"><label>Horário de saída</label><input type="time" id="pc-saida" value="17:00" oninput="calcJornada('pc')"/></div>
     </div>
     <div class="mf-row">
       <div class="mf"><label>Tempo de almoço (min)</label><input type="number" id="pc-almoco" value="60" min="0" max="180"/></div>
@@ -726,13 +724,13 @@ function setPhone(){
   document.getElementById('tb-status').classList.remove('off');
   document.getElementById('drawer-phone').textContent=v;
   document.getElementById('drawer-sub').textContent='Número ativo';
-  document.getElementById('mem-strip').classList.add('on');
+
   document.getElementById('chips-row').style.display='flex';
   // Remove welcome screen e inicia chat direto
   const w = document.getElementById('welcome');
   if(w) w.remove();
   addMsg('bot', 'Olá! Sou a Clara ✨ Como posso te ajudar hoje?');
-  loadAll(); loadMood(); loadMemChips();
+  loadAll(); loadMood();
 }
 function changePhone(){
   phone=''; privateMode=false;
@@ -834,13 +832,7 @@ function applyMood(tom){
 }
 function selectMood(tom){applyMood(tom);}
 
-// ══ MEM CHIPS ══
-async function loadMemChips(){
-  try{
-    const r=await fetch(`/forms/lembretes/${phone}`);const d=await r.json();
-    document.getElementById('mem-chips').innerHTML=d.slice(0,3).map(x=>`<span class="mem-chip">${x.message.substring(0,22)}</span>`).join('');
-  }catch{}
-}
+
 
 // ══ REMINDERS ══
 function setRemTab(t){
@@ -1127,10 +1119,10 @@ async function savePontoConfig(){
   const entrada=document.getElementById('pc-entrada').value;
   const saida=document.getElementById('pc-saida').value;
   const almoco=parseInt(document.getElementById('pc-almoco').value)||60;
-  const jornada=parseFloat(document.getElementById('pc-jornada').value)||8;
+  const jornadaEl2=document.getElementById('pc-jornada');const jornada=jornadaEl2.dataset.minutes?parseInt(jornadaEl2.dataset.minutes):480;
   pontoConfig={entrada,saida,almoco,jornada:jornada*60};
   try{
-    await fetch(`/forms/ponto-config/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entrada,saida,almoco,jornada:jornada*60})});
+    await fetch(`/forms/ponto-config/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entrada,saida,almoco,jornada})});
     closeModal('m-ponto-config');showToast('Configuração salva! ✅');renderPonto();
   }catch{showToast('Erro ⚠️');}
 }
@@ -1203,6 +1195,23 @@ async function saveCofre(){
   btn.textContent='Salvar';btn.disabled=false;
 }
 
+// ══ CALC JORNADA ══
+function calcJornada(prefix){
+  const entrada = document.getElementById(prefix+'-entrada')?.value;
+  const saida = document.getElementById(prefix+'-saida')?.value;
+  const almoco = parseInt(document.getElementById(prefix+'-almoco')?.value)||0;
+  const jornadaEl = document.getElementById(prefix+'-jornada');
+  if(!entrada||!saida||!jornadaEl) return;
+  const [eh,em]=entrada.split(':').map(Number);
+  const [sh,sm]=saida.split(':').map(Number);
+  const totalMin=(sh*60+sm)-(eh*60+em)-almoco;
+  if(totalMin<=0){jornadaEl.value='—';return;}
+  const h=Math.floor(totalMin/60), m=totalMin%60;
+  jornadaEl.value=`${h}h${m>0?pad(m)+'min':''}`;
+  // store as minutes for save
+  jornadaEl.dataset.minutes=totalMin;
+}
+
 // ══ PREFERÊNCIAS ══
 async function loadPrefs(){
   try{
@@ -1217,10 +1226,10 @@ async function savePrefs(){
   const entrada=document.getElementById('pref-entrada').value;
   const almoco=parseInt(document.getElementById('pref-almoco').value)||60;
   const saida=document.getElementById('pref-saida').value;
-  const jornada=parseFloat(document.getElementById('pref-jornada').value)||8;
+  const jornadaEl=document.getElementById('pref-jornada');const jornada=jornadaEl.dataset.minutes?parseInt(jornadaEl.dataset.minutes):(parseFloat(jornadaEl.value)||8)*60;
   try{
     await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tom,nome})});
-    await fetch(`/forms/ponto-config/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entrada,saida,almoco,jornada:jornada*60})});
+    await fetch(`/forms/ponto-config/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entrada,saida,almoco,jornada})});
     pontoConfig={entrada,saida,almoco,jornada:jornada*60};
     showToast('Preferências salvas! ✅');
   }catch{showToast('Erro ⚠️');}
