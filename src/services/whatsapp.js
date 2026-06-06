@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const BASE_URL = process.env.UAZAPI_URL || 'https://free.uazapi.com';
+const BASE_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
 const TOKEN    = process.env.UAZAPI_TOKEN;
 
 const headers = {
@@ -11,8 +11,8 @@ const headers = {
 async function sendMessage(phone, message) {
   try {
     const response = await axios.post(
-      `${BASE_URL}/message/sendText`,
-      { number: phone, text: message },
+      `${BASE_URL}/send/text`,
+      { phone: phone, text: message },
       { timeout: 15000, headers }
     );
     return response.data;
@@ -23,7 +23,6 @@ async function sendMessage(phone, message) {
 }
 
 async function sendButtons(phone, message, buttons) {
-  // UazAPI free não suporta botões — fallback para texto
   return sendMessage(phone, message);
 }
 
