@@ -769,7 +769,8 @@ async function loadAll(){
     allRem=l; allMeds=r; allGastos=g;
     if(l.length){document.getElementById('d-badge-rem').textContent=l.length;document.getElementById('d-badge-rem').style.display='';}
     if(r.length){document.getElementById('d-badge-med').textContent=r.length;document.getElementById('d-badge-med').style.display='';}
-    const todayCnt=l.filter(x=>new Date(x.scheduledAt).toDateString()===new Date().toDateString()).length;
+    const todayBRT=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+    const todayCnt=l.filter(x=>new Date(x.scheduledAt).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'})===todayBRT).length;
     document.getElementById('tc-today').textContent=todayCnt||'0';
   }catch{}
 }
@@ -841,20 +842,25 @@ function setRemTab(t){
   document.querySelectorAll('.tab[data-rt]').forEach(x=>x.classList.toggle('active',x.dataset.rt===t));
   renderRem();
 }
+function dateBRT(d){
+  // Retorna string YYYY-MM-DD no fuso BRT
+  return new Date(d).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+}
 function renderRem(){
   const el=document.getElementById('rem-body');
   const now=new Date();
-  const today=now.toDateString();
-  const tomorrow=new Date(now);tomorrow.setDate(tomorrow.getDate()+1);
+  const todayBRT=dateBRT(now);
+  const tomorrowBRT=dateBRT(new Date(now.getTime()+86400000));
   let items=allRem;
-  if(remTab==='today') items=allRem.filter(x=>new Date(x.scheduledAt).toDateString()===today);
-  if(remTab==='next') items=allRem.filter(x=>new Date(x.scheduledAt)>now&&new Date(x.scheduledAt).toDateString()!==today);
+  if(remTab==='today') items=allRem.filter(x=>dateBRT(x.scheduledAt)===todayBRT&&new Date(x.scheduledAt)>=now);
+  if(remTab==='all') items=allRem.filter(x=>new Date(x.scheduledAt)>=now);
+  if(remTab==='next') items=allRem.filter(x=>new Date(x.scheduledAt)>now&&dateBRT(x.scheduledAt)!==todayBRT);
   if(remTab==='done') items=[];
   if(!items.length){el.innerHTML='<div class="empty"><span class="empty-icon">📅</span>Nenhum lembrete aqui</div>';return;}
   const groups={};
   items.forEach(r=>{
-    const d=new Date(r.scheduledAt);
-    const label=d.toDateString()===today?'Hoje':d.toDateString()===tomorrow.toDateString()?'Amanhã':fmtD(r.scheduledAt);
+    const d=dateBRT(r.scheduledAt);
+    const label=d===todayBRT?'Hoje':d===tomorrowBRT?'Amanhã':fmtD(r.scheduledAt);
     if(!groups[label]) groups[label]=[];
     groups[label].push(r);
   });
