@@ -11,10 +11,10 @@ const MENU = `✨ *Oi, eu sou a Clara.*
 Posso cuidar de lembretes, anotações, gastos, saúde, ponto e pesquisas rápidas.
 
 Você pode tocar em uma opção ou escrever do seu jeito:
-• _"me lembra de tomar remédio às 22h"_
-• _"gastei 42 reais no mercado"_
-• _"cheguei às 9h no trabalho"_
-• _"qual foi a senha do Wi-Fi?"_
+- _"me lembra de tomar remédio às 22h"_
+- _"gastei 42 reais no mercado"_
+- _"cheguei às 9h no trabalho"_
+- _"qual foi a senha do Wi-Fi?"_
 
 O que vamos resolver agora?`;
 
@@ -137,20 +137,17 @@ async function handleMessage(phone, text, location = null) {
 
     const textLower = normalizar(text);
 
-    // MENU
     if (['menu', 'inicio', 'voltar', 'comeco', 'ajuda', 'opcoes'].includes(textLower)) {
       await memory.saveMemory(user.id, 'modo_atual', '');
       return await enviarMenu(phone);
     }
 
-    // COMANDOS RÁPIDOS DE LISTAGEM
     if (['ver lembretes', 'ver_lembretes'].includes(textLower)) return await listarLembretes(user, phone);
     if (['ver anotacoes', 'ver_anotacoes'].includes(textLower)) return await listarAnotacoes(user, phone);
     if (['ver gastos', 'ver_gastos', 'resumo_mes'].includes(textLower)) return await listarGastos(user, phone);
     if (['ver horas hoje', 'ver_horas_hoje'].includes(textLower)) return await listarPontoHoje(user, phone);
     if (['ver medicamentos', 'ver_medicamentos'].includes(textLower)) return await listarMedicamentos(user, phone);
 
-    // ESCOLHA DO MODO POR PALAVRA-CHAVE
     const modoMap = {
       'lembretes': 'lembrete', 'lembrete': 'lembrete',
       'criar_lembrete': 'lembrete', 'novo_lembrete': 'lembrete',
@@ -169,10 +166,8 @@ async function handleMessage(phone, text, location = null) {
       return await sendMessage(phone, BOAS_VINDAS_MODO[modo]);
     }
 
-    // VERIFICA MODO ATUAL
     const modoAtual = await getModoAtual(user.id);
 
-    // MODO ANOTAÇÃO → salva direto
     if (modoAtual === 'anotacao') {
       await memory.saveMemory(user.id, 'anotacao', text, { titulo: text.substring(0, 50) });
       return await sendButtons(phone,
@@ -184,7 +179,6 @@ async function handleMessage(phone, text, location = null) {
       );
     }
 
-    // MODO CONVERSAR → responde livremente
     if (modoAtual === 'conversar') {
       return await responderLivre(user, phone, text);
     }
@@ -192,12 +186,10 @@ async function handleMessage(phone, text, location = null) {
     const classified = await classify(text);
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
 
-    // Executa ações nos bastidores sem interromper a conversa
     executeAction(user, phone, classified, text).catch(e =>
       console.error('Erro executeAction:', e.message)
     );
 
-    // Sempre responde livremente com a personalidade da Clara
     await responderLivre(user, phone, text);
   } catch (error) {
     console.error('Erro handleMessage:', error.message);
@@ -230,52 +222,35 @@ async function handleCidade(user, phone, cidade) {
 // ====================== PREFERÊNCIA ======================
 async function handlePreferencia(user, phone, classified) {
   await memory.saveUserPreference(user.id, classified.nome, classified.tom);
-
   const partes = [];
   if (classified.nome) partes.push(`vou te chamar de *${classified.nome}*`);
   if (classified.tom) partes.push(`vou usar um tom mais *${classified.tom}*`);
-
   const msg = partes.length
     ? `Combinado, ${partes.join(' e ')}.`
     : 'Combinado, vou lembrar dessa preferência.';
-
   await sendMessage(phone, `${msg} 😊`);
 }
 
 // ====================== PONTO MÚLTIPLO ======================
 async function handlePontoMultiplo(user, phone, acoes, originalText) {
   await sendMessage(phone, '📍 Registrando seus pontos...');
-
   const hoje = dateBRT();
 
   for (const acao of acoes) {
     let subtipo = (acao.subtipo || '').toLowerCase().trim();
-
-    if (subtipo === 'entrada' || subtipo.includes('cheg') || subtipo.includes('entrei')) {
-      subtipo = 'entrada';
-    } else if (subtipo === 'saida_almoco' || subtipo.includes('saida_almoco') ||
-      (subtipo.includes('almo') && (subtipo.includes('sai') || subtipo.includes('saí')))) {
-      subtipo = 'saida_almoco';
-    } else if (subtipo === 'volta_almoco' || subtipo.includes('volta_almoco') ||
-      (subtipo.includes('almo') && (subtipo.includes('volt') || subtipo.includes('retorn')))) {
-      subtipo = 'volta_almoco';
-    } else if (subtipo === 'saida' || subtipo.includes('saí') || subtipo.includes('sai') || subtipo.includes('saida')) {
-      subtipo = 'saida';
-    }
+    if (subtipo === 'entrada' || subtipo.includes('cheg') || subtipo.includes('entrei')) subtipo = 'entrada';
+    else if (subtipo === 'saida_almoco' || (subtipo.includes('almo') && (subtipo.includes('sai') || subtipo.includes('saí')))) subtipo = 'saida_almoco';
+    else if (subtipo === 'volta_almoco' || (subtipo.includes('almo') && (subtipo.includes('volt') || subtipo.includes('retorn')))) subtipo = 'volta_almoco';
+    else if (subtipo === 'saida' || subtipo.includes('saí') || subtipo.includes('sai') || subtipo.includes('saida')) subtipo = 'saida';
 
     const horaUsada = acao.hora || 'agora';
     const timestamp = horaUsada !== 'agora' ? convertToDateWithTime(horaUsada) : nowBRT();
 
-    const existing = await prisma.workLog.findFirst({
-      where: { userId: user.id, type: subtipo, date: hoje }
-    });
-
+    const existing = await prisma.workLog.findFirst({ where: { userId: user.id, type: subtipo, date: hoje } });
     if (existing) {
       await prisma.workLog.update({ where: { id: existing.id }, data: { timestamp } });
     } else {
-      await prisma.workLog.create({
-        data: { userId: user.id, type: subtipo, timestamp, date: hoje }
-      });
+      await prisma.workLog.create({ data: { userId: user.id, type: subtipo, timestamp, date: hoje } });
     }
   }
 
@@ -301,25 +276,16 @@ function convertToDateWithTime(horaStr) {
 
 async function gerarResumoDoBanco(pontos, userId) {
   const get = (tipo) => pontos.find(p => p.type === tipo);
-
   const entrada     = get('entrada');
   const saidaAlmoco = get('saida_almoco');
   const voltaAlmoco = get('volta_almoco');
   const saida       = get('saida');
-
   const jornada = await memory.getJornada(userId);
 
-  let tempoManha = null;
-  let tempoTarde = null;
-  let totalTrabalhado = null;
-  let horasExtras = null;
+  let tempoManha = null, tempoTarde = null, totalTrabalhado = null, horasExtras = null;
 
-  if (entrada && saidaAlmoco) {
-    tempoManha = (new Date(saidaAlmoco.timestamp) - new Date(entrada.timestamp)) / 60000;
-  }
-  if (voltaAlmoco && saida) {
-    tempoTarde = (new Date(saida.timestamp) - new Date(voltaAlmoco.timestamp)) / 60000;
-  }
+  if (entrada && saidaAlmoco) tempoManha = (new Date(saidaAlmoco.timestamp) - new Date(entrada.timestamp)) / 60000;
+  if (voltaAlmoco && saida) tempoTarde = (new Date(saida.timestamp) - new Date(voltaAlmoco.timestamp)) / 60000;
   if (tempoManha !== null && tempoTarde !== null) {
     totalTrabalhado = tempoManha + tempoTarde;
     horasExtras = totalTrabalhado - jornada;
@@ -344,14 +310,12 @@ async function gerarResumoDoBanco(pontos, userId) {
   }
 
   if (!saida) texto += `\n💡 Me avisa quando sair!`;
-
   return texto;
 }
 
 // ====================== BUSCA ======================
 async function handleBusca(user, phone, query) {
   await sendMessage(phone, '✨ _Clareando ideias..._');
-
   const mems = await memory.getRecentMemories(user.id, 20);
   let locationText = '';
 
@@ -405,23 +369,17 @@ async function handleTask(user, phone, classified) {
     try {
       const hoje = classified.data || dateBRT();
       const [h, m] = classified.hora.split(':').map(Number);
-      const scheduledAt = new Date(`${hoje}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`);
+      const scheduledAt = new Date(`${hoje}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
 
       if (!classified.data && scheduledAt < nowBRT()) {
         scheduledAt.setDate(scheduledAt.getDate() + 1);
       }
 
       await prisma.reminder.create({
-        data: {
-          userId: user.id,
-          phone,
-          message: classified.titulo,
-          scheduledAt,
-        },
+        data: { userId: user.id, phone, message: classified.titulo, scheduledAt },
       });
 
       const dataFormatada = formatarDataHoraBR(scheduledAt);
-
       await sendButtons(phone,
         `🔔 *Lembrete criado com sucesso!*\n\n📌 ${classified.titulo}\n🗓️ ${dataFormatada}\n\nVou te avisar no horário certinho 😊`,
         [
@@ -450,11 +408,7 @@ async function handleExpense(user, phone, classified) {
   const categoria = classified.categoria || 'outro';
   const descricao = classified.descricao || categoria;
 
-  await memory.saveExpense(user.id, {
-    valor,
-    categoria,
-    descricao,
-  });
+  await memory.saveExpense(user.id, { valor, categoria, descricao });
 
   const categoriaIcon = {
     mercado: '🛒', restaurante: '🍽️', saude: '💊',
@@ -526,21 +480,16 @@ async function listarLembretes(user, phone) {
   if (reminders.length === 0) {
     return await sendButtons(phone,
       `📋 *Seus lembretes*\n\nVocê não tem lembretes ativos no momento 😊`,
-      [
-        { id: 'lembrete', label: '➕ Criar lembrete' },
-        { id: 'menu', label: '🏠 Menu' },
-      ]
+      [{ id: 'lembrete', label: '➕ Criar lembrete' }, { id: 'menu', label: '🏠 Menu' }]
     );
   }
 
   const numeros = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
   let texto = `📋 *Seus lembretes ativos*\n\n`;
-
   reminders.forEach((r, i) => {
     texto += `${numeros[i] || `${i+1}.`} 📌 ${r.message}\n`;
     texto += `    🗓️ ${formatarDataHoraBR(r.scheduledAt)}\n\n`;
   });
-
   texto += `_${reminders.length} lembrete${reminders.length > 1 ? 's' : ''} ativo${reminders.length > 1 ? 's' : ''}_ ✨`;
 
   await sendButtons(phone, texto, [
@@ -556,20 +505,15 @@ async function listarAnotacoes(user, phone) {
   if (anotacoes.length === 0) {
     return await sendButtons(phone,
       `📝 *Suas anotações*\n\nVocê ainda não tem anotações salvas 😊`,
-      [
-        { id: 'anotacao', label: '➕ Nova anotação' },
-        { id: 'menu', label: '🏠 Menu' },
-      ]
+      [{ id: 'anotacao', label: '➕ Nova anotação' }, { id: 'menu', label: '🏠 Menu' }]
     );
   }
 
   let texto = `📝 *Suas anotações*\n\n`;
-
   anotacoes.forEach((a) => {
     texto += `📌 _"${a.content}"_\n`;
     texto += `🗓️ ${formatarDataBR(a.createdAt)}\n\n`;
   });
-
   texto += `_${anotacoes.length} anotaç${anotacoes.length > 1 ? 'ões' : 'ão'} salva${anotacoes.length > 1 ? 's' : ''}_ 💜`;
 
   await sendButtons(phone, texto, [
@@ -592,27 +536,19 @@ async function listarGastos(user, phone) {
   if (gastos.length === 0) {
     return await sendButtons(phone,
       `💰 *Seus gastos*\n\nNenhum gasto registrado este mês 😊`,
-      [
-        { id: 'gasto', label: '➕ Registrar gasto' },
-        { id: 'menu', label: '🏠 Menu' },
-      ]
+      [{ id: 'gasto', label: '➕ Registrar gasto' }, { id: 'menu', label: '🏠 Menu' }]
     );
   }
 
   const total = gastos.reduce((acc, g) => acc + g.value, 0);
-  const categoriaIcon = {
-    mercado: '🛒', restaurante: '🍽️', saude: '💊',
-    transporte: '🚗', lazer: '🎉', outro: '📦'
-  };
+  const categoriaIcon = { mercado: '🛒', restaurante: '🍽️', saude: '💊', transporte: '🚗', lazer: '🎉', outro: '📦' };
 
   let texto = `💰 *Gastos do mês*\n\n`;
-
   gastos.forEach((g) => {
     const icon = categoriaIcon[g.category] || '📦';
     texto += `${icon} *${g.category}* — R$ ${g.value.toFixed(2)}\n`;
     texto += `🗓️ ${formatarDataBR(g.createdAt)}\n\n`;
   });
-
   texto += `───────────────\n💵 *Total: R$ ${total.toFixed(2)}*`;
 
   await sendButtons(phone, texto, [
@@ -631,10 +567,7 @@ async function listarPontoHoje(user, phone) {
   if (pontos.length === 0) {
     return await sendButtons(phone,
       `📍 *Ponto de hoje*\n\nNenhum registro de ponto hoje ainda 😊`,
-      [
-        { id: 'ponto', label: '📍 Bater ponto' },
-        { id: 'menu', label: '🏠 Menu' },
-      ]
+      [{ id: 'ponto', label: '📍 Bater ponto' }, { id: 'menu', label: '🏠 Menu' }]
     );
   }
 
@@ -654,15 +587,11 @@ async function listarMedicamentos(user, phone) {
   if (meds.length === 0) {
     return await sendButtons(phone,
       `💊 *Seus medicamentos*\n\nNenhum medicamento cadastrado ainda 😊`,
-      [
-        { id: 'saude', label: '➕ Cadastrar remédio' },
-        { id: 'menu', label: '🏠 Menu' },
-      ]
+      [{ id: 'saude', label: '➕ Cadastrar remédio' }, { id: 'menu', label: '🏠 Menu' }]
     );
   }
 
   let texto = `💊 *Seus medicamentos ativos*\n\n`;
-
   meds.forEach((m) => {
     const horarios = JSON.parse(m.times || '[]').join(', ');
     texto += `💊 *${m.name}*\n`;
@@ -676,7 +605,7 @@ async function listarMedicamentos(user, phone) {
   ]);
 }
 
-// ====================== EXECUÇÃO DE AÇÕES (bastidores) ======================
+// ====================== EXECUÇÃO DE AÇÕES ======================
 async function executeAction(user, phone, classified, originalText) {
   switch (classified.tipo) {
     case 'ponto_multiplo':
@@ -737,7 +666,7 @@ async function salvarTarefaSilenciosa(user, phone, classified) {
   if (classified.hora) {
     const hoje = classified.data || dateBRT();
     const [h, m] = classified.hora.split(':').map(Number);
-    const scheduledAt = new Date(`\${hoje}T\${String(h).padStart(2,'0')}:\${String(m).padStart(2,'0')}:00`);
+    const scheduledAt = new Date(`${hoje}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
     if (!classified.data && scheduledAt < nowBRT()) scheduledAt.setDate(scheduledAt.getDate() + 1);
     await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
   }
