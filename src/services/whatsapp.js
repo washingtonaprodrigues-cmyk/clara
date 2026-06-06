@@ -12,7 +12,10 @@ async function sendMessage(phone, message) {
   try {
     const response = await axios.post(
       `${BASE_URL}/send/text`,
-      { phone: phone, text: message },
+      {
+        chatid: `${phone}@s.whatsapp.net`,
+        text: message
+      },
       { timeout: 15000, headers }
     );
     return response.data;
