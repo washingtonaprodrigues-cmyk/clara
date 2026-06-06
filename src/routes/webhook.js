@@ -3,29 +3,41 @@ const router = express.Router();
 const { handleMessage } = require('../services/handler');
 const { sendMessage } = require('../services/whatsapp');
 
-// UazAPI envia para /webhook (sem /receive)
 router.post('/', async (req, res) => {
   try {
     const body = req.body;
 
+    // Log temporário para debug — remova após confirmar funcionamento
+    console.log('📦 PAYLOAD:', JSON.stringify(body).slice(0, 500));
+
     // Ignora mensagens enviadas pela própria Clara
     if (body.fromMe === true || body.key?.fromMe === true) return res.json({ ok: true });
+    if (body.wasSentByApi === true) return res.json({ ok: true });
 
-    // Extrai phone e texto no formato UazAPI
-    const phone = body.data?.key?.remoteJid?.replace('@s.whatsapp.net', '')
-      || body.from
-      || body.number;
+    // Formato UazAPI pago
+    const phone =
+      body.message?.key?.remoteJid?.replace('@s.whatsapp.net', '') ||
+      body.message?.key?.remoteJid?.replace('@g.us', '') ||
+      body.data?.key?.remoteJid?.replace('@s.whatsapp.net', '') ||
+      body.from ||
+      body.number;
 
     if (!phone) {
-      console.log('⚠️ Webhook sem phone:', JSON.stringify(body).slice(0, 200));
+      console.log('⚠️ Webhook sem phone:', JSON.stringify(body).slice(0, 300));
       return res.json({ ok: true });
     }
 
-    const text = body.data?.message?.conversation
-      || body.data?.message?.extendedTextMessage?.text
-      || body.text?.message
-      || body.message?.text
-      || '';
+    // Ignora grupos
+    if (phone.includes('@g.us') || phone.endsWith('@g.us')) return res.json({ ok: true });
+
+    const text =
+      body.message?.message?.conversation ||
+      body.message?.message?.extendedTextMessage?.text ||
+      body.data?.message?.conversation ||
+      body.data?.message?.extendedTextMessage?.text ||
+      body.text?.message ||
+      body.message?.text ||
+      '';
 
     console.log(`📨 WEBHOOK UazAPI: ${phone} — texto: ${text.slice(0, 80)}`);
 
@@ -36,13 +48,18 @@ router.post('/', async (req, res) => {
     }
 
     // ÁUDIO
-    if (body.data?.message?.audioMessage || body.audio) {
+    if (body.message?.message?.audioMessage || body.data?.message?.audioMessage) {
       sendMessage(phone, 'Por enquanto não consigo ouvir áudios, mas pode digitar que respondo na hora! 😊').catch(console.error);
       return res.json({ ok: true });
     }
 
     // IMAGEM, VÍDEO, DOCUMENTO
-    if (body.data?.message?.imageMessage || body.data?.message?.videoMessage || body.data?.message?.documentMessage) {
+    if (
+      body.message?.message?.imageMessage ||
+      body.message?.message?.videoMessage ||
+      body.message?.message?.documentMessage ||
+      body.data?.message?.imageMessage
+    ) {
       sendMessage(phone, 'Por enquanto não consigo ver fotos, vídeos ou arquivos — mas se escrever pra mim eu ajudo! 😊').catch(console.error);
       return res.json({ ok: true });
     }
@@ -56,9 +73,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Mantém /receive para compatibilidade
 router.post('/receive', (req, res) => res.json({ ok: true }));
-
 router.get('/test', (req, res) => {
   res.json({ status: 'Clara funcionando ✅' });
 });
