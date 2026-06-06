@@ -1296,22 +1296,41 @@ let deferredPrompt=null, swReg=null, vapidPublicKey='';
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;});
 
 async function initPWA(){
-  if(!('serviceWorker' in navigator)) return;
+  if(!('serviceWorker' in navigator)){
+    document.getElementById('notif-btn').style.display='none';
+    return;
+  }
   try {
     swReg = await navigator.serviceWorker.register('/sw.js');
-    console.log('SW registrado');
+    console.log('SW registrado:', swReg.scope);
     // Busca VAPID public key
-    const r = await fetch('/push/vapid-public');
-    const d = await r.json();
-    vapidPublicKey = d.key;
-  } catch(e){ console.log('SW erro:', e); }
+    try {
+      const r = await fetch('/push/vapid-public');
+      const d = await r.json();
+      vapidPublicKey = d.key;
+    } catch(e){ console.log('VAPID fetch erro:', e); }
+    // Verifica se já tem subscription ativa
+    const existing = await swReg.pushManager.getSubscription();
+    if(existing){
+      document.getElementById('notif-btn').textContent = '🔔 Notificações ativas';
+      document.getElementById('notif-btn').style.color = 'var(--green)';
+    }
+  } catch(e){
+    console.log('SW erro:', e);
+    document.getElementById('notif-btn').style.display='none';
+  }
 }
-initPWA();
+// Só inicia PWA após página carregar completamente
+window.addEventListener('load', initPWA);
 
 async function requestPushPermission(){
   if(!phone){ showToast('Informe seu número primeiro 💬'); return; }
   if(!('Notification' in window)){ showToast('Notificações não suportadas neste browser ⚠️'); return; }
-  if(!swReg){ showToast('Service Worker não registrado ⚠️'); return; }
+  if(!swReg){
+    // Tenta registrar agora
+    try { swReg = await navigator.serviceWorker.register('/sw.js'); }
+    catch(e){ showToast('Instale o app primeiro: compartilhar → Adicionar à tela de início 📱',4000); return; }
+  }
 
   const perm = await Notification.requestPermission();
   if(perm !== 'granted'){ showToast('Permissão negada ⚠️'); return; }
