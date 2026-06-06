@@ -3,59 +3,51 @@ const router = express.Router();
 const { handleMessage } = require('../services/handler');
 const { sendMessage } = require('../services/whatsapp');
 
-router.post('/receive', async (req, res) => {
+// UazAPI envia para /webhook (sem /receive)
+router.post('/', async (req, res) => {
   try {
     const body = req.body;
 
     // Ignora mensagens enviadas pela própria Clara
-    if (body.fromMe) return res.json({ ok: true });
+    if (body.fromMe === true || body.key?.fromMe === true) return res.json({ ok: true });
 
-    // Ignora mensagens de teste do Z-API trial
-    const textoMensagem = body.text?.message || '';
-    if (
-      textoMensagem.includes('MENSAGEM DE TESTE') ||
-      textoMensagem.includes('CONTA EM TRIAL') ||
-      textoMensagem.includes('FAVOR DESCONSIDERAR')
-    ) {
-      console.log('⚠️ Mensagem de teste Z-API ignorada');
+    // Extrai phone e texto no formato UazAPI
+    const phone = body.data?.key?.remoteJid?.replace('@s.whatsapp.net', '')
+      || body.from
+      || body.number;
+
+    if (!phone) {
+      console.log('⚠️ Webhook sem phone:', JSON.stringify(body).slice(0, 200));
       return res.json({ ok: true });
     }
 
-    const phone = body.phone;
-    console.log(`📨 WEBHOOK: ${phone} — tipo: ${body.type}`);
+    const text = body.data?.message?.conversation
+      || body.data?.message?.extendedTextMessage?.text
+      || body.text?.message
+      || body.message?.text
+      || '';
+
+    console.log(`📨 WEBHOOK UazAPI: ${phone} — texto: ${text.slice(0, 80)}`);
 
     // TEXTO
-    if (body.text?.message) {
-      const text = body.text.message;
-      console.log(`📩 ${phone}: ${text}`);
+    if (text) {
       handleMessage(phone, text).catch(console.error);
       return res.json({ ok: true });
     }
 
     // ÁUDIO
-    if (body.audio?.audioUrl) {
-      console.log(`🎤 Áudio recebido de ${phone} — não suportado`);
-      sendMessage(phone, 'Por enquanto não consigo ouvir áudios, mas você pode digitar que eu respondo na hora! 😊').catch(console.error);
+    if (body.data?.message?.audioMessage || body.audio) {
+      sendMessage(phone, 'Por enquanto não consigo ouvir áudios, mas pode digitar que respondo na hora! 😊').catch(console.error);
       return res.json({ ok: true });
     }
 
-    // LOCALIZAÇÃO
-    if (body.location) {
-      console.log(`📍 Localização recebida de ${phone}`);
-      handleMessage(phone, null, {
-        latitude: body.location.latitude,
-        longitude: body.location.longitude,
-      }).catch(console.error);
-      return res.json({ ok: true });
-    }
-
-    // IMAGEM, VÍDEO, DOCUMENTO, STICKER
-    if (body.image || body.video || body.document || body.sticker) {
+    // IMAGEM, VÍDEO, DOCUMENTO
+    if (body.data?.message?.imageMessage || body.data?.message?.videoMessage || body.data?.message?.documentMessage) {
       sendMessage(phone, 'Por enquanto não consigo ver fotos, vídeos ou arquivos — mas se escrever pra mim eu ajudo! 😊').catch(console.error);
       return res.json({ ok: true });
     }
 
-    console.log('⚠️ Payload não reconhecido:', Object.keys(body));
+    console.log('⚠️ Payload não reconhecido:', JSON.stringify(body).slice(0, 300));
     return res.json({ ok: true });
 
   } catch (error) {
@@ -63,6 +55,9 @@ router.post('/receive', async (req, res) => {
     return res.status(500).json({ error: 'Erro interno' });
   }
 });
+
+// Mantém /receive para compatibilidade
+router.post('/receive', (req, res) => res.json({ ok: true }));
 
 router.get('/test', (req, res) => {
   res.json({ status: 'Clara funcionando ✅' });
