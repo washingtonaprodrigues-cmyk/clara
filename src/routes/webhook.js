@@ -7,8 +7,8 @@ router.post('/', async (req, res) => {
   try {
     const body = req.body;
 
-    // Log temporário para debug — remova após confirmar funcionamento
-    console.log('📦 PAYLOAD:', JSON.stringify(body).slice(0, 500));
+    // Log completo para debug
+    console.log('📦 PAYLOAD COMPLETO:', JSON.stringify(body, null, 2));
 
     // Ignora mensagens enviadas pela própria Clara
     if (body.fromMe === true || body.key?.fromMe === true) return res.json({ ok: true });
@@ -23,7 +23,7 @@ router.post('/', async (req, res) => {
       body.number;
 
     if (!phone) {
-      console.log('⚠️ Webhook sem phone:', JSON.stringify(body).slice(0, 300));
+      console.log('⚠️ Webhook sem phone:', JSON.stringify(body));
       return res.json({ ok: true });
     }
 
@@ -64,7 +64,7 @@ router.post('/', async (req, res) => {
       return res.json({ ok: true });
     }
 
-    console.log('⚠️ Payload não reconhecido:', JSON.stringify(body).slice(0, 300));
+    console.log('⚠️ Payload não reconhecido:', JSON.stringify(body));
     return res.json({ ok: true });
 
   } catch (error) {
