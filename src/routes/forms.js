@@ -95,6 +95,100 @@ router.get('/gastos/:phone', async (req, res) => {
   }
 });
 
+// ====================== PONTO: GET ======================
+router.get('/pontos/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const user = await memory.getOrCreateUser(phone);
+    const inicioMes = new Date();
+    inicioMes.setDate(1); inicioMes.setHours(0,0,0,0);
+    const pontos = await prisma.workLog.findMany({
+      where: { userId: user.id, createdAt: { gte: inicioMes } },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json(pontos);
+  } catch (e) {
+    console.error('Erro GET pontos:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== PONTO: POST (registro) ======================
+router.post('/ponto/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const user = await memory.getOrCreateUser(phone);
+    const body = req.body;
+
+    function nowBRT() { return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })); }
+    function dateBRT() { const d = nowBRT(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+    function toTimestamp(horaStr) {
+      if (!horaStr) return null;
+      const [h, m] = horaStr.split(':').map(Number);
+      const isoStr = `${dateBRT()}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`;
+      return new Date(isoStr);
+    }
+
+    const hoje = dateBRT();
+    const tipos = ['entrada', 'saida_almoco', 'volta_almoco', 'saida'];
+
+    for (const tipo of tipos) {
+      if (!body[tipo]) continue;
+      const timestamp = toTimestamp(body[tipo]);
+      const existing = await prisma.workLog.findFirst({ where: { userId: user.id, type: tipo, date: hoje } });
+      if (existing) {
+        await prisma.workLog.update({ where: { id: existing.id }, data: { timestamp } });
+      } else {
+        await prisma.workLog.create({ data: { userId: user.id, type: tipo, timestamp, date: hoje } });
+      }
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro POST ponto:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== PONTO CONFIG: GET ======================
+router.get('/ponto-config/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const user = await memory.getOrCreateUser(phone);
+    const mems = await memory.getRecentMemories(user.id, 20);
+    const conf = mems.find(m => m.type === 'ponto_config');
+    if (conf) {
+      try { return res.json(JSON.parse(conf.content)); } catch {}
+    }
+    res.json({ entrada: '08:00', saida: '17:00', almoco: 60, jornada: 480 });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== PONTO CONFIG: POST ======================
+router.post('/ponto-config/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const user = await memory.getOrCreateUser(phone);
+    const { entrada, saida, almoco, jornada } = req.body;
+
+    // Atualiza jornada no user
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { jornadaMinutos: jornada || 480 }
+    });
+
+    // Salva config completa na memória
+    await memory.saveMemory(user.id, 'ponto_config', JSON.stringify({ entrada, saida, almoco, jornada }));
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro POST ponto-config:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== COFRE: GET ======================
 router.get('/cofre/:phone', async (req, res) => {
   try {
