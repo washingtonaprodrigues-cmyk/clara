@@ -128,6 +128,21 @@ async function responderLivre(user, phone, text) {
   try {
     const history = await memory.getConversationHistory(user.id, 10);
     const preferences = await memory.getUserPreference(user.id);
+
+    // Injeta contexto financeiro se o usuário tiver saldo configurado
+    if (preferences.saldo !== null && preferences.saldo !== undefined) {
+      try {
+        const inicioMes = new Date();
+        inicioMes.setDate(1); inicioMes.setHours(0,0,0,0);
+        const gastos = await prisma.expense.findMany({
+          where: { userId: user.id, createdAt: { gte: inicioMes } }
+        });
+        const totalGasto = gastos.reduce((a, g) => a + g.value, 0);
+        const saldoRestante = preferences.saldo - totalGasto;
+        preferences._contexto = `\n\n[CONTEXTO FINANCEIRO DO USUÁRIO]\nSaldo/orçamento mensal: R$ ${preferences.saldo.toFixed(2)}\nTotal gasto este mês: R$ ${totalGasto.toFixed(2)}\nSaldo restante: R$ ${saldoRestante.toFixed(2)}\nUse esses dados quando o usuário perguntar sobre finanças, gastos ou saldo.`;
+      } catch {}
+    }
+
     console.log(`[${phone}] Chamando freeResponse...`);
     const resp = await freeResponse(text, history, preferences);
     console.log(`[${phone}] Resposta gerada: ${String(resp).slice(0, 80)}`);
