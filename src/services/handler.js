@@ -77,11 +77,9 @@ function formatarDataHoraBR(date) {
   return `${dias[d.getDay()]} ${dStr} às ${hStr}`;
 }
 
-// Detecta horário relativo no texto: "daqui 5 minutos", "em 2 horas", etc.
 function calcularHorarioRelativo(texto) {
   const t = (texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   
-  // daqui X minutos
   const minMatch = t.match(/daqui\s+(\d+)\s*(min|minuto|minutos)/);
   if (minMatch) {
     const d = nowBRT();
@@ -89,7 +87,6 @@ function calcularHorarioRelativo(texto) {
     return d;
   }
   
-  // daqui X horas
   const hrMatch = t.match(/daqui\s+(\d+)\s*(h|hora|horas)/);
   if (hrMatch) {
     const d = nowBRT();
@@ -97,7 +94,6 @@ function calcularHorarioRelativo(texto) {
     return d;
   }
 
-  // em X minutos
   const emMinMatch = t.match(/em\s+(\d+)\s*(min|minuto|minutos)/);
   if (emMinMatch) {
     const d = nowBRT();
@@ -105,7 +101,6 @@ function calcularHorarioRelativo(texto) {
     return d;
   }
 
-  // em X horas
   const emHrMatch = t.match(/em\s+(\d+)\s*(h|hora|horas)/);
   if (emHrMatch) {
     const d = nowBRT();
@@ -436,7 +431,13 @@ async function executeAction(user, phone, classified, originalText) {
       }
       break;
     case 'preferencia':
-      await memory.saveUserPreference(user.id, classified.nome, classified.tom);
+      await memory.saveUserPreference(user.id, classified.nome, classified.tom, null);
+      break;
+    case 'saldo':
+      if (classified.valor !== undefined && classified.valor !== null) {
+        await memory.saveUserPreference(user.id, null, null, parseFloat(classified.valor));
+        console.log(`[${phone}] Saldo atualizado: R$ ${classified.valor}`);
+      }
       break;
   }
 }
@@ -464,7 +465,6 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
 
   let scheduledAt = null;
 
-  // Tenta horário relativo primeiro (daqui X minutos/horas)
   if (originalText) {
     const relativo = calcularHorarioRelativo(originalText);
     if (relativo) {
@@ -473,7 +473,6 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
     }
   }
 
-  // Se não tem relativo, usa hora fixa do classified
   if (!scheduledAt && classified.hora) {
     const hoje = classified.data || dateBRT();
     const [h, m] = classified.hora.split(':').map(Number);
