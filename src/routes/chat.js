@@ -100,7 +100,9 @@ async function executeActionFromChat(user, phone, classified, originalText) {
         }
         return null;
 
+      case 'lista_buscar':
       case 'lista_compras': {
+        // Se tem itens → criar lista nova
         if (classified.itens && classified.itens.length > 0) {
           const itemsJson = classified.itens.map((nome, i) => ({ id: i + 1, nome, done: false }));
           const lista = await prisma.groceryList.create({
@@ -114,6 +116,29 @@ async function executeActionFromChat(user, phone, classified, originalText) {
           await memory.saveMemory(user.id, 'ultima_lista', lista.id);
           console.log(`[chat] Lista criada: ${lista.name} com ${itemsJson.length} itens`);
           return { listaId: lista.id, listaNome: lista.name, listaItems: itemsJson };
+        }
+
+        // Sem itens → buscar lista existente (última ou mais recente não concluída)
+        const mems = await memory.getRecentMemories(user.id, 20);
+        const listaRef = mems.find(m => m.type === 'ultima_lista');
+        if (listaRef) {
+          const lista = await prisma.groceryList.findUnique({ where: { id: listaRef.content } });
+          if (lista && !lista.done) {
+            let items = []; try { items = JSON.parse(lista.items); } catch {}
+            console.log(`[chat] Lista encontrada: ${lista.name}`);
+            return { listaId: lista.id, listaNome: lista.name, listaItems: items };
+          }
+        }
+        // Fallback: pegar a lista ativa mais recente
+        const listaRecente = await prisma.groceryList.findFirst({
+          where: { userId: user.id, done: false },
+          orderBy: { createdAt: 'desc' }
+        });
+        if (listaRecente) {
+          let items = []; try { items = JSON.parse(listaRecente.items); } catch {}
+          await memory.saveMemory(user.id, 'ultima_lista', listaRecente.id);
+          console.log(`[chat] Lista recente encontrada: ${listaRecente.name}`);
+          return { listaId: listaRecente.id, listaNome: listaRecente.name, listaItems: items };
         }
         return null;
       }
@@ -170,7 +195,7 @@ async function executeActionFromChat(user, phone, classified, originalText) {
 }
 
 // Tipos que precisam retornar dados pro frontend — executados de forma síncrona
-const SYNC_ACTION_TYPES = ['lista_compras', 'lista_marcar', 'lista_adicionar'];
+const SYNC_ACTION_TYPES = ['lista_compras', 'lista_buscar', 'lista_marcar', 'lista_adicionar'];
 
 router.post('/:phone', async (req, res) => {
   try {
@@ -260,7 +285,12 @@ router.post('/:phone', async (req, res) => {
     // Adicionar instrução ao contexto quando for ação de lista
     if (actionData?.listaId) {
       const itensTexto = actionData.listaItems.map(i => `${i.id}. ${i.nome}`).join(', ');
-      contexto += `\n\n[AÇÃO REALIZADA] A lista "${actionData.listaNome}" foi criada/atualizada com sucesso com os seguintes itens: ${itensTexto}. Confirme isso ao usuário de forma natural e animada, sem listar os itens novamente pois eles já aparecem visualmente.`;
+      const foiCriada = classified?.tipo === 'lista_compras' && classified?.itens?.length > 0;
+      if (foiCriada) {
+        contexto += `\n\n[AÇÃO REALIZADA] A lista "${actionData.listaNome}" foi criada com sucesso com os itens: ${itensTexto}. Confirme ao usuário de forma natural e animada que a lista foi criada, sem listar os itens pois eles já aparecem visualmente.`;
+      } else {
+        contexto += `\n\n[LISTA ENCONTRADA] Encontrei a lista "${actionData.listaNome}" do usuário com os itens: ${itensTexto}. Apresente-a ao usuário de forma natural, sem listar os itens pois eles já aparecem visualmente no card.`;
+      }
     }
 
     const preferencesComContexto = { ...preferences, _contexto: contexto };
