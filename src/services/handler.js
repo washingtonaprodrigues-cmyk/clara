@@ -102,12 +102,19 @@ async function enviarMenu(phone) {
 }
 
 async function responderLivre(user, phone, text) {
-  const history = await memory.getConversationHistory(user.id, 10);
-  const preferences = await memory.getUserPreference(user.id);
-  const resp = await freeResponse(text, history, preferences);
-  await memory.saveConversationMessage(user.id, 'user', text);
-  await memory.saveConversationMessage(user.id, 'assistant', resp);
-  return sendMessage(phone, resp);
+  try {
+    const history = await memory.getConversationHistory(user.id, 10);
+    const preferences = await memory.getUserPreference(user.id);
+    console.log(`[${phone}] Chamando freeResponse...`);
+    const resp = await freeResponse(text, history, preferences);
+    console.log(`[${phone}] Resposta gerada: ${String(resp).slice(0, 80)}`);
+    await memory.saveConversationMessage(user.id, 'user', text);
+    await memory.saveConversationMessage(user.id, 'assistant', resp);
+    await sendMessage(phone, resp);
+  } catch (e) {
+    console.error(`[${phone}] Erro responderLivre:`, e.message);
+    await sendMessage(phone, 'Ops, tive um probleminha. Pode repetir?');
+  }
 }
 
 async function responderNaoEntendi(phone) {
@@ -213,13 +220,11 @@ async function getCidadeUsuario(userId) {
   return mems.find(m => m.type === 'cidade')?.content || null;
 }
 
-// ====================== CIDADE ======================
 async function handleCidade(user, phone, cidade) {
   await memory.saveMemory(user.id, 'cidade', cidade);
   await sendMessage(phone, `Anotei! 📍 Vou usar *${cidade}* para buscas locais.`);
 }
 
-// ====================== PREFERÊNCIA ======================
 async function handlePreferencia(user, phone, classified) {
   await memory.saveUserPreference(user.id, classified.nome, classified.tom);
   const partes = [];
@@ -231,7 +236,6 @@ async function handlePreferencia(user, phone, classified) {
   await sendMessage(phone, `${msg} 😊`);
 }
 
-// ====================== PONTO MÚLTIPLO ======================
 async function handlePontoMultiplo(user, phone, acoes, originalText) {
   await sendMessage(phone, '📍 Registrando seus pontos...');
   const hoje = dateBRT();
@@ -313,7 +317,6 @@ async function gerarResumoDoBanco(pontos, userId) {
   return texto;
 }
 
-// ====================== BUSCA ======================
 async function handleBusca(user, phone, query) {
   await sendMessage(phone, '✨ _Clareando ideias..._');
   const mems = await memory.getRecentMemories(user.id, 20);
@@ -345,7 +348,6 @@ async function handleBusca(user, phone, query) {
   await sendMessage(phone, resultado);
 }
 
-// ====================== ANOTAÇÃO ======================
 async function handleNote(user, phone, classified) {
   const conteudo = classified.conteudo || classified.titulo || '';
   await memory.saveMemory(user.id, 'anotacao', conteudo, { titulo: classified.titulo });
@@ -358,7 +360,6 @@ async function handleNote(user, phone, classified) {
   );
 }
 
-// ====================== TAREFA ======================
 async function handleTask(user, phone, classified) {
   await memory.saveMemory(user.id, 'tarefa', classified.titulo, {
     data: classified.data,
@@ -402,7 +403,6 @@ async function handleTask(user, phone, classified) {
   }
 }
 
-// ====================== GASTO ======================
 async function handleExpense(user, phone, classified) {
   const valor = Number(classified.valor) || 0;
   const categoria = classified.categoria || 'outro';
@@ -426,7 +426,6 @@ async function handleExpense(user, phone, classified) {
   );
 }
 
-// ====================== MEDICAMENTO ======================
 async function handleMedication(user, phone, classified) {
   const nome = classified.nome || classified.name || classified.titulo;
   const horarios = Array.isArray(classified.horarios) && classified.horarios.length
@@ -454,7 +453,6 @@ async function handleMedication(user, phone, classified) {
   );
 }
 
-// ====================== CONSULTA ======================
 async function handleQuery(user, phone, question) {
   await sendMessage(phone, '💭 _Deixa eu ver isso pra você..._');
   const memories = await memory.getRecentMemories(user.id, 30);
@@ -468,7 +466,6 @@ async function handleQuery(user, phone, question) {
   await sendMessage(phone, answer);
 }
 
-// ====================== LISTAGENS ======================
 async function listarLembretes(user, phone) {
   const agora = new Date();
   const reminders = await prisma.reminder.findMany({
@@ -605,7 +602,6 @@ async function listarMedicamentos(user, phone) {
   ]);
 }
 
-// ====================== EXECUÇÃO DE AÇÕES ======================
 async function executeAction(user, phone, classified, originalText) {
   switch (classified.tipo) {
     case 'ponto_multiplo':
