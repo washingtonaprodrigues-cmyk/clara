@@ -709,9 +709,15 @@ function showMainApp(user,savedPhone){
   // Welcome screen
   document.getElementById('welcome-greeting').textContent=getGreeting();
   document.getElementById('welcome-name').textContent=firstName;
-  loadAll();loadMood();initPWA();
+  loadAll();loadMood();loadSaldo();initPWA();
   if(pollInterval) clearInterval(pollInterval);
-  pollInterval=setInterval(()=>{loadAll().then(()=>{if(currentNav==='lembretes')renderRem();if(currentNav==='saude')renderSaude();if(currentNav==='financeiro')renderFin();if(currentNav==='cofre')renderCofre();});},30000);
+  pollInterval=setInterval(async()=>{
+    await Promise.all([loadAll(),loadSaldo()]);
+    if(currentNav==='lembretes')renderRem();
+    if(currentNav==='saude')renderSaude();
+    if(currentNav==='financeiro')renderFin();
+    if(currentNav==='cofre')renderCofre();
+  },30000);
 }
 function setAuthTab(tab){authTab=tab;document.getElementById('tab-login').classList.toggle('active',tab==='login');document.getElementById('tab-register').classList.toggle('active',tab==='register');document.getElementById('auth-email-btn').textContent=tab==='login'?'Entrar':'Criar conta';document.getElementById('auth-name-field').style.display=tab==='register'?'block':'none';document.getElementById('auth-error').textContent='';}
 async function authWithEmail(){
@@ -768,6 +774,18 @@ async function loadAll(){
   }catch{}
 }
 
+// Carrega saldo/preferências e atualiza financeiro
+let currentSaldo=null;
+async function loadSaldo(){
+  if(!phone)return;
+  try{
+    const r=await fetch(`/forms/preferencia/${phone}`);
+    const d=await r.json();
+    if(d.saldo!==undefined&&d.saldo!==null) currentSaldo=d.saldo;
+    else currentSaldo=null;
+  }catch{}
+}
+
 // CHAT
 function addMsg(role,text){
   const msgs=document.getElementById('msgs');
@@ -796,7 +814,15 @@ async function sendChat(){
     const res=await fetch(`/chat/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,privateMode})});
     const data=await res.json();
     loading.querySelector('.msg-bubble').textContent=data.reply||'Pode repetir? 😊';loading.classList.remove('loading');
-    setTimeout(()=>{loadAll().then(()=>{if(currentNav==='lembretes')renderRem();if(currentNav==='saude')renderSaude();if(currentNav==='financeiro')renderFin();if(currentNav==='cofre')renderCofre();});},1500);
+    // Ação detectada = recarrega mais rápido; senão espera 1.5s
+    const delay=(data.actionType&&data.actionType!=='outro')?600:1500;
+    setTimeout(async()=>{
+      await Promise.all([loadAll(),loadSaldo()]);
+      if(currentNav==='lembretes')renderRem();
+      if(currentNav==='saude')renderSaude();
+      if(currentNav==='financeiro')renderFin();
+      if(currentNav==='cofre')renderCofre();
+    },delay);
   }catch{loading.querySelector('.msg-bubble').textContent='Erro de conexão.';loading.classList.remove('loading');}
 }
 function cs(t){document.getElementById('chat-msg').value=t;sendChat();}
@@ -860,9 +886,30 @@ async function takeMed(id,btn){
 // FINANCEIRO
 function renderFin(){
   const hist=document.getElementById('fin-history');
-  if(!allGastos.length){hist.innerHTML='<div class="empty"><span class="empty-icon">💰</span>Sem gastos registrados</div>';['fs-total','fs-count','fs-max','fs-avg'].forEach(id=>document.getElementById(id).textContent=id==='fs-total'?'R$ 0,00':id==='fs-count'?'0':'—');return;}
+  const saldoEl=document.getElementById('fs-saldo');
+  // Atualiza saldo restante sempre
+  function atualizaSaldo(total){
+    if(!saldoEl)return;
+    if(currentSaldo!==null&&currentSaldo!==undefined){
+      const restante=currentSaldo-total;
+      saldoEl.textContent=brl(restante);
+      saldoEl.style.color=restante<0?'var(--red)':restante<currentSaldo*0.2?'var(--amber)':'var(--text2)';
+    }else{
+      saldoEl.textContent='Não informado';
+      saldoEl.style.color='var(--text2)';
+    }
+  }
+  if(!allGastos.length){
+    hist.innerHTML='<div class="empty"><span class="empty-icon">💰</span>Sem gastos registrados</div>';
+    ['fs-total','fs-count','fs-max','fs-avg'].forEach(id=>document.getElementById(id).textContent=id==='fs-total'?'R$ 0,00':id==='fs-count'?'0':'—');
+    atualizaSaldo(0);return;
+  }
   const total=allGastos.reduce((a,g)=>a+g.value,0),dias=new Date().getDate(),vals=allGastos.map(g=>g.value);
-  document.getElementById('fs-total').textContent=brl(total);document.getElementById('fs-count').textContent=allGastos.length;document.getElementById('fs-max').textContent=brl(Math.max(...vals));document.getElementById('fs-avg').textContent=brl(total/dias);
+  document.getElementById('fs-total').textContent=brl(total);
+  document.getElementById('fs-count').textContent=allGastos.length;
+  document.getElementById('fs-max').textContent=brl(Math.max(...vals));
+  document.getElementById('fs-avg').textContent=brl(total/dias);
+  atualizaSaldo(total);
   let html=`<div class="fin-hist-header">Histórico</div>`;
   allGastos.slice(0,20).forEach(g=>{const name=g.description&&g.description!==g.category?g.description:(g.category.charAt(0).toUpperCase()+g.category.slice(1));html+=`<div class="fin-hist-item"><div class="fin-hist-icon" style="background:${CAT_BG[g.category]||'rgba(107,114,128,.12)'}">${CAT_ICONS[g.category]||'📦'}</div><div class="fin-hist-info"><div class="fin-hist-name">${name}</div><div class="fin-hist-date">${fmtD(g.createdAt)}</div></div><div class="fin-hist-val">-${brl(g.value)}</div></div>`;});
   hist.innerHTML=html;
