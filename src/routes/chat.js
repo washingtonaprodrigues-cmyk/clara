@@ -27,6 +27,7 @@ function calcularHorarioRelativo(texto) {
   return null;
 }
 
+// Retorna actionData para tipos de lista, null para os demais
 async function executeActionFromChat(user, phone, classified, originalText) {
   try {
     switch (classified.tipo) {
@@ -39,18 +40,18 @@ async function executeActionFromChat(user, phone, classified, originalText) {
           });
           console.log(`[chat] Gasto salvo: R$${classified.valor} em ${classified.categoria}`);
         }
-        break;
+        return null;
 
       case 'saldo':
         if (classified.valor !== undefined && classified.valor !== null) {
           await memory.saveUserPreference(user.id, null, null, parseFloat(classified.valor));
           console.log(`[chat] Saldo salvo: R$${classified.valor}`);
         }
-        break;
+        return null;
 
       case 'preferencia':
         await memory.saveUserPreference(user.id, classified.nome, classified.tom, null);
-        break;
+        return null;
 
       case 'tarefa': {
         let scheduledAt = null;
@@ -70,7 +71,7 @@ async function executeActionFromChat(user, phone, classified, originalText) {
           });
           console.log(`[chat] Lembrete salvo: "${classified.titulo}" para ${scheduledAt}`);
         }
-        break;
+        return null;
       }
 
       case 'medicamento':
@@ -83,7 +84,7 @@ async function executeActionFromChat(user, phone, classified, originalText) {
           });
           console.log(`[chat] Medicamento salvo: ${classified.nome}`);
         }
-        break;
+        return null;
 
       case 'anotacao':
         await memory.saveMemory(user.id, 'anotacao',
@@ -91,15 +92,15 @@ async function executeActionFromChat(user, phone, classified, originalText) {
           { titulo: classified.titulo }
         );
         console.log(`[chat] Anotação salva`);
-        break;
+        return null;
 
       case 'cidade':
         if (classified.cidade) {
           await memory.saveMemory(user.id, 'cidade', classified.cidade);
         }
-        break;
+        return null;
 
-      case 'lista_compras':
+      case 'lista_compras': {
         if (classified.itens && classified.itens.length > 0) {
           const itemsJson = classified.itens.map((nome, i) => ({ id: i + 1, nome, done: false }));
           const lista = await prisma.groceryList.create({
@@ -111,12 +112,13 @@ async function executeActionFromChat(user, phone, classified, originalText) {
             }
           });
           await memory.saveMemory(user.id, 'ultima_lista', lista.id);
-          actionData = { listaId: lista.id, listaNome: lista.name, listaItems: itemsJson };
           console.log(`[chat] Lista criada: ${lista.name} com ${itemsJson.length} itens`);
+          return { listaId: lista.id, listaNome: lista.name, listaItems: itemsJson };
         }
-        break;
+        return null;
+      }
 
-      case 'lista_marcar':
+      case 'lista_marcar': {
         if (classified.numeros && classified.numeros.length > 0) {
           const mems = await memory.getRecentMemories(user.id, 20);
           const listaRef = mems.find(m => m.type === 'ultima_lista');
@@ -130,13 +132,14 @@ async function executeActionFromChat(user, phone, classified, originalText) {
                 where: { id: lista.id },
                 data: { items: JSON.stringify(items), done: allDone }
               });
-              actionData = { listaId: lista.id, listaNome: lista.name, listaItems: items };
+              return { listaId: lista.id, listaNome: lista.name, listaItems: items };
             }
           }
         }
-        break;
+        return null;
+      }
 
-      case 'lista_adicionar':
+      case 'lista_adicionar': {
         if (classified.item) {
           const mems2 = await memory.getRecentMemories(user.id, 20);
           const listaRef2 = mems2.find(m => m.type === 'ultima_lista');
@@ -150,16 +153,24 @@ async function executeActionFromChat(user, phone, classified, originalText) {
                 where: { id: lista2.id },
                 data: { items: JSON.stringify(items2) }
               });
-              actionData = { listaId: lista2.id, listaNome: lista2.name, listaItems: items2 };
+              return { listaId: lista2.id, listaNome: lista2.name, listaItems: items2 };
             }
           }
         }
-        break;
+        return null;
+      }
+
+      default:
+        return null;
     }
   } catch (e) {
     console.error('[chat] Erro executeActionFromChat:', e.message);
+    return null;
   }
 }
+
+// Tipos que precisam retornar dados pro frontend — executados de forma síncrona
+const SYNC_ACTION_TYPES = ['lista_compras', 'lista_marcar', 'lista_adicionar'];
 
 router.post('/:phone', async (req, res) => {
   try {
@@ -180,7 +191,6 @@ router.post('/:phone', async (req, res) => {
         const pad = n => String(n).padStart(2,'0');
         const hm = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
-        // Data de hoje e amanhã no fuso BRT
         const toDateStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
         const hoje = toDateStr(now);
         const amanha = new Date(now); amanha.setDate(amanha.getDate()+1);
@@ -190,7 +200,6 @@ router.post('/:phone', async (req, res) => {
         const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
         const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
 
-        // Busca tudo em paralelo
         const [lembretes, meds, gastos] = await Promise.all([
           prisma.reminder.findMany({
             where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: inicioHoje, lte: fimAmanha } },
@@ -204,7 +213,6 @@ router.post('/:phone', async (req, res) => {
           }) : Promise.resolve([])
         ]);
 
-        // Lembretes de hoje e amanhã
         if (lembretes.length > 0) {
           const fmtLemb = (r) => {
             const d = new Date(r.scheduledAt);
@@ -216,7 +224,6 @@ router.post('/:phone', async (req, res) => {
           contexto += `\n\n[AGENDA DO USUÁRIO]\nNenhum lembrete para hoje ou amanhã.`;
         }
 
-        // Medicamentos ativos
         if (meds.length > 0) {
           const fmtMed = (m) => {
             let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
@@ -227,7 +234,6 @@ router.post('/:phone', async (req, res) => {
           contexto += `\n\n[MEDICAMENTOS DO USUÁRIO]\n${meds.map(fmtMed).join('\n')}`;
         }
 
-        // Financeiro
         if (preferences.saldo != null) {
           const totalGasto = gastos.reduce((a, g) => a + g.value, 0);
           const restante = preferences.saldo - totalGasto;
@@ -242,8 +248,9 @@ router.post('/:phone', async (req, res) => {
 
     const preferencesComContexto = { ...preferences, _contexto: contexto };
 
-    let actionData = null; // dados extras de ações (ex: lista criada)
-    // Executa classify e freeResponse em paralelo
+    let actionData = null;
+
+    // classify e freeResponse em paralelo
     const [response, classified] = await Promise.all([
       freeResponse(message, history, preferencesComContexto, privateMode),
       privateMode ? Promise.resolve({ tipo: 'outro' }) : classify(message),
@@ -253,9 +260,15 @@ router.post('/:phone', async (req, res) => {
     await memory.saveConversationMessage(user.id, 'assistant', response, privateMode);
 
     if (!privateMode) {
-      executeActionFromChat(user, phone, classified, message).catch(e =>
-        console.error('[chat] Erro bg action:', e.message)
-      );
+      if (SYNC_ACTION_TYPES.includes(classified?.tipo)) {
+        // Executa de forma síncrona para capturar os dados da lista antes de responder
+        actionData = await executeActionFromChat(user, phone, classified, message);
+      } else {
+        // Demais ações rodam em background sem bloquear a resposta
+        executeActionFromChat(user, phone, classified, message).catch(e =>
+          console.error('[chat] Erro bg action:', e.message)
+        );
+      }
     }
 
     res.json({ reply: response, actionType: classified?.tipo || 'outro', actionData });
