@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { freeResponse, classify } = require('../services/groq');
+const { freeResponse, classify, extractPersonalInfo } = require('../services/groq');
 const memory = require('../services/memory');
+const { buildPersonalContext, savePersonalInfo } = memory;
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
@@ -282,6 +283,14 @@ router.post('/:phone', async (req, res) => {
       actionData = await executeActionFromChat(user, phone, classified, message);
     }
 
+    // Injeta perfil pessoal (memória de longo prazo)
+    try {
+      const perfilPessoal = await buildPersonalContext(user.id);
+      if (perfilPessoal) contexto += perfilPessoal;
+    } catch (ep) {
+      console.error('[perfil pessoal chat] erro:', ep.message);
+    }
+
     // Adicionar instrução ao contexto quando for ação de lista
     if (actionData?.listaId) {
       const itensTexto = actionData.listaItems.map(i => `${i.id}. ${i.nome}`).join(', ');
@@ -299,6 +308,17 @@ router.post('/:phone', async (req, res) => {
 
     await memory.saveConversationMessage(user.id, 'user', message, privateMode);
     await memory.saveConversationMessage(user.id, 'assistant', response, privateMode);
+
+    // Extração de memória pessoal em background
+    if (!privateMode) {
+      extractPersonalInfo(message).then(async (infos) => {
+        for (const { chave, valor, categoria } of (infos || [])) {
+          if (!chave || !valor) continue;
+          await savePersonalInfo(user.id, chave, valor, categoria || 'outro');
+          console.log(`[memória pessoal web] ${chave} = "${valor}"`);
+        }
+      }).catch(e => console.error('[extract pessoal web]', e.message));
+    }
 
     if (!privateMode && !SYNC_ACTION_TYPES.includes(classified?.tipo)) {
       // Demais ações rodam em background sem bloquear a resposta
