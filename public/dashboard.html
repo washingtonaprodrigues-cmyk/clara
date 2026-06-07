@@ -189,7 +189,25 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .input-row textarea::placeholder{color:var(--text3)}
 .send-btn{width:36px;height:36px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 10px var(--glow);transition:transform .1s}
 
-/* ── LISTAS ── */
+/* ── LISTA CARD NO CHAT ── */
+.msg-lista-card{background:var(--s1);border:1px solid var(--border2);border-radius:12px;padding:12px;margin-top:8px;min-width:220px;max-width:280px}
+.msg-lista-titulo{font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.msg-lista-items{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
+.msg-lista-item{display:flex;align-items:center;gap:8px;padding:6px 4px;border-radius:6px;cursor:pointer;transition:background .1s}
+.msg-lista-item:hover{background:var(--s2)}
+.msg-lista-item.done .msg-lista-nome{text-decoration:line-through;color:var(--text3)}
+.msg-lista-check{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--border2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px;font-weight:700;transition:all .15s}
+.msg-lista-item.done .msg-lista-check{background:var(--green);border-color:var(--green);color:#fff}
+.msg-lista-item:not(.done) .msg-lista-check{color:transparent}
+.msg-lista-nome{font-size:12px;color:var(--text);flex:1}
+.msg-lista-footer{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.msg-lista-progress{flex:1;height:3px;background:var(--s3);border-radius:2px;overflow:hidden}
+.msg-lista-progress-bar{height:100%;background:var(--green);border-radius:2px;transition:width .3s}
+.msg-lista-count{font-size:10px;color:var(--text3);white-space:nowrap}
+.msg-lista-add-row{display:flex;gap:6px}
+.msg-lista-add-inp{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-family:'Inter',sans-serif;font-size:11px;outline:none}
+.msg-lista-add-inp:focus{border-color:var(--accent)}
+.msg-lista-add-btn{padding:5px 10px;background:var(--accent);border:none;border-radius:6px;color:#fff;font-family:'Inter',sans-serif;font-size:11px;cursor:pointer}
 .lista-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px}
 .lista-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .lista-titulo{font-size:14px;font-weight:600;color:var(--text)}
@@ -865,7 +883,7 @@ async function loadSaldo(){
 }
 
 // CHAT
-function addMsg(role,text){
+function addMsg(role,text,listaData=null){
   const msgs=document.getElementById('msgs');
   const w=document.getElementById('welcome');if(w)w.remove();
   const row=document.createElement('div');row.className='msg-row '+role;
@@ -874,7 +892,13 @@ function addMsg(role,text){
     av.innerHTML='<img src="/avatar" onerror="this.parentElement.style.background=\'linear-gradient(135deg,#8B5CF6,#A855F7)\';this.parentElement.textContent=\'✨\'" alt="Clara" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/>';
     const c=document.createElement('div');c.className='msg-content';
     const b=document.createElement('div');b.className='msg-bubble';b.textContent=text;
-    c.appendChild(b);row.appendChild(av);row.appendChild(c);
+    c.appendChild(b);
+    // Se tem dados de lista, renderiza card interativo abaixo da mensagem
+    if(listaData){
+      const card=buildListaCard(listaData);
+      c.appendChild(card);
+    }
+    row.appendChild(av);row.appendChild(c);
   }else{
     const c=document.createElement('div');c.className='msg-content';
     const b=document.createElement('div');b.className='msg-bubble';b.textContent=text;
@@ -882,6 +906,69 @@ function addMsg(role,text){
     c.appendChild(b);c.appendChild(t);row.appendChild(c);
   }
   msgs.appendChild(row);msgs.scrollTop=msgs.scrollHeight;return row;
+}
+
+function buildListaCard(listaData){
+  const {listaId, listaNome, listaItems} = listaData;
+  const div=document.createElement('div');
+  div.className='msg-lista-card';
+  div.id='msg-lista-'+listaId;
+  renderListaCard(div, listaId, listaNome, listaItems);
+  return div;
+}
+
+function renderListaCard(div, listaId, listaNome, items){
+  const done=items.filter(i=>i.done).length;
+  const total=items.length;
+  const pct=total>0?Math.round((done/total)*100):0;
+  div.innerHTML=`
+    <div class="msg-lista-titulo">${listaNome}</div>
+    <div class="msg-lista-items">
+      ${items.map(item=>`
+        <div class="msg-lista-item ${item.done?'done':''}" onclick="toggleMsgItem('${listaId}',${item.id},this)">
+          <div class="msg-lista-check">${item.done?'✓':''}</div>
+          <span class="msg-lista-nome">${item.nome}</span>
+        </div>`).join('')}
+    </div>
+    <div class="msg-lista-footer">
+      <div class="msg-lista-progress"><div class="msg-lista-progress-bar" style="width:${pct}%"></div></div>
+      <span class="msg-lista-count">${done}/${total}</span>
+    </div>
+    <div class="msg-lista-add-row">
+      <input class="msg-lista-add-inp" id="msgadd-${listaId}" placeholder="Adicionar item..."/>
+      <button class="msg-lista-add-btn" onclick="addMsgItem('${listaId}')">+</button>
+    </div>`;
+}
+
+async function toggleMsgItem(listaId, itemId, el){
+  try{
+    const r=await fetch(`/forms/lista-item/${listaId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({itemId})});
+    const d=await r.json();
+    const card=document.getElementById('msg-lista-'+listaId);
+    if(card){
+      // Busca nome da lista
+      const titulo=card.querySelector('.msg-lista-titulo')?.textContent||'Lista';
+      renderListaCard(card,listaId,titulo,d.items);
+    }
+    if(d.allDone)showToast('🎉 Lista concluída!',3000);
+    // Atualiza página listas se aberta
+    if(currentNav==='listas')renderListas();
+  }catch{showToast('Erro ⚠️');}
+}
+
+async function addMsgItem(listaId){
+  const inp=document.getElementById('msgadd-'+listaId);
+  const nome=inp?.value.trim();
+  if(!nome)return;
+  try{
+    const r=await fetch(`/forms/lista-add-item/${listaId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome})});
+    const d=await r.json();
+    const card=document.getElementById('msg-lista-'+listaId);
+    if(card){
+      const titulo=card.querySelector('.msg-lista-titulo')?.textContent||'Lista';
+      renderListaCard(card,listaId,titulo,d.items);
+    }
+  }catch{showToast('Erro ⚠️');}
 }
 async function sendChat(){
   const inp=document.getElementById('chat-msg');const text=inp.value.trim();
@@ -891,7 +978,17 @@ async function sendChat(){
   try{
     const res=await fetch(`/chat/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,privateMode})});
     const data=await res.json();
-    loading.querySelector('.msg-bubble').textContent=data.reply||'Pode repetir? 😊';loading.classList.remove('loading');
+    // Se veio dados de lista, atualiza a mensagem loading para card
+    if(data.actionData?.listaId){
+      const msgEl=loading.querySelector('.msg-bubble');
+      msgEl.textContent=data.reply||'Pode repetir? 😊';
+      loading.classList.remove('loading');
+      const card=buildListaCard(data.actionData);
+      loading.querySelector('.msg-content').appendChild(card);
+    } else {
+      loading.querySelector('.msg-bubble').textContent=data.reply||'Pode repetir? 😊';
+      loading.classList.remove('loading');
+    }
     // Fala a resposta se modo voz ativo
     speakText(data.reply||'');
     // Ação detectada = recarrega mais rápido; senão espera 1.5s
