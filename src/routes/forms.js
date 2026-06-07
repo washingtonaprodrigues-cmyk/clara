@@ -173,13 +173,11 @@ router.post('/ponto-config/:phone', async (req, res) => {
     const user = await memory.getOrCreateUser(phone);
     const { entrada, saida, almoco, jornada } = req.body;
 
-    // Atualiza jornada no user
     await prisma.user.update({
       where: { id: user.id },
       data: { jornadaMinutos: jornada || 480 }
     });
 
-    // Salva config completa na memória
     await memory.saveMemory(user.id, 'ponto_config', JSON.stringify({ entrada, saida, almoco, jornada }));
 
     res.json({ ok: true });
@@ -321,16 +319,17 @@ router.get('/preferencia/:phone', async (req, res) => {
 router.post('/preferencia/:phone', async (req, res) => {
   try {
     const { phone } = req.params;
-    const { nome, tom } = req.body;
+    const { nome, tom, saldo } = req.body;
     const user = await memory.getOrCreateUser(phone);
-    await memory.saveUserPreference(user.id, nome || null, tom || null);
+    const saldoNum = (saldo !== undefined && saldo !== null && saldo !== '') ? parseFloat(saldo) : null;
+    await memory.saveUserPreference(user.id, nome || null, tom || null, saldoNum);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// ====================== LEMBRETE ======================
+// ====================== LEMBRETE: GET (form) ======================
 router.get('/lembrete/:phone', (req, res) => {
   const { phone } = req.params;
   const now = new Date();
@@ -412,6 +411,7 @@ router.get('/lembrete/:phone', (req, res) => {
 </body></html>`);
 });
 
+// ====================== LEMBRETE: POST ======================
 router.post('/lembrete/:phone', async (req, res) => {
   try {
     const { phone } = req.params;
@@ -442,7 +442,7 @@ router.post('/lembrete/:phone', async (req, res) => {
   }
 });
 
-// ====================== REMÉDIO ======================
+// ====================== REMÉDIO: GET (form) ======================
 router.get('/remedio/:phone', (req, res) => {
   const { phone } = req.params;
   const pad = n => String(n).padStart(2, '0');
@@ -511,7 +511,6 @@ router.get('/remedio/:phone', (req, res) => {
 </div>
 <script>
   const pad = n => String(n).padStart(2, '0');
-
   function atualizar() {
     const nome = document.getElementById('nome').value.trim();
     const intervalo = parseInt(document.getElementById('intervalo').value);
@@ -532,7 +531,6 @@ router.get('/remedio/:phone', (req, res) => {
       (dias > 0 ? '📅 ' + dias + ' dias · ' + (dias * freqDia) + ' doses · até ' + termina.toLocaleDateString('pt-BR') : '');
     document.getElementById('resumo').style.display = 'block';
   }
-
   async function salvar() {
     const nome = document.getElementById('nome').value.trim();
     const dose = document.getElementById('dose').value.trim();
@@ -566,6 +564,7 @@ router.get('/remedio/:phone', (req, res) => {
 </body></html>`);
 });
 
+// ====================== REMÉDIO: POST ======================
 router.post('/remedio/:phone', async (req, res) => {
   try {
     const { phone } = req.params;
@@ -599,7 +598,7 @@ router.post('/remedio/:phone', async (req, res) => {
   }
 });
 
-// ====================== PONTO ======================
+// ====================== PONTO: GET (form) ======================
 router.get('/ponto/:phone', (req, res) => {
   const { phone } = req.params;
   res.send(`<!DOCTYPE html>
@@ -673,19 +672,15 @@ router.get('/ponto/:phone', (req, res) => {
 </body></html>`);
 });
 
+// ====================== PONTO: POST ======================
 router.post('/ponto/:phone', async (req, res) => {
   try {
     const { phone } = req.params;
     const { entrada, saida_almoco, volta_almoco, saida } = req.body;
     const user = await memory.getOrCreateUser(phone);
 
-    function nowBRT() {
-      return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-    }
-    function dateBRT() {
-      const d = nowBRT();
-      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    }
+    function nowBRT() { return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })); }
+    function dateBRT() { const d = nowBRT(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
     function toTimestamp(horaStr) {
       if (!horaStr) return null;
       const [h, m] = horaStr.split(':').map(Number);
