@@ -63,17 +63,28 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 /* ── SIDEBAR DESKTOP ── */
 .sidebar{width:var(--sidebar-w);background:var(--s1);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:width .25s cubic-bezier(.4,0,.2,1);overflow:hidden;position:relative;z-index:10}
 .sidebar.collapsed{width:68px}
-.sidebar-head{padding:16px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;min-height:65px;overflow:hidden}
-.sidebar-user-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;overflow:hidden;cursor:pointer}
-.sidebar-user-avatar img{width:100%;height:100%;object-fit:cover}
-.sidebar-user-info{flex:1;min-width:0;opacity:1;transition:opacity .15s}
-.sidebar.collapsed .sidebar-user-info{opacity:0;pointer-events:none;width:0}
-.sidebar-user-name{font-size:12px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sidebar-user-phone{font-size:10px;color:var(--text3);margin-top:1px;white-space:nowrap}
-.sidebar-toggle{width:28px;height:28px;background:var(--s2);border:none;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;margin-left:auto}
-.sidebar-toggle:hover{background:var(--s3)}
-.sidebar-toggle svg{transition:transform .25s}
-.sidebar.collapsed .sidebar-toggle{margin-left:0}
+.sidebar-head{padding:0 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;min-height:56px;overflow:hidden}
+.sidebar-hamburger{width:36px;height:36px;background:none;border:none;cursor:pointer;display:flex;flex-direction:column;justify-content:center;gap:5px;padding:6px;flex-shrink:0}
+.sidebar-hamburger span{display:block;height:1.5px;background:var(--text2);border-radius:2px;transition:all .2s}
+.sidebar-clara-avatar{width:32px;height:32px;border-radius:50%;overflow:hidden;flex-shrink:0;box-shadow:0 0 10px var(--glow)}
+.sidebar-clara-avatar img{width:100%;height:100%;object-fit:cover}
+.sidebar-clara-info{flex:1;min-width:0;opacity:1;transition:opacity .15s}
+.sidebar.collapsed .sidebar-clara-info{opacity:0;pointer-events:none;width:0;overflow:hidden}
+.sidebar-clara-name{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap}
+.sidebar-clara-status{font-size:11px;color:var(--green);display:flex;align-items:center;gap:4px;white-space:nowrap}
+.sidebar-clara-status::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);flex-shrink:0}
+.sidebar-head-right{display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;opacity:1;transition:opacity .15s}
+.sidebar.collapsed .sidebar-head-right{opacity:0;pointer-events:none;width:0;overflow:hidden}
+.sidebar-nova-btn{padding:5px 10px;background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.25);border-radius:16px;color:#C4B5FD;font-family:'Inter',sans-serif;font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;transition:all .2s}
+.sidebar-nova-btn:hover{background:rgba(139,92,246,.22);color:#fff}
+.sidebar-lock-btn{width:30px;height:30px;background:var(--s2);border:1px solid var(--border);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;flex-shrink:0}
+/* collapsed head: just hamburger */
+.sidebar.collapsed .sidebar-head{padding:0;justify-content:center}
+.sidebar-user-info{display:none}
+.sidebar-user-name{display:none}
+.sidebar-user-phone{display:none}
+.sidebar-user-avatar{display:none}
+.sidebar-toggle{display:none}
 .sidebar-nav{flex:1;padding:8px;overflow-y:auto;overflow-x:hidden}
 .s-item{display:flex;align-items:center;gap:12px;padding:10px 10px;border-radius:var(--r-sm);cursor:pointer;color:var(--text3);font-size:13px;font-weight:500;transition:all .15s;white-space:nowrap;position:relative;min-height:44px}
 .s-item:hover{background:var(--s2);color:var(--text2)}
@@ -155,10 +166,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 
 /* ── WELCOME SCREEN ── */
 .welcome-screen{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px;text-align:center}
-.welcome-greeting{font-family:'Outfit',sans-serif;font-size:12px;font-weight:400;letter-spacing:3px;text-transform:uppercase;color:var(--text3);margin-bottom:12px}
-.welcome-title{font-family:'DM Serif Display',serif;font-size:38px;color:var(--text);margin-bottom:8px;line-height:1.1}
-.welcome-name{font-family:'DM Serif Display',serif;font-style:italic;color:#C4B5FD}
-.welcome-sub{font-family:'Outfit',sans-serif;font-size:14px;font-weight:300;color:var(--text3);letter-spacing:.5px}
+.welcome-greeting{font-family:'Outfit',sans-serif;font-size:11px;font-weight:400;letter-spacing:4px;text-transform:uppercase;color:var(--text3);margin-bottom:16px}
+.welcome-title{font-family:'DM Serif Display',serif;font-size:36px;color:var(--text);margin-bottom:10px;line-height:1.15;font-weight:400}
+.welcome-name{font-family:'DM Serif Display',serif;font-style:italic;color:#C4B5FD;font-weight:400}
+.welcome-sub{font-family:'Outfit',sans-serif;font-size:13px;font-weight:300;color:var(--text3);letter-spacing:.3px}
 
 .input-area{padding:12px 20px;padding-bottom:calc(12px + var(--safe-bot));background:var(--s1);border-top:1px solid var(--border);flex-shrink:0}
 .chips-row{display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;scrollbar-width:none}
@@ -359,15 +370,19 @@ select option{background:var(--s2)}
 
   <!-- SIDEBAR DESKTOP -->
   <aside class="sidebar" id="sidebar">
-    <div class="sidebar-head">
-      <div class="sidebar-user-avatar" id="sidebar-avatar">✨</div>
-      <div class="sidebar-user-info">
-        <div class="sidebar-user-name" id="sidebar-name">Usuário</div>
-        <div class="sidebar-user-phone" id="sidebar-phone">—</div>
+    <div class="sidebar-head" id="sidebar-head">
+      <!-- Hamburger always visible -->
+      <button class="sidebar-hamburger" onclick="toggleSidebar()" id="sidebar-toggle-btn"><span></span><span></span><span></span></button>
+      <!-- Clara info: visible when expanded -->
+      <div class="sidebar-clara-avatar" id="sidebar-clara-av"><img src="/avatar" onerror="this.parentElement.innerHTML='✨'" alt="Clara"/></div>
+      <div class="sidebar-clara-info">
+        <div class="sidebar-clara-name">Clara</div>
+        <div class="sidebar-clara-status">Online agora</div>
       </div>
-      <button class="sidebar-toggle" onclick="toggleSidebar()" id="sidebar-toggle-btn">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 2L4 7l5 5"/></svg>
-      </button>
+      <div class="sidebar-head-right">
+        <button class="sidebar-nova-btn" onclick="newChat()">+ Nova</button>
+        <div class="sidebar-lock-btn" id="private-btn-s" onclick="togglePrivate()">🔓</div>
+      </div>
     </div>
     <nav class="sidebar-nav">
       <div class="s-item active" onclick="navTo('chat')" data-nav="chat">
@@ -399,6 +414,14 @@ select option{background:var(--s2)}
       </div>
     </nav>
     <div class="sidebar-foot">
+      <!-- User info at bottom, hidden when collapsed -->
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:4px;opacity:1;transition:opacity .15s" id="sidebar-user-bottom">
+        <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;overflow:hidden" id="sidebar-avatar"><span>✨</span></div>
+        <div class="s-foot-label" style="flex:1;min-width:0">
+          <div style="font-size:11px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="sidebar-name">Usuário</div>
+          <div style="font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="sidebar-phone">—</div>
+        </div>
+      </div>
       <button class="s-foot-btn" id="notif-btn-s" onclick="requestPushPermission()">
         <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         <span class="s-foot-label">Notificações</span>
@@ -430,10 +453,10 @@ select option{background:var(--s2)}
         <div class="private-banner" id="priv-banner">🔒 <strong>Modo privado</strong></div>
         <div class="msgs" id="msgs">
           <div class="welcome-screen" id="welcome">
-            <div style="font-size:44px;margin-bottom:14px">✨</div>
+            <div style="font-size:40px;margin-bottom:16px">✨</div>
             <div class="welcome-greeting" id="welcome-greeting">Bom dia</div>
-            <div class="welcome-title">Olá, <span class="welcome-name" id="welcome-name">Washington</span></div>
-            <div class="welcome-sub" id="welcome-sub">Sou a Clara, sua assistente pessoal</div>
+            <div class="welcome-title">O que posso ajudar,<br><span class="welcome-name" id="welcome-name">Washington</span>?</div>
+            <div class="welcome-sub">Sou a Clara, sua assistente pessoal</div>
           </div>
         </div>
         <div class="input-area">
@@ -657,9 +680,10 @@ function getGreeting(){const h=new Date().getHours();if(h>=5&&h<12)return'Bom di
 function toggleSidebar(){
   sidebarCollapsed=!sidebarCollapsed;
   const sb=document.getElementById('sidebar');
-  const btn=document.getElementById('sidebar-toggle-btn');
   sb.classList.toggle('collapsed',sidebarCollapsed);
-  btn.querySelector('svg path').setAttribute('d',sidebarCollapsed?'M5 2l5 5-5 5':'M9 2L4 7l5 5');
+  // collapsed: head shows only hamburger
+  const claraAv=document.getElementById('sidebar-clara-av');
+  if(claraAv) claraAv.style.display=sidebarCollapsed?'none':'';
 }
 
 // AUTH
@@ -674,15 +698,16 @@ function showMainApp(user,savedPhone){
   phone=savedPhone;
   const name=user.displayName||user.email?.split('@')[0]||'Usuário';
   const firstName=name.split(' ')[0];
-  // Sidebar desktop
+  // Sidebar desktop - user info at bottom
   document.getElementById('sidebar-name').textContent=name;
   document.getElementById('sidebar-phone').textContent='+55 '+phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
   // Mobile drawer
   document.getElementById('drawer-name').textContent=name;
   document.getElementById('drawer-phone').textContent='+55 '+phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
-  // Foto usuário no drawer e sidebar
+  // Foto usuário no drawer e sidebar bottom
   if(user.photoURL){
-    document.getElementById('sidebar-avatar').innerHTML=`<img src="${user.photoURL}" style="width:100%;height:100%;object-fit:cover"/>`;
+    const sbAv=document.getElementById('sidebar-avatar');
+    if(sbAv) sbAv.innerHTML=`<img src="${user.photoURL}" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/>`;
     document.getElementById('drawer-avatar').innerHTML=`<img src="${user.photoURL}" style="width:100%;height:100%;object-fit:cover"/>`;
   }
   // Welcome screen
@@ -726,7 +751,13 @@ function navTo(p){
 }
 
 // PRIVATE
-function togglePrivate(){privateMode=!privateMode;document.getElementById('private-btn').textContent=privateMode?'🔒':'🔓';document.getElementById('priv-banner').classList.toggle('on',privateMode);showToast(privateMode?'🔒 Modo privado ativado':'🔓 Modo público ativado');}
+function togglePrivate(){
+  privateMode=!privateMode;
+  document.getElementById('private-btn').textContent=privateMode?'🔒':'🔓';
+  const sb=document.getElementById('private-btn-s');if(sb)sb.textContent=privateMode?'🔒':'🔓';
+  document.getElementById('priv-banner').classList.toggle('on',privateMode);
+  showToast(privateMode?'🔒 Modo privado ativado':'🔓 Modo público ativado');
+}
 
 // LOAD ALL
 async function loadAll(){
@@ -870,8 +901,7 @@ async function loadPrefs(){try{const r=await fetch(`/forms/preferencia/${phone}`
 async function savePrefs(){
   const tom=currentMood,nome=document.getElementById('pref-nome').value.trim();
   let newPhone=document.getElementById('pref-phone').value.trim().replace(/\D/g,'');
-  if(newPhone&&newPhone.length>=10){if(!newPhone.startsWith('55'))newPhone='55'+newPhone;phone=newPhone;const user=window._currentUser;if(user)localStorage.setItem(`clara_phone_${user.uid}`,newPhone);document.getElementById('sidebar-phone').textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');document.getElementById('drawer-phone').textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');}
-  try{await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tom,nome})});showToast('Preferências salvas! ✅');}catch{showToast('Erro ⚠️');}
+  if(newPhone&&newPhone.length>=10){if(!newPhone.startsWith('55'))newPhone='55'+newPhone;phone=newPhone;const user=window._currentUser;if(user)localStorage.setItem(`clara_phone_${user.uid}`,newPhone);document.getElementById('sidebar-phone').textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');document.getElementById('drawer-phone').textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');}  try{await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tom,nome})});showToast('Preferências salvas! ✅');}catch{showToast('Erro ⚠️');}
 }
 
 // MODALS
