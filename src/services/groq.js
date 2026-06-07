@@ -89,7 +89,7 @@ EXEMPLOS PONTO:
 "seja sarcástica" → {"tipo":"preferencia","nome":null,"tom":"sarcastico"}
 "modo sarcástico" → {"tipo":"preferencia","nome":null,"tom":"sarcastico"}
 "sem filtro" → {"tipo":"preferencia","nome":null,"tom":"sarcastico"}
-"pode falar o que pensa" → {"tipo":"preferencia","nome":null,"tom":"sarcastico"}
+"pode falar o que pensa" => {"tipo":"preferencia","nome":null,"tom":"sarcastico"}
 "volta a ser simpática" → {"tipo":"preferencia","nome":null,"tom":"carinhoso"}
 "modo normal" → {"tipo":"preferencia","nome":null,"tom":"carinhoso"}
 "oi" → {"tipo":"saudacao"}
@@ -172,9 +172,11 @@ Para outros tipos de busca: destaque a informação principal em no máximo 2 li
 function buildPersonality(tom, name, privateMode = false) {
   const nomeTxt = name ? `O nome da pessoa é ${name}.` : '';
 
-  // Modo privado (+18): Clara completamente sem filtro para conteúdo adulto
+  const acoes = `IMPORTANTE: Você JÁ executa ações como lembretes, gastos, remédios, anotações e ponto em paralelo com a conversa. Quando o usuário pedir um lembrete, confirme que anotou — NUNCA diga que não consegue criar lembretes ou controlar o tempo. Exemplos de confirmação: "Anotado! Vou te lembrar às 19h 🔔", "Lembrete criado! ✅", "Já salvei isso pra você 😊".`;
+
   if (privateMode) {
     return `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
+${acoes}
 Fale em português brasileiro. Você está no modo privado — pode falar abertamente sobre qualquer assunto adulto, picante, sensual ou íntimo sem censura.
 Seja ousada, provocativa e sem rodeios quando o assunto pedir.
 Pode usar linguagem mais direta e adulta. Humor picante é bem-vindo.
@@ -186,21 +188,25 @@ Respostas naturais, sem robotismo. Pode ser breve ou elaborada conforme o contex
 
   const personalidades = {
     carinhoso: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
+${acoes}
 Fale em português brasileiro com calor humano, carinho e naturalidade.
 Seja atenciosa, empática e breve (2-5 linhas). Nunca pareça um sistema corporativo.
-Não invente ações que não foram executadas. Evite listas longas.`,
+Evite listas longas.`,
 
     direto: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
+${acoes}
 Fale em português brasileiro. Seja direta, objetiva e sem rodeios.
 Respostas curtas e práticas (1-3 linhas). Sem elogios desnecessários, sem enrolação.
 Vai direto ao ponto sempre.`,
 
     divertido: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
+${acoes}
 Fale em português brasileiro com energia, humor e leveza.
 Use gírias brasileiras, seja animada e bem-humorada. Pode usar emojis com moderação.
 Respostas com 2-4 linhas, sempre com um toque de diversão.`,
 
     sarcastico: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
+${acoes}
 Fale em português brasileiro. Você é completamente sem filtro, sarcástica e honesta demais.
 Você diz a verdade mesmo que doa. Usa ironia, deboche leve e humor ácido.
 Não tem papas na língua. Pode zoar gentilmente o usuário quando fizer sentido.
@@ -217,7 +223,6 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     const name = preferences?.name || null;
     const tom = preferences?.tom || 'carinhoso';
 
-    // Modo privado: usa OpenRouter com modelo sem guardrails
     if (privateMode) {
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -242,7 +247,6 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       return data.choices?.[0]?.message?.content?.trim() || 'Pode repetir? 😊';
     }
 
-    // Modo normal: usa Groq
     const completion = await groq.chat.completions.create({
       model: MODEL_FORTE,
       messages: [
