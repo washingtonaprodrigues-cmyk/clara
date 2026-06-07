@@ -1,5 +1,4 @@
 const axios = require('axios');
-
 const BASE_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
 const TOKEN    = process.env.UAZAPI_TOKEN;
 
@@ -10,14 +9,16 @@ const headers = {
 
 async function sendMessage(phone, message) {
   try {
+    console.log(`📤 Enviando para ${phone}: ${String(message).slice(0, 60)}`);
     const response = await axios.post(
       `${BASE_URL}/send/text`,
       { number: phone, text: message },
       { timeout: 15000, headers }
     );
+    console.log(`✅ Enviado OK para ${phone}:`, response.data?.status || 'sem status');
     return response.data;
   } catch (error) {
-    console.error('Erro UazAPI sendMessage:', error.response?.data || error.message);
+    console.error(`❌ Erro sendMessage para ${phone}:`, error.response?.data || error.message);
     throw error;
   }
 }
