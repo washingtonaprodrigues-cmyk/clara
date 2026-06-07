@@ -111,6 +111,7 @@ async function executeActionFromChat(user, phone, classified, originalText) {
             }
           });
           await memory.saveMemory(user.id, 'ultima_lista', lista.id);
+          actionData = { listaId: lista.id, listaNome: lista.name, listaItems: itemsJson };
           console.log(`[chat] Lista criada: ${lista.name} com ${itemsJson.length} itens`);
         }
         break;
@@ -129,6 +130,7 @@ async function executeActionFromChat(user, phone, classified, originalText) {
                 where: { id: lista.id },
                 data: { items: JSON.stringify(items), done: allDone }
               });
+              actionData = { listaId: lista.id, listaNome: lista.name, listaItems: items };
             }
           }
         }
@@ -148,6 +150,7 @@ async function executeActionFromChat(user, phone, classified, originalText) {
                 where: { id: lista2.id },
                 data: { items: JSON.stringify(items2) }
               });
+              actionData = { listaId: lista2.id, listaNome: lista2.name, listaItems: items2 };
             }
           }
         }
@@ -239,6 +242,7 @@ router.post('/:phone', async (req, res) => {
 
     const preferencesComContexto = { ...preferences, _contexto: contexto };
 
+    let actionData = null; // dados extras de ações (ex: lista criada)
     // Executa classify e freeResponse em paralelo
     const [response, classified] = await Promise.all([
       freeResponse(message, history, preferencesComContexto, privateMode),
@@ -254,7 +258,7 @@ router.post('/:phone', async (req, res) => {
       );
     }
 
-    res.json({ reply: response, actionType: classified?.tipo || 'outro' });
+    res.json({ reply: response, actionType: classified?.tipo || 'outro', actionData });
   } catch (e) {
     console.error('Erro chat:', e.message);
     res.status(500).json({ error: 'Erro interno' });
