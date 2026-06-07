@@ -98,6 +98,60 @@ async function executeActionFromChat(user, phone, classified, originalText) {
           await memory.saveMemory(user.id, 'cidade', classified.cidade);
         }
         break;
+
+      case 'lista_compras':
+        if (classified.itens && classified.itens.length > 0) {
+          const itemsJson = classified.itens.map((nome, i) => ({ id: i + 1, nome, done: false }));
+          const lista = await prisma.groceryList.create({
+            data: {
+              userId: user.id,
+              name: classified.nome || '🛒 Lista de compras',
+              items: JSON.stringify(itemsJson),
+              done: false,
+            }
+          });
+          await memory.saveMemory(user.id, 'ultima_lista', lista.id);
+          console.log(`[chat] Lista criada: ${lista.name} com ${itemsJson.length} itens`);
+        }
+        break;
+
+      case 'lista_marcar':
+        if (classified.numeros && classified.numeros.length > 0) {
+          const mems = await memory.getRecentMemories(user.id, 20);
+          const listaRef = mems.find(m => m.type === 'ultima_lista');
+          if (listaRef) {
+            const lista = await prisma.groceryList.findUnique({ where: { id: listaRef.content } });
+            if (lista) {
+              let items = []; try { items = JSON.parse(lista.items); } catch {}
+              items = items.map(i => classified.numeros.includes(i.id) ? { ...i, done: true } : i);
+              const allDone = items.every(i => i.done);
+              await prisma.groceryList.update({
+                where: { id: lista.id },
+                data: { items: JSON.stringify(items), done: allDone }
+              });
+            }
+          }
+        }
+        break;
+
+      case 'lista_adicionar':
+        if (classified.item) {
+          const mems2 = await memory.getRecentMemories(user.id, 20);
+          const listaRef2 = mems2.find(m => m.type === 'ultima_lista');
+          if (listaRef2) {
+            const lista2 = await prisma.groceryList.findUnique({ where: { id: listaRef2.content } });
+            if (lista2) {
+              let items2 = []; try { items2 = JSON.parse(lista2.items); } catch {}
+              const newId = items2.length > 0 ? Math.max(...items2.map(i => i.id)) + 1 : 1;
+              items2.push({ id: newId, nome: classified.item, done: false });
+              await prisma.groceryList.update({
+                where: { id: lista2.id },
+                data: { items: JSON.stringify(items2) }
+              });
+            }
+          }
+        }
+        break;
     }
   } catch (e) {
     console.error('[chat] Erro executeActionFromChat:', e.message);
