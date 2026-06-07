@@ -188,6 +188,33 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .input-row textarea{flex:1;background:none;border:none;color:var(--text);font-family:'Inter',sans-serif;font-size:14px;outline:none;resize:none;max-height:100px;line-height:1.5;min-height:22px}
 .input-row textarea::placeholder{color:var(--text3)}
 .send-btn{width:36px;height:36px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 10px var(--glow);transition:transform .1s}
+
+/* ── LISTAS ── */
+.lista-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.lista-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.lista-titulo{font-size:14px;font-weight:600;color:var(--text)}
+.lista-contador{font-size:11px;color:var(--text3);background:var(--s3);padding:2px 8px;border-radius:10px}
+.lista-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:all .15s}
+.lista-item:last-child{border-bottom:none}
+.lista-item:hover{opacity:.85}
+.lista-item.done .lista-item-nome{text-decoration:line-through;color:var(--text3)}
+.lista-check{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--border2);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}
+.lista-item.done .lista-check{background:var(--green);border-color:var(--green)}
+.lista-item.done .lista-check::after{content:'✓';color:#fff;font-size:11px;font-weight:700}
+.lista-item-num{font-size:11px;color:var(--text3);min-width:20px;text-align:center;flex-shrink:0}
+.lista-item-nome{font-size:13px;color:var(--text);flex:1}
+.lista-item-del{width:22px;height:22px;background:none;border:none;cursor:pointer;color:var(--text3);opacity:0;transition:opacity .15s;display:flex;align-items:center;justify-content:center;font-size:14px;border-radius:4px}
+.lista-item:hover .lista-item-del{opacity:.5}
+.lista-item-del:hover{opacity:1!important;color:var(--red)!important}
+.lista-add-row{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.lista-add-input{flex:1;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);padding:7px 10px;color:var(--text);font-family:'Inter',sans-serif;font-size:12px;outline:none}
+.lista-add-input:focus{border-color:var(--accent)}
+.lista-add-btn{padding:7px 12px;background:var(--accent);border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:12px;cursor:pointer}
+.lista-footer{display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px solid var(--border)}
+.lista-progress{flex:1;height:4px;background:var(--s3);border-radius:2px;overflow:hidden;margin-right:10px}
+.lista-progress-bar{height:100%;background:var(--green);border-radius:2px;transition:width .3s}
+.lista-arquivar{background:none;border:none;cursor:pointer;font-size:11px;color:var(--text3);font-family:'Inter',sans-serif;padding:2px 6px;border-radius:4px}
+.lista-arquivar:hover{color:var(--text2);background:var(--s3)}
 .mic-btn{width:36px;height:36px;background:var(--s3);border:1px solid var(--border);border-radius:10px;color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s}
 .mic-btn:hover{background:var(--s2);color:var(--text)}
 .mic-btn.listening{background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.4);color:var(--red);animation:micPulse 1s ease-in-out infinite}
@@ -544,6 +571,18 @@ select option{background:var(--s2)}
         <div class="fin-history" id="fin-history"><div class="spin"></div></div>
       </div>
 
+      <!-- LISTAS -->
+      <div class="page" id="page-listas">
+        <div class="ph">
+          <div class="ph-icon" style="background:rgba(34,197,94,.1);color:#6EE7B7">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          </div>
+          <div><div class="ph-title">Listas</div><div class="ph-sub">Mercado, farmácia e mais</div></div>
+          <div class="ph-actions"><button class="btn-p" onclick="openModal('m-lista')">+ Nova lista</button></div>
+        </div>
+        <div class="scroll-body" style="padding:14px 16px" id="listas-body"><div class="spin"></div></div>
+      </div>
+
       <!-- COFRE -->
       <div class="page" id="page-cofre">
         <div class="ph">
@@ -611,6 +650,7 @@ select option{background:var(--s2)}
     <div class="d-item" onclick="navTo('lembretes')" data-nav="lembretes"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Lembretes <span class="d-badge" id="d-badge-rem2" style="display:none">0</span></div>
     <div class="d-item" onclick="navTo('saude')" data-nav="saude"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg> Saúde <span class="d-badge" id="d-badge-med2" style="display:none">0</span></div>
     <div class="d-item" onclick="navTo('financeiro')" data-nav="financeiro"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> Financeiro</div>
+    <div class="d-item" onclick="navTo('listas')" data-nav="listas"><svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Listas <span class="d-badge" id="d-badge-list2" style="display:none">0</span></div>
     <div class="d-item" onclick="navTo('cofre')" data-nav="cofre"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Cofre</div>
     <div class="drawer-section">Conta</div>
     <div class="d-item" onclick="navTo('preferencias')" data-nav="preferencias"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Configurações</div>
@@ -622,6 +662,18 @@ select option{background:var(--s2)}
 </div>
 
 <!-- MODALS -->
+<div class="overlay" id="m-lista">
+  <div class="modal">
+    <div class="modal-title">🛒 Nova lista</div>
+    <div class="mf"><label>Nome da lista</label><input type="text" id="ml-nome" placeholder="Ex: Mercado, Farmácia..."/></div>
+    <div class="mf"><label>Itens (um por linha ou separados por vírgula)</label><textarea id="ml-itens" placeholder="Arroz&#10;Feijão&#10;Leite&#10;Frango" style="height:120px"></textarea></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal('m-lista')">Cancelar</button>
+      <button class="btn-save" id="slista-btn" onclick="saveLista()">Criar lista</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="m-lembrete">
   <div class="modal">
     <div class="modal-title">Novo lembrete</div>
@@ -763,6 +815,7 @@ async function navTo(p){
   if(p==='lembretes')renderRem();
   if(p==='saude')renderSaude();
   if(p==='financeiro'){await loadSaldo();renderFin();}
+  if(p==='listas')renderListas();
   if(p==='cofre')renderCofre();
   if(p==='preferencias')loadPrefs();
 }
@@ -792,6 +845,9 @@ async function loadAll(){
 
     // Badge saúde: só remédios com dose ainda pendente hoje
     const medCnt=r.filter(m=>{let times=[];try{times=JSON.parse(m.times||'[]');}catch{}return times.some(t=>t>=hm);}).length;
+    // Badge listas: listas ativas
+    const listCnt=await fetch(`/forms/listas/${phone}`).then(x=>x.json()).then(d=>d.length).catch(()=>0);
+    ['d-badge-list','d-badge-list2'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display=listCnt?'':'none';if(listCnt)el.textContent=listCnt;}});
     ['d-badge-med','d-badge-med2'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display=medCnt?'':'none';if(medCnt)el.textContent=medCnt;}});
   }catch{}
 }
@@ -845,6 +901,7 @@ async function sendChat(){
       if(currentNav==='lembretes')renderRem();
       if(currentNav==='saude')renderSaude();
       if(currentNav==='financeiro')renderFin();
+      if(currentNav==='listas')renderListas();
       if(currentNav==='cofre')renderCofre();
     },delay);
   }catch{loading.querySelector('.msg-bubble').textContent='Erro de conexão.';loading.classList.remove('loading');}
@@ -1014,6 +1071,138 @@ async function requestPushPermission(){
   try{const sub=await swReg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(vapidPublicKey)});await fetch(`/push/subscribe/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscription:sub})});showToast('Notificações ativadas! 🔔',3000);}catch{showToast('Erro ao ativar notificações ⚠️');}
 }
 function urlBase64ToUint8Array(b){const p='='.repeat((4-b.length%4)%4);const s=(b+p).replace(/-/g,'+').replace(/_/g,'/');const r=atob(s);return Uint8Array.from([...r].map(c=>c.charCodeAt(0)));}
+
+// ══ LISTAS ══
+let allListas = [];
+
+async function renderListas() {
+  const el = document.getElementById('listas-body');
+  el.innerHTML = '<div class="spin"></div>';
+  try {
+    const r = await fetch(`/forms/listas/${phone}`);
+    allListas = await r.json();
+    displayListas();
+    // Badge
+    const cnt = allListas.filter(l => !l.done).length;
+    ['d-badge-list','d-badge-list2'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.style.display = cnt ? '' : 'none'; if (cnt) el.textContent = cnt; }
+    });
+  } catch {
+    el.innerHTML = '<div class="empty"><span class="empty-icon">🛒</span>Nenhuma lista criada ainda</div>';
+  }
+}
+
+function displayListas() {
+  const el = document.getElementById('listas-body');
+  if (!allListas.length) {
+    el.innerHTML = '<div class="empty"><span class="empty-icon">🛒</span>Nenhuma lista ainda<br><span style="font-size:12px;margin-top:8px;display:block">Diga para a Clara: "preciso comprar arroz, feijão..."</span></div>';
+    return;
+  }
+  el.innerHTML = allListas.map(lista => {
+    const items = Array.isArray(lista.items) ? lista.items : [];
+    const done = items.filter(i => i.done).length;
+    const total = items.length;
+    const pct = total > 0 ? Math.round((done/total)*100) : 0;
+    const itemsHtml = items.map(item => `
+      <div class="lista-item ${item.done ? 'done' : ''}" onclick="toggleItem('${lista.id}',${item.id})">
+        <div class="lista-check"></div>
+        <span class="lista-item-num">${item.id}</span>
+        <span class="lista-item-nome">${item.nome}</span>
+        <button class="lista-item-del" onclick="event.stopPropagation();removeItem('${lista.id}',${item.id})">✕</button>
+      </div>`).join('');
+    return `
+      <div class="lista-card" id="lista-${lista.id}">
+        <div class="lista-header">
+          <div class="lista-titulo">${lista.name}</div>
+          <div class="lista-contador">${done}/${total} itens</div>
+        </div>
+        ${itemsHtml}
+        <div class="lista-add-row">
+          <input class="lista-add-input" id="add-${lista.id}" placeholder="Adicionar item..." onkeydown="if(event.key==='Enter')addItem('${lista.id}')"/>
+          <button class="lista-add-btn" onclick="addItem('${lista.id}')">+</button>
+        </div>
+        <div class="lista-footer">
+          <div class="lista-progress"><div class="lista-progress-bar" style="width:${pct}%"></div></div>
+          <button class="lista-arquivar" onclick="arquivarLista('${lista.id}')">Arquivar</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function toggleItem(listaId, itemId) {
+  try {
+    const r = await fetch(`/forms/lista-item/${listaId}`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ itemId })
+    });
+    const d = await r.json();
+    // Atualiza local
+    const lista = allListas.find(l => l.id === listaId);
+    if (lista) lista.items = d.items;
+    displayListas();
+    if (d.allDone) showToast('🎉 Lista concluída!', 3000);
+  } catch { showToast('Erro ⚠️'); }
+}
+
+async function addItem(listaId) {
+  const inp = document.getElementById('add-' + listaId);
+  const nome = inp?.value.trim();
+  if (!nome) return;
+  try {
+    const r = await fetch(`/forms/lista-add-item/${listaId}`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ nome })
+    });
+    const d = await r.json();
+    const lista = allListas.find(l => l.id === listaId);
+    if (lista) lista.items = d.items;
+    if (inp) inp.value = '';
+    displayListas();
+  } catch { showToast('Erro ⚠️'); }
+}
+
+async function removeItem(listaId, itemId) {
+  try {
+    const r = await fetch(`/forms/lista-item/${listaId}/${itemId}`, { method: 'DELETE' });
+    const d = await r.json();
+    const lista = allListas.find(l => l.id === listaId);
+    if (lista) lista.items = d.items;
+    displayListas();
+  } catch { showToast('Erro ⚠️'); }
+}
+
+async function arquivarLista(listaId) {
+  try {
+    await fetch(`/forms/lista-arquivar/${listaId}`, { method: 'POST' });
+    allListas = allListas.filter(l => l.id !== listaId);
+    displayListas();
+    showToast('Lista arquivada ✅');
+  } catch { showToast('Erro ⚠️'); }
+}
+
+async function saveLista() {
+  const nome = document.getElementById('ml-nome').value.trim();
+  const itensRaw = document.getElementById('ml-itens').value.trim();
+  if (!itensRaw) { showToast('Adicione pelo menos um item ⚠️'); return; }
+  const btn = document.getElementById('slista-btn');
+  btn.textContent = '...'; btn.disabled = true;
+  try {
+    const r = await fetch(`/forms/lista/${phone}`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ nome: nome || '🛒 Lista de compras', itens: itensRaw })
+    });
+    if (r.ok) {
+      closeModal('m-lista');
+      showToast('Lista criada! 🛒');
+      document.getElementById('ml-nome').value = '';
+      document.getElementById('ml-itens').value = '';
+      await renderListas();
+    } else showToast('Erro ⚠️');
+  } catch { showToast('Erro ⚠️'); }
+  btn.textContent = 'Criar lista'; btn.disabled = false;
+}
+
 // ══ VOZ ══
 let voiceMode = false; // true = Clara responde em voz
 let recognition = null;
