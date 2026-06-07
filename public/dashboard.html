@@ -10,7 +10,6 @@
 <meta name="apple-mobile-web-app-title" content="Clara"/>
 <meta name="theme-color" content="#8B5CF6"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,600;1,500&display=swap" rel="stylesheet"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 :root{
   --bg:#08090D;--s1:#0E0F16;--s2:#13141D;--s3:#1A1B26;
@@ -27,7 +26,7 @@ html,body{height:100%;overflow:hidden}
 body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-size:14px;height:100dvh}
 .app{display:flex;flex-direction:column;height:100dvh;padding-top:var(--safe-top)}
 
-/* ── AUTH SCREEN ── */
+/* AUTH */
 #auth-screen{position:fixed;inset:0;background:var(--bg);z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
 #auth-screen.hidden{display:none}
 .auth-logo{font-size:56px;margin-bottom:12px}
@@ -49,7 +48,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .auth-google:hover{border-color:rgba(255,255,255,.2);background:var(--s3)}
 .auth-error{font-size:12px;color:var(--red);margin-top:8px;text-align:center;min-height:16px}
 
-/* ── PHONE SETUP SCREEN ── */
+/* PHONE SCREEN */
 #phone-screen{position:fixed;inset:0;background:var(--bg);z-index:190;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
 #phone-screen.hidden{display:none}
 .phone-screen-box{width:100%;max-width:360px;background:var(--s1);border:1px solid var(--border2);border-radius:20px;padding:24px}
@@ -65,14 +64,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .topbar-left{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
 .tb-menu{width:36px;height:36px;background:none;border:none;cursor:pointer;display:flex;flex-direction:column;justify-content:center;gap:5px;padding:6px;flex-shrink:0}
 .tb-menu span{display:block;height:2px;background:var(--text2);border-radius:2px;transition:all .2s}
-.tb-avatar{width:34px;height:34px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;box-shadow:0 0 12px var(--glow);overflow:hidden}
-.tb-avatar img{width:100%;height:100%;object-fit:cover}
+/* Topbar avatar = sempre ✨, sem foto */
+.tb-avatar{width:34px;height:34px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;box-shadow:0 0 12px var(--glow)}
 .tb-info{min-width:0}
 .tb-name{font-size:15px;font-weight:600;color:var(--text)}
 .tb-status{font-size:11px;color:var(--green);display:flex;align-items:center;gap:4px}
 .tb-status::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);flex-shrink:0}
-.tb-status.off{color:var(--text3)}
-.tb-status.off::before{background:var(--text3);box-shadow:none}
 .topbar-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .tb-nova{padding:7px 14px;background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.25);border-radius:20px;color:#C4B5FD;font-family:'Inter',sans-serif;font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .2s}
 .tb-nova:hover{background:rgba(139,92,246,.22);border-color:rgba(139,92,246,.45);color:#fff}
@@ -125,7 +122,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .msg-time{font-size:10px;color:var(--text3);padding:0 4px}
 .welcome-screen{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px;text-align:center}
 .welcome-title{font-family:'Playfair Display',serif;font-size:26px;color:var(--text);margin-bottom:6px}
-.welcome-sub{font-size:13px;color:var(--text2);margin-bottom:28px}
+.welcome-sub{font-size:13px;color:var(--text2)}
 .input-area{padding:10px 16px;padding-bottom:calc(10px + var(--safe-bot));background:var(--s1);border-top:1px solid var(--border);flex-shrink:0}
 .chips-row{display:flex;gap:6px;margin-bottom:8px;overflow-x:auto;scrollbar-width:none}
 .chips-row::-webkit-scrollbar{display:none}
@@ -137,7 +134,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .input-row textarea::placeholder{color:var(--text3)}
 .send-btn{width:36px;height:36px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 10px var(--glow);transition:transform .1s}
 .send-btn:active{transform:scale(.92)}
-.send-btn:disabled{opacity:.3;cursor:default}
 
 /* PAGE HEADER */
 .ph{padding:14px 16px;border-bottom:1px solid var(--border);background:var(--s1);display:flex;align-items:center;gap:12px;flex-shrink:0}
@@ -146,9 +142,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .ph-sub{font-size:11px;color:var(--text3);margin-top:1px}
 .ph-actions{margin-left:auto;display:flex;gap:6px}
 .btn-p{padding:7px 14px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 4px 10px var(--glow)}
-.btn-o{padding:7px 12px;background:none;border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-family:'Inter',sans-serif;font-size:12px;cursor:pointer}
 .scroll-body{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
-.section-title{font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
 .empty{text-align:center;padding:40px 16px;color:var(--text3)}
 .empty-icon{font-size:32px;display:block;margin-bottom:10px;opacity:.25}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -161,15 +155,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 
 /* LEMBRETES */
 .rem-date-nav{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0}
-.rem-date-label{flex:1;font-size:13px;font-weight:600;color:var(--text)}
-.rem-date-sub{font-size:11px;color:var(--text3);font-weight:400;margin-left:6px}
 .rem-nav-btn{width:28px;height:28px;background:var(--s2);border:1px solid var(--border);border-radius:7px;color:var(--text2);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s}
 .rem-nav-btn:hover{border-color:var(--border2);color:var(--text)}
 .rem-today-btn{padding:4px 10px;background:var(--s2);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-family:'Inter',sans-serif;font-size:11px;font-weight:500;cursor:pointer;transition:all .15s}
 .rem-today-btn:hover{border-color:var(--accent);color:var(--accent)}
 .rem-timeline{flex:1;overflow-y:auto;padding:0 16px 16px;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
-.rem-timeline-inner{position:relative;padding-top:8px}
-.rem-now-line{display:flex;align-items:center;gap:8px;margin:4px 0;position:relative;z-index:2}
+.rem-now-line{display:flex;align-items:center;gap:8px;margin:4px 0}
 .rem-now-time{font-size:10px;font-weight:700;color:var(--accent);min-width:36px;text-align:right}
 .rem-now-bar{flex:1;height:1.5px;background:var(--accent);opacity:.6;border-radius:1px}
 .rem-now-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent);flex-shrink:0}
@@ -184,13 +175,13 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .rem-row-title{flex:1;font-size:13px;font-weight:500;color:var(--text);min-width:0}
 .rem-row-title.done{text-decoration:line-through;color:var(--text3)}
 .rem-done-section{margin-top:4px}
-.rem-done-toggle{display:flex;align-items:center;gap:6px;padding:8px 0;cursor:pointer;color:var(--text3);font-size:12px;font-weight:500;transition:color .15s;background:none;border:none;font-family:'Inter',sans-serif}
+.rem-done-toggle{display:flex;align-items:center;gap:6px;padding:8px 0;cursor:pointer;color:var(--text3);font-size:12px;font-weight:500;background:none;border:none;font-family:'Inter',sans-serif}
 .rem-done-toggle:hover{color:var(--text2)}
 .rem-done-toggle svg{transition:transform .2s}
 .rem-done-toggle.open svg{transform:rotate(180deg)}
 
 /* SAÚDE */
-.med-section-title{display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-size:12px;font-weight:600;color:var(--text2);flex-shrink:0}
+.med-section-title{display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-size:12px;font-weight:600;color:var(--text2)}
 .med-row{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r);margin:0 16px 10px;transition:all .15s}
 .med-icon-wrap{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
 .med-info{flex:1;min-width:0}
@@ -207,8 +198,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .med-action-btn.tomar{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 4px 10px var(--glow)}
 .med-action-btn.pendente{background:var(--s3);color:var(--text3);border:1px solid var(--border)}
 .med-action-btn:disabled{opacity:.4;cursor:default}
-.med-tip{margin:12px 16px;padding:12px 14px;background:rgba(139,92,246,.06);border:1px solid rgba(139,92,246,.15);border-radius:var(--r);display:flex;gap:10px;align-items:flex-start}
-.med-tip-icon{font-size:18px;flex-shrink:0}
+.med-tip{margin:12px 16px;padding:12px 14px;background:rgba(139,92,246,.06);border:1px solid rgba(139,92,246,.15);border-radius:var(--r);display:flex;gap:10px}
 .med-tip-title{font-size:11px;font-weight:600;color:#C4B5FD;margin-bottom:2px}
 .med-tip-text{font-size:11px;color:var(--text3)}
 
@@ -225,8 +215,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .fin-stat-sm-val{font-size:14px;font-weight:700;color:var(--text)}
 .fin-history{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
 .fin-hist-header{padding:12px 16px 8px;font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px}
-.fin-hist-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);transition:background .15s}
-.fin-hist-item:hover{background:rgba(255,255,255,.02)}
+.fin-hist-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)}
 .fin-hist-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
 .fin-hist-info{flex:1;min-width:0}
 .fin-hist-name{font-size:13px;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -260,24 +249,24 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .mood-desc{font-size:11px;color:var(--text3);margin-top:2px}
 .pref-field{margin-bottom:14px}
 .pref-field label{display:block;font-size:12px;color:var(--text2);margin-bottom:5px}
-.pref-field input,.pref-field select{width:100%;padding:9px 12px;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none}
-.pref-field input:focus,.pref-field select:focus{border-color:var(--accent)}
-.pref-time-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.pref-field input{width:100%;padding:9px 12px;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none}
+.pref-field input:focus{border-color:var(--accent)}
 .pref-save-btn{width:100%;padding:11px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 12px var(--glow);margin-top:4px}
 
-/* MODAL */
-.overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);z-index:100;display:none;align-items:flex-end;justify-content:center;padding:0}
+/* MODAL — CENTRO DA TELA */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);z-index:100;display:none;align-items:center;justify-content:center;padding:16px}
 .overlay.open{display:flex}
-.modal{background:var(--s2);border:1px solid var(--border2);border-radius:20px 20px 0 0;padding:20px 20px calc(20px + var(--safe-bot));width:100%;max-width:500px;max-height:90dvh;overflow-y:auto}
-.modal-handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 16px}
-.modal-title{font-family:'Playfair Display',serif;font-size:17px;color:var(--text);margin-bottom:16px}
+.modal{background:var(--s2);border:1px solid var(--border2);border-radius:20px;padding:24px;width:100%;max-width:420px;max-height:90dvh;overflow-y:auto;animation:modalIn .2s ease}
+@keyframes modalIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
+.modal-handle{display:none}
+.modal-title{font-family:'Playfair Display',serif;font-size:18px;color:var(--text);margin-bottom:20px;display:flex;align-items:center;gap:8px}
 .mf{margin-bottom:12px}
 .mf label{display:block;font-size:11px;font-weight:500;color:var(--text2);margin-bottom:5px}
 .mf input,.mf select,.mf textarea{width:100%;padding:9px 12px;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none}
 .mf textarea{resize:none;height:65px}
 .mf input:focus,.mf select:focus,.mf textarea:focus{border-color:var(--accent)}
 .mf-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.modal-btns{display:flex;gap:8px;margin-top:16px}
+.modal-btns{display:flex;gap:8px;margin-top:20px}
 .btn-cancel{flex:1;padding:10px;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text2);font-family:'Inter',sans-serif;font-size:13px;cursor:pointer}
 .btn-save{flex:2;padding:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 10px var(--glow)}
 .btn-save:disabled{opacity:.4;cursor:default}
@@ -296,13 +285,11 @@ select option{background:var(--s2)}
       <div class="auth-tab active" onclick="setAuthTab('login')" id="tab-login">Entrar</div>
       <div class="auth-tab" onclick="setAuthTab('register')" id="tab-register">Criar conta</div>
     </div>
-    <div id="auth-email-form">
-      <div class="auth-field"><label>E-mail</label><input type="email" id="auth-email" placeholder="seu@email.com"/></div>
-      <div class="auth-field"><label>Senha</label><input type="password" id="auth-password" placeholder="••••••••"/></div>
-      <div class="auth-field" id="auth-name-field" style="display:none"><label>Seu nome</label><input type="text" id="auth-name" placeholder="Como quer ser chamado?"/></div>
-      <button class="auth-btn" id="auth-email-btn" onclick="authWithEmail()">Entrar</button>
-      <div class="auth-error" id="auth-error"></div>
-    </div>
+    <div class="auth-field"><label>E-mail</label><input type="email" id="auth-email" placeholder="seu@email.com"/></div>
+    <div class="auth-field"><label>Senha</label><input type="password" id="auth-password" placeholder="••••••••"/></div>
+    <div class="auth-field" id="auth-name-field" style="display:none"><label>Seu nome</label><input type="text" id="auth-name" placeholder="Como quer ser chamado?"/></div>
+    <button class="auth-btn" id="auth-email-btn" onclick="authWithEmail()">Entrar</button>
+    <div class="auth-error" id="auth-error"></div>
     <div class="auth-divider">ou</div>
     <button class="auth-google" onclick="authWithGoogle()">
       <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 002.38-5.88c0-.57-.05-.66-.15-1.18z"/><path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 01-7.18-2.54H1.83v2.07A8 8 0 008.98 17z"/><path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 010-3.04V5.41H1.83a8 8 0 000 7.18l2.67-2.07z"/><path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 001.83 5.4L4.5 7.49a4.77 4.77 0 014.48-3.31z"/></svg>
@@ -311,16 +298,13 @@ select option{background:var(--s2)}
   </div>
 </div>
 
-<!-- PHONE SETUP SCREEN -->
+<!-- PHONE SCREEN -->
 <div id="phone-screen" class="hidden">
   <div class="phone-screen-box">
     <div class="phone-screen-title">Quase lá! 📱</div>
     <div class="phone-screen-sub">Informe seu WhatsApp para receber lembretes e usar a Clara.</div>
     <div class="phone-screen-user" id="phone-screen-user"></div>
-    <div class="auth-field">
-      <label>Número WhatsApp (com DDD, sem +55)</label>
-      <input type="tel" id="phone-setup-input" placeholder="Ex: 43999998888"/>
-    </div>
+    <div class="auth-field"><label>Número WhatsApp (com DDD, sem +55)</label><input type="tel" id="phone-setup-input" placeholder="Ex: 43999998888"/></div>
     <button class="auth-btn" onclick="savePhone()">Salvar e continuar</button>
     <div class="auth-error" id="phone-error"></div>
   </div>
@@ -331,7 +315,8 @@ select option{background:var(--s2)}
   <div class="topbar">
     <div class="topbar-left">
       <button class="tb-menu" onclick="toggleDrawer()"><span></span><span></span><span></span></button>
-      <div class="tb-avatar" id="tb-avatar">✨</div>
+      <!-- Topbar: sempre ✨, sem foto do usuário -->
+      <div class="tb-avatar">✨</div>
       <div class="tb-info">
         <div class="tb-name">Clara</div>
         <div class="tb-status" id="tb-status">Online agora</div>
@@ -339,13 +324,14 @@ select option{background:var(--s2)}
     </div>
     <div class="topbar-right">
       <button class="tb-nova" onclick="newChat()">＋ Nova conversa</button>
-      <div class="tb-icon-btn" id="private-btn" onclick="togglePrivate()" title="Modo privado">🔓</div>
+      <div class="tb-icon-btn" id="private-btn" onclick="togglePrivate()">🔓</div>
     </div>
   </div>
 
   <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
   <div class="drawer" id="drawer">
     <div class="drawer-head">
+      <!-- Drawer: foto do usuário aqui -->
       <div class="drawer-user-avatar" id="drawer-avatar">✨</div>
       <div class="drawer-user-info">
         <div class="drawer-user-name" id="drawer-name">Usuário</div>
@@ -372,17 +358,17 @@ select option{background:var(--s2)}
   <div class="pages">
     <!-- CHAT -->
     <div class="page active" id="page-chat">
-      <div class="private-banner" id="priv-banner">🔒 <strong>Modo privado</strong> — histórico apagado ao iniciar nova conversa</div>
+      <div class="private-banner" id="priv-banner">🔒 <strong>Modo privado</strong></div>
       <div class="msgs" id="msgs">
         <div class="welcome-screen" id="welcome">
           <div style="font-size:48px;margin-bottom:16px">✨</div>
-          <div class="welcome-title">Olá!</div>
+          <div class="welcome-title" id="welcome-title">Olá!</div>
           <div class="welcome-sub">Sou a Clara, sua assistente pessoal</div>
         </div>
       </div>
       <div class="input-area">
-        <div class="chips-row" id="chips-row">
-          <span class="chip" onclick="cs('Ver minha agenda de hoje')">📋 Ver agenda</span>
+        <div class="chips-row">
+          <span class="chip" onclick="cs('Ver minha agenda de hoje')">📋 Agenda</span>
           <span class="chip" onclick="cs('Criar um lembrete')">📅 Lembrete</span>
           <span class="chip" onclick="cs('Registrar um gasto')">💰 Gasto</span>
           <span class="chip" onclick="cs('Adicionar remédio')">💊 Remédio</span>
@@ -392,7 +378,7 @@ select option{background:var(--s2)}
           <textarea id="chat-msg" rows="1" placeholder="Pergunte ou peça algo para a Clara..."
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"
             oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"></textarea>
-          <button class="send-btn" id="send-btn" onclick="sendChat()">➤</button>
+          <button class="send-btn" onclick="sendChat()">➤</button>
         </div>
       </div>
     </div>
@@ -407,7 +393,7 @@ select option{background:var(--s2)}
       <div class="rem-date-nav">
         <button class="rem-nav-btn" onclick="changeRemDate(-1)">‹</button>
         <div style="flex:1">
-          <div class="rem-date-label" id="rem-date-label">Hoje</div>
+          <div style="font-size:13px;font-weight:600;color:var(--text)" id="rem-date-label">Hoje</div>
           <div style="font-size:11px;color:var(--text3)" id="rem-date-sub"></div>
         </div>
         <button class="rem-today-btn" id="rem-today-btn" onclick="goRemToday()">Hoje</button>
@@ -487,10 +473,9 @@ select option{background:var(--s2)}
   </div>
 </div>
 
-<!-- MODALS -->
+<!-- MODALS (centro da tela) -->
 <div class="overlay" id="m-lembrete">
   <div class="modal">
-    <div class="modal-handle"></div>
     <div class="modal-title">📅 Novo lembrete</div>
     <div class="mf"><label>O que lembrar?</label><textarea id="ml-titulo" placeholder="Descreva o lembrete..."></textarea></div>
     <div class="mf-row">
@@ -506,7 +491,6 @@ select option{background:var(--s2)}
 
 <div class="overlay" id="m-remedio">
   <div class="modal">
-    <div class="modal-handle"></div>
     <div class="modal-title">💊 Cadastrar medicamento</div>
     <div class="mf"><label>Nome</label><input type="text" id="mr-nome" placeholder="Ex: Nebivolol 5mg"/></div>
     <div class="mf-row">
@@ -532,7 +516,6 @@ select option{background:var(--s2)}
 
 <div class="overlay" id="m-gasto">
   <div class="modal">
-    <div class="modal-handle"></div>
     <div class="modal-title">💰 Registrar gasto</div>
     <div class="mf"><label>Valor (R$)</label><input type="number" id="mg-val" placeholder="0,00" step="0.01" min="0"/></div>
     <div class="mf-row">
@@ -559,7 +542,6 @@ select option{background:var(--s2)}
 
 <div class="overlay" id="m-cofre">
   <div class="modal">
-    <div class="modal-handle"></div>
     <div class="modal-title">🔐 Novo segredo</div>
     <div class="mf"><label>Tipo</label>
       <select id="ct" onchange="updateCofreFields()">
@@ -604,15 +586,13 @@ const firebaseConfig = {
   projectId: "clara-ia-850b2",
   storageBucket: "clara-ia-850b2.firebasestorage.app",
   messagingSenderId: "942967325103",
-  appId: "1:942967325103:web:cd3fdaad215f6d5a672f5a",
-  measurementId: "G-WWGWKWRDB4"
+  appId: "1:942967325103:web:cd3fdaad215f6d5a672f5a"
 };
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 
-// Expõe funções globalmente
 window._firebaseAuth = auth;
 window._googleProvider = provider;
 window._signInWithEmailAndPassword = signInWithEmailAndPassword;
@@ -624,12 +604,10 @@ window._updateProfile = updateProfile;
 onAuthStateChanged(auth, async (user) => {
   if (user) {
     window._currentUser = user;
-    // Verifica se tem phone salvo
     const savedPhone = localStorage.getItem(`clara_phone_${user.uid}`);
     if (!savedPhone) {
       showPhoneScreen(user);
     } else {
-      window._phone = savedPhone;
       showMainApp(user, savedPhone);
     }
   } else {
@@ -640,125 +618,117 @@ onAuthStateChanged(auth, async (user) => {
 </script>
 
 <script>
-// ══ STATE ══
-let phone = '', privateMode = false, currentNav = 'chat';
-let allRem = [], allMeds = [], allGastos = [];
-let currentMood = 'carinhoso';
-let remViewDate = new Date();
-let authTab = 'login';
+let phone='', privateMode=false, currentNav='chat';
+let allRem=[], allMeds=[], allGastos=[];
+let currentMood='carinhoso', remViewDate=new Date(), authTab='login';
+let pollInterval=null;
 
-const CAT_COLORS={alimentacao:'#F59E0B',mercado:'#10B981',transporte:'#3B82F6',saude:'#EF4444',lazer:'#A855F7',moradia:'#EC4899',educacao:'#06B6D4',outro:'#6B7280'};
 const CAT_ICONS={alimentacao:'🍔',mercado:'🛒',transporte:'🚗',saude:'💊',lazer:'🎮',moradia:'🏠',educacao:'📚',outro:'📦'};
 const CAT_BG={alimentacao:'rgba(245,158,11,.12)',mercado:'rgba(16,185,129,.12)',transporte:'rgba(59,130,246,.12)',saude:'rgba(239,68,68,.12)',lazer:'rgba(168,85,247,.12)',moradia:'rgba(236,72,153,.12)',educacao:'rgba(6,182,212,.12)',outro:'rgba(107,114,128,.12)'};
 const MED_COLORS=['rgba(139,92,246,.15)','rgba(59,130,246,.15)','rgba(16,185,129,.15)','rgba(245,158,11,.15)','rgba(239,68,68,.15)'];
 const MED_TEXT=['#C4B5FD','#93C5FD','#6EE7B7','#FCD34D','#FCA5A5'];
 
-const pad = n => String(n).padStart(2, '0');
-const brl = v => 'R$ ' + Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+const pad=n=>String(n).padStart(2,'0');
+const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 function nowLocal(){const n=new Date();return{data:`${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`,hora:`${pad(n.getHours())}:${pad(n.getMinutes())}`};}
 function fmtD(d){try{return new Date(d).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});}catch{return'—';}}
-function showToast(m, d=2500){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),d);}
+function showToast(m,d=2500){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),d);}
 
-// ══ AUTH ══
+// AUTH
 function showAuthScreen(){
   document.getElementById('auth-screen').classList.remove('hidden');
   document.getElementById('phone-screen').classList.add('hidden');
   document.getElementById('main-app').style.display='none';
+  if(pollInterval){clearInterval(pollInterval);pollInterval=null;}
 }
-
 function showPhoneScreen(user){
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('phone-screen').classList.remove('hidden');
   document.getElementById('main-app').style.display='none';
-  const avatar = user.photoURL ? `<img src="${user.photoURL}" class="phone-screen-avatar"/>` : `<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#8B5CF6,#A855F7);display:flex;align-items:center;justify-content:center;font-size:14px">✨</div>`;
-  document.getElementById('phone-screen-user').innerHTML = `${avatar}<div><div class="phone-screen-name">${user.displayName||user.email}</div><div class="phone-screen-email">${user.email}</div></div>`;
+  const av=user.photoURL?`<img src="${user.photoURL}" class="phone-screen-avatar"/>`:`<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#8B5CF6,#A855F7);display:flex;align-items:center;justify-content:center;font-size:14px">✨</div>`;
+  document.getElementById('phone-screen-user').innerHTML=`${av}<div><div class="phone-screen-name">${user.displayName||user.email}</div><div class="phone-screen-email">${user.email}</div></div>`;
 }
-
 function showMainApp(user, savedPhone){
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('phone-screen').classList.add('hidden');
   document.getElementById('main-app').style.display='flex';
-  phone = savedPhone;
-
-  // Update UI with user info
-  const name = user.displayName || user.email?.split('@')[0] || 'Usuário';
-  document.getElementById('drawer-name').textContent = name;
-  document.getElementById('drawer-phone').textContent = '+55 ' + phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
-
+  phone=savedPhone;
+  const name=user.displayName||user.email?.split('@')[0]||'Usuário';
+  document.getElementById('drawer-name').textContent=name;
+  document.getElementById('drawer-phone').textContent='+55 '+phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
+  document.getElementById('welcome-title').textContent=`Olá, ${name.split(' ')[0]}!`;
+  // Foto só no drawer
   if(user.photoURL){
-    document.getElementById('tb-avatar').innerHTML = `<img src="${user.photoURL}" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/>`;
-    document.getElementById('drawer-avatar').innerHTML = `<img src="${user.photoURL}" style="width:100%;height:100%;object-fit:cover"/>`;
+    document.getElementById('drawer-avatar').innerHTML=`<img src="${user.photoURL}" style="width:100%;height:100%;object-fit:cover"/>`;
   }
-
-  // Start chat
-  const w = document.getElementById('welcome');
-  if(w){w.querySelector('.welcome-title').textContent = `Olá, ${name.split(' ')[0]}!`;}
-
   loadAll();
   loadMood();
   initPWA();
+  // Polling a cada 30s para sincronizar com WhatsApp
+  if(pollInterval) clearInterval(pollInterval);
+  pollInterval=setInterval(()=>{
+    loadAll().then(()=>{
+      if(currentNav==='lembretes') renderRem();
+      if(currentNav==='saude') renderSaude();
+      if(currentNav==='financeiro') renderFin();
+      if(currentNav==='cofre') renderCofre();
+    });
+  },30000);
 }
-
 function setAuthTab(tab){
-  authTab = tab;
-  document.getElementById('tab-login').classList.toggle('active', tab==='login');
-  document.getElementById('tab-register').classList.toggle('active', tab==='register');
-  document.getElementById('auth-email-btn').textContent = tab==='login' ? 'Entrar' : 'Criar conta';
-  document.getElementById('auth-name-field').style.display = tab==='register' ? 'block' : 'none';
-  document.getElementById('auth-error').textContent = '';
+  authTab=tab;
+  document.getElementById('tab-login').classList.toggle('active',tab==='login');
+  document.getElementById('tab-register').classList.toggle('active',tab==='register');
+  document.getElementById('auth-email-btn').textContent=tab==='login'?'Entrar':'Criar conta';
+  document.getElementById('auth-name-field').style.display=tab==='register'?'block':'none';
+  document.getElementById('auth-error').textContent='';
 }
-
 async function authWithEmail(){
-  const email = document.getElementById('auth-email').value.trim();
-  const password = document.getElementById('auth-password').value;
-  const errEl = document.getElementById('auth-error');
-  const btn = document.getElementById('auth-email-btn');
+  const email=document.getElementById('auth-email').value.trim();
+  const password=document.getElementById('auth-password').value;
+  const errEl=document.getElementById('auth-error');
+  const btn=document.getElementById('auth-email-btn');
   if(!email||!password){errEl.textContent='Preencha email e senha';return;}
-  btn.disabled=true; btn.textContent='Aguarde...';
+  btn.disabled=true;btn.textContent='Aguarde...';
   try{
     if(authTab==='login'){
-      await window._signInWithEmailAndPassword(window._firebaseAuth, email, password);
+      await window._signInWithEmailAndPassword(window._firebaseAuth,email,password);
     } else {
-      const name = document.getElementById('auth-name').value.trim();
-      const cred = await window._createUserWithEmailAndPassword(window._firebaseAuth, email, password);
-      if(name) await window._updateProfile(cred.user, {displayName: name});
+      const name=document.getElementById('auth-name').value.trim();
+      const cred=await window._createUserWithEmailAndPassword(window._firebaseAuth,email,password);
+      if(name) await window._updateProfile(cred.user,{displayName:name});
     }
-  } catch(e){
-    const msgs = {'auth/user-not-found':'Usuário não encontrado','auth/wrong-password':'Senha incorreta','auth/email-already-in-use':'Email já cadastrado','auth/weak-password':'Senha fraca (mín. 6 caracteres)','auth/invalid-email':'Email inválido','auth/invalid-credential':'Email ou senha incorretos'};
-    errEl.textContent = msgs[e.code] || 'Erro ao autenticar';
-    btn.disabled=false; btn.textContent = authTab==='login'?'Entrar':'Criar conta';
+  }catch(e){
+    const msgs={'auth/user-not-found':'Usuário não encontrado','auth/wrong-password':'Senha incorreta','auth/email-already-in-use':'Email já cadastrado','auth/weak-password':'Senha fraca (mín. 6 caracteres)','auth/invalid-email':'Email inválido','auth/invalid-credential':'Email ou senha incorretos'};
+    errEl.textContent=msgs[e.code]||'Erro ao autenticar';
+    btn.disabled=false;btn.textContent=authTab==='login'?'Entrar':'Criar conta';
   }
 }
-
 async function authWithGoogle(){
-  try{
-    await window._signInWithPopup(window._firebaseAuth, window._googleProvider);
-  } catch(e){
-    document.getElementById('auth-error').textContent = 'Erro ao entrar com Google';
-  }
+  try{await window._signInWithPopup(window._firebaseAuth,window._googleProvider);}
+  catch{document.getElementById('auth-error').textContent='Erro ao entrar com Google';}
 }
-
 async function savePhone(){
-  let v = document.getElementById('phone-setup-input').value.trim().replace(/\D/g,'');
-  const errEl = document.getElementById('phone-error');
+  let v=document.getElementById('phone-setup-input').value.trim().replace(/\D/g,'');
+  const errEl=document.getElementById('phone-error');
   if(!v||v.length<10){errEl.textContent='Número inválido';return;}
   if(!v.startsWith('55')) v='55'+v;
-  const user = window._currentUser;
-  localStorage.setItem(`clara_phone_${user.uid}`, v);
-  showMainApp(user, v);
+  const user=window._currentUser;
+  localStorage.setItem(`clara_phone_${user.uid}`,v);
+  showMainApp(user,v);
 }
-
 async function doLogout(){
   closeDrawer();
+  if(pollInterval){clearInterval(pollInterval);pollInterval=null;}
   await window._signOut(window._firebaseAuth);
-  phone=''; allRem=[]; allMeds=[]; allGastos=[];
+  phone='';allRem=[];allMeds=[];allGastos=[];
 }
 
-// ══ DRAWER ══
+// DRAWER
 function toggleDrawer(){document.getElementById('drawer').classList.toggle('open');document.getElementById('drawer-overlay').classList.toggle('open');}
 function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('drawer-overlay').classList.remove('open');}
 
-// ══ NAV ══
+// NAV
 function navTo(p){
   closeDrawer();
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
@@ -774,7 +744,7 @@ function navTo(p){
   if(p==='preferencias') loadPrefs();
 }
 
-// ══ PRIVATE ══
+// PRIVATE
 function togglePrivate(){
   privateMode=!privateMode;
   document.getElementById('private-btn').textContent=privateMode?'🔒':'🔓';
@@ -782,7 +752,7 @@ function togglePrivate(){
   showToast(privateMode?'🔒 Modo privado ativado':'🔓 Modo público ativado');
 }
 
-// ══ LOAD ALL ══
+// LOAD ALL — sincroniza dados do WhatsApp
 async function loadAll(){
   if(!phone) return;
   try{
@@ -801,7 +771,7 @@ async function loadAll(){
   }catch{}
 }
 
-// ══ CHAT ══
+// CHAT
 function addMsg(role,text){
   const msgs=document.getElementById('msgs');
   const w=document.getElementById('welcome');if(w) w.remove();
@@ -825,7 +795,7 @@ async function sendChat(){
   const inp=document.getElementById('chat-msg');
   const text=inp.value.trim();
   if(!text||!phone) return;
-  inp.value=''; inp.style.height='auto';
+  inp.value='';inp.style.height='auto';
   addMsg('user',text);
   const loading=addMsg('bot','digitando...');loading.classList.add('loading');
   try{
@@ -833,7 +803,15 @@ async function sendChat(){
     const data=await res.json();
     loading.querySelector('.msg-bubble').textContent=data.reply||'Pode repetir? 😊';
     loading.classList.remove('loading');
-    setTimeout(loadAll,1200);
+    // Recarrega dados após resposta (captura ações do WhatsApp)
+    setTimeout(()=>{
+      loadAll().then(()=>{
+        if(currentNav==='lembretes') renderRem();
+        if(currentNav==='saude') renderSaude();
+        if(currentNav==='financeiro') renderFin();
+        if(currentNav==='cofre') renderCofre();
+      });
+    },1500);
   }catch(e){
     loading.querySelector('.msg-bubble').textContent='Erro de conexão.';
     loading.classList.remove('loading');
@@ -847,12 +825,12 @@ async function newChat(){
   navTo('chat');
 }
 
-// ══ MOOD ══
+// MOOD
 async function loadMood(){try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();if(d.tom)applyMood(d.tom);}catch{}}
 function applyMood(tom){currentMood=tom;document.querySelectorAll('.mood-card').forEach(b=>b.classList.toggle('active',b.dataset.mood===tom));}
 function selectMood(tom){applyMood(tom);}
 
-// ══ LEMBRETES ══
+// LEMBRETES
 function dateBRTStr(d){return new Date(d).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});}
 function changeRemDate(delta){remViewDate=new Date(remViewDate);remViewDate.setDate(remViewDate.getDate()+delta);renderRem();}
 function goRemToday(){remViewDate=new Date();renderRem();}
@@ -863,15 +841,15 @@ function renderRem(){
   const todayStr=dateBRTStr(now);
   const viewStr=dateBRTStr(remViewDate);
   const isToday=viewStr===todayStr;
-
   const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   const meses=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
-  const vd=new Date(remViewDate.getTime()+remViewDate.getTimezoneOffset()*60000+(-3*3600000));
-
-  document.getElementById('rem-date-label').textContent = isToday ? 'Hoje' : `${dias[vd.getDay()]}, ${pad(vd.getDate())} de ${meses[vd.getMonth()]}`;
-  document.getElementById('rem-date-sub').textContent = isToday ? `${dias[vd.getDay()]}, ${pad(vd.getDate())} de ${meses[vd.getMonth()]}` : '';
-  // Esconde botão "Hoje" quando já está no dia de hoje
-  document.getElementById('rem-today-btn').style.display = isToday ? 'none' : '';
+  // Calcula data no fuso BRT
+  const offset=-3*60;
+  const utc=remViewDate.getTime()+remViewDate.getTimezoneOffset()*60000;
+  const vd=new Date(utc+offset*60000);
+  document.getElementById('rem-date-label').textContent=isToday?'Hoje':`${dias[vd.getDay()]}, ${pad(vd.getDate())} de ${meses[vd.getMonth()]}`;
+  document.getElementById('rem-date-sub').textContent=isToday?`${dias[vd.getDay()]}, ${pad(vd.getDate())} de ${meses[vd.getMonth()]}` :'';
+  document.getElementById('rem-today-btn').style.display=isToday?'none':'';
 
   const dayRems=allRem.filter(r=>dateBRTStr(r.scheduledAt)===viewStr);
   const pending=dayRems.filter(r=>!r.confirmed&&!r.sent).sort((a,b)=>new Date(a.scheduledAt)-new Date(b.scheduledAt));
@@ -879,7 +857,7 @@ function renderRem(){
 
   if(!dayRems.length){el.innerHTML='<div class="empty"><span class="empty-icon">📅</span>Nenhum lembrete neste dia</div>';return;}
 
-  let html='<div class="rem-timeline-inner">';
+  let html='<div style="padding-top:8px">';
   let nowInserted=false;
   pending.forEach(r=>{
     const t=new Date(r.scheduledAt);
@@ -926,7 +904,7 @@ async function doneRem(id){
   catch{showToast('Erro ⚠️');}
 }
 
-// ══ SAÚDE ══
+// SAÚDE — após tomar, mostra próxima dose (amanhã)
 function renderSaude(){
   const el=document.getElementById('saude-body');
   if(!allMeds.length){el.innerHTML='<div class="empty"><span class="empty-icon">💊</span>Nenhum medicamento cadastrado</div>';return;}
@@ -935,37 +913,45 @@ function renderSaude(){
   let html=`<div class="med-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Próximas doses</div>`;
   allMeds.forEach((m,i)=>{
     let times=[];try{times=JSON.parse(m.times);}catch{}
-    const next=times.find(t=>t>=hm)||times[0]||'—';
-    const isNext=times.find(t=>t>=hm);
+    const nextToday=times.find(t=>t>=hm);
     const ci=i%MED_COLORS.length;
-    const btnClass=isNext?'tomar':'pendente';
-    const btnLabel=isNext?'Tomar agora':'Pendente';
+    // Se já tomou todas as doses de hoje, mostra amanhã
+    let nextTime, nextDay;
+    if(nextToday){nextTime=nextToday;nextDay='Hoje';}
+    else{nextTime=times[0]||'—';nextDay=times.length?'Amanhã':'—';}
+    const isTomado=!nextToday&&times.length>0;
+    const btnClass=isTomado?'tomado':nextToday?'tomar':'pendente';
+    const btnLabel=isTomado?'✅ Tomado':'Tomar agora';
     html+=`<div class="med-row">
       <div class="med-icon-wrap" style="background:${MED_COLORS[ci]}">${['💊','🔵','🟢','🟡','🔴'][ci]}</div>
       <div class="med-info"><div class="med-name">${m.name}</div><div class="med-freq">${m.frequency}x por dia</div></div>
-      <div class="med-next"><div class="med-next-label">Próxima dose</div><div class="med-next-time" style="color:${MED_TEXT[ci]}">${next}</div><div class="med-next-day">Hoje</div></div>
+      <div class="med-next">
+        <div class="med-next-label">Próxima dose</div>
+        <div class="med-next-time" style="color:${MED_TEXT[ci]}">${nextTime}</div>
+        <div class="med-next-day">${nextDay}</div>
+      </div>
       <div class="med-doses"><div class="med-doses-num">${m.remaining}</div><div>doses rest.</div></div>
-      <button class="med-action-btn ${btnClass}" onclick="takeMed('${m.id}',this)">${btnLabel}</button>
+      <button class="med-action-btn ${btnClass}" onclick="takeMed('${m.id}',this)" ${isTomado?'disabled':''}>${btnLabel}</button>
     </div>`;
   });
-  html+=`<div class="med-tip"><div class="med-tip-icon">💡</div><div><div class="med-tip-title">Dica da Clara</div><div class="med-tip-text">Mantenha sua rotina de medicamentos em dia. Isso faz toda a diferença!</div></div></div>`;
+  html+=`<div class="med-tip"><div style="font-size:18px;flex-shrink:0">💡</div><div><div class="med-tip-title">Dica da Clara</div><div class="med-tip-text">Mantenha sua rotina de medicamentos em dia. Isso faz toda a diferença!</div></div></div>`;
   el.innerHTML=html;
 }
 async function takeMed(id,btn){
-  btn.textContent='✅ Tomado!';btn.disabled=true;btn.className='med-action-btn tomado';
-  try{await fetch(`/forms/remedio-tomado/${id}`,{method:'POST'});showToast('Dose registrada! 💊');setTimeout(()=>loadAll().then(()=>renderSaude()),800);}
-  catch{showToast('Erro ⚠️');}
+  btn.textContent='✅ Tomado';btn.disabled=true;btn.className='med-action-btn tomado';
+  try{
+    await fetch(`/forms/remedio-tomado/${id}`,{method:'POST'});
+    showToast('Dose registrada! 💊');
+    setTimeout(()=>loadAll().then(()=>renderSaude()),800);
+  }catch{showToast('Erro ⚠️');}
 }
 
-// ══ FINANCEIRO ══
+// FINANCEIRO
 function renderFin(){
   const hist=document.getElementById('fin-history');
   if(!allGastos.length){
     hist.innerHTML='<div class="empty"><span class="empty-icon">💰</span>Sem gastos registrados</div>';
-    document.getElementById('fs-total').textContent='R$ 0,00';
-    document.getElementById('fs-count').textContent='0';
-    document.getElementById('fs-max').textContent='—';
-    document.getElementById('fs-avg').textContent='R$ 0';
+    ['fs-total','fs-count','fs-max','fs-avg'].forEach(id=>document.getElementById(id).textContent=id==='fs-total'?'R$ 0,00':id==='fs-count'?'0':'—');
     return;
   }
   const total=allGastos.reduce((a,g)=>a+g.value,0);
@@ -983,7 +969,7 @@ function renderFin(){
   hist.innerHTML=html;
 }
 
-// ══ COFRE ══
+// COFRE
 async function renderCofre(){
   const el=document.getElementById('cofre-body');
   el.innerHTML='<div class="spin"></div>';
@@ -1026,13 +1012,9 @@ async function saveCofre(){
   btn.textContent='Salvar';btn.disabled=false;
 }
 
-// ══ PREFERÊNCIAS ══
+// PREFERÊNCIAS
 async function loadPrefs(){
-  try{
-    const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();
-    if(d.tom) applyMood(d.tom);
-    if(d.name) document.getElementById('pref-nome').value=d.name;
-  }catch{}
+  try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();if(d.tom)applyMood(d.tom);if(d.name)document.getElementById('pref-nome').value=d.name;}catch{}
   document.getElementById('pref-phone').value=phone.replace('55','');
 }
 async function savePrefs(){
@@ -1046,13 +1028,11 @@ async function savePrefs(){
     if(user) localStorage.setItem(`clara_phone_${user.uid}`,newPhone);
     document.getElementById('drawer-phone').textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
   }
-  try{
-    await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tom,nome})});
-    showToast('Preferências salvas! ✅');
-  }catch{showToast('Erro ⚠️');}
+  try{await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tom,nome})});showToast('Preferências salvas! ✅');}
+  catch{showToast('Erro ⚠️');}
 }
 
-// ══ MODALS ══
+// MODALS
 function openModal(id){
   if(id==='m-lembrete'){const{data,hora}=nowLocal();document.getElementById('ml-data').value=data;document.getElementById('ml-hora').value=hora;document.getElementById('ml-titulo').value='';}
   if(id==='m-remedio'){const{hora}=nowLocal();document.getElementById('mr-inicio').value=hora;document.getElementById('mr-nome').value='';}
@@ -1092,7 +1072,7 @@ async function saveGasto(){
   btn.textContent='Registrar';btn.disabled=false;
 }
 
-// ══ PWA ══
+// PWA
 let swReg=null, vapidPublicKey='';
 async function initPWA(){
   if(!('serviceWorker' in navigator)){document.getElementById('notif-btn').style.display='none';return;}
@@ -1104,7 +1084,7 @@ async function initPWA(){
   }catch{document.getElementById('notif-btn').style.display='none';}
 }
 async function requestPushPermission(){
-  if(!phone){showToast('Configure seu número primeiro 💬');return;}
+  if(!phone){showToast('Configure seu número primeiro');return;}
   if(!('Notification' in window)){showToast('Notificações não suportadas ⚠️');return;}
   if(!swReg){try{swReg=await navigator.serviceWorker.register('/sw.js');}catch{showToast('Instale o app primeiro 📱',4000);return;}}
   const perm=await Notification.requestPermission();
