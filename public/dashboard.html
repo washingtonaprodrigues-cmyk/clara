@@ -572,6 +572,11 @@ select option{background:var(--s2)}
             <div class="pref-label">WhatsApp</div>
             <div class="pref-field"><label>Número conectado</label><input type="tel" id="pref-phone" placeholder="Ex: 43999998888"/></div>
           </div>
+          <div class="pref-section">
+            <div class="pref-label">Financeiro</div>
+            <div class="pref-field"><label>Saldo / Orçamento mensal (R$)</label><input type="number" id="pref-saldo" placeholder="Ex: 1400" step="0.01" min="0"/></div>
+            <div style="font-size:11px;color:var(--text3);margin-top:-8px;padding-top:4px">Ou diga no chat: "meu saldo é 1400"</div>
+          </div>
           <div style="padding:16px 20px"><button class="pref-save-btn" onclick="savePrefs()">Salvar preferências</button></div>
         </div>
       </div>
@@ -737,7 +742,7 @@ function toggleDrawer(){document.getElementById('drawer').classList.toggle('open
 function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('drawer-overlay').classList.remove('open');}
 
 // NAV
-function navTo(p){
+async function navTo(p){
   closeDrawer();
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.s-item,.d-item').forEach(x=>x.classList.remove('active'));
@@ -747,7 +752,7 @@ function navTo(p){
   if(!phone)return;
   if(p==='lembretes')renderRem();
   if(p==='saude')renderSaude();
-  if(p==='financeiro')renderFin();
+  if(p==='financeiro'){await loadSaldo();renderFin();}
   if(p==='cofre')renderCofre();
   if(p==='preferencias')loadPrefs();
 }
@@ -940,11 +945,31 @@ async function saveCofre(){
 }
 
 // PREFERÊNCIAS
-async function loadPrefs(){try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();if(d.tom)applyMood(d.tom);if(d.name)document.getElementById('pref-nome').value=d.name;}catch{}document.getElementById('pref-phone').value=phone.replace('55','');}
+async function loadPrefs(){
+  try{
+    const r=await fetch(`/forms/preferencia/${phone}`);
+    const d=await r.json();
+    if(d.tom)applyMood(d.tom);
+    if(d.name)document.getElementById('pref-nome').value=d.name;
+    if(d.saldo!==undefined&&d.saldo!==null){
+      document.getElementById('pref-saldo').value=d.saldo;
+      currentSaldo=d.saldo;
+    }
+  }catch{}
+  document.getElementById('pref-phone').value=phone.replace('55','');
+}
 async function savePrefs(){
   const tom=currentMood,nome=document.getElementById('pref-nome').value.trim();
+  const saldoInput=document.getElementById('pref-saldo').value;
+  const saldoNum=saldoInput!==''&&saldoInput!==undefined?parseFloat(saldoInput):null;
   let newPhone=document.getElementById('pref-phone').value.trim().replace(/\D/g,'');
-  if(newPhone&&newPhone.length>=10){if(!newPhone.startsWith('55'))newPhone='55'+newPhone;phone=newPhone;const user=window._currentUser;if(user)localStorage.setItem(`clara_phone_${user.uid}`,newPhone);const sp=document.getElementById('sidebar-phone');if(sp)sp.textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');document.getElementById('drawer-phone').textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');}  try{await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tom,nome})});showToast('Preferências salvas! ✅');}catch{showToast('Erro ⚠️');}
+  if(newPhone&&newPhone.length>=10){if(!newPhone.startsWith('55'))newPhone='55'+newPhone;phone=newPhone;const user=window._currentUser;if(user)localStorage.setItem(`clara_phone_${user.uid}`,newPhone);const sp=document.getElementById('sidebar-phone');if(sp)sp.textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');document.getElementById('drawer-phone').textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');}
+  try{
+    await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tom,nome,saldo:saldoNum})});
+    if(saldoNum!==null){currentSaldo=saldoNum;}
+    showToast('Preferências salvas! ✅');
+    if(currentNav==='financeiro')renderFin();
+  }catch{showToast('Erro ⚠️');}
 }
 
 // MODALS
