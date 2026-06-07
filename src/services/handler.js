@@ -129,18 +129,64 @@ async function responderLivre(user, phone, text) {
     const history = await memory.getConversationHistory(user.id, 10);
     const preferences = await memory.getUserPreference(user.id);
 
-    // Injeta contexto financeiro se o usuário tiver saldo configurado
-    if (preferences.saldo !== null && preferences.saldo !== undefined) {
-      try {
-        const inicioMes = new Date();
-        inicioMes.setDate(1); inicioMes.setHours(0,0,0,0);
-        const gastos = await prisma.expense.findMany({
+    // Monta contexto completo (agenda, remédios, financeiro)
+    let contexto = '';
+    try {
+      const now = nowBRT();
+      const pad = n => String(n).padStart(2,'0');
+      const hm = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      const toDateStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+      const hoje = toDateStr(now);
+      const amanha = new Date(now); amanha.setDate(amanha.getDate()+1);
+      const amanhaStr = toDateStr(amanha);
+      const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
+      const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
+      const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const [lembretes, meds, gastos] = await Promise.all([
+        prisma.reminder.findMany({
+          where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: inicioHoje, lte: fimAmanha } },
+          orderBy: { scheduledAt: 'asc' }, take: 20
+        }),
+        prisma.medication.findMany({
+          where: { userId: user.id, active: true, remaining: { gt: 0 } }
+        }),
+        preferences.saldo != null ? prisma.expense.findMany({
           where: { userId: user.id, createdAt: { gte: inicioMes } }
-        });
+        }) : Promise.resolve([])
+      ]);
+
+      if (lembretes.length > 0) {
+        const fmtLemb = (r) => {
+          const d = new Date(r.scheduledAt);
+          const dStr = toDateStr(d) === hoje ? 'Hoje' : 'Amanhã';
+          return `• ${dStr} às ${pad(d.getHours())}:${pad(d.getMinutes())} — ${r.message}`;
+        };
+        contexto += `\n\n[AGENDA]\n${lembretes.map(fmtLemb).join('\n')}`;
+      } else {
+        contexto += `\n\n[AGENDA]\nNenhum lembrete para hoje ou amanhã.`;
+      }
+
+      if (meds.length > 0) {
+        const fmtMed = (m) => {
+          let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
+          const proxima = times.find(t => t >= hm) || times[0] || '—';
+          const quando = times.find(t => t >= hm) ? 'hoje' : 'amanhã';
+          return `• ${m.name} — próxima dose: ${proxima} (${quando}), ${m.remaining} doses restantes`;
+        };
+        contexto += `\n\n[MEDICAMENTOS]\n${meds.map(fmtMed).join('\n')}`;
+      }
+
+      if (preferences.saldo != null) {
         const totalGasto = gastos.reduce((a, g) => a + g.value, 0);
-        const saldoRestante = preferences.saldo - totalGasto;
-        preferences._contexto = `\n\n[CONTEXTO FINANCEIRO DO USUÁRIO]\nSaldo/orçamento mensal: R$ ${preferences.saldo.toFixed(2)}\nTotal gasto este mês: R$ ${totalGasto.toFixed(2)}\nSaldo restante: R$ ${saldoRestante.toFixed(2)}\nUse esses dados quando o usuário perguntar sobre finanças, gastos ou saldo.`;
-      } catch {}
+        const restante = preferences.saldo - totalGasto;
+        contexto += `\n\n[FINANCEIRO]\nOrçamento mensal: R$ ${preferences.saldo.toFixed(2)}\nGasto este mês: R$ ${totalGasto.toFixed(2)}\nSaldo restante: R$ ${restante.toFixed(2)}`;
+      }
+
+      if (contexto) contexto = `\n\nUse as informações abaixo para responder com precisão:${contexto}`;
+      preferences._contexto = contexto;
+    } catch (e) {
+      console.error(`[${phone}] Erro contexto:`, e.message);
     }
 
     console.log(`[${phone}] Chamando freeResponse...`);
