@@ -1,4 +1,4 @@
-// Clara memory v5
+// Clara memory v6 — com memória pessoal expandida
 
 const { PrismaClient } = require('@prisma/client');
 
@@ -41,7 +41,6 @@ async function saveUserPreference(userId, name, tom, saldo = null) {
   const data = {};
   if (name) data.name = name;
 
-  // Lê metadata atual pra não sobrescrever campos existentes
   const user = await prisma.user.findUnique({ where: { id: userId } });
   let meta = {};
   if (user?.metadata) { try { meta = JSON.parse(user.metadata); } catch {} }
@@ -65,6 +64,105 @@ async function getUserPreference(userId) {
     } catch {}
   }
   return { name: user.name, tom, saldo };
+}
+
+// ====================== MEMÓRIA PESSOAL ======================
+// Armazena informações pessoais extraídas das conversas
+// Ex: filhos, pets, profissão, rotina, datas importantes, objetivos
+
+const PERSONAL_INFO_TYPE = 'info_pessoal';
+
+// Salva ou atualiza uma informação pessoal por chave
+// chave: identificador único (ex: 'filho_nome_1', 'pet_thor', 'profissao')
+// valor: string com a informação
+// categoria: 'familia' | 'trabalho' | 'rotina' | 'saude' | 'objetivos' | 'datas' | 'outro'
+async function savePersonalInfo(userId, chave, valor, categoria = 'outro') {
+  // Verifica se já existe uma memória com essa chave
+  const existing = await prisma.memory.findFirst({
+    where: {
+      userId,
+      type: PERSONAL_INFO_TYPE,
+      metadata: { contains: `"chave":"${chave}"` },
+    },
+  });
+
+  if (existing) {
+    // Atualiza só se o valor mudou
+    if (existing.content === valor) return existing;
+    return prisma.memory.update({
+      where: { id: existing.id },
+      data: {
+        content: valor,
+        metadata: JSON.stringify({ chave, categoria, updatedAt: new Date().toISOString() }),
+      },
+    });
+  }
+
+  return prisma.memory.create({
+    data: {
+      userId,
+      type: PERSONAL_INFO_TYPE,
+      content: valor,
+      metadata: JSON.stringify({ chave, categoria, createdAt: new Date().toISOString() }),
+    },
+  });
+}
+
+// Retorna todas as infos pessoais do usuário, agrupadas por categoria
+async function getPersonalInfo(userId, categoria = null) {
+  const where = { userId, type: PERSONAL_INFO_TYPE };
+  const mems = await prisma.memory.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const result = {};
+  for (const m of mems) {
+    let meta = {};
+    try { meta = JSON.parse(m.metadata || '{}'); } catch {}
+    if (categoria && meta.categoria !== categoria) continue;
+    result[meta.chave || m.id] = { valor: m.content, categoria: meta.categoria || 'outro' };
+  }
+  return result;
+}
+
+// Formata o perfil pessoal como texto para injetar no contexto da IA
+async function buildPersonalContext(userId) {
+  const infos = await getPersonalInfo(userId);
+  if (Object.keys(infos).length === 0) return '';
+
+  const grupos = {
+    familia: [],
+    trabalho: [],
+    rotina: [],
+    saude: [],
+    objetivos: [],
+    datas: [],
+    outro: [],
+  };
+
+  for (const [chave, { valor, categoria }] of Object.entries(infos)) {
+    const grupo = grupos[categoria] || grupos.outro;
+    grupo.push(valor);
+  }
+
+  const labels = {
+    familia: 'Família',
+    trabalho: 'Trabalho',
+    rotina: 'Rotina',
+    saude: 'Saúde',
+    objetivos: 'Objetivos',
+    datas: 'Datas importantes',
+    outro: 'Informações pessoais',
+  };
+
+  let texto = '';
+  for (const [cat, items] of Object.entries(grupos)) {
+    if (items.length === 0) continue;
+    texto += `\n[${labels[cat]}]\n${items.map(i => `• ${i}`).join('\n')}`;
+  }
+
+  return texto ? `\n\n[PERFIL DO USUÁRIO — use para personalizar respostas e ser proativa]${texto}` : '';
 }
 
 // ====================== MEMÓRIAS ======================
@@ -212,6 +310,7 @@ module.exports = {
   getOrCreateUser,
   saveJornada, getJornada,
   saveUserPreference, getUserPreference,
+  savePersonalInfo, getPersonalInfo, buildPersonalContext,
   saveMemory, getRecentMemories,
   setTemporaryContext, getTemporaryContext, clearTemporaryContext,
   saveConversationMessage, getConversationHistory,
