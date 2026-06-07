@@ -63,25 +63,28 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 /* ── SIDEBAR DESKTOP ── */
 .sidebar{width:var(--sidebar-w);background:var(--s1);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:width .25s cubic-bezier(.4,0,.2,1);overflow:hidden;position:relative;z-index:10}
 .sidebar.collapsed{width:68px}
-.sidebar-head{padding:0 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;min-height:56px;overflow:hidden}
-.sidebar-hamburger{width:32px;height:32px;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text2);transition:color .15s;padding:0}
+.sidebar-head{padding:0;border-bottom:1px solid var(--border);display:flex;align-items:center;min-height:56px;overflow:hidden}
+.sidebar-hamburger{width:52px;height:56px;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text2);transition:color .15s;padding:0}
 .sidebar-hamburger:hover{color:var(--text)}
-.sidebar-hamburger svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;transition:opacity .15s}
+.sidebar-hamburger svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 /* collapsed: show hamburger icon */
 .sidebar-hamburger .icon-close{display:none}
 .sidebar-hamburger .icon-open{display:block}
-/* expanded: show arrow icon */
-.sidebar:not(.collapsed) .sidebar-hamburger .icon-close{display:block}
-.sidebar:not(.collapsed) .sidebar-hamburger .icon-open{display:none}
-.sidebar-user-av{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;overflow:hidden;transition:opacity .15s,width .15s}
+/* expanded: show nothing in hamburger slot — arrow moves to end */
+.sidebar:not(.collapsed) .sidebar-hamburger{display:none}
+.sidebar-user-av{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;overflow:hidden;margin-left:12px}
 .sidebar-user-av img{width:100%;height:100%;object-fit:cover}
-.sidebar.collapsed .sidebar-user-av{opacity:0;width:0;pointer-events:none}
-.sidebar-clara-info{flex:1;min-width:0;opacity:1;transition:opacity .15s}
-.sidebar.collapsed .sidebar-clara-info{opacity:0;pointer-events:none;width:0;overflow:hidden}
+.sidebar.collapsed .sidebar-user-av{display:none}
+.sidebar-clara-info{flex:1;min-width:0;opacity:1;transition:opacity .15s;overflow:hidden;padding-left:8px}
+.sidebar.collapsed .sidebar-clara-info{display:none}
 .sidebar-clara-name{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sidebar-clara-status{font-size:10px;color:var(--text3);white-space:nowrap}
+.sidebar-clara-status{font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* arrow button at END of header row, only when expanded */
+.sidebar-arrow-btn{width:28px;height:28px;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text3);flex-shrink:0;margin-right:8px;border-radius:6px;transition:all .15s}
+.sidebar-arrow-btn:hover{background:var(--s2);color:var(--text)}
+.sidebar-arrow-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.sidebar.collapsed .sidebar-arrow-btn{display:none}
 .sidebar-head-right{display:none}
-.sidebar.collapsed .sidebar-head{justify-content:center;padding:0}
 .sidebar-user-info{display:none}
 .sidebar-user-name{display:none}
 .sidebar-user-phone{display:none}
@@ -375,19 +378,20 @@ select option{background:var(--s2)}
   <!-- SIDEBAR DESKTOP -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
-      <!-- Arrow/hamburger button -->
+      <!-- Hamburger: only visible when collapsed, centered like other icons -->
       <button class="sidebar-hamburger" onclick="toggleSidebar()" id="sidebar-toggle-btn">
-        <!-- Hamburger (collapsed state) -->
         <svg class="icon-open" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-        <!-- Arrow left (expanded state) -->
-        <svg class="icon-close" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
       </button>
-      <!-- User avatar + info (only when expanded) -->
+      <!-- User info: only visible when expanded -->
       <div class="sidebar-user-av" id="sidebar-avatar">✨</div>
       <div class="sidebar-clara-info">
         <div class="sidebar-clara-name" id="sidebar-name">Usuário</div>
         <div class="sidebar-clara-status" id="sidebar-phone">—</div>
       </div>
+      <!-- Arrow: at the end, only when expanded -->
+      <button class="sidebar-arrow-btn" onclick="toggleSidebar()">
+        <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
     </div>
     <nav class="sidebar-nav">
       <div class="s-item active" onclick="navTo('chat')" data-nav="chat">
@@ -440,7 +444,7 @@ select option{background:var(--s2)}
         <div class="tb-name">Clara</div>
         <div class="tb-status">Online agora</div>
       </div>
-      <button class="tb-nova" onclick="newChat()">+ Nova</button>
+      <button class="tb-nova" onclick="newChat()">+ Novo Chat</button>
       <div class="tb-icon-btn" id="private-btn" onclick="togglePrivate()">🔓</div>
     </div>
 
