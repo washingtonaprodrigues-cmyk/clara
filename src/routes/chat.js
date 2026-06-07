@@ -115,17 +115,36 @@ router.post('/:phone', async (req, res) => {
     const history = await memory.getConversationHistory(user.id, limit);
     const preferences = await memory.getUserPreference(user.id);
 
-    // Executa classify e freeResponse em paralelo para não atrasar a resposta
+    // Busca gastos do mês para dar contexto financeiro à Clara
+    let contextoFinanceiro = '';
+    if (preferences.saldo !== null && preferences.saldo !== undefined) {
+      try {
+        const inicioMes = new Date();
+        inicioMes.setDate(1); inicioMes.setHours(0,0,0,0);
+        const gastos = await prisma.expense.findMany({
+          where: { userId: user.id, createdAt: { gte: inicioMes } }
+        });
+        const totalGasto = gastos.reduce((a, g) => a + g.value, 0);
+        const saldoRestante = preferences.saldo - totalGasto;
+        contextoFinanceiro = `\n\n[CONTEXTO FINANCEIRO DO USUÁRIO]\nSaldo/orçamento mensal: R$ ${preferences.saldo.toFixed(2)}\nTotal gasto este mês: R$ ${totalGasto.toFixed(2)}\nSaldo restante: R$ ${saldoRestante.toFixed(2)}\nUse esses dados quando o usuário perguntar sobre finanças, gastos ou saldo.`;
+      } catch {}
+    }
+
+    // Injeta contexto financeiro nas preferências para o freeResponse
+    const preferencesComContexto = {
+      ...preferences,
+      _contexto: contextoFinanceiro
+    };
+
+    // Executa classify e freeResponse em paralelo
     const [response, classified] = await Promise.all([
-      freeResponse(message, history, preferences, privateMode),
+      freeResponse(message, history, preferencesComContexto, privateMode),
       privateMode ? Promise.resolve({ tipo: 'outro' }) : classify(message),
     ]);
 
-    // Salva conversa
     await memory.saveConversationMessage(user.id, 'user', message, privateMode);
     await memory.saveConversationMessage(user.id, 'assistant', response, privateMode);
 
-    // Executa ação em background (não bloqueia resposta)
     if (!privateMode) {
       executeActionFromChat(user, phone, classified, message).catch(e =>
         console.error('[chat] Erro bg action:', e.message)
