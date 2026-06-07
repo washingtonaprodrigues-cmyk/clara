@@ -231,6 +231,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
   try {
     const name = preferences?.name || null;
     const tom = preferences?.tom || 'carinhoso';
+    const contexto = preferences?._contexto || '';
 
     if (privateMode) {
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -244,7 +245,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         body: JSON.stringify({
           model: MODEL_PRIVADO,
           messages: [
-            { role: 'system', content: buildPersonality(tom, name, true) },
+            { role: 'system', content: buildPersonality(tom, name, true) + contexto },
             ...history,
             { role: 'user', content: message }
           ],
@@ -259,7 +260,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     const completion = await groq.chat.completions.create({
       model: MODEL_FORTE,
       messages: [
-        { role: 'system', content: buildPersonality(tom, name, false) },
+        { role: 'system', content: buildPersonality(tom, name, false) + contexto },
         ...history,
         { role: 'user', content: message }
       ],
