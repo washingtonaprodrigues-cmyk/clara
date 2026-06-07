@@ -773,9 +773,16 @@ async function loadAll(){
     const [l,r,g]=await Promise.all([fetch(`/forms/lembretes/${phone}`).then(x=>x.json()).catch(()=>[]),fetch(`/forms/remedios/${phone}`).then(x=>x.json()).catch(()=>[]),fetch(`/forms/gastos/${phone}`).then(x=>x.json()).catch(()=>[])]);
     allRem=l;allMeds=r;allGastos=g;
     const todayBRT=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+    const now=new Date();
+    const hm=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+    // Badge lembretes: só pendentes de hoje
     const todayCnt=l.filter(x=>!x.confirmed&&!x.sent&&new Date(x.scheduledAt).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'})===todayBRT).length;
     ['d-badge-rem','d-badge-rem2'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display=todayCnt?'':'none';if(todayCnt)el.textContent=todayCnt;}});
-    ['d-badge-med','d-badge-med2'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display=r.length?'':'none';if(r.length)el.textContent=r.length;}});
+
+    // Badge saúde: só remédios com dose ainda pendente hoje
+    const medCnt=r.filter(m=>{let times=[];try{times=JSON.parse(m.times||'[]');}catch{}return times.some(t=>t>=hm);}).length;
+    ['d-badge-med','d-badge-med2'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display=medCnt?'':'none';if(medCnt)el.textContent=medCnt;}});
   }catch{}
 }
 
