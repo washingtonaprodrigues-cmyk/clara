@@ -1,6 +1,7 @@
-const { classify, searchWeb, freeResponse, generateMemorySummary } = require('./groq');
+const { classify, extractPersonalInfo, searchWeb, freeResponse, generateMemorySummary } = require('./groq');
 const { sendMessage, sendButtons, sendReminderWithButtons } = require('./whatsapp');
 const memory = require('./memory');
+const { buildPersonalContext, savePersonalInfo } = memory;
 const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
@@ -262,6 +263,15 @@ async function responderLivre(user, phone, text, contextoExtra = '') {
       }
 
       if (contexto) contexto = `\n\nUse as informações abaixo para responder com precisão:${contexto}`;
+
+      // Injeta perfil pessoal (memória de longo prazo)
+      try {
+        const perfilPessoal = await buildPersonalContext(user.id);
+        if (perfilPessoal) contexto += perfilPessoal;
+      } catch (ep) {
+        console.error('[perfil pessoal] erro:', ep.message);
+      }
+
       if (contextoExtra) contexto += contextoExtra;
 
       preferences._contexto = contexto;
@@ -379,6 +389,11 @@ async function handleMessage(phone, text, location = null) {
         await responderLivre(user, phone, text, contextoExtra);
       }
 
+      // Extração de memória pessoal em background (mesmo para msgs de lista)
+      extractAndSavePersonalInfo(user.id, text).catch(e =>
+        console.error('[extract pessoal lista] erro:', e.message)
+      );
+
       return;
     }
 
@@ -388,6 +403,11 @@ async function handleMessage(phone, text, location = null) {
     );
 
     await responderLivre(user, phone, text);
+
+    // ── Extração de memória pessoal em background ──
+    extractAndSavePersonalInfo(user.id, text).catch(e =>
+      console.error('[extract pessoal] erro:', e.message)
+    );
   } catch (error) {
     console.error('Erro handleMessage:', error.message);
     await sendMessage(phone, 'Ops, tive um probleminha. Pode repetir?');
@@ -666,6 +686,17 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
   if (scheduledAt) {
     await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
     console.log(`[${phone}] Lembrete salvo: "${classified.titulo}" para ${scheduledAt}`);
+  }
+}
+
+// ── Extrai e salva informações pessoais da mensagem do usuário ──
+async function extractAndSavePersonalInfo(userId, text) {
+  const infos = await extractPersonalInfo(text);
+  if (!infos || infos.length === 0) return;
+  for (const { chave, valor, categoria } of infos) {
+    if (!chave || !valor) continue;
+    await savePersonalInfo(userId, chave, valor, categoria || 'outro');
+    console.log(`[memória pessoal] salvo: ${chave} = "${valor}" (${categoria})`);
   }
 }
 
