@@ -37,21 +37,34 @@ async function getJornada(userId) {
 
 // ====================== PREFERÊNCIAS ======================
 
-async function saveUserPreference(userId, name, tom) {
+async function saveUserPreference(userId, name, tom, saldo = null) {
   const data = {};
   if (name) data.name = name;
-  if (tom) data.metadata = JSON.stringify({ tom });
+
+  // Lê metadata atual pra não sobrescrever campos existentes
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  let meta = {};
+  if (user?.metadata) { try { meta = JSON.parse(user.metadata); } catch {} }
+
+  if (tom) meta.tom = tom;
+  if (saldo !== null && saldo !== undefined && !isNaN(saldo)) meta.saldo = parseFloat(saldo);
+
+  data.metadata = JSON.stringify(meta);
   return prisma.user.update({ where: { id: userId }, data });
 }
 
 async function getUserPreference(userId) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) return { name: null, tom: 'carinhoso' };
-  let tom = 'carinhoso';
+  if (!user) return { name: null, tom: 'carinhoso', saldo: null };
+  let tom = 'carinhoso', saldo = null;
   if (user.metadata) {
-    try { tom = JSON.parse(user.metadata).tom || 'carinhoso'; } catch {}
+    try {
+      const m = JSON.parse(user.metadata);
+      tom = m.tom || 'carinhoso';
+      saldo = m.saldo !== undefined ? m.saldo : null;
+    } catch {}
   }
-  return { name: user.name, tom };
+  return { name: user.name, tom, saldo };
 }
 
 // ====================== MEMÓRIAS ======================
@@ -98,7 +111,6 @@ async function clearTemporaryContext(userId) {
 // ====================== CONVERSA ======================
 
 async function saveConversationMessage(userId, role, content, privateMode = false) {
-  // Modo privado: não salva nada no banco para proteger a privacidade do usuário
   if (privateMode) return;
 
   await prisma.memory.create({
@@ -109,7 +121,6 @@ async function saveConversationMessage(userId, role, content, privateMode = fals
     },
   });
 
-  // Modo normal: limite de 40 mensagens
   const msgs = await prisma.memory.findMany({
     where: { userId, type: 'conversa' },
     orderBy: { createdAt: 'desc' },
