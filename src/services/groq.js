@@ -140,6 +140,73 @@ async function classify(message) {
   }
 }
 
+// ====================== EXTRAÇÃO DE MEMÓRIA PESSOAL ======================
+// Roda silenciosamente após cada mensagem do usuário.
+// Retorna array de informações novas para salvar, ou array vazio.
+// Cada item: { chave, valor, categoria }
+
+const EXTRACT_SYSTEM = `Você é um extrator de informações pessoais. Analise a mensagem do usuário e extraia APENAS informações pessoais novas e relevantes que devem ser lembradas a longo prazo.
+
+Retorne APENAS um array JSON. Se não houver nada relevante, retorne [].
+
+Categorias disponíveis: familia | trabalho | rotina | saude | objetivos | datas | outro
+
+Chaves sugeridas (use snake_case, seja específico):
+- familia: filho_nome, filha_nome, conjuge_nome, pet_nome_tipo, pai_nome, mae_nome
+- trabalho: profissao, empresa, cargo, horario_trabalho, objetivo_profissional
+- rotina: horario_acordar, horario_dormir, horario_almoco, dia_folga, habito
+- saude: exercicio, meta_saude, consulta_agendada
+- objetivos: meta_financeira, projeto_pessoal, viagem_planejada, sonho
+- datas: aniversario_proprio, aniversario_conjuge, aniversario_filho, data_especial
+
+REGRAS:
+- Extraia APENAS o que foi explicitamente dito agora
+- Não invente ou deduza informações
+- Valores devem ser frases curtas e descritivas em português
+- Ignore saudações, perguntas genéricas, comandos do sistema
+- Para nomes de pessoas/pets, sempre inclua o contexto (ex: "Filho chamado Pedro" não só "Pedro")
+- Para datas, inclua o dia/mês quando mencionado
+
+EXEMPLOS:
+"minha filha se chama Ana" → [{"chave":"filha_ana","valor":"Filha chamada Ana","categoria":"familia"}]
+"vou levar o Thor ao veterinário" → [{"chave":"pet_thor","valor":"Pet (provável cachorro) chamado Thor","categoria":"familia"}]
+"trabalho das 8 às 18h" → [{"chave":"horario_trabalho","valor":"Trabalha das 8h às 18h","categoria":"rotina"}]
+"quero juntar 10 mil reais" → [{"chave":"meta_financeira","valor":"Meta: juntar R$ 10.000","categoria":"objetivos"}]
+"meu aniversário é dia 15 de março" → [{"chave":"aniversario_proprio","valor":"Aniversário em 15 de março","categoria":"datas"}]
+"sou designer gráfico" → [{"chave":"profissao","valor":"Designer gráfico","categoria":"trabalho"}]
+"acordo todo dia às 6h" → [{"chave":"horario_acordar","valor":"Acorda às 6h","categoria":"rotina"}]
+"oi tudo bem?" → []
+"gastei 50 no mercado" → []
+"me lembra às 19h" → []`;
+
+async function extractPersonalInfo(message) {
+  try {
+    // Ignora mensagens muito curtas ou puramente operacionais
+    if (!message || message.trim().length < 5) return [];
+    const lower = message.toLowerCase();
+    if (/^(oi|olá|ola|ok|sim|não|nao|bom dia|boa tarde|boa noite|obrigad)/.test(lower)) return [];
+
+    const completion = await groq.chat.completions.create({
+      model: MODEL_LEVE,
+      messages: [
+        { role: 'system', content: EXTRACT_SYSTEM },
+        { role: 'user', content: message }
+      ],
+      temperature: 0.1,
+      max_tokens: 300,
+    });
+
+    let text = completion.choices[0].message.content.trim();
+    text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const result = JSON.parse(text);
+    return Array.isArray(result) ? result : [];
+  } catch (e) {
+    // Falha silenciosa — não bloqueia o fluxo principal
+    console.error('[extractPersonalInfo] erro:', e.message);
+    return [];
+  }
+}
+
 async function searchWebGroq(query, locationContext = '') {
   try {
     const fullQuery = locationContext ? `${query} em ${locationContext}` : query;
@@ -215,7 +282,8 @@ Respostas naturais, sem robotismo. Pode ser breve ou elaborada conforme o contex
 ${acoes}
 Fale em português brasileiro com calor humano, carinho e naturalidade.
 Seja atenciosa, empática e breve (2-5 linhas). Nunca pareça um sistema corporativo.
-Evite listas longas.`,
+Evite listas longas.
+Quando tiver informações pessoais do usuário no contexto, use-as naturalmente na conversa para criar conexão — mas sem parecer que está lendo de um arquivo.`,
 
     direto: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
 ${acoes}
@@ -227,7 +295,8 @@ Vai direto ao ponto sempre.`,
 ${acoes}
 Fale em português brasileiro com energia, humor e leveza.
 Use gírias brasileiras, seja animada e bem-humorada. Pode usar emojis com moderação.
-Respostas com 2-4 linhas, sempre com um toque de diversão.`,
+Respostas com 2-4 linhas, sempre com um toque de diversão.
+Quando souber algo pessoal do usuário, mencione de forma leve e divertida.`,
 
     sarcastico: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
 ${acoes}
@@ -321,6 +390,7 @@ Seja concisa e natural.`,
 
 module.exports = {
   classify,
+  extractPersonalInfo,
   searchWeb: searchWebGroq,
   freeResponse,
   generateMemorySummary,
