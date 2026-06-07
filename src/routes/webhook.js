@@ -7,27 +7,23 @@ router.post('/', async (req, res) => {
   try {
     const body = req.body;
 
-    // LOG COMPLETO para debug
-    console.log('PAYLOAD FULL:', JSON.stringify(body));
+    // Ignora mensagens enviadas pela própria Clara
+    if (body.message?.fromMe === true) return res.json({ ok: true });
+    if (body.message?.wasSentByApi === true) return res.json({ ok: true });
+    if (body.message?.isGroup === true) return res.json({ ok: true });
 
-    // Ignora mensagens enviadas pela própria Clara (verifica em todos os níveis)
-    const fromMe = body.fromMe === true || body.message?.fromMe === true;
-    if (fromMe) return res.json({ ok: true });
-    if (body.wasSentByApi === true || body.message?.wasSentByApi === true) return res.json({ ok: true });
-    if (body.isGroup === true || body.message?.isGroup === true) return res.json({ ok: true });
-
-    // Extrai phone — formato real do UazAPI: "5543920003604@s.whatsapp.net"
-    const phone = (body.sender || body.owner || '')
+    // Extrai phone do remetente real: body.message.sender_pn
+    const phone = (body.message?.sender_pn || '')
       .replace('@s.whatsapp.net', '')
       .replace(/\D/g, '');
 
     if (!phone) {
-      console.log('⚠️ Webhook sem phone:', JSON.stringify(body).slice(0, 300));
+      console.log('⚠️ Webhook sem phone:', JSON.stringify(body).slice(0, 200));
       return res.json({ ok: true });
     }
 
-    // Extrai texto — campo "text" direto no payload
-    const text = body.text || body.message?.text || body.message?.content?.text || '';
+    // Extrai texto
+    const text = body.message?.text || body.message?.content?.text || '';
 
     console.log(`📨 WEBHOOK UazAPI: ${phone} — texto: ${text.slice(0, 80)}`);
 
@@ -37,19 +33,19 @@ router.post('/', async (req, res) => {
     }
 
     // Áudio
-    if (body.mediaType === 'audio' || body.messageType === 'audioMessage') {
+    if (body.message?.mediaType === 'audio' || body.message?.messageType === 'audioMessage') {
       sendMessage(phone, 'Por enquanto não consigo ouvir áudios, mas pode digitar que respondo na hora! 😊').catch(console.error);
       return res.json({ ok: true });
     }
 
     // Imagem, vídeo, documento
-    if (['image', 'video', 'document'].includes(body.mediaType) ||
-        ['imageMessage', 'videoMessage', 'documentMessage'].includes(body.messageType)) {
+    if (['image', 'video', 'document'].includes(body.message?.mediaType) ||
+        ['imageMessage', 'videoMessage', 'documentMessage'].includes(body.message?.messageType)) {
       sendMessage(phone, 'Por enquanto não consigo ver fotos, vídeos ou arquivos — mas se escrever pra mim eu ajudo! 😊').catch(console.error);
       return res.json({ ok: true });
     }
 
-    console.log('⚠️ Payload não reconhecido:', JSON.stringify(body).slice(0, 300));
+    console.log('⚠️ Payload não reconhecido tipo:', body.message?.type || 'sem tipo');
     return res.json({ ok: true });
 
   } catch (error) {
