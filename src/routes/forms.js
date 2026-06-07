@@ -760,4 +760,110 @@ router.post('/ponto/:phone', async (req, res) => {
   }
 });
 
+
+// ====================== LISTAS: GET ======================
+router.get('/listas/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const user = await memory.getOrCreateUser(phone);
+    const listas = await prisma.groceryList.findMany({
+      where: { userId: user.id, done: false },
+      orderBy: { createdAt: 'desc' },
+    });
+    const result = listas.map(l => ({
+      ...l, items: (() => { try { return JSON.parse(l.items); } catch { return []; } })()
+    }));
+    res.json(result);
+  } catch (e) {
+    console.error('Erro GET listas:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== LISTA: POST (criar) ======================
+router.post('/lista/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const { nome, itens } = req.body;
+    const user = await memory.getOrCreateUser(phone);
+    const itemsArr = Array.isArray(itens)
+      ? itens
+      : String(itens).split(/[,\n;]+/).map(i => i.trim()).filter(Boolean);
+    const itemsJson = itemsArr.map((nome, i) => ({ id: i + 1, nome, done: false }));
+    const lista = await prisma.groceryList.create({
+      data: { userId: user.id, name: nome || '🛒 Lista de compras', items: JSON.stringify(itemsJson), done: false }
+    });
+    const { saveMemory } = require('../services/memory');
+    await saveMemory(user.id, 'ultima_lista', lista.id);
+    res.json({ ok: true, id: lista.id, items: itemsJson });
+  } catch (e) {
+    console.error('Erro POST lista:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== LISTA ITEM: TOGGLE ======================
+router.post('/lista-item/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { itemId } = req.body;
+    const lista = await prisma.groceryList.findUnique({ where: { id } });
+    if (!lista) return res.status(404).json({ error: 'Lista não encontrada' });
+    let items = []; try { items = JSON.parse(lista.items); } catch {}
+    items = items.map(i => i.id === itemId ? { ...i, done: !i.done } : i);
+    const allDone = items.every(i => i.done);
+    await prisma.groceryList.update({ where: { id }, data: { items: JSON.stringify(items), done: allDone } });
+    res.json({ ok: true, items, allDone });
+  } catch (e) {
+    console.error('Erro toggle item:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== LISTA ITEM: ADD ======================
+router.post('/lista-add-item/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nome } = req.body;
+    const lista = await prisma.groceryList.findUnique({ where: { id } });
+    if (!lista) return res.status(404).json({ error: 'Lista não encontrada' });
+    let items = []; try { items = JSON.parse(lista.items); } catch {}
+    const newId = items.length > 0 ? Math.max(...items.map(i => i.id)) + 1 : 1;
+    items.push({ id: newId, nome, done: false });
+    await prisma.groceryList.update({ where: { id }, data: { items: JSON.stringify(items) } });
+    res.json({ ok: true, items });
+  } catch (e) {
+    console.error('Erro add item:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== LISTA ITEM: REMOVE ======================
+router.delete('/lista-item/:id/:itemId', async (req, res) => {
+  try {
+    const { id, itemId } = req.params;
+    const lista = await prisma.groceryList.findUnique({ where: { id } });
+    if (!lista) return res.status(404).json({ error: 'Lista não encontrada' });
+    let items = []; try { items = JSON.parse(lista.items); } catch {}
+    items = items.filter(i => i.id !== parseInt(itemId));
+    await prisma.groceryList.update({ where: { id }, data: { items: JSON.stringify(items) } });
+    res.json({ ok: true, items });
+  } catch (e) {
+    console.error('Erro remove item:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== LISTA: ARQUIVAR ======================
+router.post('/lista-arquivar/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.groceryList.update({ where: { id }, data: { done: true } });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro arquivar lista:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;
