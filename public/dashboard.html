@@ -188,7 +188,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .input-row textarea{flex:1;background:none;border:none;color:var(--text);font-family:'Inter',sans-serif;font-size:14px;outline:none;resize:none;max-height:100px;line-height:1.5;min-height:22px}
 .input-row textarea::placeholder{color:var(--text3)}
 .send-btn{width:36px;height:36px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 10px var(--glow);transition:transform .1s}
-.send-btn:active{transform:scale(.92)}
+.mic-btn{width:36px;height:36px;background:var(--s3);border:1px solid var(--border);border-radius:10px;color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s}
+.mic-btn:hover{background:var(--s2);color:var(--text)}
+.mic-btn.listening{background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.4);color:var(--red);animation:micPulse 1s ease-in-out infinite}
+@keyframes micPulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.3)}50%{box-shadow:0 0 0 6px rgba(239,68,68,0)}}
+.voice-mode-on{border-color:rgba(139,92,246,.5)!important;color:#C4B5FD!important;background:rgba(139,92,246,.12)!important}
 
 /* ── PAGE HEADER ── */
 .ph{padding:14px 20px;border-bottom:1px solid var(--border);background:var(--s1);display:flex;align-items:center;gap:12px;flex-shrink:0}
@@ -466,11 +470,17 @@ select option{background:var(--s2)}
             <span class="chip" onclick="cs('Registrar um gasto')">Gasto</span>
             <span class="chip" onclick="cs('Adicionar remédio')">Remédio</span>
             <span class="chip" onclick="cs('Guardar no cofre')">Cofre</span>
+            <!-- Toggle voz/texto -->
+            <span class="chip" id="voice-toggle-chip" onclick="toggleVoiceMode()" title="Alternar resposta em voz ou texto">🔇 Voz</span>
           </div>
           <div class="input-row">
             <textarea id="chat-msg" rows="1" placeholder="Pergunte ou peça algo para a Clara..."
               onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"
               oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"></textarea>
+            <!-- Botão microfone -->
+            <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Falar com a Clara">
+              <svg id="mic-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            </button>
             <button class="send-btn" onclick="sendChat()">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             </button>
@@ -826,6 +836,8 @@ async function sendChat(){
     const res=await fetch(`/chat/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,privateMode})});
     const data=await res.json();
     loading.querySelector('.msg-bubble').textContent=data.reply||'Pode repetir? 😊';loading.classList.remove('loading');
+    // Fala a resposta se modo voz ativo
+    speakText(data.reply||'');
     // Ação detectada = recarrega mais rápido; senão espera 1.5s
     const delay=(data.actionType&&data.actionType!=='outro')?600:1500;
     setTimeout(async()=>{
@@ -1002,6 +1014,127 @@ async function requestPushPermission(){
   try{const sub=await swReg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(vapidPublicKey)});await fetch(`/push/subscribe/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscription:sub})});showToast('Notificações ativadas! 🔔',3000);}catch{showToast('Erro ao ativar notificações ⚠️');}
 }
 function urlBase64ToUint8Array(b){const p='='.repeat((4-b.length%4)%4);const s=(b+p).replace(/-/g,'+').replace(/_/g,'/');const r=atob(s);return Uint8Array.from([...r].map(c=>c.charCodeAt(0)));}
+// ══ VOZ ══
+let voiceMode = false; // true = Clara responde em voz
+let recognition = null;
+let isListening = false;
+let synth = window.speechSynthesis;
+let claraVoice = null;
+
+// Carrega a melhor voz feminina pt-BR disponível
+function loadVoice() {
+  const voices = synth.getVoices();
+  // Prioridade: pt-BR feminina → pt-BR qualquer → pt qualquer
+  claraVoice =
+    voices.find(v => v.lang === 'pt-BR' && v.name.match(/female|feminina|francisca|vitória|leticia|luciana/i)) ||
+    voices.find(v => v.lang === 'pt-BR') ||
+    voices.find(v => v.lang.startsWith('pt')) ||
+    voices[0] || null;
+}
+if (synth) {
+  loadVoice();
+  synth.onvoiceschanged = loadVoice;
+}
+
+function speakText(text) {
+  if (!synth || !voiceMode) return;
+  synth.cancel(); // cancela fala anterior
+  // Remove emojis e markdown para a voz ficar mais natural
+  const clean = text.replace(/[\u{1F300}-\u{1FFFF}]/gu,'').replace(/[*_`#]/g,'').trim();
+  const utt = new SpeechSynthesisUtterance(clean);
+  if (claraVoice) utt.voice = claraVoice;
+  utt.lang = 'pt-BR';
+  utt.rate = 1.05;
+  utt.pitch = 1.1;
+  utt.volume = 1;
+  synth.speak(utt);
+}
+
+function toggleVoiceMode() {
+  voiceMode = !voiceMode;
+  const chip = document.getElementById('voice-toggle-chip');
+  if (voiceMode) {
+    chip.textContent = '🔊 Voz ativa';
+    chip.classList.add('voice-mode-on');
+    showToast('🔊 Clara vai responder em voz', 2000);
+  } else {
+    chip.textContent = '🔇 Voz';
+    chip.classList.remove('voice-mode-on');
+    synth?.cancel();
+    showToast('🔇 Respostas em texto', 2000);
+  }
+}
+
+function toggleMic() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    showToast('Microfone não suportado neste navegador ⚠️', 3000);
+    return;
+  }
+  if (isListening) {
+    stopMic();
+  } else {
+    startMic();
+  }
+}
+
+function startMic() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRecognition();
+  recognition.lang = 'pt-BR';
+  recognition.continuous = false;
+  recognition.interimResults = true;
+
+  const btn = document.getElementById('mic-btn');
+  const inp = document.getElementById('chat-msg');
+
+  recognition.onstart = () => {
+    isListening = true;
+    btn.classList.add('listening');
+    inp.placeholder = '🎤 Ouvindo...';
+  };
+
+  recognition.onresult = (e) => {
+    let transcript = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      transcript += e.results[i][0].transcript;
+    }
+    inp.value = transcript;
+    inp.style.height = 'auto';
+    inp.style.height = Math.min(inp.scrollHeight, 100) + 'px';
+  };
+
+  recognition.onend = () => {
+    isListening = false;
+    btn.classList.remove('listening');
+    inp.placeholder = 'Pergunte ou peça algo para a Clara...';
+    // Envia automaticamente se tiver texto
+    const text = inp.value.trim();
+    if (text) {
+      // Ativa voz automaticamente ao usar microfone
+      if (!voiceMode) {
+        voiceMode = true;
+        const chip = document.getElementById('voice-toggle-chip');
+        chip.textContent = '🔊 Voz ativa';
+        chip.classList.add('voice-mode-on');
+      }
+      setTimeout(() => sendChat(), 300);
+    }
+  };
+
+  recognition.onerror = (e) => {
+    isListening = false;
+    btn.classList.remove('listening');
+    inp.placeholder = 'Pergunte ou peça algo para a Clara...';
+    if (e.error !== 'no-speech') showToast('Erro no microfone: ' + e.error, 3000);
+  };
+
+  recognition.start();
+}
+
+function stopMic() {
+  recognition?.stop();
+}
+
 const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
 if(isIOS&&!window.navigator.standalone)setTimeout(()=>showToast('Instale: compartilhar → Adicionar à tela de início 📱',5000),4000);
 </script>
