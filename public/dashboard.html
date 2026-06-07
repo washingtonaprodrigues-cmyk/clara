@@ -63,25 +63,31 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 /* ── SIDEBAR DESKTOP ── */
 .sidebar{width:var(--sidebar-w);background:var(--s1);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:width .25s cubic-bezier(.4,0,.2,1);overflow:hidden;position:relative;z-index:10}
 .sidebar.collapsed{width:68px}
-.sidebar-head{padding:16px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;min-height:65px;overflow:hidden}
-.sidebar-hamburger{width:36px;height:36px;background:none;border:none;cursor:pointer;display:flex;flex-direction:column;justify-content:center;gap:5px;padding:6px;flex-shrink:0}
-.sidebar-hamburger span{display:block;height:1.5px;background:var(--text2);border-radius:2px;transition:all .2s}
-.sidebar-clara-avatar{width:32px;height:32px;border-radius:50%;overflow:hidden;flex-shrink:0;box-shadow:0 0 10px var(--glow)}
-.sidebar-clara-avatar img{width:100%;height:100%;object-fit:cover}
+.sidebar-head{padding:0 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;min-height:56px;overflow:hidden}
+.sidebar-hamburger{width:32px;height:32px;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text2);transition:color .15s;padding:0}
+.sidebar-hamburger:hover{color:var(--text)}
+.sidebar-hamburger svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;transition:opacity .15s}
+/* collapsed: show hamburger icon */
+.sidebar-hamburger .icon-close{display:none}
+.sidebar-hamburger .icon-open{display:block}
+/* expanded: show arrow icon */
+.sidebar:not(.collapsed) .sidebar-hamburger .icon-close{display:block}
+.sidebar:not(.collapsed) .sidebar-hamburger .icon-open{display:none}
+.sidebar-user-av{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;overflow:hidden;transition:opacity .15s,width .15s}
+.sidebar-user-av img{width:100%;height:100%;object-fit:cover}
+.sidebar.collapsed .sidebar-user-av{opacity:0;width:0;pointer-events:none}
 .sidebar-clara-info{flex:1;min-width:0;opacity:1;transition:opacity .15s}
 .sidebar.collapsed .sidebar-clara-info{opacity:0;pointer-events:none;width:0;overflow:hidden}
-.sidebar-clara-name{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap}
-.sidebar-clara-status{font-size:11px;color:var(--green);display:flex;align-items:center;gap:4px;white-space:nowrap}
-.sidebar-clara-status::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);flex-shrink:0}
+.sidebar-clara-name{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sidebar-clara-status{font-size:10px;color:var(--text3);white-space:nowrap}
 .sidebar-head-right{display:none}
-.sidebar.collapsed .sidebar-head{padding:0 6px;justify-content:flex-start}
-/* collapsed: hide info, show only hamburger */
-.sidebar.collapsed .sidebar-clara-avatar{display:none}
+.sidebar.collapsed .sidebar-head{justify-content:center;padding:0}
 .sidebar-user-info{display:none}
 .sidebar-user-name{display:none}
 .sidebar-user-phone{display:none}
 .sidebar-user-avatar{display:none}
 .sidebar-toggle{display:none}
+.sidebar-clara-avatar{display:none}
 .sidebar-nav{flex:1;padding:8px;overflow-y:auto;overflow-x:hidden}
 .s-item{display:flex;align-items:center;gap:12px;padding:10px 10px;border-radius:var(--r-sm);cursor:pointer;color:var(--text3);font-size:13px;font-weight:500;transition:all .15s;white-space:nowrap;position:relative;min-height:44px}
 .s-item:hover{background:var(--s2);color:var(--text2)}
@@ -165,7 +171,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 /* ── WELCOME SCREEN ── */
 .welcome-screen{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px;text-align:center}
 .welcome-greeting{font-family:'Outfit',sans-serif;font-size:11px;font-weight:400;letter-spacing:4px;text-transform:uppercase;color:var(--text3);margin-bottom:16px}
-.welcome-title{font-family:'DM Serif Display',serif;font-size:36px;color:var(--text);margin-bottom:10px;line-height:1.15;font-weight:400}
+.welcome-title{font-family:'DM Serif Display',serif;font-size:28px;color:var(--text);margin-bottom:10px;line-height:1.3;font-weight:400}
 .welcome-name{font-family:'DM Serif Display',serif;font-style:italic;color:#C4B5FD;font-weight:400}
 .welcome-sub{font-family:'Outfit',sans-serif;font-size:13px;font-weight:300;color:var(--text3);letter-spacing:.3px}
 
@@ -368,9 +374,16 @@ select option{background:var(--s2)}
 
   <!-- SIDEBAR DESKTOP -->
   <aside class="sidebar" id="sidebar">
-    <div class="sidebar-head" id="sidebar-head">
-      <button class="sidebar-hamburger" onclick="toggleSidebar()" id="sidebar-toggle-btn"><span></span><span></span><span></span></button>
-      <div class="sidebar-clara-avatar" id="sidebar-clara-av"><img src="/avatar" onerror="this.parentElement.innerHTML='✨'" alt="Clara"/></div>
+    <div class="sidebar-head">
+      <!-- Arrow/hamburger button -->
+      <button class="sidebar-hamburger" onclick="toggleSidebar()" id="sidebar-toggle-btn">
+        <!-- Hamburger (collapsed state) -->
+        <svg class="icon-open" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        <!-- Arrow left (expanded state) -->
+        <svg class="icon-close" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <!-- User avatar + info (only when expanded) -->
+      <div class="sidebar-user-av" id="sidebar-avatar">✨</div>
       <div class="sidebar-clara-info">
         <div class="sidebar-clara-name" id="sidebar-name">Usuário</div>
         <div class="sidebar-clara-status" id="sidebar-phone">—</div>
@@ -663,11 +676,7 @@ function getGreeting(){const h=new Date().getHours();if(h>=5&&h<12)return'Bom di
 // SIDEBAR toggle
 function toggleSidebar(){
   sidebarCollapsed=!sidebarCollapsed;
-  const sb=document.getElementById('sidebar');
-  sb.classList.toggle('collapsed',sidebarCollapsed);
-  // collapsed: head shows only hamburger
-  const claraAv=document.getElementById('sidebar-clara-av');
-  if(claraAv) claraAv.style.display=sidebarCollapsed?'none':'';
+  document.getElementById('sidebar').classList.toggle('collapsed',sidebarCollapsed);
 }
 
 // AUTH
@@ -688,8 +697,10 @@ function showMainApp(user,savedPhone){
   // Mobile drawer
   document.getElementById('drawer-name').textContent=name;
   document.getElementById('drawer-phone').textContent='+55 '+phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
-  // Foto usuário no drawer; sidebar mostra foto da Clara (avatar)
+  // Foto usuário no drawer e sidebar
   if(user.photoURL){
+    const sbAv=document.getElementById('sidebar-avatar');
+    if(sbAv){sbAv.innerHTML=`<img src="${user.photoURL}" style="width:100%;height:100%;object-fit:cover"/>`;sbAv.style.background='none';}
     document.getElementById('drawer-avatar').innerHTML=`<img src="${user.photoURL}" style="width:100%;height:100%;object-fit:cover"/>`;
   }
   // Welcome screen
