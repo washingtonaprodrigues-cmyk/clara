@@ -7,13 +7,11 @@ router.post('/', async (req, res) => {
   try {
     const body = req.body;
 
-    // LOG COMPLETO para debug
-    console.log('PAYLOAD:', JSON.stringify(body).slice(0, 600));
-
-    // Ignora mensagens enviadas pela própria Clara
-    if (body.fromMe === true) return res.json({ ok: true });
-    if (body.wasSentByApi === true) return res.json({ ok: true });
-    if (body.isGroup === true) return res.json({ ok: true });
+    // Ignora mensagens enviadas pela própria Clara (verifica em todos os níveis)
+    const fromMe = body.fromMe === true || body.message?.fromMe === true;
+    if (fromMe) return res.json({ ok: true });
+    if (body.wasSentByApi === true || body.message?.wasSentByApi === true) return res.json({ ok: true });
+    if (body.isGroup === true || body.message?.isGroup === true) return res.json({ ok: true });
 
     // Extrai phone — formato real do UazAPI: "5543920003604@s.whatsapp.net"
     const phone = (body.sender || body.owner || '')
