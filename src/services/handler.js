@@ -36,6 +36,9 @@ const BOAS_VINDAS_MODO = {
   'conversar': `💬 *Conversar*\n\nAdoro uma boa conversa! Pode falar à vontade sobre qualquer assunto 😄\n\n_Pode começar!_ 🥰`,
 };
 
+// Tipos de lista que precisam ser executados antes de gerar a resposta
+const LISTA_TIPOS = ['lista_compras', 'lista_buscar', 'lista_marcar', 'lista_adicionar'];
+
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 }
@@ -79,35 +82,14 @@ function formatarDataHoraBR(date) {
 
 function calcularHorarioRelativo(texto) {
   const t = (texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  
   const minMatch = t.match(/daqui\s+(\d+)\s*(min|minuto|minutos)/);
-  if (minMatch) {
-    const d = nowBRT();
-    d.setMinutes(d.getMinutes() + parseInt(minMatch[1]));
-    return d;
-  }
-  
+  if (minMatch) { const d = nowBRT(); d.setMinutes(d.getMinutes() + parseInt(minMatch[1])); return d; }
   const hrMatch = t.match(/daqui\s+(\d+)\s*(h|hora|horas)/);
-  if (hrMatch) {
-    const d = nowBRT();
-    d.setHours(d.getHours() + parseInt(hrMatch[1]));
-    return d;
-  }
-
+  if (hrMatch) { const d = nowBRT(); d.setHours(d.getHours() + parseInt(hrMatch[1])); return d; }
   const emMinMatch = t.match(/em\s+(\d+)\s*(min|minuto|minutos)/);
-  if (emMinMatch) {
-    const d = nowBRT();
-    d.setMinutes(d.getMinutes() + parseInt(emMinMatch[1]));
-    return d;
-  }
-
+  if (emMinMatch) { const d = nowBRT(); d.setMinutes(d.getMinutes() + parseInt(emMinMatch[1])); return d; }
   const emHrMatch = t.match(/em\s+(\d+)\s*(h|hora|horas)/);
-  if (emHrMatch) {
-    const d = nowBRT();
-    d.setHours(d.getHours() + parseInt(emHrMatch[1]));
-    return d;
-  }
-
+  if (emHrMatch) { const d = nowBRT(); d.setHours(d.getHours() + parseInt(emHrMatch[1])); return d; }
   return null;
 }
 
@@ -124,12 +106,112 @@ async function enviarMenu(phone) {
   return sendButtons(phone, MENU, MENU_BUTTONS);
 }
 
-async function responderLivre(user, phone, text) {
+// Executa ação de lista de forma síncrona e retorna dados para o contexto
+async function executeListaAction(user, phone, classified) {
+  try {
+    const tipo = classified.tipo;
+
+    // lista_compras com itens → cria lista nova
+    if ((tipo === 'lista_compras') && classified.itens && classified.itens.length > 0) {
+      const itemsJson = classified.itens.map((nome, i) => ({ id: i + 1, nome, done: false }));
+      const lista = await prisma.groceryList.create({
+        data: {
+          userId: user.id,
+          name: classified.nome || '🛒 Lista de compras',
+          items: JSON.stringify(itemsJson),
+          done: false,
+        }
+      });
+      await memory.saveMemory(user.id, 'ultima_lista', lista.id);
+      console.log(`[${phone}] Lista criada: ${lista.name} com ${itemsJson.length} itens`);
+      return { acao: 'criada', listaNome: lista.name, listaItems: itemsJson };
+    }
+
+    // lista_buscar ou lista_compras sem itens → busca lista existente
+    if (tipo === 'lista_buscar' || (tipo === 'lista_compras' && (!classified.itens || classified.itens.length === 0))) {
+      const mems = await memory.getRecentMemories(user.id, 20);
+      const listaRef = mems.find(m => m.type === 'ultima_lista');
+      if (listaRef) {
+        const lista = await prisma.groceryList.findUnique({ where: { id: listaRef.content } });
+        if (lista && !lista.done) {
+          let items = []; try { items = JSON.parse(lista.items); } catch {}
+          return { acao: 'encontrada', listaNome: lista.name, listaItems: items };
+        }
+      }
+      // Fallback: lista ativa mais recente
+      const listaRecente = await prisma.groceryList.findFirst({
+        where: { userId: user.id, done: false },
+        orderBy: { createdAt: 'desc' }
+      });
+      if (listaRecente) {
+        let items = []; try { items = JSON.parse(listaRecente.items); } catch {}
+        await memory.saveMemory(user.id, 'ultima_lista', listaRecente.id);
+        return { acao: 'encontrada', listaNome: listaRecente.name, listaItems: items };
+      }
+      return { acao: 'nenhuma', listaNome: null, listaItems: [] };
+    }
+
+    // lista_marcar
+    if (tipo === 'lista_marcar' && classified.numeros && classified.numeros.length > 0) {
+      const mems = await memory.getRecentMemories(user.id, 20);
+      const listaRef = mems.find(m => m.type === 'ultima_lista');
+      if (listaRef) {
+        const lista = await prisma.groceryList.findUnique({ where: { id: listaRef.content } });
+        if (lista) {
+          let items = []; try { items = JSON.parse(lista.items); } catch {}
+          items = items.map(i => classified.numeros.includes(i.id) ? { ...i, done: true } : i);
+          const allDone = items.every(i => i.done);
+          await prisma.groceryList.update({
+            where: { id: lista.id },
+            data: { items: JSON.stringify(items), done: allDone }
+          });
+          return { acao: 'marcada', listaNome: lista.name, listaItems: items, allDone };
+        }
+      }
+      return null;
+    }
+
+    // lista_adicionar
+    if (tipo === 'lista_adicionar' && classified.item) {
+      const mems2 = await memory.getRecentMemories(user.id, 20);
+      const listaRef2 = mems2.find(m => m.type === 'ultima_lista');
+      if (listaRef2) {
+        const lista2 = await prisma.groceryList.findUnique({ where: { id: listaRef2.content } });
+        if (lista2) {
+          let items2 = []; try { items2 = JSON.parse(lista2.items); } catch {}
+          const newId = items2.length > 0 ? Math.max(...items2.map(i => i.id)) + 1 : 1;
+          items2.push({ id: newId, nome: classified.item, done: false });
+          await prisma.groceryList.update({
+            where: { id: lista2.id },
+            data: { items: JSON.stringify(items2) }
+          });
+          return { acao: 'adicionado', listaNome: lista2.name, listaItems: items2, itemAdicionado: classified.item };
+        }
+      }
+      return null;
+    }
+
+    return null;
+  } catch (e) {
+    console.error(`[${phone}] Erro executeListaAction:`, e.message);
+    return null;
+  }
+}
+
+// Monta texto da lista para enviar no WhatsApp
+function formatarListaWhatsApp(listaResult) {
+  if (!listaResult || !listaResult.listaItems) return '';
+  const { listaNome, listaItems } = listaResult;
+  const itens = listaItems.map(i => `${i.done ? '✅' : '⬜'} ${i.id}. ${i.nome}`).join('\n');
+  const done = listaItems.filter(i => i.done).length;
+  return `🛒 *${listaNome}*\n\n${itens}\n\n_${done}/${listaItems.length} itens marcados_`;
+}
+
+async function responderLivre(user, phone, text, contextoExtra = '') {
   try {
     const history = await memory.getConversationHistory(user.id, 10);
     const preferences = await memory.getUserPreference(user.id);
 
-    // Monta contexto completo (agenda, remédios, financeiro)
     let contexto = '';
     try {
       const now = nowBRT();
@@ -148,12 +230,8 @@ async function responderLivre(user, phone, text) {
           where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: inicioHoje, lte: fimAmanha } },
           orderBy: { scheduledAt: 'asc' }, take: 20
         }),
-        prisma.medication.findMany({
-          where: { userId: user.id, active: true, remaining: { gt: 0 } }
-        }),
-        preferences.saldo != null ? prisma.expense.findMany({
-          where: { userId: user.id, createdAt: { gte: inicioMes } }
-        }) : Promise.resolve([])
+        prisma.medication.findMany({ where: { userId: user.id, active: true, remaining: { gt: 0 } } }),
+        preferences.saldo != null ? prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } } }) : Promise.resolve([])
       ]);
 
       if (lembretes.length > 0) {
@@ -184,6 +262,8 @@ async function responderLivre(user, phone, text) {
       }
 
       if (contexto) contexto = `\n\nUse as informações abaixo para responder com precisão:${contexto}`;
+      if (contextoExtra) contexto += contextoExtra;
+
       preferences._contexto = contexto;
     } catch (e) {
       console.error(`[${phone}] Erro contexto:`, e.message);
@@ -259,9 +339,50 @@ async function handleMessage(phone, text, location = null) {
       return await responderLivre(user, phone, text);
     }
 
+    // ── Classificar primeiro ──
     const classified = await classify(text);
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
 
+    // ── Para listas: executar ANTES de gerar resposta ──
+    if (LISTA_TIPOS.includes(classified.tipo)) {
+      const listaResult = await executeListaAction(user, phone, classified);
+
+      let contextoExtra = '';
+      if (listaResult) {
+        const { acao, listaNome, listaItems, allDone, itemAdicionado } = listaResult;
+
+        if (acao === 'criada') {
+          const itensTexto = listaItems.map(i => i.nome).join(', ');
+          contextoExtra = `\n\n[AÇÃO REALIZADA] Acabei de criar a lista "${listaNome}" com os itens: ${itensTexto}. Confirme ao usuário de forma animada que a lista foi criada. Não liste os itens na resposta pois eles já aparecem separadamente.`;
+        } else if (acao === 'encontrada') {
+          const itensTexto = listaItems.map(i => `${i.done ? '✅' : '⬜'} ${i.nome}`).join(', ');
+          contextoExtra = `\n\n[LISTA ENCONTRADA] Encontrei a lista "${listaNome}" com: ${itensTexto}. Apresente-a de forma natural. Não liste os itens pois eles já aparecem separadamente abaixo da sua mensagem.`;
+        } else if (acao === 'nenhuma') {
+          contextoExtra = `\n\n[SEM LISTA] O usuário não tem nenhuma lista ativa no momento. Informe isso e ofereça criar uma nova.`;
+        } else if (acao === 'marcada') {
+          contextoExtra = `\n\n[AÇÃO REALIZADA] Marquei os itens solicitados na lista "${listaNome}".${allDone ? ' Todos os itens foram concluídos! 🎉' : ''} Confirme ao usuário.`;
+        } else if (acao === 'adicionado') {
+          contextoExtra = `\n\n[AÇÃO REALIZADA] Adicionei "${itemAdicionado}" à lista "${listaNome}". Confirme ao usuário.`;
+        }
+
+        // Enviar resposta de texto com contexto correto
+        await responderLivre(user, phone, text, contextoExtra);
+
+        // Enviar a lista formatada no WhatsApp (se encontrada ou criada)
+        if ((acao === 'criada' || acao === 'encontrada' || acao === 'adicionado' || acao === 'marcada') && listaItems.length > 0) {
+          const listaTexto = formatarListaWhatsApp(listaResult);
+          await sendMessage(phone, listaTexto);
+        }
+      } else {
+        // Nenhuma lista encontrada/criada — responde normalmente
+        contextoExtra = `\n\n[SEM LISTA] Não foi possível encontrar ou criar a lista. Informe ao usuário e ofereça ajuda.`;
+        await responderLivre(user, phone, text, contextoExtra);
+      }
+
+      return;
+    }
+
+    // ── Demais ações: executar em background ──
     executeAction(user, phone, classified, text).catch(e =>
       console.error('Erro executeAction:', e.message)
     );
@@ -500,64 +621,7 @@ async function executeAction(user, phone, classified, originalText) {
         console.log(`[${phone}] Saldo atualizado: R$ ${classified.valor}`);
       }
       break;
-
-    case 'lista_compras':
-      if (classified.itens && classified.itens.length > 0) {
-        const itemsJson = classified.itens.map((nome, i) => ({ id: i + 1, nome, done: false }));
-        const lista = await prisma.groceryList.create({
-          data: {
-            userId: user.id,
-            name: classified.nome || '🛒 Lista de compras',
-            items: JSON.stringify(itemsJson),
-            done: false,
-          }
-        });
-        // Salva referência da última lista criada na memória
-        await memory.saveMemory(user.id, 'ultima_lista', lista.id);
-        console.log(`[${phone}] Lista criada: ${lista.name} com ${itemsJson.length} itens`);
-      }
-      break;
-
-    case 'lista_marcar':
-      if (classified.numeros && classified.numeros.length > 0) {
-        // Busca última lista ativa
-        const mems = await memory.getRecentMemories(user.id, 20);
-        const listaRef = mems.find(m => m.type === 'ultima_lista');
-        if (listaRef) {
-          const lista = await prisma.groceryList.findUnique({ where: { id: listaRef.content } });
-          if (lista) {
-            let items = []; try { items = JSON.parse(lista.items); } catch {}
-            items = items.map(i => classified.numeros.includes(i.id) ? { ...i, done: true } : i);
-            const allDone = items.every(i => i.done);
-            await prisma.groceryList.update({
-              where: { id: lista.id },
-              data: { items: JSON.stringify(items), done: allDone }
-            });
-            console.log(`[${phone}] Marcados itens: ${classified.numeros.join(', ')}`);
-          }
-        }
-      }
-      break;
-
-    case 'lista_adicionar':
-      if (classified.item) {
-        const mems2 = await memory.getRecentMemories(user.id, 20);
-        const listaRef2 = mems2.find(m => m.type === 'ultima_lista');
-        if (listaRef2) {
-          const lista2 = await prisma.groceryList.findUnique({ where: { id: listaRef2.content } });
-          if (lista2) {
-            let items2 = []; try { items2 = JSON.parse(lista2.items); } catch {}
-            const newId = items2.length > 0 ? Math.max(...items2.map(i => i.id)) + 1 : 1;
-            items2.push({ id: newId, nome: classified.item, done: false });
-            await prisma.groceryList.update({
-              where: { id: lista2.id },
-              data: { items: JSON.stringify(items2) }
-            });
-            console.log(`[${phone}] Item adicionado: ${classified.item}`);
-          }
-        }
-      }
-      break;
+    // listas são tratadas em handleMessage via executeListaAction — não chegam aqui
   }
 }
 
