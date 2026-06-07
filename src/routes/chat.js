@@ -246,29 +246,35 @@ router.post('/:phone', async (req, res) => {
       }
     }
 
-    const preferencesComContexto = { ...preferences, _contexto: contexto };
-
     let actionData = null;
 
-    // classify e freeResponse em paralelo
-    const [response, classified] = await Promise.all([
-      freeResponse(message, history, preferencesComContexto, privateMode),
-      privateMode ? Promise.resolve({ tipo: 'outro' }) : classify(message),
-    ]);
+    // Classificar a mensagem primeiro (necessário para saber se é lista antes de gerar resposta)
+    const classified = privateMode ? { tipo: 'outro' } : await classify(message);
+
+    // Para tipos de lista: executar ação ANTES de gerar a resposta,
+    // assim a Clara sabe que a lista foi criada/atualizada e responde corretamente
+    if (!privateMode && SYNC_ACTION_TYPES.includes(classified?.tipo)) {
+      actionData = await executeActionFromChat(user, phone, classified, message);
+    }
+
+    // Adicionar instrução ao contexto quando for ação de lista
+    if (actionData?.listaId) {
+      const itensTexto = actionData.listaItems.map(i => `${i.id}. ${i.nome}`).join(', ');
+      contexto += `\n\n[AÇÃO REALIZADA] A lista "${actionData.listaNome}" foi criada/atualizada com sucesso com os seguintes itens: ${itensTexto}. Confirme isso ao usuário de forma natural e animada, sem listar os itens novamente pois eles já aparecem visualmente.`;
+    }
+
+    const preferencesComContexto = { ...preferences, _contexto: contexto };
+
+    const response = await freeResponse(message, history, preferencesComContexto, privateMode);
 
     await memory.saveConversationMessage(user.id, 'user', message, privateMode);
     await memory.saveConversationMessage(user.id, 'assistant', response, privateMode);
 
-    if (!privateMode) {
-      if (SYNC_ACTION_TYPES.includes(classified?.tipo)) {
-        // Executa de forma síncrona para capturar os dados da lista antes de responder
-        actionData = await executeActionFromChat(user, phone, classified, message);
-      } else {
-        // Demais ações rodam em background sem bloquear a resposta
-        executeActionFromChat(user, phone, classified, message).catch(e =>
-          console.error('[chat] Erro bg action:', e.message)
-        );
-      }
+    if (!privateMode && !SYNC_ACTION_TYPES.includes(classified?.tipo)) {
+      // Demais ações rodam em background sem bloquear a resposta
+      executeActionFromChat(user, phone, classified, message).catch(e =>
+        console.error('[chat] Erro bg action:', e.message)
+      );
     }
 
     res.json({ reply: response, actionType: classified?.tipo || 'outro', actionData });
