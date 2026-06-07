@@ -5,7 +5,6 @@ const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
 
-// ====================== MENU ======================
 const MENU = `✨ *Oi, eu sou a Clara.*
 
 Posso cuidar de lembretes, anotações, gastos, saúde, ponto e pesquisas rápidas.
@@ -17,8 +16,6 @@ Você pode tocar em uma opção ou escrever do seu jeito:
 - _"qual foi a senha do Wi-Fi?"_
 
 O que vamos resolver agora?`;
-
-const MENU_FOOTER = '\n\n_Digite *menu* para ver as opções 🏠_';
 
 const MENU_BUTTONS = [
   { id: 'criar_lembrete', label: '⏰ Lembrete' },
@@ -39,7 +36,6 @@ const BOAS_VINDAS_MODO = {
   'conversar': `💬 *Conversar*\n\nAdoro uma boa conversa! Pode falar à vontade sobre qualquer assunto 😄\n\n_Pode começar!_ 🥰`,
 };
 
-// ====================== UTILITÁRIOS ======================
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 }
@@ -73,15 +69,51 @@ function formatarDataHoraBR(date) {
   const hoje = nowBRT();
   const amanha = new Date(hoje);
   amanha.setDate(amanha.getDate() + 1);
-
   const dStr = `${d.getDate()}/${d.getMonth() + 1}`;
   const hStr = horaStr(d);
-
   if (d.toDateString() === hoje.toDateString()) return `Hoje às ${hStr}`;
   if (d.toDateString() === amanha.toDateString()) return `Amanhã às ${hStr}`;
-
   const dias = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   return `${dias[d.getDay()]} ${dStr} às ${hStr}`;
+}
+
+// Detecta horário relativo no texto: "daqui 5 minutos", "em 2 horas", etc.
+function calcularHorarioRelativo(texto) {
+  const t = (texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  
+  // daqui X minutos
+  const minMatch = t.match(/daqui\s+(\d+)\s*(min|minuto|minutos)/);
+  if (minMatch) {
+    const d = nowBRT();
+    d.setMinutes(d.getMinutes() + parseInt(minMatch[1]));
+    return d;
+  }
+  
+  // daqui X horas
+  const hrMatch = t.match(/daqui\s+(\d+)\s*(h|hora|horas)/);
+  if (hrMatch) {
+    const d = nowBRT();
+    d.setHours(d.getHours() + parseInt(hrMatch[1]));
+    return d;
+  }
+
+  // em X minutos
+  const emMinMatch = t.match(/em\s+(\d+)\s*(min|minuto|minutos)/);
+  if (emMinMatch) {
+    const d = nowBRT();
+    d.setMinutes(d.getMinutes() + parseInt(emMinMatch[1]));
+    return d;
+  }
+
+  // em X horas
+  const emHrMatch = t.match(/em\s+(\d+)\s*(h|hora|horas)/);
+  if (emHrMatch) {
+    const d = nowBRT();
+    d.setHours(d.getHours() + parseInt(emHrMatch[1]));
+    return d;
+  }
+
+  return null;
 }
 
 async function getModoAtual(userId) {
@@ -90,11 +122,7 @@ async function getModoAtual(userId) {
 }
 
 function normalizar(text) {
-  return (text || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
+  return (text || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
 async function enviarMenu(phone) {
@@ -117,18 +145,6 @@ async function responderLivre(user, phone, text) {
   }
 }
 
-async function responderNaoEntendi(phone) {
-  return sendButtons(phone,
-    `Entendi a ideia, mas preciso de um detalhe para fazer certinho.\n\nVocê pode escrever, por exemplo:\n• _"me lembra amanhã às 8h de ligar para Ana"_\n• _"gastei 35 reais no almoço"_\n• _"anota senha do Wi-Fi 12345"_`,
-    [
-      { id: 'criar_lembrete', label: '⏰ Criar lembrete' },
-      { id: 'nova_anotacao', label: '📝 Salvar nota' },
-      { id: 'menu', label: '🏠 Menu' },
-    ]
-  );
-}
-
-// ====================== HANDLER PRINCIPAL ======================
 async function handleMessage(phone, text, location = null) {
   try {
     const user = await memory.getOrCreateUser(phone);
@@ -179,10 +195,7 @@ async function handleMessage(phone, text, location = null) {
       await memory.saveMemory(user.id, 'anotacao', text, { titulo: text.substring(0, 50) });
       return await sendButtons(phone,
         `📝 *Anotação salva!*\n\n_"${text}"_\n\nGuardei isso aqui com segurança 💜`,
-        [
-          { id: 'ver_anotacoes', label: '📋 Ver anotações' },
-          { id: 'menu', label: '🏠 Menu' },
-        ]
+        [{ id: 'ver_anotacoes', label: '📋 Ver anotações' }, { id: 'menu', label: '🏠 Menu' }]
       );
     }
 
@@ -204,71 +217,9 @@ async function handleMessage(phone, text, location = null) {
   }
 }
 
-// ====================== SAUDAÇÃO ======================
-async function handleSaudacao(user, phone) {
-  const cidade = await getCidadeUsuario(user.id);
-  await enviarMenu(phone);
-  if (!cidade) {
-    setTimeout(async () => {
-      await sendMessage(phone, '📍 _Dica: me diz sua cidade e vou buscar clima e locais pra você!_');
-    }, 1500);
-  }
-}
-
 async function getCidadeUsuario(userId) {
   const mems = await memory.getRecentMemories(userId, 50);
   return mems.find(m => m.type === 'cidade')?.content || null;
-}
-
-async function handleCidade(user, phone, cidade) {
-  await memory.saveMemory(user.id, 'cidade', cidade);
-  await sendMessage(phone, `Anotei! 📍 Vou usar *${cidade}* para buscas locais.`);
-}
-
-async function handlePreferencia(user, phone, classified) {
-  await memory.saveUserPreference(user.id, classified.nome, classified.tom);
-  const partes = [];
-  if (classified.nome) partes.push(`vou te chamar de *${classified.nome}*`);
-  if (classified.tom) partes.push(`vou usar um tom mais *${classified.tom}*`);
-  const msg = partes.length
-    ? `Combinado, ${partes.join(' e ')}.`
-    : 'Combinado, vou lembrar dessa preferência.';
-  await sendMessage(phone, `${msg} 😊`);
-}
-
-async function handlePontoMultiplo(user, phone, acoes, originalText) {
-  await sendMessage(phone, '📍 Registrando seus pontos...');
-  const hoje = dateBRT();
-
-  for (const acao of acoes) {
-    let subtipo = (acao.subtipo || '').toLowerCase().trim();
-    if (subtipo === 'entrada' || subtipo.includes('cheg') || subtipo.includes('entrei')) subtipo = 'entrada';
-    else if (subtipo === 'saida_almoco' || (subtipo.includes('almo') && (subtipo.includes('sai') || subtipo.includes('saí')))) subtipo = 'saida_almoco';
-    else if (subtipo === 'volta_almoco' || (subtipo.includes('almo') && (subtipo.includes('volt') || subtipo.includes('retorn')))) subtipo = 'volta_almoco';
-    else if (subtipo === 'saida' || subtipo.includes('saí') || subtipo.includes('sai') || subtipo.includes('saida')) subtipo = 'saida';
-
-    const horaUsada = acao.hora || 'agora';
-    const timestamp = horaUsada !== 'agora' ? convertToDateWithTime(horaUsada) : nowBRT();
-
-    const existing = await prisma.workLog.findFirst({ where: { userId: user.id, type: subtipo, date: hoje } });
-    if (existing) {
-      await prisma.workLog.update({ where: { id: existing.id }, data: { timestamp } });
-    } else {
-      await prisma.workLog.create({ data: { userId: user.id, type: subtipo, timestamp, date: hoje } });
-    }
-  }
-
-  const pontosHoje = await prisma.workLog.findMany({
-    where: { userId: user.id, date: hoje },
-    orderBy: { timestamp: 'asc' }
-  });
-
-  const resumo = await gerarResumoDoBanco(pontosHoje, user.id);
-  await sendButtons(phone, resumo, [
-    { id: 'ver_horas_hoje', label: '📋 Ver horas hoje' },
-    { id: 'bater_ponto', label: '📍 Bater ponto' },
-    { id: 'menu', label: '🏠 Menu' },
-  ]);
 }
 
 function convertToDateWithTime(horaStr) {
@@ -315,155 +266,6 @@ async function gerarResumoDoBanco(pontos, userId) {
 
   if (!saida) texto += `\n💡 Me avisa quando sair!`;
   return texto;
-}
-
-async function handleBusca(user, phone, query) {
-  await sendMessage(phone, '✨ _Clareando ideias..._');
-  const mems = await memory.getRecentMemories(user.id, 20);
-  let locationText = '';
-
-  const locationMem = mems.find(m => m.type === 'localizacao');
-  if (locationMem) {
-    try {
-      const loc = JSON.parse(locationMem.content);
-      locationText = `${loc.latitude}, ${loc.longitude}`;
-    } catch (e) {}
-  }
-
-  if (!locationText) {
-    const cidadeMem = mems.find(m => m.type === 'cidade');
-    if (cidadeMem) locationText = cidadeMem.content;
-  }
-
-  let queryFinal = query;
-  if (locationText) {
-    queryFinal = query
-      .replace(/minha cidade/gi, locationText)
-      .replace(/aqui/gi, locationText)
-      .replace(/perto de mim/gi, `perto de ${locationText}`)
-      .replace(/próximo a mim/gi, `próximo a ${locationText}`);
-  }
-
-  const resultado = await searchWeb(queryFinal, locationText);
-  await sendMessage(phone, resultado);
-}
-
-async function handleNote(user, phone, classified) {
-  const conteudo = classified.conteudo || classified.titulo || '';
-  await memory.saveMemory(user.id, 'anotacao', conteudo, { titulo: classified.titulo });
-  await sendButtons(phone,
-    `📝 *Anotação salva!*\n\n_"${conteudo}"_\n\nGuardei isso aqui com segurança 💜`,
-    [
-      { id: 'ver_anotacoes', label: '📋 Ver anotações' },
-      { id: 'menu', label: '🏠 Menu' },
-    ]
-  );
-}
-
-async function handleTask(user, phone, classified) {
-  await memory.saveMemory(user.id, 'tarefa', classified.titulo, {
-    data: classified.data,
-    hora: classified.hora,
-  });
-
-  if (classified.hora) {
-    try {
-      const hoje = classified.data || dateBRT();
-      const [h, m] = classified.hora.split(':').map(Number);
-      const scheduledAt = new Date(`${hoje}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
-
-      if (!classified.data && scheduledAt < nowBRT()) {
-        scheduledAt.setDate(scheduledAt.getDate() + 1);
-      }
-
-      await prisma.reminder.create({
-        data: { userId: user.id, phone, message: classified.titulo, scheduledAt },
-      });
-
-      const dataFormatada = formatarDataHoraBR(scheduledAt);
-      await sendButtons(phone,
-        `🔔 *Lembrete criado com sucesso!*\n\n📌 ${classified.titulo}\n🗓️ ${dataFormatada}\n\nVou te avisar no horário certinho 😊`,
-        [
-          { id: 'ver_lembretes', label: '📋 Ver lembretes' },
-          { id: 'menu', label: '🏠 Menu' },
-        ]
-      );
-    } catch (e) {
-      console.error('Erro criar reminder:', e.message);
-      await sendMessage(phone, `Guardei! Vou te lembrar às *${classified.hora}*. ⏰`);
-    }
-  } else {
-    await sendButtons(phone,
-      `🔔 *Lembrete criado!*\n\n📌 ${classified.titulo}\n\nGuardei aqui pra você 😊`,
-      [
-        { id: 'ver_lembretes', label: '📋 Ver lembretes' },
-        { id: 'menu', label: '🏠 Menu' },
-      ]
-    );
-  }
-}
-
-async function handleExpense(user, phone, classified) {
-  const valor = Number(classified.valor) || 0;
-  const categoria = classified.categoria || 'outro';
-  const descricao = classified.descricao || categoria;
-
-  await memory.saveExpense(user.id, { valor, categoria, descricao });
-
-  const categoriaIcon = {
-    mercado: '🛒', restaurante: '🍽️', saude: '💊',
-    transporte: '🚗', lazer: '🎉', outro: '📦'
-  };
-  const icon = categoriaIcon[categoria] || '📦';
-
-  await sendButtons(phone,
-    `💰 *Gasto registrado!*\n\n${icon} *${categoria.charAt(0).toUpperCase() + categoria.slice(1)}*\n💵 R$ ${valor.toFixed(2)}\n\nSeu gasto foi salvo no controle financeiro 😊`,
-    [
-      { id: 'ver_gastos', label: '📋 Ver gastos' },
-      { id: 'resumo_mes', label: '📊 Resumo do mês' },
-      { id: 'menu', label: '🏠 Menu' },
-    ]
-  );
-}
-
-async function handleMedication(user, phone, classified) {
-  const nome = classified.nome || classified.name || classified.titulo;
-  const horarios = Array.isArray(classified.horarios) && classified.horarios.length
-    ? classified.horarios
-    : ['08:00'];
-
-  if (!nome) {
-    return await sendMessage(phone, 'Me diz o nome do remédio e o horário? Exemplo: _"Losartana todo dia às 8h"_');
-  }
-
-  await memory.saveMedication(user.id, {
-    nome,
-    quantidade: Number(classified.quantidade) || 0,
-    frequencia: Number(classified.frequencia) || horarios.length || 1,
-    horarios,
-  });
-
-  await sendButtons(phone,
-    `💊 *Medicamento cadastrado!*\n\n${nome}\n⏰ ${horarios.join(', ')}\n\nVou te lembrar nos horários combinados 😊`,
-    [
-      { id: 'ver_medicamentos', label: '📋 Ver medicamentos' },
-      { id: 'novo_remedio', label: '➕ Novo remédio' },
-      { id: 'menu', label: '🏠 Menu' },
-    ]
-  );
-}
-
-async function handleQuery(user, phone, question) {
-  await sendMessage(phone, '💭 _Deixa eu ver isso pra você..._');
-  const memories = await memory.getRecentMemories(user.id, 30);
-
-  if (memories.length === 0) {
-    await sendMessage(phone, 'Ainda não guardei nada pra você. Me conta algo!');
-    return;
-  }
-
-  const answer = await generateMemorySummary(memories, question);
-  await sendMessage(phone, answer);
 }
 
 async function listarLembretes(user, phone) {
@@ -614,7 +416,7 @@ async function executeAction(user, phone, classified, originalText) {
       await memory.saveMemory(user.id, 'anotacao', classified.conteudo || classified.titulo || originalText, { titulo: classified.titulo });
       break;
     case 'tarefa':
-      await salvarTarefaSilenciosa(user, phone, classified);
+      await salvarTarefaSilenciosa(user, phone, classified, originalText);
       break;
     case 'gasto':
       await memory.saveExpense(user.id, {
@@ -646,7 +448,7 @@ async function salvarPontoSilencioso(user, acoes) {
     if (subtipo.includes('entrada') || subtipo.includes('cheg')) subtipo = 'entrada';
     else if (subtipo.includes('saida_almoco') || (subtipo.includes('almo') && subtipo.includes('sai'))) subtipo = 'saida_almoco';
     else if (subtipo.includes('volta_almoco') || (subtipo.includes('almo') && subtipo.includes('volt'))) subtipo = 'volta_almoco';
-    else if (subtipo.includes('saida') || subtipo.includes('saí')) subtipo = 'saida';
+    else if (subtipo.includes('saida') || subtipo.includes('sai')) subtipo = 'saida';
     const timestamp = acao.hora ? convertToDateWithTime(acao.hora) : nowBRT();
     const existing = await prisma.workLog.findFirst({ where: { userId: user.id, type: subtipo, date: hoje } });
     if (existing) {
@@ -657,14 +459,31 @@ async function salvarPontoSilencioso(user, acoes) {
   }
 }
 
-async function salvarTarefaSilenciosa(user, phone, classified) {
+async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
   await memory.saveMemory(user.id, 'tarefa', classified.titulo, { data: classified.data, hora: classified.hora });
-  if (classified.hora) {
+
+  let scheduledAt = null;
+
+  // Tenta horário relativo primeiro (daqui X minutos/horas)
+  if (originalText) {
+    const relativo = calcularHorarioRelativo(originalText);
+    if (relativo) {
+      scheduledAt = relativo;
+      console.log(`[${phone}] Horário relativo calculado: ${scheduledAt}`);
+    }
+  }
+
+  // Se não tem relativo, usa hora fixa do classified
+  if (!scheduledAt && classified.hora) {
     const hoje = classified.data || dateBRT();
     const [h, m] = classified.hora.split(':').map(Number);
-    const scheduledAt = new Date(`${hoje}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
+    scheduledAt = new Date(`${hoje}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
     if (!classified.data && scheduledAt < nowBRT()) scheduledAt.setDate(scheduledAt.getDate() + 1);
+  }
+
+  if (scheduledAt) {
     await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
+    console.log(`[${phone}] Lembrete salvo: "${classified.titulo}" para ${scheduledAt}`);
   }
 }
 
