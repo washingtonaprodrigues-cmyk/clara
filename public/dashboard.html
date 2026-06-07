@@ -1103,3 +1103,119 @@ if(isIOS&&!window.navigator.standalone) setTimeout(()=>showToast('Instale: compa
 </script>
 </body>
 </html>
+</span></div><div class="cofre-actions"><button class="cofre-btn" onclick="copyCofre('${item.id}',${JSON.stringify(JSON.stringify(d))})">📋</button><button class="cofre-btn" onclick="delCofre('${item.id}')" style="color:var(--red)">🗑</button></div></div>${fields}<div class="cofre-date">Salvo em ${fmtD(item.createdAt)}</div></div>`;
+  }).join('');
+}
+function togglePw(id,b64){const el=document.getElementById('pw-'+id);if(!el) return;const decoded=decodeURIComponent(escape(atob(b64)));if(el.classList.contains('cofre-hidden')){el.textContent=decoded;el.classList.remove('cofre-hidden');el.classList.add('cofre-val');}else{el.textContent='••••••••';el.classList.add('cofre-hidden');el.classList.remove('cofre-val');}}
+function copyCofre(id,ds){try{const d=JSON.parse(ds);navigator.clipboard.writeText(d.senha||d.num||d.nota||d.outro||'');showToast('Copiado! 📋');}catch{showToast('Erro ao copiar');}}
+async function delCofre(id){if(!confirm('Excluir?'))return;try{await fetch(`/forms/cofre/${id}`,{method:'DELETE'});showToast('Excluído ✅');renderCofre();}catch{showToast('Erro ⚠️');}}
+function updateCofreFields(){const t=document.getElementById('ct').value;['senha','cartao','nota','outro'].forEach(x=>document.getElementById('cf-'+x).style.display=x===t?'block':'none');}
+async function saveCofre(){
+  const tipo=document.getElementById('ct').value;const nome=document.getElementById('cn').value.trim();
+  if(!nome){showToast('Informe o nome ⚠️');return;}
+  let data={tipo,nome};
+  if(tipo==='senha'){data.email=document.getElementById('ce').value;data.senha=document.getElementById('cs-pw').value;data.url=document.getElementById('cu').value;}
+  else if(tipo==='cartao'){data.num=document.getElementById('cc-num').value;data.val=document.getElementById('cc-val').value;data.cvv=document.getElementById('cc-cvv').value;}
+  else if(tipo==='nota'){data.nota=document.getElementById('cn-txt').value;}
+  else{data.outro=document.getElementById('co-txt').value;}
+  const btn=document.getElementById('sc-btn');btn.textContent='Salvando...';btn.disabled=true;
+  try{const r=await fetch(`/forms/cofre/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conteudo:JSON.stringify(data)})});if(r.ok){closeModal('m-cofre');showToast('Salvo! 🔐');renderCofre();}else showToast('Erro ⚠️');}catch{showToast('Erro ⚠️');}
+  btn.textContent='Salvar';btn.disabled=false;
+}
+
+// PREFERÊNCIAS
+async function loadPrefs(){
+  try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();if(d.tom)applyMood(d.tom);if(d.name)document.getElementById('pref-nome').value=d.name;}catch{}
+  document.getElementById('pref-phone').value=phone.replace('55','');
+}
+async function savePrefs(){
+  const tom=currentMood;
+  const nome=document.getElementById('pref-nome').value.trim();
+  let newPhone=document.getElementById('pref-phone').value.trim().replace(/\D/g,'');
+  if(newPhone&&newPhone.length>=10){
+    if(!newPhone.startsWith('55')) newPhone='55'+newPhone;
+    phone=newPhone;
+    const user=window._currentUser;
+    if(user) localStorage.setItem(`clara_phone_${user.uid}`,newPhone);
+    document.getElementById('sidebar-user-phone').textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
+    document.getElementById('drawer-phone').textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
+  }
+  try{await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tom,nome})});showToast('Preferências salvas! ✅');}
+  catch{showToast('Erro ⚠️');}
+}
+
+// MODALS
+function openModal(id){
+  if(id==='m-lembrete'){const{data,hora}=nowLocal();document.getElementById('ml-data').value=data;document.getElementById('ml-hora').value=hora;document.getElementById('ml-titulo').value='';}
+  if(id==='m-remedio'){const{hora}=nowLocal();document.getElementById('mr-inicio').value=hora;document.getElementById('mr-nome').value='';}
+  if(id==='m-gasto'){document.getElementById('mg-val').value='';document.getElementById('mg-desc').value='';}
+  document.getElementById(id).classList.add('open');
+}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
+
+async function saveLembrete(){
+  const titulo=document.getElementById('ml-titulo').value.trim();
+  const data=document.getElementById('ml-data').value;
+  const hora=document.getElementById('ml-hora').value;
+  if(!titulo){showToast('Descreva o lembrete ⚠️');return;}
+  const btn=document.getElementById('sl-btn');btn.textContent='...';btn.disabled=true;
+  try{const r=await fetch(`/forms/lembrete/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titulo,data,hora})});if(r.ok){closeModal('m-lembrete');showToast('Lembrete criado! ✅');await loadAll();renderRem();}else showToast('Erro ⚠️');}catch{showToast('Erro ⚠️');}
+  btn.textContent='Criar';btn.disabled=false;
+}
+async function saveRemedio(){
+  const nome=document.getElementById('mr-nome').value.trim();
+  const dose=document.getElementById('mr-dose').value;
+  const intervalo=parseInt(document.getElementById('mr-int').value);
+  const dias=parseInt(document.getElementById('mr-dias').value)||0;
+  const horarioInicio=document.getElementById('mr-inicio').value;
+  if(!nome){showToast('Informe o medicamento ⚠️');return;}
+  const btn=document.getElementById('sr-btn');btn.textContent='...';btn.disabled=true;
+  try{const r=await fetch(`/forms/remedio/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome,dose,intervalo,dias,horarioInicio})});if(r.ok){closeModal('m-remedio');showToast('Remédio cadastrado! ✅');await loadAll();renderSaude();}else showToast('Erro ⚠️');}catch{showToast('Erro ⚠️');}
+  btn.textContent='Cadastrar';btn.disabled=false;
+}
+async function saveGasto(){
+  const valor=parseFloat(document.getElementById('mg-val').value);
+  const categoria=document.getElementById('mg-cat').value;
+  const descricao=document.getElementById('mg-desc').value||categoria;
+  if(!valor||valor<=0){showToast('Informe o valor ⚠️');return;}
+  const btn=document.getElementById('sg-btn');btn.textContent='...';btn.disabled=true;
+  try{const r=await fetch(`/forms/gasto/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({valor,categoria,descricao})});if(r.ok){closeModal('m-gasto');showToast('Gasto registrado! ✅');await loadAll();renderFin();}else showToast('Erro ⚠️');}catch{showToast('Erro ⚠️');}
+  btn.textContent='Registrar';btn.disabled=false;
+}
+
+// PWA
+let swReg=null,vapidPublicKey='';
+async function initPWA(){
+  if(!('serviceWorker' in navigator)){['notif-btn','notif-btn-side'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});return;}
+  try{
+    swReg=await navigator.serviceWorker.register('/sw.js');
+    try{const r=await fetch('/push/vapid-public');const d=await r.json();vapidPublicKey=d.key;}catch{}
+    const existing=await swReg.pushManager.getSubscription();
+    if(existing){
+      ['notif-btn','notif-btn-side'].forEach(id=>{
+        const el=document.getElementById(id);
+        if(el){el.style.color='var(--green)';}
+      });
+    }
+  }catch{['notif-btn','notif-btn-side'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});}
+}
+async function requestPushPermission(){
+  if(!phone){showToast('Configure seu número primeiro');return;}
+  if(!('Notification' in window)){showToast('Notificações não suportadas ⚠️');return;}
+  if(!swReg){try{swReg=await navigator.serviceWorker.register('/sw.js');}catch{showToast('Instale o app primeiro 📱',4000);return;}}
+  const perm=await Notification.requestPermission();
+  if(perm!=='granted'){showToast('Permissão negada ⚠️');return;}
+  try{
+    const sub=await swReg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(vapidPublicKey)});
+    await fetch(`/push/subscribe/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscription:sub})});
+    showToast('Notificações ativadas! 🔔',3000);
+    ['notif-btn','notif-btn-side'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.color='var(--green)';});
+  }catch{showToast('Erro ao ativar notificações ⚠️');}
+}
+function urlBase64ToUint8Array(b){const p='='.repeat((4-b.length%4)%4);const s=(b+p).replace(/-/g,'+').replace(/_/g,'/');const r=atob(s);return Uint8Array.from([...r].map(c=>c.charCodeAt(0)));}
+const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+if(isIOS&&!window.navigator.standalone) setTimeout(()=>showToast('Instale: compartilhar → Adicionar à tela de início 📱',5000),4000);
+</script>
+</body>
+</html>
