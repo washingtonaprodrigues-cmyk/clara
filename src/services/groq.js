@@ -61,6 +61,15 @@ TIPOS:
 - saldo: quando o usuário informa seu saldo, salário, renda ou orçamento mensal
   {"tipo":"saldo","valor":1400.0}
   
+- lista_compras: lista de compras, mercado, farmácia etc
+  {"tipo":"lista_compras","nome":"título da lista","itens":["item1","item2","item3"]}
+
+- lista_marcar: usuário diz que já pegou/comprou itens (cita números)
+  {"tipo":"lista_marcar","numeros":[2,3,4]}
+
+- lista_adicionar: adicionar item a lista existente
+  {"tipo":"lista_adicionar","item":"nome do item"}
+
 - consulta: pergunta sobre algo guardado
   {"tipo":"consulta","sobre":"tema"}
   
@@ -97,6 +106,12 @@ EXEMPLOS PONTO:
 "volta a ser simpática" → {"tipo":"preferencia","nome":null,"tom":"carinhoso"}
 "modo normal" → {"tipo":"preferencia","nome":null,"tom":"carinhoso"}
 "oi" → {"tipo":"saudacao"}
+"preciso comprar arroz, feijão e leite" → {"tipo":"lista_compras","nome":"🛒 Lista do mercado","itens":["Arroz","Feijão","Leite"]}
+"lista da farmácia: dipirona, curativo" → {"tipo":"lista_compras","nome":"💊 Lista da farmácia","itens":["Dipirona","Curativo"]}
+"já peguei o 2 e o 3" → {"tipo":"lista_marcar","numeros":[2,3]}
+"peguei os itens 1, 4 e 5" → {"tipo":"lista_marcar","numeros":[1,4,5]}
+"adiciona macarrão na lista" → {"tipo":"lista_adicionar","item":"Macarrão"}
+"coloca detergente também" → {"tipo":"lista_adicionar","item":"Detergente"}
 "meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
 "tenho 2500 reais no mês" → {"tipo":"saldo","valor":2500.0}
 "meu salário é 3000" → {"tipo":"saldo","valor":3000.0}
