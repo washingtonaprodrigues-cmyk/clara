@@ -22,6 +22,7 @@ REGRAS IMPORTANTES:
 - Se tiver horário/data e intenção de lembrar, use tarefa.
 - Se for só uma informação para guardar, use anotacao.
 - Se for pergunta atual/local/notícia/preço/clima/telefone/endereço, use busca.
+- Se o usuário informar seu saldo, salário, orçamento ou renda mensal, use saldo.
 
 TIPOS:
 - ponto_multiplo: registrar entrada/saída trabalho
@@ -56,6 +57,9 @@ TIPOS:
 
 - preferencia: nome do usuário ou jeito que prefere ser atendido
   {"tipo":"preferencia","nome":"nome ou null","tom":"carinhoso/direto/divertido/profissional ou null"}
+
+- saldo: quando o usuário informa seu saldo, salário, renda ou orçamento mensal
+  {"tipo":"saldo","valor":1400.0}
   
 - consulta: pergunta sobre algo guardado
   {"tipo":"consulta","sobre":"tema"}
@@ -93,6 +97,11 @@ EXEMPLOS PONTO:
 "volta a ser simpática" → {"tipo":"preferencia","nome":null,"tom":"carinhoso"}
 "modo normal" → {"tipo":"preferencia","nome":null,"tom":"carinhoso"}
 "oi" → {"tipo":"saudacao"}
+"meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
+"tenho 2500 reais no mês" → {"tipo":"saldo","valor":2500.0}
+"meu salário é 3000" → {"tipo":"saldo","valor":3000.0}
+"meu orçamento mensal é 1800 reais" → {"tipo":"saldo","valor":1800.0}
+"recebi 5000 esse mês" → {"tipo":"saldo","valor":5000.0}
 `;
 
 async function classify(message) {
