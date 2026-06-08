@@ -70,6 +70,12 @@ TIPOS:
 - lista_adicionar: adicionar item a lista existente
   {"tipo":"lista_adicionar","item":"nome do item"}
 
+- salvar_contato: usuário informa número de um contato
+  {"tipo":"salvar_contato","nome":"nome do contato","phone":"número","relation":"esposa/amigo/chefe/filho/etc ou null","notes":"info extra ou null"}
+
+- enviar_mensagem: usuário quer enviar mensagem para um contato
+  {"tipo":"enviar_mensagem","destinatario":"nome do contato","mensagem":"texto a enviar","phone":"número se informado ou null"}
+
 - consulta: pergunta sobre algo guardado
   {"tipo":"consulta","sobre":"tema"}
   
@@ -113,6 +119,11 @@ EXEMPLOS PONTO:
 "adiciona macarrão na lista" → {"tipo":"lista_adicionar","item":"Macarrão"}
 "coloca detergente também" → {"tipo":"lista_adicionar","item":"Detergente"}
 "meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
+"o número da minha esposa é 43999998888" → {"tipo":"salvar_contato","nome":"esposa","phone":"43999998888","relation":"esposa","notes":null}
+"salva o contato do João: 11988887777" → {"tipo":"salvar_contato","nome":"João","phone":"11988887777","relation":null,"notes":null}
+"manda mensagem pro João dizendo que vou atrasar" → {"tipo":"enviar_mensagem","destinatario":"João","mensagem":"Vou atrasar, te aviso quando chegar!","phone":null}
+"fala pra minha esposa que vou chegar às 19h" → {"tipo":"enviar_mensagem","destinatario":"esposa","mensagem":"Vou chegar às 19h 😊","phone":null}
+"manda um oi pro 43999991111" → {"tipo":"enviar_mensagem","destinatario":null,"mensagem":"Oi! 😊","phone":"43999991111"}
 "tenho 2500 reais no mês" → {"tipo":"saldo","valor":2500.0}
 "meu salário é 3000" → {"tipo":"saldo","valor":3000.0}
 "meu orçamento mensal é 1800 reais" → {"tipo":"saldo","valor":1800.0}
