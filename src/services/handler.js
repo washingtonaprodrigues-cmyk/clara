@@ -764,6 +764,17 @@ Qual você quer? Me diz o número.`);
       let phoneClean = destinatarioPhone.replace(/\D/g, '');
       if (!phoneClean.startsWith('55') && phoneClean.length <= 11) phoneClean = '55' + phoneClean;
 
+      // Se veio nome + número juntos, salva o contato automaticamente para uso futuro
+      if (destinatarioNome && classified.phone) {
+        await saveContact(user.id, {
+          nome: destinatarioNome,
+          phone: phoneClean,
+          relation: null,
+          notes: null,
+        }).catch(() => {}); // falha silenciosa — não bloqueia o envio
+        console.log(`[Contato] Auto-salvo: ${destinatarioNome} → ${phoneClean}`);
+      }
+
       const mensagem = classified.mensagem || '';
       if (!mensagem) {
         await sendMessage(phone, 'O que quer que eu escreva na mensagem? 😊');
