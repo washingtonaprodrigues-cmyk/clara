@@ -39,7 +39,7 @@ const BOAS_VINDAS_MODO = {
 
 // Tipos de lista que precisam ser executados antes de gerar a resposta
 const LISTA_TIPOS = ['lista_compras', 'lista_buscar', 'lista_marcar', 'lista_adicionar'];
-const CONTATO_TIPOS = ['salvar_contato', 'enviar_mensagem'];
+const CONTATO_TIPOS = ['salvar_contato', 'enviar_mensagem', 'enviar_mensagem_agendada'];
 
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
@@ -719,6 +719,104 @@ async function handleContatoAction(user, phone, classified) {
       const relTxt = classified.relation ? ` (${classified.relation})` : '';
       await sendMessage(phone, `✅ Contato salvo! ${classified.nome}${relTxt} — ${classified.phone.replace(/(\d{2})(\d{2})(\d{5})(\d{4})/, '+$1 ($2) $3-$4')} 📱`);
       console.log(`[Contato] Salvo: ${classified.nome} → ${classified.phone}`);
+      return;
+    }
+
+    if (classified.tipo === 'enviar_mensagem_agendada') {
+      let destinatarioPhone = classified.phone || null;
+      let destinatarioNome = classified.destinatario || null;
+
+      // Busca contato pelo nome se não tem phone
+      if (!destinatarioPhone && destinatarioNome) {
+        const encontrados = await findContactByName(user.id, destinatarioNome);
+        if (encontrados.length === 0) {
+          await sendMessage(phone, `Não encontrei nenhum contato com o nome "${destinatarioNome}" 😕\n\nMe diz o número e eu salvo: "o número do ${destinatarioNome} é 43999..."`);
+          return;
+        }
+        if (encontrados.length > 1) {
+          const lista = encontrados.map((c, i) => `${i+1}. ${c.name}${c.relation ? ` (${c.relation})` : ''} — ${c.phone}`).join('\n');
+          await sendMessage(phone, `Encontrei mais de um contato:\n\n${lista}\n\nQual você quer? Me diz o número.`);
+          return;
+        }
+        destinatarioPhone = encontrados[0].phone;
+        destinatarioNome = encontrados[0].name;
+      }
+
+      if (!destinatarioPhone) {
+        await sendMessage(phone, 'Para quem quer enviar? Me diz o nome ou número 😊');
+        return;
+      }
+
+      let phoneClean = destinatarioPhone.replace(/\D/g, '');
+      if (!phoneClean.startsWith('55') && phoneClean.length <= 11) phoneClean = '55' + phoneClean;
+
+      const mensagem = classified.mensagem || '';
+      if (!mensagem) {
+        await sendMessage(phone, 'O que quer que eu escreva? 😊');
+        return;
+      }
+
+      // Calcula scheduledAt
+      const nowBRT = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      const now = nowBRT();
+      let scheduledAt = null;
+
+      if (classified.data && classified.hora) {
+        scheduledAt = new Date(`${classified.data}T${classified.hora}:00-03:00`);
+      } else if (classified.hora) {
+        // Hoje ou amanhã com hora específica
+        const [h, m] = classified.hora.split(':').map(Number);
+        scheduledAt = new Date(now);
+        scheduledAt.setHours(h, m || 0, 0, 0);
+        // Se já passou hoje, agenda para amanhã
+        if (scheduledAt <= now) scheduledAt.setDate(scheduledAt.getDate() + 1);
+      } else if (classified.quando) {
+        // Tenta interpretar "amanhã", "sexta", etc
+        const quando = classified.quando.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (quando.includes('amanha')) {
+          scheduledAt = new Date(now);
+          scheduledAt.setDate(scheduledAt.getDate() + 1);
+          scheduledAt.setHours(9, 0, 0, 0); // padrão 9h se não especificou hora
+        } else {
+          const diasSemana = { 'segunda':1,'terca':2,'quarta':3,'quinta':4,'sexta':5,'sabado':6,'domingo':0 };
+          for (const [nome, dia] of Object.entries(diasSemana)) {
+            if (quando.includes(nome)) {
+              scheduledAt = new Date(now);
+              const diff = (dia - now.getDay() + 7) % 7 || 7;
+              scheduledAt.setDate(scheduledAt.getDate() + diff);
+              scheduledAt.setHours(9, 0, 0, 0);
+              break;
+            }
+          }
+        }
+      }
+
+      if (!scheduledAt || scheduledAt <= now) {
+        await sendMessage(phone, 'Não entendi quando quer enviar 😕 Me diz a hora certa, ex: "amanhã às 10h"');
+        return;
+      }
+
+      // Salva no banco
+      await prisma.scheduledMessage.create({
+        data: {
+          userId: user.id,
+          fromPhone: phone,
+          toPhone: phoneClean,
+          toName: destinatarioNome,
+          message: mensagem,
+          scheduledAt,
+        }
+      });
+
+      // Auto-salva contato se veio com phone
+      if (destinatarioNome && classified.phone) {
+        await saveContact(user.id, { nome: destinatarioNome, phone: phoneClean }).catch(() => {});
+      }
+
+      const horaBRT = scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+      const dataBRT = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long' });
+      await sendMessage(phone, `✅ Agendado! Vou enviar para *${destinatarioNome || phoneClean}* ${dataBRT} às ${horaBRT}:\n\n_"${mensagem}"_`);
+      console.log(`[Msg Agendada] ${destinatarioNome} (${phoneClean}) → ${scheduledAt}`);
       return;
     }
 
