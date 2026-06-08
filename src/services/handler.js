@@ -1,11 +1,8 @@
 const { classify, extractPersonalInfo, searchWeb, freeResponse, generateMemorySummary } = require('./groq');
 const { sendMessage, sendButtons, sendReminderWithButtons } = require('./whatsapp');
 const memory = require('./memory');
+const prisma = require('./prisma');
 const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName } = memory;
-const { PrismaClient } = require('@prisma/client');
-
-const prisma = new PrismaClient();
-
 const MENU = `✨ *Oi, eu sou a Clara.*
 
 Posso cuidar de lembretes, anotações, gastos, saúde, ponto e pesquisas rápidas.
