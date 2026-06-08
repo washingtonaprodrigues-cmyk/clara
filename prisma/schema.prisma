@@ -32,6 +32,22 @@ model User {
   sleepLogs      SleepLog[]
   workouts       Workout[]
   workLogs       WorkLog[]
+  contacts       Contact[]
+}
+
+model Contact {
+  id        String    @id @default(cuid())
+  userId    String
+  name      String
+  phone     String
+  relation  String?   // ex: esposa, amigo, chefe, filho
+  notes     String?   // info extra: "gosta de futebol", "aniversário em março"
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, phone])
 }
 
 model Memory {
