@@ -573,7 +573,17 @@ cron.schedule('* * * * *', async () => {
 
     for (const msg of msgs) {
       try {
-        await sendMessage(msg.toPhone, msg.message);
+        // Busca nome do usuário para personalizar
+        const userRemetente = await prisma.user.findFirst({ where: { phone: msg.fromPhone } });
+        const nomeRemetente = userRemetente?.name || 'seu contato';
+        const foneFormatado = msg.fromPhone.replace('55', '').replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
+        const msgFormatada = `Oi! Sou a Clara, secretária virtual do ${nomeRemetente}. Ele(a) pediu pra enviar esse recado:
+
+_${msg.message}_
+
+Não precisa me responder, tá? Dúvidas, é só chamar no WhatsApp do ${nomeRemetente}: ${foneFormatado} 😊`;
+
+        await sendMessage(msg.toPhone, msgFormatada);
 
         await prisma.scheduledMessage.update({
           where: { id: msg.id },
