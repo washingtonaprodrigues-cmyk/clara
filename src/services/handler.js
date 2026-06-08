@@ -1,7 +1,7 @@
 const { classify, extractPersonalInfo, searchWeb, freeResponse, generateMemorySummary } = require('./groq');
 const { sendMessage, sendButtons, sendReminderWithButtons } = require('./whatsapp');
 const memory = require('./memory');
-const { buildPersonalContext, savePersonalInfo } = memory;
+const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName } = memory;
 const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
@@ -39,6 +39,7 @@ const BOAS_VINDAS_MODO = {
 
 // Tipos de lista que precisam ser executados antes de gerar a resposta
 const LISTA_TIPOS = ['lista_compras', 'lista_buscar', 'lista_marcar', 'lista_adicionar'];
+const CONTATO_TIPOS = ['salvar_contato', 'enviar_mensagem'];
 
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
@@ -306,6 +307,10 @@ async function handleMessage(phone, text, location = null) {
 
     const textLower = normalizar(text);
 
+    // Verifica se há confirmação pendente de envio de mensagem
+    const foiConfirmacao = await checkConfirmacaoPendente(user, phone, text);
+    if (foiConfirmacao) return;
+
     if (['menu', 'inicio', 'voltar', 'comeco', 'ajuda', 'opcoes'].includes(textLower)) {
       await memory.saveMemory(user.id, 'modo_atual', '');
       return await enviarMenu(phone);
@@ -394,6 +399,13 @@ async function handleMessage(phone, text, location = null) {
         console.error('[extract pessoal lista] erro:', e.message)
       );
 
+      return;
+    }
+
+    // ── Contatos: salvar ou enviar mensagem ──
+    if (CONTATO_TIPOS.includes(classified.tipo)) {
+      await handleContatoAction(user, phone, classified);
+      extractAndSavePersonalInfo(user.id, text).catch(() => {});
       return;
     }
 
@@ -686,6 +698,141 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
   if (scheduledAt) {
     await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
     console.log(`[${phone}] Lembrete salvo: "${classified.titulo}" para ${scheduledAt}`);
+  }
+}
+
+
+// ── Trata ações de contato (salvar e enviar mensagem) ──
+async function handleContatoAction(user, phone, classified) {
+  try {
+    if (classified.tipo === 'salvar_contato') {
+      if (!classified.nome || !classified.phone) {
+        await sendMessage(phone, 'Preciso do nome e do número para salvar o contato 😊');
+        return;
+      }
+      await saveContact(user.id, {
+        nome: classified.nome,
+        phone: classified.phone,
+        relation: classified.relation || null,
+        notes: classified.notes || null,
+      });
+      const relTxt = classified.relation ? ` (${classified.relation})` : '';
+      await sendMessage(phone, `✅ Contato salvo! ${classified.nome}${relTxt} — ${classified.phone.replace(/(\d{2})(\d{2})(\d{5})(\d{4})/, '+$1 ($2) $3-$4')} 📱`);
+      console.log(`[Contato] Salvo: ${classified.nome} → ${classified.phone}`);
+      return;
+    }
+
+    if (classified.tipo === 'enviar_mensagem') {
+      let destinatarioPhone = classified.phone || null;
+      let destinatarioNome = classified.destinatario || null;
+
+      // Se não tem phone, busca nos contatos salvos pelo nome
+      if (!destinatarioPhone && destinatarioNome) {
+        const encontrados = await findContactByName(user.id, destinatarioNome);
+
+        if (encontrados.length === 0) {
+          await sendMessage(phone,
+            `Não encontrei nenhum contato com o nome "${destinatarioNome}" 😕
+
+` +
+            `Me diz o número dele e eu salvo: "o número do ${destinatarioNome} é 43999..."`
+          );
+          return;
+        }
+
+        if (encontrados.length > 1) {
+          const lista = encontrados.map((c, i) => `${i+1}. ${c.name}${c.relation ? ` (${c.relation})` : ''} — ${c.phone}`).join('
+');
+          await sendMessage(phone, `Encontrei mais de um contato com esse nome:
+
+${lista}
+
+Qual você quer? Me diz o número.`);
+          return;
+        }
+
+        destinatarioPhone = encontrados[0].phone;
+        destinatarioNome = encontrados[0].name;
+      }
+
+      if (!destinatarioPhone) {
+        await sendMessage(phone, 'Para quem quer enviar? Me diz o nome ou número 😊');
+        return;
+      }
+
+      // Normaliza phone
+      let phoneClean = destinatarioPhone.replace(/\D/g, '');
+      if (!phoneClean.startsWith('55') && phoneClean.length <= 11) phoneClean = '55' + phoneClean;
+
+      const mensagem = classified.mensagem || '';
+      if (!mensagem) {
+        await sendMessage(phone, 'O que quer que eu escreva na mensagem? 😊');
+        return;
+      }
+
+      // Pede confirmação antes de enviar
+      const preview = `📤 Vou enviar para *${destinatarioNome || phoneClean}*:
+
+_"${mensagem}"_
+
+Confirma? (sim/não)`;
+
+      // Salva contexto de confirmação pendente
+      await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
+        tipo: 'enviar_mensagem',
+        destinatarioPhone: phoneClean,
+        destinatarioNome: destinatarioNome || phoneClean,
+        mensagem,
+        expira: Date.now() + 2 * 60 * 1000, // 2 minutos para confirmar
+      }));
+
+      await sendMessage(phone, preview);
+      console.log(`[Contato] Aguardando confirmação para enviar a ${destinatarioNome || phoneClean}`);
+      return;
+    }
+  } catch (e) {
+    console.error('[handleContatoAction] Erro:', e.message);
+    await sendMessage(phone, 'Ops, tive um problema com isso. Pode tentar de novo?');
+  }
+}
+
+// ── Verifica e processa confirmação pendente de envio de mensagem ──
+async function checkConfirmacaoPendente(user, phone, text) {
+  try {
+    const mems = await memory.getRecentMemories(user.id, 10);
+    const pendente = mems.find(m => m.type === 'confirmacao_pendente');
+    if (!pendente) return false;
+
+    let dados;
+    try { dados = JSON.parse(pendente.content); } catch { return false; }
+
+    // Verifica se expirou
+    if (Date.now() > dados.expira) {
+      await prisma.memory.delete({ where: { id: pendente.id } });
+      return false;
+    }
+
+    const textNorm = text.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+    if (['sim','s','ok','confirma','envia','manda','pode','yes'].includes(textNorm)) {
+      // Envia a mensagem
+      await sendMessage(dados.destinatarioPhone, dados.mensagem);
+      await prisma.memory.delete({ where: { id: pendente.id } });
+      await sendMessage(phone, `✅ Mensagem enviada para *${dados.destinatarioNome}*! 📤`);
+      console.log(`[Contato] Mensagem enviada para ${dados.destinatarioPhone}`);
+      return true;
+    }
+
+    if (['nao','n','não','cancelar','cancela','para'].includes(textNorm)) {
+      await prisma.memory.delete({ where: { id: pendente.id } });
+      await sendMessage(phone, 'Ok, cancelei o envio 😊');
+      return true;
+    }
+
+    return false;
+  } catch (e) {
+    console.error('[checkConfirmacaoPendente] Erro:', e.message);
+    return false;
   }
 }
 
