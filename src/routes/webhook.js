@@ -47,7 +47,6 @@ async function getRemedioRecente(userId) {
   const now = nowBRT();
   const pad = n => String(n).padStart(2, '0');
   const hm = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-  // Horários dentro de ±5 minutos
   const horarios = [];
   for (let d = -5; d <= 5; d++) {
     const t = new Date(now.getTime() + d * 60000);
@@ -63,11 +62,45 @@ async function getRemedioRecente(userId) {
   return null;
 }
 
+// Extrai contatos de um vCard
+function parseVCard(vcard) {
+  if (!vcard) return null;
+  const lines = vcard.split('\n');
+  let nome = null;
+  let telefone = null;
+
+  for (const line of lines) {
+    // Nome: FN:João Silva
+    if (line.startsWith('FN:')) {
+      nome = line.replace('FN:', '').trim();
+    }
+    // Telefone: TEL;type=CELL;waid=5511999998888:+55 11 99999-8888
+    // ou TEL:+5511999998888
+    if (line.startsWith('TEL')) {
+      // Tenta extrair do waid primeiro (mais confiável)
+      const waidMatch = line.match(/waid=(\d+)/);
+      if (waidMatch) {
+        telefone = waidMatch[1];
+      } else {
+        // Extrai só números do valor
+        const val = line.split(':').slice(1).join(':');
+        telefone = val.replace(/\D/g, '');
+      }
+    }
+  }
+
+  if (!nome || !telefone) return null;
+
+  // Normaliza telefone
+  if (!telefone.startsWith('55') && telefone.length <= 11) telefone = '55' + telefone;
+
+  return { nome, telefone };
+}
+
 async function handleSimpleResponse(phone, text) {
   const user = await memory.getOrCreateUser(phone);
   const textLower = text.trim();
 
-  // "tomei", "já tomei" → marca remédio como tomado
   if (TOMEI_REMEDIO.some(r => r.test(textLower))) {
     const med = await getRemedioRecente(user.id);
     if (med) {
@@ -80,7 +113,6 @@ async function handleSimpleResponse(phone, text) {
     }
   }
 
-  // "feito", "fiz", "pronto" → conclui lembrete pendente
   if (LEMBRETE_FEITO.some(r => r.test(textLower))) {
     const lembrete = await getLembretePendente(user.id, phone);
     if (lembrete) {
@@ -99,23 +131,18 @@ async function handleSimpleResponse(phone, text) {
     }
   }
 
-  // "ok", "sim", "certo" após lembrete → confirma
   if (CONFIRMACOES.some(r => r.test(textLower))) {
     const lembrete = await getLembretePendente(user.id, phone);
     if (lembrete) {
-      // Não conclui, só acusa recebimento sem gastar IA
       await sendMessage(phone, `👍 Ok! Te lembro de: *${lembrete.message}*`);
       return true;
     }
-    // Se não tem lembrete pendente, deixa a IA responder
     return false;
   }
 
-  // "não", "agora não" → snooze do lembrete
   if (NEGACOES.some(r => r.test(textLower))) {
     const lembrete = await getLembretePendente(user.id, phone);
     if (lembrete) {
-      // Reagenda para 30 minutos
       const novoHorario = new Date(nowBRT().getTime() + 30 * 60 * 1000);
       await prisma.reminder.update({
         where: { id: lembrete.id },
@@ -152,11 +179,70 @@ router.post('/', async (req, res) => {
     console.log(`📨 WEBHOOK: ${phone} — "${text.slice(0, 80)}"`);
 
     if (text) {
-      // Tenta resposta simples primeiro (sem IA)
       const handled = await handleSimpleResponse(phone, text);
       if (!handled) {
-        // Se não foi tratado, usa IA normalmente
         handleMessage(phone, text).catch(console.error);
+      }
+      return res.json({ ok: true });
+    }
+
+    // ── CONTATO encaminhado pelo WhatsApp ──
+    const msgType = body.message?.messageType || body.message?.type || '';
+    const isContact = msgType === 'contactMessage' ||
+                      msgType === 'contactsArrayMessage' ||
+                      body.message?.contact ||
+                      body.message?.contacts;
+
+    if (isContact) {
+      try {
+        const user = await memory.getOrCreateUser(phone);
+
+        // Pega vCards — pode vir como array ou objeto único
+        const vcards = [];
+        if (body.message?.contacts) {
+          for (const c of body.message.contacts) {
+            if (c.vcard) vcards.push(c.vcard);
+          }
+        } else if (body.message?.contact?.vcard) {
+          vcards.push(body.message.contact.vcard);
+        } else if (body.message?.content?.vcard) {
+          vcards.push(body.message.content.vcard);
+        }
+
+        if (vcards.length === 0) {
+          return res.json({ ok: true });
+        }
+
+        const salvos = [];
+        const erros = [];
+
+        for (const vcard of vcards) {
+          const contato = parseVCard(vcard);
+          if (!contato) { erros.push('vCard inválido'); continue; }
+
+          try {
+            await memory.saveContact(user.id, {
+              nome: contato.nome,
+              phone: contato.telefone,
+            });
+            salvos.push(contato.nome);
+            console.log(`[Contato vCard] Salvo: ${contato.nome} → ${contato.telefone}`);
+          } catch (e) {
+            erros.push(contato.nome);
+            console.error(`[Contato vCard] Erro ao salvar ${contato.nome}:`, e.message);
+          }
+        }
+
+        // Resposta para o usuário
+        if (salvos.length === 1) {
+          await sendMessage(phone, `✅ Contato salvo! *${salvos[0]}* está na minha lista agora 📱\n\nSempre que quiser enviar uma mensagem, é só me pedir!`);
+        } else if (salvos.length > 1) {
+          await sendMessage(phone, `✅ ${salvos.length} contatos salvos!\n\n${salvos.map(n => `• ${n}`).join('\n')}\n\nJá posso enviar mensagens para eles quando precisar 📱`);
+        } else {
+          await sendMessage(phone, 'Recebi o contato mas não consegui ler as informações 😕 Tenta encaminhar de novo!');
+        }
+      } catch (e) {
+        console.error('[Contato vCard] Erro geral:', e.message);
       }
       return res.json({ ok: true });
     }
