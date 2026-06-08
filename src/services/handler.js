@@ -39,7 +39,7 @@ const BOAS_VINDAS_MODO = {
 
 // Tipos de lista que precisam ser executados antes de gerar a resposta
 const LISTA_TIPOS = ['lista_compras', 'lista_buscar', 'lista_marcar', 'lista_adicionar'];
-const CONTATO_TIPOS = ['salvar_contato', 'enviar_mensagem', 'enviar_mensagem_agendada'];
+const CONTATO_TIPOS = ['salvar_contato', 'deletar_contato', 'enviar_mensagem', 'enviar_mensagem_agendada'];
 
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
@@ -227,13 +227,14 @@ async function responderLivre(user, phone, text, contextoExtra = '') {
       const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
       const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
 
-      const [lembretes, meds, gastos] = await Promise.all([
+      const [lembretes, meds, gastos, perfilPessoal] = await Promise.all([
         prisma.reminder.findMany({
           where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: inicioHoje, lte: fimAmanha } },
           orderBy: { scheduledAt: 'asc' }, take: 20
         }),
         prisma.medication.findMany({ where: { userId: user.id, active: true, remaining: { gt: 0 } } }),
-        preferences.saldo != null ? prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } } }) : Promise.resolve([])
+        preferences.saldo != null ? prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } } }) : Promise.resolve([]),
+        buildPersonalContext(user.id).catch(() => '')
       ]);
 
       if (lembretes.length > 0) {
@@ -265,13 +266,8 @@ async function responderLivre(user, phone, text, contextoExtra = '') {
 
       if (contexto) contexto = `\n\nUse as informações abaixo para responder com precisão:${contexto}`;
 
-      // Injeta perfil pessoal (memória de longo prazo)
-      try {
-        const perfilPessoal = await buildPersonalContext(user.id);
-        if (perfilPessoal) contexto += perfilPessoal;
-      } catch (ep) {
-        console.error('[perfil pessoal] erro:', ep.message);
-      }
+      // Perfil pessoal já foi carregado em paralelo no Promise.all acima
+      if (perfilPessoal) contexto += perfilPessoal;
 
       if (contextoExtra) contexto += contextoExtra;
 
@@ -705,6 +701,27 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
 // ── Trata ações de contato (salvar e enviar mensagem) ──
 async function handleContatoAction(user, phone, classified) {
   try {
+    if (classified.tipo === 'deletar_contato') {
+      const nome = classified.nome;
+      if (!nome) {
+        await sendMessage(phone, 'Qual contato quer apagar? Me diz o nome 😊');
+        return;
+      }
+      const encontrados = await findContactByName(user.id, nome);
+      if (encontrados.length === 0) {
+        await sendMessage(phone, `Não encontrei nenhum contato com o nome "${nome}" 😕`);
+        return;
+      }
+      // Deleta todos que encontrou com esse nome
+      for (const c of encontrados) {
+        await prisma.contact.delete({ where: { id: c.id } });
+      }
+      const nomes = encontrados.map(c => c.name).join(', ');
+      await sendMessage(phone, `✅ Contato${encontrados.length > 1 ? 's' : ''} removido${encontrados.length > 1 ? 's' : ''}: *${nomes}* 🗑️`);
+      console.log(`[Contato] Deletado(s): ${nomes}`);
+      return;
+    }
+
     if (classified.tipo === 'salvar_contato') {
       if (!classified.nome || !classified.phone) {
         await sendMessage(phone, 'Preciso do nome e do número para salvar o contato 😊');
@@ -734,8 +751,14 @@ async function handleContatoAction(user, phone, classified) {
           return;
         }
         if (encontrados.length > 1) {
-          const lista = encontrados.map((c, i) => `${i+1}. ${c.name}${c.relation ? ` (${c.relation})` : ''} — ${c.phone}`).join('\n');
-          await sendMessage(phone, `Encontrei mais de um contato:\n\n${lista}\n\nQual você quer? Me diz o número.`);
+          const lista = encontrados.map((c, i) => `${i+1}. ${c.name}${c.relation ? ` (${c.relation})` : ''} — ${c.phone}`).join('\\n');
+          await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
+            tipo: 'selecao_contato',
+            opcoes: encontrados.map(c => ({ nome: c.name, phone: c.phone, relation: c.relation })),
+            mensagem: classified.mensagem || '',
+            expira: Date.now() + 3 * 60 * 1000,
+          }));
+          await sendMessage(phone, `Encontrei mais de um contato:\\n\\n${lista}\\n\\nQual você quer? Responde com o número (1, 2...)`);
           return;
         }
         destinatarioPhone = encontrados[0].phone;
@@ -917,6 +940,46 @@ async function checkConfirmacaoPendente(user, phone, text) {
     }
 
     const textNorm = text.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+    // Seleção de contato quando há múltiplos resultados
+    if (dados.tipo === 'selecao_contato') {
+      const num = parseInt(textNorm);
+      if (!isNaN(num) && num >= 1 && num <= dados.opcoes.length) {
+        const escolhido = dados.opcoes[num - 1];
+        await prisma.memory.delete({ where: { id: pendente.id } });
+
+        // Agora trata como envio normal — pede confirmação da mensagem
+        let phoneClean = escolhido.phone.replace(/\D/g, '');
+        if (!phoneClean.startsWith('55') && phoneClean.length <= 11) phoneClean = '55' + phoneClean;
+
+        if (dados.mensagem) {
+          const preview = `📤 Vou enviar para *${escolhido.nome}*:\n\n_"${dados.mensagem}"_\n\nConfirma? (sim/não)`;
+          await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
+            tipo: 'enviar_mensagem',
+            destinatarioPhone: phoneClean,
+            destinatarioNome: escolhido.nome,
+            mensagem: dados.mensagem,
+            expira: Date.now() + 2 * 60 * 1000,
+          }));
+          await sendMessage(phone, preview);
+        } else {
+          await sendMessage(phone, `Ok! ${escolhido.nome} selecionado. O que quer enviar para ele(a)?`);
+        }
+        return true;
+      }
+      // Resposta inválida — manter pendente
+      if (!isNaN(num)) {
+        await sendMessage(phone, `Número inválido. Escolha entre 1 e ${dados.opcoes.length}.`);
+        return true;
+      }
+      // Se digitou algo que não é número, cancela
+      if (['nao','n','não','cancelar','cancela'].includes(textNorm)) {
+        await prisma.memory.delete({ where: { id: pendente.id } });
+        await sendMessage(phone, 'Ok, cancelei 😊');
+        return true;
+      }
+      return false;
+    }
 
     if (['sim','s','ok','confirma','envia','manda','pode','yes'].includes(textNorm)) {
       // Envia a mensagem
