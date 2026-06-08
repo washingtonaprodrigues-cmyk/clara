@@ -73,8 +73,13 @@ TIPOS:
 - salvar_contato: usuário informa número de um contato
   {"tipo":"salvar_contato","nome":"nome do contato","phone":"número","relation":"esposa/amigo/chefe/filho/etc ou null","notes":"info extra ou null"}
 
-- enviar_mensagem: usuário quer enviar mensagem para um contato
+- enviar_mensagem: usuário quer enviar mensagem AGORA para um contato
   {"tipo":"enviar_mensagem","destinatario":"nome do contato","mensagem":"texto a enviar","phone":"número se informado ou null"}
+  IMPORTANTE: a mensagem deve ser escrita como SE FOSSE O PRÓPRIO USUÁRIO enviando — direta, no tom certo, sem "eu vou" ou "posso". Ex: "Deu certo a planilha?" não "Posso perguntar se deu certo a planilha?"
+
+- enviar_mensagem_agendada: usuário quer enviar mensagem em horário/data futura
+  {"tipo":"enviar_mensagem_agendada","destinatario":"nome do contato","mensagem":"texto a enviar","phone":"número se informado ou null","quando":"descrição do horário ex: amanhã às 10h, sexta às 14h, hoje às 19h","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null"}
+  IMPORTANTE: use este tipo quando houver qualquer referência de tempo futuro (amanhã, depois, às Xh, na sexta, etc). A mensagem deve ser direta, como se o usuário estivesse enviando pessoalmente.
 
 - consulta: pergunta sobre algo guardado
   {"tipo":"consulta","sobre":"tema"}
@@ -123,6 +128,9 @@ EXEMPLOS PONTO:
 "salva o contato do João: 11988887777" → {"tipo":"salvar_contato","nome":"João","phone":"11988887777","relation":null,"notes":null}
 "manda mensagem pro João dizendo que vou atrasar" → {"tipo":"enviar_mensagem","destinatario":"João","mensagem":"Vou atrasar, te aviso quando chegar!","phone":null}
 "fala pra minha esposa que vou chegar às 19h" → {"tipo":"enviar_mensagem","destinatario":"esposa","mensagem":"Vou chegar às 19h 😊","phone":null}
+"manda mensagem pro meu amor perguntando se deu certo a planilha do frete" → {"tipo":"enviar_mensagem","destinatario":"meu amor","mensagem":"Deu certo a planilha do frete? 😊","phone":null}
+"fala pro João que a reunião foi cancelada" → {"tipo":"enviar_mensagem","destinatario":"João","mensagem":"A reunião foi cancelada 😊","phone":null}
+"avisa minha mãe que vou chegar tarde" → {"tipo":"enviar_mensagem","destinatario":"minha mãe","mensagem":"Vou chegar tarde hoje 😊","phone":null}
 "manda um oi pro 43999991111" → {"tipo":"enviar_mensagem","destinatario":null,"mensagem":"Oi! 😊","phone":"43999991111"}
 "tenho 2500 reais no mês" → {"tipo":"saldo","valor":2500.0}
 "meu salário é 3000" → {"tipo":"saldo","valor":3000.0}
