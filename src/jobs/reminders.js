@@ -46,9 +46,9 @@ async function getUserContext(user) {
 }
 
 // ─────────────────────────────────────────────
-// BOM DIA INTELIGENTE (07:00)
+// BOM DIA INTELIGENTE (07:05 — após remédios)
 // ─────────────────────────────────────────────
-cron.schedule('0 7 * * *', async () => {
+cron.schedule('5 7 * * *', async () => {
   try {
     const now = nowBRT();
     const hoje = dateBRT(now);
