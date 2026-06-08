@@ -959,7 +959,17 @@ async function checkConfirmacaoPendente(user, phone, text) {
 
     if (['sim','s','ok','confirma','envia','manda','pode','yes'].includes(textNorm)) {
       // Envia a mensagem
-      await sendMessage(dados.destinatarioPhone, dados.mensagem);
+      // Busca nome do remetente para personalizar a mensagem
+      const remetente = await memory.getUserPreference(user.id);
+      const nomeRemetente = remetente.name || 'seu contato';
+      const foneFormatado = phone.replace('55', '').replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
+      const msgFormatada = `Oi! Sou a Clara, secretária virtual do ${nomeRemetente}. Ele(a) pediu pra enviar esse recado:
+
+_${dados.mensagem}_
+
+Não precisa me responder, tá? Dúvidas, é só chamar no WhatsApp do ${nomeRemetente}: ${foneFormatado} 😊`;
+
+      await sendMessage(dados.destinatarioPhone, msgFormatada);
       await prisma.memory.delete({ where: { id: pendente.id } });
       await sendMessage(phone, `✅ Mensagem enviada para *${dados.destinatarioNome}*! 📤`);
       console.log(`[Contato] Mensagem enviada para ${dados.destinatarioPhone}`);
