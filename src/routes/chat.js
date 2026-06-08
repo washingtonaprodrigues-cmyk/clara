@@ -226,7 +226,7 @@ router.post('/:phone', async (req, res) => {
         const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
         const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
 
-        const [lembretes, meds, gastos] = await Promise.all([
+        const [lembretes, meds, gastos, perfilPessoal] = await Promise.all([
           prisma.reminder.findMany({
             where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: inicioHoje, lte: fimAmanha } },
             orderBy: { scheduledAt: 'asc' }, take: 20
@@ -236,7 +236,8 @@ router.post('/:phone', async (req, res) => {
           }),
           preferences.saldo != null ? prisma.expense.findMany({
             where: { userId: user.id, createdAt: { gte: inicioMes } }
-          }) : Promise.resolve([])
+          }) : Promise.resolve([]),
+          buildPersonalContext(user.id).catch(() => '')
         ]);
 
         if (lembretes.length > 0) {
@@ -283,13 +284,8 @@ router.post('/:phone', async (req, res) => {
       actionData = await executeActionFromChat(user, phone, classified, message);
     }
 
-    // Injeta perfil pessoal (memória de longo prazo)
-    try {
-      const perfilPessoal = await buildPersonalContext(user.id);
-      if (perfilPessoal) contexto += perfilPessoal;
-    } catch (ep) {
-      console.error('[perfil pessoal chat] erro:', ep.message);
-    }
+    // Perfil pessoal já carregado em paralelo acima
+    if (perfilPessoal) contexto += perfilPessoal;
 
     // Adicionar instrução ao contexto quando for ação de lista
     if (actionData?.listaId) {
