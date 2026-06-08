@@ -643,6 +643,28 @@ async function executeAction(user, phone, classified, originalText) {
     case 'preferencia':
       await memory.saveUserPreference(user.id, classified.nome, classified.tom, null);
       break;
+    case 'concluir_lembrete': {
+      if (classified.titulo) {
+        const lembretes = await prisma.reminder.findMany({
+          where: { userId: user.id, confirmed: false, sent: false },
+          orderBy: { scheduledAt: 'asc' }
+        });
+        const titulo = classified.titulo.toLowerCase();
+        const match = lembretes.find(r =>
+          r.message.toLowerCase().includes(titulo) ||
+          titulo.includes(r.message.toLowerCase().substring(0, 10))
+        ) || lembretes[0];
+        if (match) {
+          await prisma.reminder.update({
+            where: { id: match.id },
+            data: { confirmed: true, sent: true }
+          });
+          console.log(`[${phone}] Lembrete concluído: "${match.message}"`);
+        }
+      }
+      break;
+    }
+
     case 'saldo':
       if (classified.valor !== undefined && classified.valor !== null) {
         await memory.saveUserPreference(user.id, null, null, parseFloat(classified.valor));
