@@ -32,6 +32,32 @@ function calcularHorarioRelativo(texto) {
 async function executeActionFromChat(user, phone, classified, originalText) {
   try {
     switch (classified.tipo) {
+      case 'concluir_lembrete': {
+        // Busca lembrete pelo título e conclui
+        if (classified.titulo) {
+          const lembretes = await prisma.reminder.findMany({
+            where: { userId: user.id, confirmed: false, sent: false },
+            orderBy: { scheduledAt: 'asc' }
+          });
+          // Busca o lembrete mais parecido com o título
+          const titulo = classified.titulo.toLowerCase();
+          const match = lembretes.find(r =>
+            r.message.toLowerCase().includes(titulo) ||
+            titulo.includes(r.message.toLowerCase().substring(0, 10))
+          ) || lembretes[0]; // fallback: conclui o mais próximo
+
+          if (match) {
+            await prisma.reminder.update({
+              where: { id: match.id },
+              data: { confirmed: true, sent: true }
+            });
+            console.log(`[chat] Lembrete concluído: "${match.message}"`);
+            return { lembreteId: match.id, lembreteTitulo: match.message };
+          }
+        }
+        return null;
+      }
+
       case 'gasto':
         if (classified.valor) {
           await memory.saveExpense(user.id, {
@@ -196,7 +222,7 @@ async function executeActionFromChat(user, phone, classified, originalText) {
 }
 
 // Tipos que precisam retornar dados pro frontend — executados de forma síncrona
-const SYNC_ACTION_TYPES = ['lista_compras', 'lista_buscar', 'lista_marcar', 'lista_adicionar'];
+const SYNC_ACTION_TYPES = ['lista_compras', 'lista_buscar', 'lista_marcar', 'lista_adicionar', 'concluir_lembrete', 'tarefa'];
 
 router.post('/:phone', async (req, res) => {
   try {
@@ -291,6 +317,11 @@ router.post('/:phone', async (req, res) => {
     if (perfilPessoal) contexto += perfilPessoal;
 
     // Adicionar instrução ao contexto quando for ação de lista
+    // Contexto para concluir lembrete
+    if (actionData?.lembreteId) {
+      contexto += `\n\n[AÇÃO REALIZADA] O lembrete "${actionData.lembreteTitulo}" foi marcado como concluído com sucesso. Confirme ao usuário de forma natural.`;
+    }
+
     if (actionData?.listaId) {
       const itensTexto = actionData.listaItems.map(i => `${i.id}. ${i.nome}`).join(', ');
       const foiCriada = classified?.tipo === 'lista_compras' && classified?.itens?.length > 0;
