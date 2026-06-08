@@ -2,10 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { handleMessage } = require('../services/handler');
 const { sendMessage, sendButtons } = require('../services/whatsapp');
-const { PrismaClient } = require('@prisma/client');
 const memory = require('../services/memory');
-
-const prisma = new PrismaClient();
+const prisma = require('../services/prisma');
 
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
