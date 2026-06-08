@@ -558,6 +558,42 @@ cron.schedule('* * * * *', async () => {
   } catch (e) { console.error('[Med] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
+
+// ─────────────────────────────────────────────
+// MENSAGENS AGENDADAS PARA CONTATOS (a cada minuto)
+// ─────────────────────────────────────────────
+cron.schedule('* * * * *', async () => {
+  try {
+    const now = nowBRT();
+
+    const msgs = await prisma.scheduledMessage.findMany({
+      where: { sent: false, scheduledAt: { lte: now } },
+      orderBy: { scheduledAt: 'asc' }
+    });
+
+    for (const msg of msgs) {
+      try {
+        await sendMessage(msg.toPhone, msg.message);
+
+        await prisma.scheduledMessage.update({
+          where: { id: msg.id },
+          data: { sent: true }
+        });
+
+        // Notifica o usuário que a mensagem foi enviada
+        const horaBRT = msg.scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+        await sendMessage(msg.fromPhone, `✅ Mensagem enviada para *${msg.toName || msg.toPhone}* às ${horaBRT}! 📤`);
+
+        console.log(`[Msg Agendada] Enviada: ${msg.toName || msg.toPhone} (${msg.toPhone})`);
+      } catch (e) {
+        console.error(`[Msg Agendada] Erro msg ${msg.id}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.error('[Msg Agendada] Erro geral:', e.message);
+  }
+}, { timezone: 'America/Sao_Paulo' });
+
 // ─────────────────────────────────────────────
 // LIMPEZA DE LOCKS (03:00)
 // ─────────────────────────────────────────────
