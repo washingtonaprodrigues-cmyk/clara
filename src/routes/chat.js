@@ -226,7 +226,8 @@ router.post('/:phone', async (req, res) => {
         const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
         const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
 
-        const [lembretes, meds, gastos, perfilPessoal] = await Promise.all([
+        let _perfilPessoal = '';
+        const [lembretes, meds, gastos] = await Promise.all([
           prisma.reminder.findMany({
             where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: inicioHoje, lte: fimAmanha } },
             orderBy: { scheduledAt: 'asc' }, take: 20
@@ -237,8 +238,8 @@ router.post('/:phone', async (req, res) => {
           preferences.saldo != null ? prisma.expense.findMany({
             where: { userId: user.id, createdAt: { gte: inicioMes } }
           }) : Promise.resolve([]),
-          buildPersonalContext(user.id).catch(() => '')
         ]);
+        _perfilPessoal = await buildPersonalContext(user.id).catch(() => '');
 
         if (lembretes.length > 0) {
           const fmtLemb = (r) => {
@@ -268,12 +269,14 @@ router.post('/:phone', async (req, res) => {
         }
 
         if (contexto) contexto = `\n\nUse as informações abaixo para responder com precisão quando o usuário perguntar sobre agenda, remédios ou finanças:${contexto}`;
+        perfilPessoal = _perfilPessoal;
       } catch (e) {
         console.error('[chat] Erro contexto:', e.message);
       }
     }
 
     let actionData = null;
+    let perfilPessoal = '';
 
     // Classificar a mensagem primeiro (necessário para saber se é lista antes de gerar resposta)
     const classified = privateMode ? { tipo: 'outro' } : await classify(message);
@@ -284,7 +287,7 @@ router.post('/:phone', async (req, res) => {
       actionData = await executeActionFromChat(user, phone, classified, message);
     }
 
-    // Perfil pessoal já carregado em paralelo acima
+    // Perfil pessoal carregado no bloco de contexto
     if (perfilPessoal) contexto += perfilPessoal;
 
     // Adicionar instrução ao contexto quando for ação de lista
