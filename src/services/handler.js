@@ -698,7 +698,7 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
 }
 
 
-// ── Trata ações de contato (salvar e enviar mensagem) ──
+// ── Trata ações de contato (salvar, deletar e enviar mensagem) ──
 async function handleContatoAction(user, phone, classified) {
   try {
     if (classified.tipo === 'deletar_contato') {
@@ -712,7 +712,6 @@ async function handleContatoAction(user, phone, classified) {
         await sendMessage(phone, `Não encontrei nenhum contato com o nome "${nome}" 😕`);
         return;
       }
-      // Deleta todos que encontrou com esse nome
       for (const c of encontrados) {
         await prisma.contact.delete({ where: { id: c.id } });
       }
@@ -734,7 +733,7 @@ async function handleContatoAction(user, phone, classified) {
         notes: classified.notes || null,
       });
       const relTxt = classified.relation ? ` (${classified.relation})` : '';
-      await sendMessage(phone, `✅ Contato salvo! ${classified.nome}${relTxt} — ${classified.phone.replace(/(\d{2})(\d{2})(\d{5})(\d{4})/, '+$1 ($2) $3-$4')} 📱`);
+      await sendMessage(phone, `✅ Contato salvo! ${classified.nome}${relTxt} 📱`);
       console.log(`[Contato] Salvo: ${classified.nome} → ${classified.phone}`);
       return;
     }
@@ -743,7 +742,6 @@ async function handleContatoAction(user, phone, classified) {
       let destinatarioPhone = classified.phone || null;
       let destinatarioNome = classified.destinatario || null;
 
-      // Busca contato pelo nome se não tem phone
       if (!destinatarioPhone && destinatarioNome) {
         const encontrados = await findContactByName(user.id, destinatarioNome);
         if (encontrados.length === 0) {
@@ -751,14 +749,14 @@ async function handleContatoAction(user, phone, classified) {
           return;
         }
         if (encontrados.length > 1) {
-          const lista = encontrados.map((c, i) => `${i+1}. ${c.name}${c.relation ? ` (${c.relation})` : ''} — ${c.phone}`).join('\\n');
+          const lista = encontrados.map((c, i) => `${i+1}. ${c.name}${c.relation ? ` (${c.relation})` : ''} — ${c.phone}`).join('\n');
           await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
             tipo: 'selecao_contato',
             opcoes: encontrados.map(c => ({ nome: c.name, phone: c.phone, relation: c.relation })),
             mensagem: classified.mensagem || '',
             expira: Date.now() + 3 * 60 * 1000,
           }));
-          await sendMessage(phone, `Encontrei mais de um contato:\\n\\n${lista}\\n\\nQual você quer? Responde com o número (1, 2...)`);
+          await sendMessage(phone, `Encontrei mais de um contato:\n\n${lista}\n\nQual você quer? Responde com o número (1, 2...)`);
           return;
         }
         destinatarioPhone = encontrados[0].phone;
@@ -779,7 +777,6 @@ async function handleContatoAction(user, phone, classified) {
         return;
       }
 
-      // Calcula scheduledAt
       const nowBRT = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
       const now = nowBRT();
       let scheduledAt = null;
@@ -787,19 +784,16 @@ async function handleContatoAction(user, phone, classified) {
       if (classified.data && classified.hora) {
         scheduledAt = new Date(`${classified.data}T${classified.hora}:00-03:00`);
       } else if (classified.hora) {
-        // Hoje ou amanhã com hora específica
         const [h, m] = classified.hora.split(':').map(Number);
         scheduledAt = new Date(now);
         scheduledAt.setHours(h, m || 0, 0, 0);
-        // Se já passou hoje, agenda para amanhã
         if (scheduledAt <= now) scheduledAt.setDate(scheduledAt.getDate() + 1);
       } else if (classified.quando) {
-        // Tenta interpretar "amanhã", "sexta", etc
         const quando = classified.quando.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         if (quando.includes('amanha')) {
           scheduledAt = new Date(now);
           scheduledAt.setDate(scheduledAt.getDate() + 1);
-          scheduledAt.setHours(9, 0, 0, 0); // padrão 9h se não especificou hora
+          scheduledAt.setHours(9, 0, 0, 0);
         } else {
           const diasSemana = { 'segunda':1,'terca':2,'quarta':3,'quinta':4,'sexta':5,'sabado':6,'domingo':0 };
           for (const [nome, dia] of Object.entries(diasSemana)) {
@@ -819,7 +813,6 @@ async function handleContatoAction(user, phone, classified) {
         return;
       }
 
-      // Salva no banco
       await prisma.scheduledMessage.create({
         data: {
           userId: user.id,
@@ -831,14 +824,13 @@ async function handleContatoAction(user, phone, classified) {
         }
       });
 
-      // Auto-salva contato se veio com phone
       if (destinatarioNome && classified.phone) {
         await saveContact(user.id, { nome: destinatarioNome, phone: phoneClean }).catch(() => {});
       }
 
       const horaBRT = scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
       const dataBRT = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long' });
-      await sendMessage(phone, `✅ Agendado! Vou enviar para *${destinatarioNome || phoneClean}* ${dataBRT} às ${horaBRT}:\n\n_"${mensagem}"_`);
+      await sendMessage(phone, `✅ Agendado!\n\nVou enviar para *${destinatarioNome || phoneClean}* ${dataBRT} às ${horaBRT}:\n\n_"${mensagem}"_`);
       console.log(`[Msg Agendada] ${destinatarioNome} (${phoneClean}) → ${scheduledAt}`);
       return;
     }
@@ -847,26 +839,23 @@ async function handleContatoAction(user, phone, classified) {
       let destinatarioPhone = classified.phone || null;
       let destinatarioNome = classified.destinatario || null;
 
-      // Se não tem phone, busca nos contatos salvos pelo nome
       if (!destinatarioPhone && destinatarioNome) {
         const encontrados = await findContactByName(user.id, destinatarioNome);
-
         if (encontrados.length === 0) {
-          await sendMessage(phone,
-            `Não encontrei nenhum contato com o nome "${destinatarioNome}" 😕
-
-` +
-            `Me diz o número dele e eu salvo: "o número do ${destinatarioNome} é 43999..."`
-          );
+          await sendMessage(phone, `Não encontrei nenhum contato com o nome "${destinatarioNome}" 😕\n\nMe diz o número dele e eu salvo: "o número do ${destinatarioNome} é 43999..."`);
           return;
         }
-
         if (encontrados.length > 1) {
           const lista = encontrados.map((c, i) => `${i+1}. ${c.name}${c.relation ? ` (${c.relation})` : ''} — ${c.phone}`).join('\n');
-          await sendMessage(phone, `Encontrei mais de um contato com esse nome:\n\n${lista}\n\nQual você quer? Me diz o número.`);
+          await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
+            tipo: 'selecao_contato',
+            opcoes: encontrados.map(c => ({ nome: c.name, phone: c.phone, relation: c.relation })),
+            mensagem: classified.mensagem || '',
+            expira: Date.now() + 3 * 60 * 1000,
+          }));
+          await sendMessage(phone, `Encontrei mais de um contato:\n\n${lista}\n\nQual você quer? Responde com o número (1, 2...)`);
           return;
         }
-
         destinatarioPhone = encontrados[0].phone;
         destinatarioNome = encontrados[0].name;
       }
@@ -876,18 +865,11 @@ async function handleContatoAction(user, phone, classified) {
         return;
       }
 
-      // Normaliza phone
       let phoneClean = destinatarioPhone.replace(/\D/g, '');
       if (!phoneClean.startsWith('55') && phoneClean.length <= 11) phoneClean = '55' + phoneClean;
 
-      // Se veio nome + número juntos, salva o contato automaticamente para uso futuro
       if (destinatarioNome && classified.phone) {
-        await saveContact(user.id, {
-          nome: destinatarioNome,
-          phone: phoneClean,
-          relation: null,
-          notes: null,
-        }).catch(() => {}); // falha silenciosa — não bloqueia o envio
+        await saveContact(user.id, { nome: destinatarioNome, phone: phoneClean }).catch(() => {});
         console.log(`[Contato] Auto-salvo: ${destinatarioNome} → ${phoneClean}`);
       }
 
@@ -897,20 +879,14 @@ async function handleContatoAction(user, phone, classified) {
         return;
       }
 
-      // Pede confirmação antes de enviar
-      const preview = `📤 Vou enviar para *${destinatarioNome || phoneClean}*:
+      const preview = `📤 Vou enviar para *${destinatarioNome || phoneClean}*:\n\n_"${mensagem}"_\n\nConfirma? (sim/não)`;
 
-_"${mensagem}"_
-
-Confirma? (sim/não)`;
-
-      // Salva contexto de confirmação pendente
       await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
         tipo: 'enviar_mensagem',
         destinatarioPhone: phoneClean,
         destinatarioNome: destinatarioNome || phoneClean,
         mensagem,
-        expira: Date.now() + 2 * 60 * 1000, // 2 minutos para confirmar
+        expira: Date.now() + 2 * 60 * 1000,
       }));
 
       await sendMessage(phone, preview);
