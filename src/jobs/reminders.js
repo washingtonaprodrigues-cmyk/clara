@@ -489,7 +489,7 @@ ${infoPessoal}`;
 // ─────────────────────────────────────────────
 cron.schedule('* * * * *', async () => {
   try {
-    const now = nowBRT();
+    const now = new Date(); // UTC direto para comparar com scheduledAt do banco
     const reminders = await prisma.reminder.findMany({
       where: { sent: false, confirmed: false, scheduledAt: { lte: now } },
       orderBy: { scheduledAt: 'asc' }
@@ -527,8 +527,9 @@ cron.schedule('* * * * *', async () => {
 // ─────────────────────────────────────────────
 cron.schedule('* * * * *', async () => {
   try {
-    const now = nowBRT();
-    const minutoChave = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const now = new Date(); // UTC
+    const nowLocal = nowBRT(); // BRT para extrair hora local
+    const minutoChave = `${pad(nowLocal.getHours())}:${pad(nowLocal.getMinutes())}`;
 
     const meds = await prisma.medication.findMany({
       where: { active: true, remaining: { gt: 0 } },
