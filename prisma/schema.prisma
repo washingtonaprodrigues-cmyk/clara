@@ -8,31 +8,31 @@ datasource db {
 }
 
 model User {
-  id             String   @id @default(cuid())
-  phone          String   @unique
+  id             String    @id @default(cuid())
+  phone          String    @unique
   name           String?
   metadata       String?
   monthlyIncome  Float?
-  jornadaMinutos Int      @default(480)
-  isPremium      Boolean  @default(false)
-  blocked        Boolean  @default(false)
-  createdAt      DateTime @default(now())
+  jornadaMinutos Int       @default(480)
+  isPremium      Boolean   @default(false)
+  blocked        Boolean   @default(false)
+  createdAt      DateTime  @default(now())
   updatedAt      DateTime? @updatedAt
 
-  memories       Memory[]
-  medications    Medication[]
-  tasks          Task[]
-  expenses       Expense[]
-  purchases      Purchase[]
-  secrets        Secret[]
-  bills          Bill[]
-  reminders      Reminder[]
-  events         Event[]
-  groceryLists   GroceryList[]
-  sleepLogs      SleepLog[]
-  workouts       Workout[]
-  workLogs       WorkLog[]
-  contacts       Contact[]
+  memories     Memory[]
+  medications  Medication[]
+  tasks        Task[]
+  expenses     Expense[]
+  purchases    Purchase[]
+  secrets      Secret[]
+  bills        Bill[]
+  reminders    Reminder[]
+  events       Event[]
+  groceryLists GroceryList[]
+  sleepLogs    SleepLog[]
+  workouts     Workout[]
+  workLogs     WorkLog[]
+  contacts     Contact[]
 }
 
 model Contact {
@@ -40,8 +40,8 @@ model Contact {
   userId    String
   name      String
   phone     String
-  relation  String?   // ex: esposa, amigo, chefe, filho
-  notes     String?   // info extra: "gosta de futebol", "aniversário em março"
+  relation  String?
+  notes     String?
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
 
@@ -173,16 +173,16 @@ model Secret {
 }
 
 model Bill {
-  id          String    @id @default(cuid())
-  userId      String
-  title       String
-  amount      Float
-  dueDate     DateTime?
-  paid        Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime?
+  id        String    @id @default(cuid())
+  userId    String
+  title     String
+  amount    Float
+  dueDate   DateTime?
+  paid      Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime?
 
-  user        User      @relation(fields: [userId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
 }
 
 model GroceryList {
@@ -219,4 +219,51 @@ model Workout {
   createdAt DateTime  @default(now())
 
   user      User      @relation(fields: [userId], references: [id])
+}
+
+// Tabelas da Evolution API / UazAPI
+
+model Instance {
+  id                      String    @id
+  name                    String
+  connectionStatus        String
+  ownerJid                String?
+  profilePicUrl           String?
+  integration             String?
+  number                  String?
+  token                   String?
+  clientName              String?
+  profileName             String?
+  businessId              String?
+  disconnectionAt         DateTime?
+  disconnectionObject     Json?
+  disconnectionReasonCode Int?
+  createdAt               DateTime?
+  updatedAt               DateTime?
+
+  settings                Setting[]
+}
+
+model Session {
+  id        String   @id
+  sessionId String
+  creds     String?
+  createdAt DateTime
+}
+
+model Setting {
+  id              String    @id
+  rejectCall      Boolean
+  msgCall         String?
+  groupsIgnore    Boolean
+  alwaysOnline    Boolean
+  readMessages    Boolean
+  readStatus      Boolean
+  syncFullHistory Boolean
+  wavoipToken     String?
+  instanceId      String
+  createdAt       DateTime?
+  updatedAt       DateTime
+
+  instance        Instance  @relation(fields: [instanceId], references: [id])
 }
