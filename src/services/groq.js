@@ -73,6 +73,9 @@ TIPOS:
 - salvar_contato: usuário informa número de um contato
   {"tipo":"salvar_contato","nome":"nome do contato","phone":"número","relation":"esposa/amigo/chefe/filho/etc ou null","notes":"info extra ou null"}
 
+- deletar_contato: usuário quer apagar/remover um contato salvo
+  {"tipo":"deletar_contato","nome":"nome do contato"}
+
 - enviar_mensagem: usuário quer enviar mensagem AGORA para um contato
   {"tipo":"enviar_mensagem","destinatario":"nome do contato","mensagem":"texto a enviar","phone":"número se informado ou null"}
   IMPORTANTE: a mensagem deve ser escrita como SE FOSSE O PRÓPRIO USUÁRIO enviando — direta, no tom certo, sem "eu vou" ou "posso". Ex: "Deu certo a planilha?" não "Posso perguntar se deu certo a planilha?"
@@ -125,6 +128,8 @@ EXEMPLOS PONTO:
 "coloca detergente também" → {"tipo":"lista_adicionar","item":"Detergente"}
 "meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
 "o número da minha esposa é 43999998888" → {"tipo":"salvar_contato","nome":"esposa","phone":"43999998888","relation":"esposa","notes":null}
+"apaga o contato do João" → {"tipo":"deletar_contato","nome":"João"}
+"remove a minha ex da lista" → {"tipo":"deletar_contato","nome":"minha ex"}
 "salva o contato do João: 11988887777" → {"tipo":"salvar_contato","nome":"João","phone":"11988887777","relation":null,"notes":null}
 "manda mensagem pro João dizendo que vou atrasar" → {"tipo":"enviar_mensagem","destinatario":"João","mensagem":"Vou atrasar, te aviso quando chegar!","phone":null}
 "fala pra minha esposa que vou chegar às 19h" → {"tipo":"enviar_mensagem","destinatario":"esposa","mensagem":"Vou chegar às 19h 😊","phone":null}
