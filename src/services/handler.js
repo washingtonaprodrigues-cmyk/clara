@@ -741,13 +741,8 @@ async function handleContatoAction(user, phone, classified) {
         }
 
         if (encontrados.length > 1) {
-          const lista = encontrados.map((c, i) => `${i+1}. ${c.name}${c.relation ? ` (${c.relation})` : ''} — ${c.phone}`).join('
-');
-          await sendMessage(phone, `Encontrei mais de um contato com esse nome:
-
-${lista}
-
-Qual você quer? Me diz o número.`);
+          const lista = encontrados.map((c, i) => `${i+1}. ${c.name}${c.relation ? ` (${c.relation})` : ''} — ${c.phone}`).join('\n');
+          await sendMessage(phone, `Encontrei mais de um contato com esse nome:\n\n${lista}\n\nQual você quer? Me diz o número.`);
           return;
         }
 
