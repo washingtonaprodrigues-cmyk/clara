@@ -321,6 +321,13 @@ router.post('/:phone', async (req, res) => {
       contexto += `\n\n[AÇÃO REALIZADA] O lembrete "${actionData.lembreteTitulo}" foi marcado como concluído com sucesso. Confirme ao usuário de forma natural.`;
     }
 
+    // Contexto para tarefa/lembrete criado — evitar que a IA confunda com lembretes existentes
+    if (classified.tipo === 'tarefa' && actionData) {
+      const horaCriada = classified.hora || '';
+      const dataCriada = classified.data || '';
+      contexto += `\n\n[AÇÃO REALIZADA] Lembrete criado com sucesso: "${classified.titulo || classified.tarefa || text}" para ${dataCriada} às ${horaCriada}. IMPORTANTE: confirme EXATAMENTE esse horário ao usuário, não consulte nem mencione outros lembretes existentes.`;
+    }
+
     if (actionData?.listaId) {
       const itensTexto = actionData.listaItems.map(i => `${i.id}. ${i.nome}`).join(', ');
       const foiCriada = classified?.tipo === 'lista_compras' && classified?.itens?.length > 0;
