@@ -239,7 +239,8 @@ async function responderLivre(user, phone, text, contextoExtra = '') {
         const fmtLemb = (r) => {
           const d = new Date(r.scheduledAt);
           const dStr = toDateStr(d) === hoje ? 'Hoje' : 'Amanhã';
-          return `• ${dStr} às ${pad(d.getHours())}:${pad(d.getMinutes())} — ${r.message}`;
+          const horaBRT = d.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo', hour:'2-digit', minute:'2-digit'});
+          return `• ${dStr} às ${horaBRT} — ${r.message}`;
         };
         contexto += `\n\n[AGENDA]\n${lembretes.map(fmtLemb).join('\n')}`;
       } else {
