@@ -32,7 +32,8 @@ model User {
   sleepLogs      SleepLog[]
   workouts       Workout[]
   workLogs       WorkLog[]
-  contacts       Contact[]
+  contacts          Contact[]
+  scheduledMessages ScheduledMessage[]
 }
 
 model Contact {
