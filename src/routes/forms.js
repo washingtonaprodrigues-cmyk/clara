@@ -442,6 +442,18 @@ router.post('/lembrete/:phone', async (req, res) => {
   }
 });
 
+// ====================== LEMBRETE: DELETE ======================
+router.delete('/lembrete/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.reminder.delete({ where: { id } });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro DELETE lembrete:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== REMÉDIO: GET (form) ======================
 router.get('/remedio/:phone', (req, res) => {
   const { phone } = req.params;
@@ -594,6 +606,18 @@ router.post('/remedio/:phone', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error('Erro form remedio:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== REMÉDIO: DELETE ======================
+router.delete('/remedio/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.medication.update({ where: { id }, data: { active: false } });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro DELETE remedio:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -760,7 +784,6 @@ router.post('/ponto/:phone', async (req, res) => {
   }
 });
 
-
 // ====================== LISTAS: GET ======================
 router.get('/listas/:phone', async (req, res) => {
   try {
@@ -798,6 +821,18 @@ router.post('/lista/:phone', async (req, res) => {
     res.json({ ok: true, id: lista.id, items: itemsJson });
   } catch (e) {
     console.error('Erro POST lista:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== LISTA: DELETE ======================
+router.delete('/lista/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.groceryList.delete({ where: { id } });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro DELETE lista:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
