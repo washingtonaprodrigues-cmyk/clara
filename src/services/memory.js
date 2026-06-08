@@ -303,6 +303,49 @@ async function getMonthExpenses(userId) {
   });
 }
 
+
+// ====================== CONTATOS ======================
+
+async function saveContact(userId, { nome, phone, relation = null, notes = null }) {
+  // Normaliza o telefone (só números, com 55 se necessário)
+  let phoneClean = phone.replace(/\D/g, '');
+  if (!phoneClean.startsWith('55') && phoneClean.length <= 11) phoneClean = '55' + phoneClean;
+
+  // Upsert: atualiza se já existe, cria se não
+  const existing = await prisma.contact.findFirst({
+    where: { userId, phone: phoneClean }
+  });
+
+  if (existing) {
+    return prisma.contact.update({
+      where: { id: existing.id },
+      data: { name: nome, relation, notes, updatedAt: new Date() }
+    });
+  }
+
+  return prisma.contact.create({
+    data: { userId, name: nome, phone: phoneClean, relation, notes }
+  });
+}
+
+async function getContacts(userId) {
+  return prisma.contact.findMany({
+    where: { userId },
+    orderBy: { name: 'asc' }
+  });
+}
+
+// Busca contato por nome (busca parcial, case-insensitive)
+async function findContactByName(userId, nome) {
+  const contacts = await prisma.contact.findMany({
+    where: {
+      userId,
+      name: { contains: nome, mode: 'insensitive' }
+    }
+  });
+  return contacts;
+}
+
 // ====================== EXPORTS ======================
 
 module.exports = {
@@ -316,4 +359,5 @@ module.exports = {
   saveConversationMessage, getConversationHistory,
   saveMedication, saveTask,
   saveExpense, getMonthExpenses,
+  saveContact, getContacts, findContactByName,
 };
