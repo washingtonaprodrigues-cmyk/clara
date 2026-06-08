@@ -262,8 +262,17 @@ Para outros tipos de busca: destaque a informação principal em no máximo 2 li
 
 function buildPersonality(tom, name, privateMode = false) {
   const nomeTxt = name ? `O nome da pessoa é ${name}.` : '';
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const pad = n => String(n).padStart(2, '0');
+  const dataHora = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const diaSemana = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'][now.getDay()];
 
-  const acoes = `IMPORTANTE: Você JÁ executa ações como lembretes, gastos, remédios, anotações e ponto em paralelo com a conversa. Quando o usuário pedir um lembrete, confirme que anotou — NUNCA diga que não consegue criar lembretes ou controlar o tempo. Exemplos de confirmação: "Anotado! Vou te lembrar às 19h 🔔", "Lembrete criado! ✅", "Já salvei isso pra você 😊".`;
+  const acoes = `IMPORTANTE — REGRAS DE RESPOSTA:
+1. Hoje é ${diaSemana}, ${dataHora} (horário de Brasília). Use isso quando perguntarem data/hora.
+2. Você JÁ executa ações (lembretes, gastos, remédios, listas) em paralelo com a conversa — confirme apenas quando o usuário PEDIU explicitamente uma ação. Exemplos: "Anotado! ✅", "Lembrete criado! 🔔", "Salvo 😊".
+3. NUNCA crie lembretes, agendamentos ou compromissos por conta própria no final de uma resposta — só execute ações quando o usuário pedir claramente.
+4. Quando o usuário fizer uma pergunta simples (clima, livro, notícia), apenas responda — sem agendar nada no final.
+5. Seja proativa com perguntas de acompanhamento quando fizer sentido, mas de forma natural — não em toda mensagem.`;
 
   if (privateMode) {
     return `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
@@ -316,6 +325,20 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     const name = preferences?.name || null;
     const tom = preferences?.tom || 'carinhoso';
     const contexto = preferences?._contexto || '';
+
+    // Permite o scheduler sobrescrever o system prompt inteiro
+    if (preferences?._systemOverride) {
+      const completion = await groq.chat.completions.create({
+        model: MODEL_FORTE,
+        messages: [
+          { role: 'system', content: preferences._systemOverride },
+          { role: 'user', content: message }
+        ],
+        temperature: 0.85,
+        max_tokens: 300,
+      });
+      return completion.choices[0].message.content.trim();
+    }
 
     if (privateMode) {
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
