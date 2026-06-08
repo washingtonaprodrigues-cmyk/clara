@@ -84,6 +84,9 @@ TIPOS:
   {"tipo":"enviar_mensagem_agendada","destinatario":"nome do contato","mensagem":"texto a enviar","phone":"número se informado ou null","quando":"descrição do horário ex: amanhã às 10h, sexta às 14h, hoje às 19h","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null"}
   IMPORTANTE: use este tipo quando houver qualquer referência de tempo futuro (amanhã, depois, às Xh, na sexta, etc). A mensagem deve ser direta, como se o usuário estivesse enviando pessoalmente.
 
+- concluir_lembrete: usuário diz que concluiu/fez/realizou um compromisso ou lembrete específico
+  {"tipo":"concluir_lembrete","titulo":"descrição do que foi concluído"}
+
 - consulta: pergunta sobre algo guardado
   {"tipo":"consulta","sobre":"tema"}
   
@@ -102,12 +105,22 @@ EXEMPLOS PONTO:
 "cheguei às 8" → {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
 "minha cidade é Carlópolis PR" → {"tipo":"cidade","cidade":"Carlópolis, Paraná"}
 "farmácia perto" → {"tipo":"busca","query":"farmácia próxima"}
+"quanto custa Losartana?" → {"tipo":"busca","query":"preço Losartana farmácia"}
+"preço do remédio Levotiroxina" → {"tipo":"busca","query":"preço Levotiroxina farmácia"}
+"qual o valor da dipirona?" → {"tipo":"busca","query":"preço dipirona farmácia"}
+"onde comprar vitamina C?" → {"tipo":"busca","query":"onde comprar vitamina C"}
+"posso tomar remédio fora do horário?" → {"tipo":"busca","query":"pode tomar remédio fora do horário prescrição"}
+"remédio em jejum esqueci" → {"tipo":"busca","query":"esqueci tomar remédio em jejum o que fazer"}
 "anote que o código é 123" → {"tipo":"anotacao","titulo":"código","conteudo":"o código é 123"}
 "me lembra às 19h de buscar minha sogra" → {"tipo":"tarefa","titulo":"buscar sogra","data":null,"hora":"19:00"}
 "gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
 "tomo Losartana todo dia às 8h" → {"tipo":"medicamento","nome":"Losartana","quantidade":0,"frequencia":1,"horarios":["08:00"]}
 "Vitamina C às 9h e 21h" → {"tipo":"medicamento","nome":"Vitamina C","quantidade":0,"frequencia":2,"horarios":["09:00","21:00"]}
 "quanto gastei esse mês?" → {"tipo":"consulta","sobre":"gastos"}
+"conclui a reunião com o cliente" → {"tipo":"concluir_lembrete","titulo":"reunião com o cliente"}
+"já fiz a tarefa do relatório" → {"tipo":"concluir_lembrete","titulo":"tarefa do relatório"}
+"dá baixa na reunião de hoje" → {"tipo":"concluir_lembrete","titulo":"reunião de hoje"}
+"pode marcar como feito o compromisso das 14h" → {"tipo":"concluir_lembrete","titulo":"compromisso das 14h"}
 "qual a senha do wi-fi?" → {"tipo":"consulta","sobre":"senha wi-fi"}
 "me chamo Ana" → {"tipo":"preferencia","nome":"Ana","tom":null}
 "seja mais direto comigo" → {"tipo":"preferencia","nome":null,"tom":"direto"}
@@ -183,13 +196,17 @@ Chaves sugeridas (use snake_case, seja específico):
 - objetivos: meta_financeira, projeto_pessoal, viagem_planejada, sonho
 - datas: aniversario_proprio, aniversario_conjuge, aniversario_filho, data_especial
 
-REGRAS:
-- Extraia APENAS o que foi explicitamente dito agora
-- Não invente ou deduza informações
+REGRAS CRÍTICAS:
+- Extraia APENAS informações que o usuário declarou EXPLICITAMENTE sobre si mesmo
+- NUNCA deduza, infira ou suponha — se não foi dito claramente, retorne []
+- NUNCA extraia de perguntas que o usuário fez ("como está o tempo?" NÃO significa que ele gosta de meteorologia)
+- NUNCA extraia de assuntos que a IA mencionou — apenas do que o USUÁRIO escreveu
+- NUNCA extraia de contexto implícito (ex: "comprei fertilizante" NÃO significa "gosta de jardinagem")
 - Valores devem ser frases curtas e descritivas em português
 - Ignore saudações, perguntas genéricas, comandos do sistema
 - Para nomes de pessoas/pets, sempre inclua o contexto (ex: "Filho chamado Pedro" não só "Pedro")
 - Para datas, inclua o dia/mês quando mencionado
+- Em caso de dúvida se é explícito ou implícito: retorne []
 
 EXEMPLOS:
 "minha filha se chama Ana" → [{"chave":"filha_ana","valor":"Filha chamada Ana","categoria":"familia"}]
