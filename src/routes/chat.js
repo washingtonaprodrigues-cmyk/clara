@@ -2,10 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { freeResponse, classify, extractPersonalInfo } = require('../services/groq');
 const memory = require('../services/memory');
+const prisma = require('../services/prisma');
 const { buildPersonalContext, savePersonalInfo } = memory;
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 }
