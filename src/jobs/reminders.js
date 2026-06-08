@@ -1,10 +1,8 @@
 const cron = require('node-cron');
-const { PrismaClient } = require('@prisma/client');
 const { sendMessage } = require('../services/whatsapp');
 const { freeResponse } = require('../services/groq');
 const memory = require('../services/memory');
-
-const prisma = new PrismaClient();
+const prisma = require('../services/prisma');
 
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
