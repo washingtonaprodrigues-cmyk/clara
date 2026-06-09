@@ -514,15 +514,23 @@ function fmtD(d){try{return new Date(d).toLocaleDateString('pt-BR',{timeZone:'Am
 function showToast(m,d=2500){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),d);}
 function getGreeting(){const h=new Date().getHours();if(h>=5&&h<12)return'BOM DIA';if(h>=12&&h<18)return'BOA TARDE';return'BOA NOITE';}
 function setNotifAtivo(ativo){
-  ['notif-btn-s','notif-btn'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(!el)return;
-    el.style.color=ativo?'var(--green)':'';
-    const lbl=el.querySelector('.s-foot-label,span');
+  // Sidebar web
+  const btnS=document.getElementById('notif-btn-s');
+  if(btnS){
+    const lbl=document.getElementById('notif-label-s');
     if(lbl)lbl.textContent=ativo?'Notificações ativas':'Notificações';
-    const svg=el.querySelector('svg');
-    if(svg)svg.style.stroke=ativo?'var(--green)':'';
-  });
+    btnS.style.color=ativo?'var(--green)':'';
+  }
+  // Drawer mobile
+  const btnD=document.getElementById('notif-btn');
+  if(btnD){
+    // Reescreve o conteúdo do botão mantendo SVG
+    const svg=btnD.querySelector('svg');
+    btnD.innerHTML='';
+    if(svg){svg.style.stroke=ativo?'var(--green)':'';btnD.appendChild(svg);}
+    btnD.appendChild(Object.assign(document.createTextNode(ativo?' Notificações ativas':' Notificações')));
+    btnD.style.color=ativo?'var(--green)':'';
+  }
 }
 
 function toggleSidebar(){
