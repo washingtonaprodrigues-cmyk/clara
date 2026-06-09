@@ -694,7 +694,7 @@ async function editarItemLista(listaId, itemId){
   const item=lista?.items?.find(i=>i.id===itemId);
   const nomeAtual=item?item.nome:'';
   const novo = prompt('Editar item:', nomeAtual);
-  if(!novo || novo.trim() === atual) return;
+  if(!novo || novo.trim() === nomeAtual) return;
   try{
     const r = await fetch(`/forms/lista-item-editar/${listaId}/${itemId}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({nome:novo.trim()})});
     const d = await r.json();
