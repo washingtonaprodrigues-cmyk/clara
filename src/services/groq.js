@@ -424,15 +424,20 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       return data.choices?.[0]?.message?.content?.trim() || 'Pode repetir? 😊';
     }
 
+    // Mensagens curtas e sociais não precisam do modelo grande
+    const isCurta = message.trim().length < 40;
+    const isSocial = /^(beijos?|boa noite|bom dia|boa tarde|oi|olá|até|tchau|😘|❤|valeu|obrigad|flw|abraços?|saudades)/i.test(message.trim());
+    const modeloEscolhido = (isCurta && isSocial) ? MODEL_LEVE : MODEL_FORTE;
+
     const completion = await groq.chat.completions.create({
-      model: MODEL_FORTE,
+      model: modeloEscolhido,
       messages: [
         { role: 'system', content: buildPersonality(tom, name, false) + contexto },
         ...history,
         { role: 'user', content: message }
       ],
       temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-      max_tokens: 400,
+      max_tokens: isCurta ? 80 : 400,
     });
     return completion.choices[0].message.content.trim();
   } catch (e) {
