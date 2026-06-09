@@ -175,12 +175,27 @@ router.post('/', async (req, res) => {
     }
 
     const text = body.message?.text || body.message?.content?.text || '';
-    console.log(`📨 WEBHOOK: ${phone} — "${text.slice(0, 80)}"`);
+
+    // Extrai mensagem citada (quando usuário responde/cita uma mensagem)
+    const quotedText = body.message?.quotedMsg?.body
+      || body.message?.quotedMsg?.text
+      || body.message?.contextInfo?.quotedMessage?.conversation
+      || body.message?.content?.contextInfo?.quotedMessage?.conversation
+      || '';
+
+    // Se tem mensagem citada, injeta no texto para a IA ter contexto
+    const textComContexto = quotedText && text
+      ? `[Mensagem citada: "${quotedText.slice(0, 200)}"]
+${text}`
+      : text;
+
+    console.log(`📨 WEBHOOK: ${phone} — "${text.slice(0, 80)}"${quotedText ? ` [citou: "${quotedText.slice(0, 40)}"]` : ''}`);
 
     if (text) {
       const handled = await handleSimpleResponse(phone, text);
+      // Se não tratado pela resposta simples, usa o texto com contexto
       if (!handled) {
-        handleMessage(phone, text).catch(console.error);
+        handleMessage(phone, textComContexto).catch(console.error);
       }
       return res.json({ ok: true });
     }
