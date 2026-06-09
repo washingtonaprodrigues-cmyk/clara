@@ -552,9 +552,33 @@ cron.schedule('* * * * *', async () => {
 
     for (const key of Object.keys(grupos)) {
       const grupo = grupos[key];
-      let msg = grupo.reminders.length === 1
-        ? `🔔 Lembrete\n\n${grupo.reminders[0].message}\n⏰ ${grupo.hora}\n\n${random(finais)}`
-        : `📌 Você tem ${grupo.reminders.length} lembretes agora\n\n${grupo.reminders.map(r => `• ${r.message}`).join('\n')}\n\n⏰ ${grupo.hora}\n\n${random(finais)}`;
+
+      let msg;
+      try {
+        // Buscar nome do usuário para personalizar
+        const user = await prisma.user.findFirst({ where: { phone: grupo.phone } });
+        const prefs = user ? await prisma.preference.findFirst({ where: { userId: user.id } }) : null;
+        const nome = prefs?.name || user?.name || null;
+
+        if (grupo.reminders.length === 1) {
+          const r = grupo.reminders[0];
+          const system = `Você é a Clara, assistente pessoal. ${nome ? `O usuário se chama ${nome}.` : ''}
+Envie uma notificação de lembrete calorosa e breve (máx 2 linhas).
+O lembrete é: "${r.message}" às ${grupo.hora}.
+Seja direta e encorajadora — não genérica. Sem listas, sem perguntas.
+Exemplos: "Washington, chegou a hora de cobrar o Fábio! Vai lá 💪"
+          "Não esquece: ${r.message} — é agora! ⏰"`;
+          msg = await freeResponse('Envie a notificação deste lembrete.', [], { _systemOverride: system });
+        } else {
+          const titulos = grupo.reminders.map(r => `• ${r.message}`).join('\n');
+          msg = `📌 Você tem ${grupo.reminders.length} lembretes agora\n\n${titulos}\n\n⏰ ${grupo.hora}\n\n${random(finais)}`;
+        }
+      } catch(e) {
+        // Fallback simples se IA falhar
+        msg = grupo.reminders.length === 1
+          ? `🔔 Lembrete\n\n${grupo.reminders[0].message}\n⏰ ${grupo.hora}\n\n${random(finais)}`
+          : `📌 Você tem ${grupo.reminders.length} lembretes agora\n\n${grupo.reminders.map(r => `• ${r.message}`).join('\n')}\n\n⏰ ${grupo.hora}\n\n${random(finais)}`;
+      }
 
       await sendMessage(grupo.phone, msg);
       await prisma.reminder.updateMany({
