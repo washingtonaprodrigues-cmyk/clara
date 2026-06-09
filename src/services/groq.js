@@ -429,16 +429,23 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     const isSocial = /^(beijos?|boa noite|bom dia|boa tarde|oi|olá|até|tchau|😘|❤|valeu|obrigad|flw|abraços?|saudades)/i.test(message.trim());
     const modeloEscolhido = (isCurta && isSocial) ? MODEL_LEVE : MODEL_FORTE;
 
-    const completion = await groq.chat.completions.create({
-      model: modeloEscolhido,
-      messages: [
-        { role: 'system', content: buildPersonality(tom, name, false) + contexto },
-        ...history,
-        { role: 'user', content: message }
-      ],
-      temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-      max_tokens: isCurta ? 80 : 600,
-    });
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 15000)
+    );
+
+    const completion = await Promise.race([
+      groq.chat.completions.create({
+        model: modeloEscolhido,
+        messages: [
+          { role: 'system', content: buildPersonality(tom, name, false) + contexto },
+          ...history,
+          { role: 'user', content: message }
+        ],
+        temperature: tom === 'sarcastico' ? 0.9 : 0.7,
+        max_tokens: isCurta ? 80 : 600,
+      }),
+      timeoutPromise
+    ]);
     return completion.choices[0].message.content.trim();
   } catch (e) {
     console.error('Erro freeResponse:', e.message);
