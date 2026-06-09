@@ -642,6 +642,19 @@ async function executeAction(user, phone, classified, originalText) {
       await deletarLembretePorTitulo(user, phone, classified);
       contextoExtra = `\n\n[AÇÃO REALIZADA] Lembrete "${classified.titulo}" foi cancelado/deletado. Confirme ao usuário de forma natural.`;
       break;
+    case 'deletar_remedio':
+      if (classified.nome) {
+        const nomeRemedio = classified.nome.toLowerCase();
+        const remedios = await prisma.medication.findMany({ where: { userId: user.id } });
+        const encontrados = remedios.filter(m => m.name.toLowerCase().includes(nomeRemedio) || nomeRemedio.includes(m.name.toLowerCase().split(' ')[0]));
+        if (encontrados.length > 0) {
+          await prisma.medication.deleteMany({ where: { id: { in: encontrados.map(m => m.id) } } });
+          contextoExtra = `\n\n[AÇÃO REALIZADA] Medicamento "${encontrados[0].name}" foi excluído com sucesso. Confirme ao usuário de forma natural e diga que não receberá mais lembretes desse remédio.`;
+        } else {
+          contextoExtra = `\n\n[AÇÃO] Não foi encontrado nenhum medicamento com o nome "${classified.nome}". Informe o usuário que não encontrou esse remédio cadastrado.`;
+        }
+      }
+      break;
     case 'gasto':
       await memory.saveExpense(user.id, {
         valor: classified.valor,
