@@ -894,7 +894,7 @@ router.put('/lista-titulo/:id', async (req, res) => {
   try {
     const { nome } = req.body;
     if (!nome) return res.status(400).json({ error: 'Nome obrigatório' });
-    await prisma.list.update({ where: { id: req.params.id }, data: { name: nome } });
+    await prisma.groceryList.update({ where: { id: req.params.id }, data: { name: nome } });
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -903,14 +903,14 @@ router.put('/lista-titulo/:id', async (req, res) => {
 router.put('/lista-item-editar/:id/:itemId', async (req, res) => {
   try {
     const { nome } = req.body;
-    const lista = await prisma.list.findUnique({ where: { id: req.params.id } });
+    const lista = await prisma.groceryList.findUnique({ where: { id: req.params.id } });
     if (!lista) return res.status(404).json({ error: 'Lista não encontrada' });
     const items = JSON.parse(lista.items || '[]');
     const itemId = parseInt(req.params.itemId);
     const item = items.find(i => i.id === itemId);
     if (!item) return res.status(404).json({ error: 'Item não encontrado' });
     item.nome = nome;
-    await prisma.list.update({ where: { id: req.params.id }, data: { items: JSON.stringify(items) } });
+    await prisma.groceryList.update({ where: { id: req.params.id }, data: { items: JSON.stringify(items) } });
     res.json({ items });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
