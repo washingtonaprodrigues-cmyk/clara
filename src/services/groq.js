@@ -437,7 +437,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         { role: 'user', content: message }
       ],
       temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-      max_tokens: isCurta ? 80 : 400,
+      max_tokens: isCurta ? 80 : 600,
     });
     return completion.choices[0].message.content.trim();
   } catch (e) {
