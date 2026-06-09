@@ -207,10 +207,20 @@ function formatarListaWhatsApp(listaResult) {
   return `🛒 *${listaNome}*\n\n${itens}\n\n_${done}/${listaItems.length} itens marcados_`;
 }
 
-async function responderLivre(user, phone, text, contextoExtra = '') {
+async function responderLivre(user, phone, text, contextoExtra = '', skipContext = false) {
   try {
     const history = await memory.getConversationHistory(user.id, 10);
     const preferences = await memory.getUserPreference(user.id);
+
+    // Saudações simples: responde direto sem buscar contexto (mais rápido)
+    if (skipContext) {
+      preferences._contexto = '';
+      const resp = await freeResponse(text, history, preferences);
+      await memory.saveConversationMessage(user.id, 'user', text);
+      await memory.saveConversationMessage(user.id, 'assistant', resp);
+      await sendMessage(phone, resp);
+      return;
+    }
 
     let contexto = '';
     try {
@@ -409,7 +419,9 @@ async function handleMessage(phone, text, location = null) {
       console.error('Erro executeAction:', e.message)
     );
 
-    await responderLivre(user, phone, text);
+    // Saudações simples: pular busca de contexto para resposta mais rápida
+    const isSaudacao = classified.tipo === 'saudacao';
+    await responderLivre(user, phone, text, '', isSaudacao);
 
     // ── Extração de memória pessoal em background ──
     extractAndSavePersonalInfo(user.id, text).catch(e =>
