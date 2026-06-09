@@ -51,6 +51,12 @@ cron.schedule('5 7 * * *', async () => {
   try {
     const now = nowBRT();
     const hoje = dateBRT(now);
+
+    // Lock: evita duplicata no mesmo dia
+    const lockKey = `bom_dia_${hoje}`;
+    const jaEnviou = await prisma.memory.findFirst({ where: { type: lockKey } });
+    if (jaEnviou) { console.log('[Bom dia] já enviado hoje, pulando'); return; }
+    await prisma.memory.create({ data: { userId: 'system', type: lockKey, content: '1' } }).catch(() => {});
     const amanha = new Date(now); amanha.setDate(amanha.getDate() + 1);
     const amanhaStr = dateBRT(amanha);
     const diasSemana = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
@@ -127,6 +133,13 @@ cron.schedule('30 21 * * *', async () => {
   try {
     const now = nowBRT();
     const hoje = dateBRT(now);
+
+    // Lock: evita duplicata no mesmo dia
+    const lockKey = `boa_noite_${hoje}`;
+    const jaEnviou = await prisma.memory.findFirst({ where: { type: lockKey } });
+    if (jaEnviou) { console.log('[Boa noite] já enviado hoje, pulando'); return; }
+    await prisma.memory.create({ data: { userId: 'system', type: lockKey, content: '1' } }).catch(() => {});
+
     const amanha = new Date(now); amanha.setDate(amanha.getDate() + 1);
     const amanhaStr = dateBRT(amanha);
 
@@ -169,11 +182,12 @@ cron.schedule('30 21 * * *', async () => {
         if (infoPessoal) ctx += infoPessoal;
 
         const systemBoaNoite = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Envie uma mensagem de boa noite calorosa e breve (máx 4 linhas).
-Se houver compromissos amanhã, mencione de forma natural (não em lista).
-Se o usuário concluiu tarefas hoje, celebre levemente.
-Se souber algo pessoal, faça uma referência natural.
-NÃO pergunte "Como posso ajudar?". NÃO agende nada.
+Envie uma mensagem de boa noite calorosa e breve (máx 3 linhas).
+O foco é acolher e desejar descanso — é hora de largar o dia.
+Se o usuário concluiu bastante hoje, celebre levemente mas sem detalhar.
+Se houver compromissos amanhã, pode mencionar que "amanhã tem bastante coisa" ou "amanhã vai ser agitado" — sem citar compromissos específicos.
+Se souber algo pessoal, faça uma referência natural e afetiva.
+NÃO liste compromissos. NÃO pergunte "Como posso ajudar?". NÃO agende nada.
 Tom: ${prefs.tom || 'carinhoso'}.
 
 ${ctx}`;
