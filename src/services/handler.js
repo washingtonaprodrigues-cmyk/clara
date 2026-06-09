@@ -634,6 +634,14 @@ async function executeAction(user, phone, classified, originalText) {
     case 'tarefa':
       await salvarTarefaSilenciosa(user, phone, classified, originalText);
       break;
+    case 'editar_lembrete':
+      await editarLembrete(user, phone, classified);
+      contextoExtra = `\n\n[AÇÃO REALIZADA] Lembrete "${classified.titulo}" foi reagendado${classified.nova_hora ? ` para às ${classified.nova_hora}` : ''}${classified.nova_data ? ` em ${classified.nova_data}` : ''}. Confirme ao usuário de forma natural.`;
+      break;
+    case 'deletar_lembrete':
+      await deletarLembretePorTitulo(user, phone, classified);
+      contextoExtra = `\n\n[AÇÃO REALIZADA] Lembrete "${classified.titulo}" foi cancelado/deletado. Confirme ao usuário de forma natural.`;
+      break;
     case 'gasto':
       await memory.saveExpense(user.id, {
         valor: classified.valor,
@@ -725,9 +733,80 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
   }
 
   if (scheduledAt) {
+    // Lembrete principal
     await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
     console.log(`[${phone}] Lembrete salvo: "${classified.titulo}" para ${scheduledAt}`);
+
+    // Lembrete de antecedência (ex: "me lembra 30min antes")
+    const antecedencia = classified.antecedencia;
+    if (antecedencia && antecedencia > 0) {
+      const scheduledAntes = new Date(scheduledAt.getTime() - antecedencia * 60 * 1000);
+      if (scheduledAntes > new Date()) {
+        await prisma.reminder.create({ data: {
+          userId: user.id, phone,
+          message: `⏰ Em ${antecedencia} minutos: ${classified.titulo}`,
+          scheduledAt: scheduledAntes
+        }});
+        console.log(`[${phone}] Lembrete antecipado criado: ${antecedencia}min antes`);
+      }
+    }
   }
+}
+
+// ── Editar lembrete existente ──
+async function editarLembrete(user, phone, classified) {
+  try {
+    const titulo = classified.titulo?.toLowerCase();
+    if (!titulo) { await sendMessage(phone, 'Qual lembrete quer alterar? Me diz o nome 😊'); return; }
+
+    const lembretes = await prisma.reminder.findMany({
+      where: { userId: user.id, sent: false, confirmed: false }
+    });
+    const encontrado = lembretes.find(r => r.message.toLowerCase().includes(titulo));
+
+    if (!encontrado) {
+      await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕`);
+      return;
+    }
+
+    let novoScheduledAt = new Date(encontrado.scheduledAt);
+    if (classified.nova_hora) {
+      const [h, m] = classified.nova_hora.split(':').map(Number);
+      const data = classified.nova_data || encontrado.scheduledAt.toISOString().split('T')[0];
+      novoScheduledAt = new Date(`${data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
+    } else if (classified.nova_data) {
+      const horaAtual = new Date(encontrado.scheduledAt).toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
+      const [h, m] = horaAtual.split(':').map(Number);
+      novoScheduledAt = new Date(`${classified.nova_data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
+    }
+
+    await prisma.reminder.update({ where: { id: encontrado.id }, data: { scheduledAt: novoScheduledAt } });
+    const horaBRT = novoScheduledAt.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
+    const dataBRT = novoScheduledAt.toLocaleDateString('pt-BR', {timeZone:'America/Sao_Paulo'});
+    console.log(`[${phone}] Lembrete editado: "${encontrado.message}" → ${novoScheduledAt}`);
+    // resposta virá pelo freeResponse com contexto da ação
+  } catch(e) { console.error('[editarLembrete]', e.message); }
+}
+
+// ── Deletar lembrete por título ──
+async function deletarLembretePorTitulo(user, phone, classified) {
+  try {
+    const titulo = classified.titulo?.toLowerCase();
+    if (!titulo) { await sendMessage(phone, 'Qual lembrete quer cancelar? Me diz o nome 😊'); return; }
+
+    const lembretes = await prisma.reminder.findMany({
+      where: { userId: user.id, sent: false, confirmed: false }
+    });
+    const encontrados = lembretes.filter(r => r.message.toLowerCase().includes(titulo));
+
+    if (!encontrados.length) {
+      await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕`);
+      return;
+    }
+
+    await prisma.reminder.deleteMany({ where: { id: { in: encontrados.map(r => r.id) } } });
+    console.log(`[${phone}] ${encontrados.length} lembrete(s) deletado(s)`);
+  } catch(e) { console.error('[deletarLembrete]', e.message); }
 }
 
 
