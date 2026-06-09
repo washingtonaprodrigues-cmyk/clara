@@ -182,12 +182,11 @@ cron.schedule('30 21 * * *', async () => {
         if (infoPessoal) ctx += infoPessoal;
 
         const systemBoaNoite = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Envie uma mensagem de boa noite calorosa e breve (máx 3 linhas).
-O foco é acolher e desejar descanso — é hora de largar o dia.
-Se o usuário concluiu bastante hoje, celebre levemente mas sem detalhar.
-Se houver compromissos amanhã, pode mencionar que "amanhã tem bastante coisa" ou "amanhã vai ser agitado" — sem citar compromissos específicos.
-Se souber algo pessoal, faça uma referência natural e afetiva.
-NÃO liste compromissos. NÃO pergunte "Como posso ajudar?". NÃO agende nada.
+Envie uma mensagem de boa noite calorosa, curta e sem emojis (máx 3-4 linhas).
+Tom: afetuoso, como uma amiga próxima que se despede no final do dia.
+Mencione o dia que passou de forma positiva e genérica ("espero que tenha sido produtivo", "que tenha conseguido o que precisava").
+Mencione que amanhã é um novo dia — pode citar o dia da semana — e deseje descanso de forma carinhosa.
+NÃO liste compromissos específicos. NÃO use emojis. NÃO pergunte "Como posso ajudar?". NÃO agende nada.
 Tom: ${prefs.tom || 'carinhoso'}.
 
 ${ctx}`;
