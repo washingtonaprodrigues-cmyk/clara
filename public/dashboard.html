@@ -679,13 +679,13 @@ async function delRem(id){
 async function editarTituloLista(listaId){
   const lista=allListas.find(l=>l.id===listaId);
   const nomeAtual=lista?lista.name:'';
-  const novo = prompt('Novo nome da lista:', nomeAtual);
-  if(!novo || novo.trim() === atual) return;
+  const novo=prompt('Novo nome da lista:',nomeAtual);
+  if(!novo||novo.trim()===nomeAtual)return;
   try{
-    const r = await fetch(`/forms/lista-titulo/${listaId}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({nome:novo.trim()})});
-    if(r.ok){ el.textContent=novo.trim(); showToast('Nome atualizado ✅'); await renderListas(); }
+    const r=await fetch(`/forms/lista-titulo/${listaId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:novo.trim()})});
+    if(r.ok){if(lista)lista.name=novo.trim();showToast('Nome atualizado ✅');await renderListas();}
     else showToast('Erro ao atualizar ⚠️');
-  }catch{ showToast('Erro ⚠️'); }
+  }catch{showToast('Erro ⚠️');}
 }
 
 // ── Editar item da lista ──
