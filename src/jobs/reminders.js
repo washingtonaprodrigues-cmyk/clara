@@ -593,6 +593,27 @@ Exemplos: "Washington, chegou a hora de cobrar o Fábio! Vai lá 💪"
       }
 
       await sendMessage(grupo.phone, msg);
+
+      // Push notification para o dashboard (web/Windows)
+      try {
+        const pushUser = await prisma.user.findFirst({ where: { phone: grupo.phone } });
+        if (pushUser) {
+          const subs = await prisma.pushSubscription.findMany({ where: { userId: pushUser.id } });
+          if (subs.length > 0) {
+            const webpush = require('web-push');
+            const titulo = grupo.reminders.length === 1 ? grupo.reminders[0].message : `${grupo.reminders.length} lembretes agora`;
+            const payload = JSON.stringify({ title: '🔔 Clara', body: titulo, icon: '/icons/icon-192.png' });
+            for (const sub of subs) {
+              try {
+                await webpush.sendNotification(JSON.parse(sub.subscription), payload);
+              } catch(e) {
+                if (e.statusCode === 410) await prisma.pushSubscription.delete({ where: { id: sub.id } });
+              }
+            }
+          }
+        }
+      } catch(pushErr) { console.error('[Push] Erro:', pushErr.message); }
+
       await prisma.reminder.updateMany({
         where: { id: { in: grupo.reminders.map(r => r.id) } },
         data: { sent: true }
