@@ -442,7 +442,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
           { role: 'user', content: message }
         ],
         temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-        max_tokens: isCurta ? 80 : 600,
+        max_tokens: isCurta ? 80 : 1200,
       }),
       timeoutPromise
     ]);
