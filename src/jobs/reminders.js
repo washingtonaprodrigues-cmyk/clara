@@ -68,6 +68,17 @@ cron.schedule('5 7 * * *', async () => {
     for (const user of users) {
       try {
         if (await jaEnviouHoje(user.id, 'bom_dia_enviado')) continue;
+
+        // Lock extra: verificar se enviou nos últimos 60 minutos (evita duplicata por restart)
+        const ultimoBomDia = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'bom_dia_enviado' },
+          orderBy: { createdAt: 'desc' }
+        });
+        if (ultimoBomDia) {
+          const diff = Date.now() - new Date(ultimoBomDia.createdAt).getTime();
+          if (diff < 60 * 60 * 1000) { console.log(`[Bom dia] já enviado há ${Math.round(diff/60000)}min para ${user.phone}`); continue; }
+        }
+
         await marcarEnviadoHoje(user.id, 'bom_dia_enviado');
 
         const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
@@ -105,11 +116,21 @@ cron.schedule('5 7 * * *', async () => {
         if (infoPessoal) ctx += infoPessoal;
 
         const systemBomDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Envie uma mensagem de bom dia personalizada, calorosa e breve (máx 5 linhas).
-Use o contexto abaixo para torná-la relevante. Mencione compromissos do dia se houver.
-Se souber algo pessoal do usuário (família, trabalho, hábitos), faça uma referência natural.
-NÃO liste os lembretes em formato de lista — mencione de forma conversacional.
-NÃO agende nada. NÃO termine com "Como posso ajudar?".
+Envie uma mensagem de bom dia curta, organizada e calorosa. Siga este formato:
+
+Bom dia, [nome]! ☀️
+
+[Se houver compromissos hoje: mencione o primeiro horário/tarefa do dia e diga se o restante da manhã/dia também está movimentado. Uma ou duas frases no máximo.]
+[Se não houver compromissos: diga que o dia está livre e deseje um bom dia tranquilo.]
+
+[Frase de encerramento calorosa e breve — tipo "Tenha um excelente dia, qualquer coisa estarei por aqui." Sem perguntas, sem emojis extras.]
+
+REGRAS:
+- Máximo 4 linhas no total
+- NÃO liste todos os compromissos
+- NÃO use mais de 1 emoji (o ☀️ do bom dia)
+- NÃO termine com "Como posso ajudar?"
+- NÃO agende nada
 Tom: ${prefs.tom || 'carinhoso'}.
 
 ${ctx}`;
@@ -148,6 +169,16 @@ cron.schedule('30 21 * * *', async () => {
     for (const user of users) {
       try {
         if (await jaEnviouHoje(user.id, 'boa_noite_enviado')) continue;
+
+        const ultimaBoaNoite = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'boa_noite_enviado' },
+          orderBy: { createdAt: 'desc' }
+        });
+        if (ultimaBoaNoite) {
+          const diff = Date.now() - new Date(ultimaBoaNoite.createdAt).getTime();
+          if (diff < 60 * 60 * 1000) { console.log(`[Boa noite] já enviado há ${Math.round(diff/60000)}min para ${user.phone}`); continue; }
+        }
+
         await marcarEnviadoHoje(user.id, 'boa_noite_enviado');
 
         const inicioAmanha = new Date(`${amanhaStr}T00:00:00-03:00`);
