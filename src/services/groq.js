@@ -44,7 +44,22 @@ TIPOS:
   {"tipo":"anotacao","titulo":"resumo","conteudo":"texto completo"}
   
 - tarefa: compromisso COM horário/data
-  {"tipo":"tarefa","titulo":"desc","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null"}
+  {"tipo":"tarefa","titulo":"desc","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null","antecedencia":30,"recorrente":false,"frequencia":"diario/semanal/mensal ou null"}
+  
+  REGRAS PARA DATA/HORA:
+  - "daqui X horas/minutos" → calcule baseado em ${hoje} e hora atual
+  - "na hora do almoço" → 12:00, "de manhã cedo" → 07:00, "à noite" → 20:00
+  - "semana que vem segunda" → calcule a data correta
+  - "todo dia às X" → recorrente:true, frequencia:"diario"
+  - "toda semana" → recorrente:true, frequencia:"semanal"
+  - "me lembra X minutos antes" → antecedencia:X (em minutos)
+  - "me lembra 2 vezes" → crie dois lembretes: antecedencia:60 e antecedencia:0
+
+- editar_lembrete: usuário quer mudar horário/data de um lembrete existente
+  {"tipo":"editar_lembrete","titulo":"parte do título para identificar","nova_hora":"HH:MM ou null","nova_data":"YYYY-MM-DD ou null"}
+
+- deletar_lembrete: usuário quer cancelar/apagar um lembrete
+  {"tipo":"deletar_lembrete","titulo":"parte do título para identificar"}
   
 - gasto: gastou dinheiro
   {"tipo":"gasto","valor":0.0,"categoria":"mercado/restaurante/saude/transporte/lazer/outro","descricao":"desc"}
@@ -113,6 +128,13 @@ EXEMPLOS PONTO:
 "remédio em jejum esqueci" → {"tipo":"busca","query":"esqueci tomar remédio em jejum o que fazer"}
 "anote que o código é 123" → {"tipo":"anotacao","titulo":"código","conteudo":"o código é 123"}
 "me lembra às 19h de buscar minha sogra" → {"tipo":"tarefa","titulo":"buscar sogra","data":null,"hora":"19:00"}
+"me lembra daqui 2 horas de ligar pro cliente" → {"tipo":"tarefa","titulo":"ligar pro cliente","data":null,"hora":"<hora atual + 2h>","antecedencia":0,"recorrente":false}
+"me lembra todo dia às 8h de tomar remédio" → {"tipo":"tarefa","titulo":"tomar remédio","data":null,"hora":"08:00","recorrente":true,"frequencia":"diario"}
+"me lembra 30 minutos antes da reunião das 15h" → {"tipo":"tarefa","titulo":"reunião","data":null,"hora":"14:30","antecedencia":0,"recorrente":false}
+"me lembra 2 vezes sobre a reunião das 15h" → {"tipo":"tarefa","titulo":"reunião","data":null,"hora":"15:00","antecedencia":60,"recorrente":false}
+"cancela o lembrete da Serigraf" → {"tipo":"deletar_lembrete","titulo":"Serigraf"}
+"muda o lembrete da reunião pra às 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
+"reagenda o compromisso de amanhã pra sexta" → {"tipo":"editar_lembrete","titulo":"compromisso","nova_hora":null,"nova_data":"<data da próxima sexta>"}
 "gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
 "tomo Losartana todo dia às 8h" → {"tipo":"medicamento","nome":"Losartana","quantidade":0,"frequencia":1,"horarios":["08:00"]}
 "Vitamina C às 9h e 21h" → {"tipo":"medicamento","nome":"Vitamina C","quantidade":0,"frequencia":2,"horarios":["09:00","21:00"]}
