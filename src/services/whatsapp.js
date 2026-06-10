@@ -7,12 +7,12 @@ const headers = {
   'Content-Type': 'application/json',
 };
 
-async function sendMessage(phone, message) {
+async function sendMessage(phone, message, delay = 2000) {
   try {
     console.log(`📤 Enviando para ${phone}: ${String(message).slice(0, 60)}`);
     const response = await axios.post(
       `${BASE_URL}/send/text`,
-      { number: phone, text: message },
+      { number: phone, text: message, delay },
       { timeout: 15000, headers }
     );
     console.log(`✅ Enviado OK para ${phone}:`, response.data?.status || 'sem status');
