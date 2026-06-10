@@ -37,7 +37,7 @@ const BOAS_VINDAS_MODO = {
 
 // Tipos de lista que precisam ser executados antes de gerar a resposta
 const LISTA_TIPOS = ['lista_compras', 'lista_buscar', 'lista_marcar', 'lista_adicionar'];
-const CONTATO_TIPOS = ['salvar_contato', 'deletar_contato', 'enviar_mensagem', 'enviar_mensagem_agendada', 'listar_contatos'];
+const CONTATO_TIPOS = ['salvar_contato', 'deletar_contato', 'enviar_mensagem', 'enviar_mensagem_agendada'];
 
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
@@ -256,6 +256,18 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       } else {
         contexto += `\n\n[AGENDA]\nNenhum lembrete para hoje ou amanhã.`;
       }
+
+      // Injetar contatos quando usuário menciona envio ou contatos
+      try {
+        const textLower = (text||'').toLowerCase();
+        if (/envi|mand|recado|contato|mostr|lista/.test(textLower)) {
+          const contatos = await getContacts(user.id);
+          if (contatos.length > 0) {
+            const listaCtx = contatos.map((c,i) => `${i+1}. ${c.name}${c.relation?` (${c.relation})`:''} — ${c.phone}`).join('\n');
+            contexto += `\n\n[CONTATOS SALVOS]\n${listaCtx}`;
+          }
+        }
+      } catch(e) {}
 
       if (meds.length > 0) {
         const fmtMed = (m) => {
