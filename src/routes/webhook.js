@@ -261,9 +261,9 @@ ${text}`
       return res.json({ ok: true });
     }
 
-    // Áudio
+    // Áudio — transcreve via Groq Whisper
     if (body.message?.mediaType === 'audio' || body.message?.messageType === 'audioMessage') {
-      sendMessage(phone, 'Por enquanto não consigo ouvir áudios, mas pode digitar que respondo na hora! 😊').catch(console.error);
+      transcribeAndProcess(phone, body).catch(console.error);
       return res.json({ ok: true });
     }
 
@@ -284,5 +284,58 @@ ${text}`
 
 router.post('/receive', (req, res) => res.json({ ok: true }));
 router.get('/test', (req, res) => res.json({ status: 'Clara funcionando ✅' }));
+
+// ── Transcrição de áudio via Groq Whisper ──
+async function transcribeAndProcess(phone, body) {
+  try {
+    const messageId = body.message?.id || body.message?.messageid;
+    if (!messageId) {
+      await sendMessage(phone, 'Não consegui processar o áudio 😕 Pode digitar?');
+      return;
+    }
+
+    // Baixar o áudio da UazAPI
+    const UAZAPI_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
+    const UAZAPI_TOKEN = process.env.UAZAPI_TOKEN;
+    
+    const dlRes = await fetch(`${UAZAPI_URL}/message/download/${messageId}`, {
+      headers: { token: UAZAPI_TOKEN }
+    });
+
+    if (!dlRes.ok) {
+      await sendMessage(phone, 'Não consegui baixar o áudio 😕 Pode digitar?');
+      return;
+    }
+
+    const audioBuffer = Buffer.from(await dlRes.arrayBuffer());
+    
+    // Transcrever via Groq Whisper
+    const Groq = require('groq-sdk');
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const { toFile } = require('groq-sdk');
+
+    const transcription = await groq.audio.transcriptions.create({
+      file: await toFile(audioBuffer, 'audio.ogg', { type: 'audio/ogg' }),
+      model: 'whisper-large-v3-turbo',
+      language: 'pt',
+    });
+
+    const texto = transcription.text?.trim();
+    if (!texto) {
+      await sendMessage(phone, 'Não entendi o áudio 😕 Pode repetir digitando?');
+      return;
+    }
+
+    console.log(`[Áudio] ${phone} transcrito: "${texto.slice(0, 80)}"`);
+
+    // Processar como mensagem de texto normal
+    const { handleMessage } = require('../services/handler');
+    await handleMessage(phone, texto);
+
+  } catch(e) {
+    console.error('[Áudio] Erro:', e.message);
+    await sendMessage(phone, 'Tive um problema com o áudio 😕 Pode digitar?');
+  }
+}
 
 module.exports = router;
