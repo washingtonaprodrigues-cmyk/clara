@@ -70,16 +70,12 @@ cron.schedule('5 7 * * *', async () => {
         if (await jaEnviouHoje(user.id, 'bom_dia_enviado')) continue;
 
         // Lock extra: verificar se enviou nos últimos 60 minutos (evita duplicata por restart)
-        const ultimoBomDia = await prisma.memory.findFirst({
-          where: { userId: user.id, type: 'bom_dia_enviado' },
-          orderBy: { createdAt: 'desc' }
+        // Lock por usuário — evita duplicata em restarts do Railway
+        const lockDia = await prisma.memory.findFirst({
+          where: { userId: user.id, type: `bom_dia_${hoje}` }
         });
-        if (ultimoBomDia) {
-          const diff = Date.now() - new Date(ultimoBomDia.createdAt).getTime();
-          if (diff < 60 * 60 * 1000) { console.log(`[Bom dia] já enviado há ${Math.round(diff/60000)}min para ${user.phone}`); continue; }
-        }
-
-        await marcarEnviadoHoje(user.id, 'bom_dia_enviado');
+        if (lockDia) { console.log(`[Bom dia] já enviado hoje para ${user.phone}`); continue; }
+        await prisma.memory.create({ data: { userId: user.id, type: `bom_dia_${hoje}`, content: '1' } }).catch(() => {});
 
         const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
         const fimHoje = new Date(`${hoje}T23:59:59-03:00`);
@@ -171,16 +167,12 @@ cron.schedule('30 21 * * *', async () => {
       try {
         if (await jaEnviouHoje(user.id, 'boa_noite_enviado')) continue;
 
-        const ultimaBoaNoite = await prisma.memory.findFirst({
-          where: { userId: user.id, type: 'boa_noite_enviado' },
-          orderBy: { createdAt: 'desc' }
+        // Lock por usuário — evita duplicata em restarts do Railway
+        const lockNoite = await prisma.memory.findFirst({
+          where: { userId: user.id, type: `boa_noite_${hoje}` }
         });
-        if (ultimaBoaNoite) {
-          const diff = Date.now() - new Date(ultimaBoaNoite.createdAt).getTime();
-          if (diff < 60 * 60 * 1000) { console.log(`[Boa noite] já enviado há ${Math.round(diff/60000)}min para ${user.phone}`); continue; }
-        }
-
-        await marcarEnviadoHoje(user.id, 'boa_noite_enviado');
+        if (lockNoite) { console.log(`[Boa noite] já enviado hoje para ${user.phone}`); continue; }
+        await prisma.memory.create({ data: { userId: user.id, type: `boa_noite_${hoje}`, content: '1' } }).catch(() => {});
 
         const inicioAmanha = new Date(`${amanhaStr}T00:00:00-03:00`);
         const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
