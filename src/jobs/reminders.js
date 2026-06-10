@@ -702,7 +702,7 @@ Não precisa me responder, tá? Dúvidas, é só chamar no WhatsApp do ${nomeRem
         });
 
         // Notifica o usuário que a mensagem foi enviada
-        const horaBRT = msg.scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+        const horaBRT = new Date(msg.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
         await sendMessage(msg.fromPhone, `✅ Mensagem enviada para *${msg.toName || msg.toPhone}* às ${horaBRT}! 📤`);
 
         console.log(`[Msg Agendada] Enviada: ${msg.toName || msg.toPhone} (${msg.toPhone})`);
