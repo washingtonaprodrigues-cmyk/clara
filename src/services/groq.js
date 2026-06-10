@@ -86,9 +86,6 @@ TIPOS:
 - lista_adicionar: adicionar item a lista existente
   {"tipo":"lista_adicionar","item":"nome do item"}
 
-- listar_contatos: usuário quer ver seus contatos salvos
-  {"tipo":"listar_contatos"}
-
 - salvar_contato: usuário informa número de um contato
   {"tipo":"salvar_contato","nome":"nome do contato","phone":"número","relation":"esposa/amigo/chefe/filho/etc ou null","notes":"info extra ou null"}
 
@@ -99,18 +96,16 @@ TIPOS:
   {"tipo":"deletar_remedio","nome":"nome do remédio"}
 
 - enviar_mensagem: usuário quer enviar mensagem AGORA para um contato
-  {"tipo":"enviar_mensagem","destinatario":"nome do contato ou null","mensagem":"texto a enviar","phone":"número se informado ou null","contato_numero":null}
+  {"tipo":"enviar_mensagem","destinatario":"nome ou apelido do contato","mensagem":"texto a enviar","phone":"número se informado ou null"}
   IMPORTANTE: a mensagem deve ser escrita como SE FOSSE O PRÓPRIO USUÁRIO enviando — direta, no tom certo.
-  Se o usuário disser "envia pro contato 1", "manda pro 2", "pro número 3 da lista" → use contato_numero:1 (ou 2, 3...) e destinatario:null
-  NUNCA coloque o número como destinatario — use contato_numero para índices da lista
+  Use o nome/apelido exatamente como o usuário disse: "meu amor", "amor", "João", "minha mãe" etc.
   CRÍTICO: se o destinatario for um número ("1", "2", "3" etc) ou "contato 1", "contato 2" etc, SEMPRE use contato_numero e deixe destinatario null — direta, no tom certo, sem "eu vou" ou "posso". Ex: "Deu certo a planilha?" não "Posso perguntar se deu certo a planilha?"
 
 - enviar_mensagem_agendada: usuário quer enviar mensagem em horário/data futura
-  {"tipo":"enviar_mensagem_agendada","destinatario":"nome do contato ou null","mensagem":"texto a enviar","phone":"número se informado ou null","quando":"descrição do horário","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null","contato_numero":null}
+  {"tipo":"enviar_mensagem_agendada","destinatario":"nome ou apelido do contato","mensagem":"texto a enviar","phone":"número se informado ou null","quando":"descrição do horário","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null"}
   IMPORTANTE: use este tipo quando houver qualquer referência de tempo futuro.
   A mensagem deve ser direta, como se o usuário estivesse enviando pessoalmente.
   Para hora: "10 da manhã" = "10:00", "3 da tarde" = "15:00", "8 da noite" = "20:00" — SEMPRE em horário de Brasília (BRT).
-  Se o usuário disser "pro contato 1" → contato_numero:1, destinatario:null
 
 - concluir_lembrete: usuário diz que concluiu/fez/realizou um compromisso ou lembrete específico
   {"tipo":"concluir_lembrete","titulo":"descrição do que foi concluído"}
