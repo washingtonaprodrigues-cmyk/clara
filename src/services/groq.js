@@ -37,8 +37,9 @@ TIPOS:
 - cidade: quando o usuário informa sua cidade
   {"tipo":"cidade","cidade":"nome da cidade e estado"}
 
-- busca: clima, farmácia, restaurante, loja, telefone, informações locais
+- busca: qualquer pergunta que precise de informação atual, notícias, clima, preços, lugares, pesquisa na internet
   {"tipo":"busca","query":"texto da busca"}
+  USE SEMPRE que o usuário perguntar sobre: notícias, o que aconteceu, pesquisa, informações atuais, preços, clima, lugares, "consegue pesquisar?", "busca pra mim", qualquer coisa que exija dados da internet
   
 - anotacao: guardar informação SEM horário
   {"tipo":"anotacao","titulo":"resumo","conteudo":"texto completo"}
@@ -85,6 +86,9 @@ TIPOS:
 - lista_adicionar: adicionar item a lista existente
   {"tipo":"lista_adicionar","item":"nome do item"}
 
+- listar_contatos: usuário quer ver seus contatos salvos
+  {"tipo":"listar_contatos"}
+
 - salvar_contato: usuário informa número de um contato
   {"tipo":"salvar_contato","nome":"nome do contato","phone":"número","relation":"esposa/amigo/chefe/filho/etc ou null","notes":"info extra ou null"}
 
@@ -95,8 +99,9 @@ TIPOS:
   {"tipo":"deletar_remedio","nome":"nome do remédio"}
 
 - enviar_mensagem: usuário quer enviar mensagem AGORA para um contato
-  {"tipo":"enviar_mensagem","destinatario":"nome do contato","mensagem":"texto a enviar","phone":"número se informado ou null"}
-  IMPORTANTE: a mensagem deve ser escrita como SE FOSSE O PRÓPRIO USUÁRIO enviando — direta, no tom certo, sem "eu vou" ou "posso". Ex: "Deu certo a planilha?" não "Posso perguntar se deu certo a planilha?"
+  {"tipo":"enviar_mensagem","destinatario":"nome do contato ou null","mensagem":"texto a enviar","phone":"número se informado ou null","contato_numero":null}
+  IMPORTANTE: a mensagem deve ser escrita como SE FOSSE O PRÓPRIO USUÁRIO enviando
+  Se o usuário disser "envia pro contato 2" ou "lembra o contato 1", use contato_numero com o índice informado — direta, no tom certo, sem "eu vou" ou "posso". Ex: "Deu certo a planilha?" não "Posso perguntar se deu certo a planilha?"
 
 - enviar_mensagem_agendada: usuário quer enviar mensagem em horário/data futura
   {"tipo":"enviar_mensagem_agendada","destinatario":"nome do contato","mensagem":"texto a enviar","phone":"número se informado ou null","quando":"descrição do horário ex: amanhã às 10h, sexta às 14h, hoje às 19h","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null"}
@@ -165,6 +170,9 @@ EXEMPLOS PONTO:
 "adiciona macarrão na lista" → {"tipo":"lista_adicionar","item":"Macarrão"}
 "coloca detergente também" → {"tipo":"lista_adicionar","item":"Detergente"}
 "meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
+"mostra meus contatos" → {"tipo":"listar_contatos"}
+"quais contatos tenho?" → {"tipo":"listar_contatos"}
+"lista meus contatos" → {"tipo":"listar_contatos"}
 "o número da minha esposa é 43999998888" → {"tipo":"salvar_contato","nome":"esposa","phone":"43999998888","relation":"esposa","notes":null}
 "apaga o contato do João" → {"tipo":"deletar_contato","nome":"João"}
 "exclui o remédio Nebivolol" → {"tipo":"deletar_remedio","nome":"Nebivolol"}
