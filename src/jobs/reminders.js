@@ -15,10 +15,11 @@ function dateBRT(d = nowBRT()) {
 function random(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
 const finais = [
-  '💜 Estou por aqui.',
   '😊 Me avisa quando concluir.',
-  '✨ Tudo certo por aí?',
-  '💜 Pode deixar comigo.',
+  '💜 Irei te lembrar!',
+  '✨ Estou de olho pra você!',
+  '🔔 Não deixo você esquecer.',
+  '😊 Conta comigo.',
 ];
 
 // ─────────────────────────────────────────────
