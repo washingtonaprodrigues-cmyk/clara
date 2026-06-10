@@ -37,7 +37,7 @@ const BOAS_VINDAS_MODO = {
 
 // Tipos de lista que precisam ser executados antes de gerar a resposta
 const LISTA_TIPOS = ['lista_compras', 'lista_buscar', 'lista_marcar', 'lista_adicionar'];
-const CONTATO_TIPOS = ['salvar_contato', 'deletar_contato', 'enviar_mensagem', 'enviar_mensagem_agendada'];
+const CONTATO_TIPOS = ['salvar_contato', 'deletar_contato', 'enviar_mensagem', 'enviar_mensagem_agendada', 'listar_contatos'];
 
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
@@ -826,6 +826,26 @@ async function deletarLembretePorTitulo(user, phone, classified) {
 // ── Trata ações de contato (salvar, deletar e enviar mensagem) ──
 async function handleContatoAction(user, phone, classified) {
   try {
+    // ── Listar contatos ──
+    if (classified.tipo === 'listar_contatos') {
+      const contatos = await getContacts(user.id);
+      if (!contatos.length) {
+        await sendMessage(phone, 'Você ainda não tem contatos salvos. Me diz o número de alguém: "o número do João é 43999998888" 😊');
+        return;
+      }
+      const lista = contatos.map((c, i) =>
+        `${i+1}. *${c.name}*${c.relation ? ` (${c.relation})` : ''} — ${c.phone}`
+      ).join('\n');
+      await sendMessage(phone, `📋 *Seus contatos:*\n\n${lista}\n\nPode dizer "envia mensagem pro contato 2" ou "lembra o contato 1 de tal coisa" 😊`);
+      // Salvar lista para uso posterior por número
+      await prisma.memory.upsert({
+        where: { userId_type: { userId: user.id, type: 'contatos_listados' } },
+        update: { content: JSON.stringify(contatos) },
+        create: { userId: user.id, type: 'contatos_listados', content: JSON.stringify(contatos) }
+      }).catch(() => {});
+      return;
+    }
+
     if (classified.tipo === 'deletar_contato') {
       const nome = classified.nome;
       if (!nome) {
@@ -963,6 +983,18 @@ async function handleContatoAction(user, phone, classified) {
     if (classified.tipo === 'enviar_mensagem') {
       let destinatarioPhone = classified.phone || null;
       let destinatarioNome = classified.destinatario || null;
+
+      // Suporte a contato por número da lista ("envia pro contato 2")
+      if (classified.contato_numero) {
+        try {
+          const mem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'contatos_listados' } });
+          if (mem) {
+            const lista = JSON.parse(mem.content);
+            const c = lista[classified.contato_numero - 1];
+            if (c) { destinatarioNome = c.name; destinatarioPhone = c.phone; }
+          }
+        } catch(e) {}
+      }
 
       if (!destinatarioPhone && destinatarioNome) {
         const encontrados = await findContactByName(user.id, destinatarioNome);
