@@ -45,7 +45,6 @@ async function getLembretePendente(userId, phone) {
 async function getRemedioRecente(userId) {
   const now = nowBRT();
   const pad = n => String(n).padStart(2, '0');
-  const hm = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
   const horarios = [];
   for (let d = -5; d <= 5; d++) {
     const t = new Date(now.getTime() + d * 60000);
@@ -69,19 +68,14 @@ function parseVCard(vcard) {
   let telefone = null;
 
   for (const line of lines) {
-    // Nome: FN:João Silva
     if (line.startsWith('FN:')) {
       nome = line.replace('FN:', '').trim();
     }
-    // Telefone: TEL;type=CELL;waid=5511999998888:+55 11 99999-8888
-    // ou TEL:+5511999998888
     if (line.startsWith('TEL')) {
-      // Tenta extrair do waid primeiro (mais confiável)
       const waidMatch = line.match(/waid=(\d+)/);
       if (waidMatch) {
         telefone = waidMatch[1];
       } else {
-        // Extrai só números do valor
         const val = line.split(':').slice(1).join(':');
         telefone = val.replace(/\D/g, '');
       }
@@ -89,10 +83,7 @@ function parseVCard(vcard) {
   }
 
   if (!nome || !telefone) return null;
-
-  // Normaliza telefone
   if (!telefone.startsWith('55') && telefone.length <= 11) telefone = '55' + telefone;
-
   return { nome, telefone };
 }
 
@@ -176,24 +167,21 @@ router.post('/', async (req, res) => {
 
     const text = body.message?.text || body.message?.content?.text || '';
 
-    // Extrai mensagem citada (quando usuário responde/cita uma mensagem)
+    // Extrai mensagem citada
     const quotedText = body.message?.quotedMsg?.body
       || body.message?.quotedMsg?.text
       || body.message?.contextInfo?.quotedMessage?.conversation
       || body.message?.content?.contextInfo?.quotedMessage?.conversation
       || '';
 
-    // Se tem mensagem citada, injeta no texto para a IA ter contexto
     const textComContexto = quotedText && text
-      ? `[Mensagem citada: "${quotedText.slice(0, 200)}"]
-${text}`
+      ? `[Mensagem citada: "${quotedText.slice(0, 200)}"]\n${text}`
       : text;
 
     console.log(`📨 WEBHOOK: ${phone} — "${text.slice(0, 80)}"${quotedText ? ` [citou: "${quotedText.slice(0, 40)}"]` : ''}`);
 
     if (text) {
       const handled = await handleSimpleResponse(phone, text);
-      // Se não tratado pela resposta simples, usa o texto com contexto
       if (!handled) {
         handleMessage(phone, textComContexto).catch(console.error);
       }
@@ -211,7 +199,6 @@ ${text}`
       try {
         const user = await memory.getOrCreateUser(phone);
 
-        // Pega vCards — pode vir como array ou objeto único
         const vcards = [];
         if (body.message?.contacts) {
           for (const c of body.message.contacts) {
@@ -223,9 +210,7 @@ ${text}`
           vcards.push(body.message.content.vcard);
         }
 
-        if (vcards.length === 0) {
-          return res.json({ ok: true });
-        }
+        if (vcards.length === 0) return res.json({ ok: true });
 
         const salvos = [];
         const erros = [];
@@ -233,12 +218,8 @@ ${text}`
         for (const vcard of vcards) {
           const contato = parseVCard(vcard);
           if (!contato) { erros.push('vCard inválido'); continue; }
-
           try {
-            await memory.saveContact(user.id, {
-              nome: contato.nome,
-              phone: contato.telefone,
-            });
+            await memory.saveContact(user.id, { nome: contato.nome, phone: contato.telefone });
             salvos.push(contato.nome);
             console.log(`[Contato vCard] Salvo: ${contato.nome} → ${contato.telefone}`);
           } catch (e) {
@@ -247,7 +228,6 @@ ${text}`
           }
         }
 
-        // Resposta para o usuário
         if (salvos.length === 1) {
           await sendMessage(phone, `✅ Contato salvo! *${salvos[0]}* está na minha lista agora 📱\n\nSempre que quiser enviar uma mensagem, é só me pedir!`);
         } else if (salvos.length > 1) {
@@ -261,19 +241,23 @@ ${text}`
       return res.json({ ok: true });
     }
 
-    // Áudio — transcreve via Groq Whisper
+    // ── ÁUDIO — transcreve via Groq Whisper ──
     const audioMsgType = body.message?.messageType || body.message?.mediaType || body.message?.type || '';
-    const isAudio = ['audioMessage','audio','pttMessage','AudioMessage','media'].includes(audioMsgType) || body.message?.audio || body.message?.ptt || (body.message?.mimeType||'').includes('audio') || (body.message?.content?.mimeType||'').includes('audio');
-    
+    const isAudio = ['audioMessage', 'audio', 'pttMessage', 'AudioMessage', 'media'].includes(audioMsgType)
+      || body.message?.audio
+      || body.message?.ptt
+      || (body.message?.mimeType || '').includes('audio')
+      || (body.message?.content?.mimeType || '').includes('audio');
+
     if (isAudio) {
       console.log('[Áudio] Detectado. messageType:', audioMsgType, 'mimeType:', body.message?.mimeType || body.message?.content?.mimeType);
       transcribeAndProcess(phone, body).catch(console.error);
       return res.json({ ok: true });
     }
-    
-    // Log para tipos não reconhecidos (debug)
+
+    // Log para tipos não reconhecidos
     if (msgType && msgType !== 'extendedTextMessage' && msgType !== 'conversation' && !text) {
-      console.log('[Webhook] Tipo não tratado:', msgType, 'keys:', Object.keys(body.message || {}).slice(0,8).join(','));
+      console.log('[Webhook] Tipo não tratado:', msgType, 'keys:', Object.keys(body.message || {}).slice(0, 8).join(','));
     }
 
     // Imagem, vídeo, documento
@@ -297,34 +281,65 @@ router.get('/test', (req, res) => res.json({ status: 'Clara funcionando ✅' }))
 // ── Transcrição de áudio via Groq Whisper ──
 async function transcribeAndProcess(phone, body) {
   try {
-    const messageId = body.message?.id || body.message?.messageid;
+    // Pega o ID da mensagem — tenta todos os campos possíveis
+    const messageId = body.message?.id
+      || body.message?.messageid
+      || body.message?.messageId
+      || body.message?.key?.id;
+
     if (!messageId) {
+      console.log('[Áudio] ID não encontrado. Keys disponíveis:', Object.keys(body.message || {}).join(', '));
       await sendMessage(phone, 'Não consegui processar o áudio 😕 Pode digitar?');
       return;
     }
 
-    // Baixar o áudio da UazAPI
+    console.log('[Áudio] Baixando messageId:', messageId);
+
     const UAZAPI_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
     const UAZAPI_TOKEN = process.env.UAZAPI_TOKEN;
-    
-    const dlRes = await fetch(`${UAZAPI_URL}/message/download/${messageId}`, {
-      headers: { token: UAZAPI_TOKEN }
+
+    // Endpoint correto: POST /message/download com id no body
+    const dlRes = await fetch(`${UAZAPI_URL}/message/download`, {
+      method: 'POST',
+      headers: {
+        'token': UAZAPI_TOKEN,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        id: messageId,
+        return_base64: true,
+        return_link: false,
+        generate_mp3: false, // OGG — compatível com Groq Whisper
+      }),
     });
 
     if (!dlRes.ok) {
+      const errText = await dlRes.text().catch(() => '');
+      console.error('[Áudio] Falha no download:', dlRes.status, errText.slice(0, 200));
       await sendMessage(phone, 'Não consegui baixar o áudio 😕 Pode digitar?');
       return;
     }
 
-    const audioBuffer = Buffer.from(await dlRes.arrayBuffer());
-    
-    // Transcrever via Groq Whisper
+    const dlData = await dlRes.json();
+    console.log('[Áudio] Download OK. mimetype:', dlData.mimetype, 'base64 length:', dlData.base64Data?.length || 0);
+
+    if (!dlData.base64Data) {
+      console.error('[Áudio] base64Data vazio. Resposta:', JSON.stringify(dlData).slice(0, 200));
+      await sendMessage(phone, 'Não consegui ler o áudio 😕 Pode digitar?');
+      return;
+    }
+
+    // Converte base64 para Buffer e transcreve via Groq Whisper
+    const audioBuffer = Buffer.from(dlData.base64Data, 'base64');
+    const mimeType = dlData.mimetype || 'audio/ogg';
+    const ext = mimeType.includes('mp3') ? 'mp3' : 'ogg';
+
     const Groq = require('groq-sdk');
-    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
     const { toFile } = require('groq-sdk');
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
     const transcription = await groq.audio.transcriptions.create({
-      file: await toFile(audioBuffer, 'audio.ogg', { type: 'audio/ogg' }),
+      file: await toFile(audioBuffer, `audio.${ext}`, { type: mimeType }),
       model: 'whisper-large-v3-turbo',
       language: 'pt',
     });
@@ -336,12 +351,9 @@ async function transcribeAndProcess(phone, body) {
     }
 
     console.log(`[Áudio] ${phone} transcrito: "${texto.slice(0, 80)}"`);
-
-    // Processar como mensagem de texto normal
-    const { handleMessage } = require('../services/handler');
     await handleMessage(phone, texto);
 
-  } catch(e) {
+  } catch (e) {
     console.error('[Áudio] Erro:', e.message);
     await sendMessage(phone, 'Tive um problema com o áudio 😕 Pode digitar?');
   }
