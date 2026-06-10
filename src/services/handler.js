@@ -1,4 +1,4 @@
-const { classify, extractPersonalInfo, searchWeb, freeResponse, generateMemorySummary } = require('./groq');
+const { classify, extractPersonalInfo, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary } = require('./groq');
 const { sendMessage, sendButtons, sendReminderWithButtons } = require('./whatsapp');
 const memory = require('./memory');
 const { PrismaClient } = require('@prisma/client');
@@ -303,6 +303,9 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     await memory.saveConversationMessage(user.id, 'user', text);
     await memory.saveConversationMessage(user.id, 'assistant', resp);
     await sendMessage(phone, resp);
+
+    // Atualizar resumo de relacionamento em background a cada 5 mensagens
+    updateRelationshipSummary(user.id, history, resp).catch(() => {});
   } catch (e) {
     console.error(`[${phone}] Erro responderLivre:`, e.message);
     await sendMessage(phone, 'Ops, tive um probleminha. Pode repetir?');
@@ -1176,5 +1179,35 @@ async function extractAndSavePersonalInfo(userId, text) {
     console.log(`[memória pessoal] salvo: ${chave} = "${valor}" (${categoria})`);
   }
 }
+
+// ── Atualiza resumo de relacionamento em background ──
+async function updateRelationshipSummary(userId, history, lastReply) {
+  try {
+    // Só atualiza a cada ~5 mensagens para não gastar tokens
+    const count = await prisma.memory.count({ where: { userId, type: 'conversation_message' } });
+    if (count % 5 !== 0) return;
+
+    const current = await prisma.memory.findFirst({
+      where: { userId, type: 'relationship_summary' },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const msgs = [...history.slice(-10), { role: 'assistant', content: lastReply }];
+    const novoResumo = await generateRelationshipSummary(msgs, current?.content || '');
+
+    if (novoResumo) {
+      await prisma.memory.upsert({
+        where: { userId_type: { userId, type: 'relationship_summary' } },
+        update: { content: novoResumo },
+        create: { userId, type: 'relationship_summary', content: novoResumo }
+      }).catch(async () => {
+        // Se não tem unique constraint, delete e recria
+        await prisma.memory.deleteMany({ where: { userId, type: 'relationship_summary' } });
+        await prisma.memory.create({ data: { userId, type: 'relationship_summary', content: novoResumo } });
+      });
+    }
+  } catch(e) { /* silencioso */ }
+}
+
 
 module.exports = { handleMessage };
