@@ -495,6 +495,39 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
   }
 }
 
+// Gera um resumo do relacionamento/tom da conversa para persistir entre sessões
+async function generateRelationshipSummary(recentMessages, currentSummary) {
+  try {
+    const msgs = recentMessages.map(m => (m.role === 'user' ? 'Usuário' : 'Clara') + ': ' + m.content).join('\n');
+    
+    const completion = await groq.chat.completions.create({
+      model: MODEL_LEVE,
+      messages: [
+        {
+          role: 'system',
+          content: `Você analisa conversas e extrai o tom/relacionamento estabelecido entre o usuário e a assistente Clara.
+Retorne um parágrafo curto (2-3 linhas) descrevendo:
+- Tom da conversa (formal, brincalhão, íntimo, etc)
+- Apelidos ou formas de tratamento usados
+- Piadas ou referências recorrentes
+- Nível de intimidade estabelecido
+Seja específico e útil para a Clara manter continuidade.
+Exemplo: "Tom muito brincalhão e íntimo. Usuário usa 'kkk' frequentemente e gosta de zoação. Clara usa emoji 🙄 como marca registrada e o usuário adorou. Chamou Clara de 'tontona' com carinho. Relação de amizade próxima estabelecida."`
+        },
+        { role: 'user', content: `Conversa recente:
+${msgs}
+
+Resumo anterior: ${currentSummary || 'nenhum'}` }
+      ],
+      temperature: 0.3,
+      max_tokens: 150,
+    });
+    return completion.choices[0].message.content.trim();
+  } catch(e) {
+    return currentSummary || '';
+  }
+}
+
 async function generateMemorySummary(memories, question) {
   try {
     const memoriesText = memories
@@ -531,4 +564,5 @@ module.exports = {
   searchWeb: searchWebGroq,
   freeResponse,
   generateMemorySummary,
+  generateRelationshipSummary,
 };
