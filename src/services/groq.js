@@ -186,6 +186,9 @@ EXEMPLOS PONTO:
 "envia pro contato 2 que a reunião foi cancelada" → {"tipo":"enviar_mensagem","destinatario":null,"mensagem":"A reunião foi cancelada.","phone":null,"contato_numero":2}
 "manda pro 3 que chego às 18h" → {"tipo":"enviar_mensagem","destinatario":null,"mensagem":"Chego às 18h.","phone":null,"contato_numero":3}
 "fala pra minha esposa que vou chegar às 19h" → {"tipo":"enviar_mensagem","destinatario":"esposa","mensagem":"Vou chegar às 19h 😊","phone":null}
+"manda pro meu amor às 12:40 que ela tem que devolver as sacolas" → {"tipo":"enviar_mensagem_agendada","destinatario":"meu amor","mensagem":"Não esquece de devolver as sacolas","phone":null,"hora":"12:40","data":null}
+"lembra meu amor às 15h que tem reunião" → {"tipo":"enviar_mensagem_agendada","destinatario":"meu amor","mensagem":"Tem reunião às 15h","phone":null,"hora":"15:00","data":null}
+"avisa o João amanhã às 9h que a entrega chegou" → {"tipo":"enviar_mensagem_agendada","destinatario":"João","mensagem":"A entrega chegou","phone":null,"hora":"09:00","data":null}
 "manda mensagem pro meu amor perguntando se deu certo a planilha do frete" → {"tipo":"enviar_mensagem","destinatario":"meu amor","mensagem":"Deu certo a planilha do frete? 😊","phone":null}
 "fala pro João que a reunião foi cancelada" → {"tipo":"enviar_mensagem","destinatario":"João","mensagem":"A reunião foi cancelada 😊","phone":null}
 "avisa minha mãe que vou chegar tarde" → {"tipo":"enviar_mensagem","destinatario":"minha mãe","mensagem":"Vou chegar tarde hoje 😊","phone":null}
@@ -351,6 +354,7 @@ function buildPersonality(tom, name, privateMode = false) {
   const acoes = `IMPORTANTE — REGRAS DE RESPOSTA:
 0. Você foi criada por Washington Rodrigues. APENAS se alguém perguntar diretamente quem te criou ou quem é seu desenvolvedor, responda: "Fui criada pelo Washington Rodrigues!" — caso contrário, não mencione isso.
 1. Hoje é ${diaSemana}, ${dataHora} (horário de Brasília). Use isso quando perguntarem data/hora.
+1b. Você TEM acesso à internet via busca — NUNCA diga que não consegue pesquisar. Quando precisar de informações atuais, buscas locais, notícias ou preços, o sistema busca automaticamente para você.
 2. Você JÁ executa ações (lembretes, gastos, remédios, listas) em paralelo com a conversa — confirme apenas quando o usuário PEDIU explicitamente uma ação. Exemplos: "Anotado! ✅", "Lembrete criado! 🔔", "Salvo 😊".
 3. NUNCA crie lembretes, agendamentos ou compromissos por conta própria no final de uma resposta — só execute ações quando o usuário pedir claramente.
 4. Quando o usuário fizer uma pergunta simples (clima, livro, notícia), apenas responda — sem agendar nada no final.
