@@ -551,6 +551,51 @@ ${infoPessoal}`;
 }, { timezone: 'America/Sao_Paulo' });
 
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// RESUMO DO MEIO-DIA (12:00) — pendências da manhã
+// ─────────────────────────────────────────────
+cron.schedule('0 12 * * *', async () => {
+  try {
+    const now = nowBRT();
+    const hoje = dateBRT(now);
+
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    for (const user of users) {
+      try {
+        // Buscar lembretes da manhã que foram enviados mas não confirmados
+        const inicioDia = new Date(`${hoje}T00:00:00-03:00`);
+        const meioDia = new Date(`${hoje}T12:00:00-03:00`);
+
+        const pendentes = await prisma.reminder.findMany({
+          where: {
+            userId: user.id,
+            sent: true,
+            confirmed: false,
+            scheduledAt: { gte: inicioDia, lt: meioDia }
+          }
+        });
+
+        if (!pendentes.length) continue;
+
+        const lista = pendentes.map(r => {
+          const h = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+          return '• ' + h + ' — ' + r.message;
+        }).join('\n');
+
+        const prefs = await prisma.preference.findFirst({ where: { userId: user.id } });
+        const nome = prefs?.name || user.name || '';
+
+        await sendMessage(user.phone, `⏰ ${nome ? nome + ', a' : 'A'}inda tem ${pendentes.length} ${pendentes.length === 1 ? 'tarefa da manhã pendente' : 'tarefas da manhã pendentes'}:
+
+${lista}
+
+Conseguiu fazer alguma? Me avisa que dou baixa ou remarco pra você 😊`);
+
+      } catch(e) { console.error('[Meio-dia]', e.message); }
+    }
+  } catch(e) { console.error('[Meio-dia] Erro:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
 // LEMBRETES (a cada minuto)
 // ─────────────────────────────────────────────
 cron.schedule('* * * * *', async () => {
