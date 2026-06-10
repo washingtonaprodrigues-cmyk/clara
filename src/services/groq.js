@@ -100,12 +100,17 @@ TIPOS:
 
 - enviar_mensagem: usuário quer enviar mensagem AGORA para um contato
   {"tipo":"enviar_mensagem","destinatario":"nome do contato ou null","mensagem":"texto a enviar","phone":"número se informado ou null","contato_numero":null}
-  IMPORTANTE: a mensagem deve ser escrita como SE FOSSE O PRÓPRIO USUÁRIO enviando
-  Se o usuário disser "envia pro contato 2" ou "lembra o contato 1", use contato_numero com o índice informado — direta, no tom certo, sem "eu vou" ou "posso". Ex: "Deu certo a planilha?" não "Posso perguntar se deu certo a planilha?"
+  IMPORTANTE: a mensagem deve ser escrita como SE FOSSE O PRÓPRIO USUÁRIO enviando — direta, no tom certo.
+  Se o usuário disser "envia pro contato 1", "manda pro 2", "pro número 3 da lista" → use contato_numero:1 (ou 2, 3...) e destinatario:null
+  NUNCA coloque o número como destinatario — use contato_numero para índices da lista
+  CRÍTICO: se o destinatario for um número ("1", "2", "3" etc) ou "contato 1", "contato 2" etc, SEMPRE use contato_numero e deixe destinatario null — direta, no tom certo, sem "eu vou" ou "posso". Ex: "Deu certo a planilha?" não "Posso perguntar se deu certo a planilha?"
 
 - enviar_mensagem_agendada: usuário quer enviar mensagem em horário/data futura
-  {"tipo":"enviar_mensagem_agendada","destinatario":"nome do contato","mensagem":"texto a enviar","phone":"número se informado ou null","quando":"descrição do horário ex: amanhã às 10h, sexta às 14h, hoje às 19h","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null"}
-  IMPORTANTE: use este tipo quando houver qualquer referência de tempo futuro (amanhã, depois, às Xh, na sexta, etc). A mensagem deve ser direta, como se o usuário estivesse enviando pessoalmente.
+  {"tipo":"enviar_mensagem_agendada","destinatario":"nome do contato ou null","mensagem":"texto a enviar","phone":"número se informado ou null","quando":"descrição do horário","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null","contato_numero":null}
+  IMPORTANTE: use este tipo quando houver qualquer referência de tempo futuro.
+  A mensagem deve ser direta, como se o usuário estivesse enviando pessoalmente.
+  Para hora: "10 da manhã" = "10:00", "3 da tarde" = "15:00", "8 da noite" = "20:00" — SEMPRE em horário de Brasília (BRT).
+  Se o usuário disser "pro contato 1" → contato_numero:1, destinatario:null
 
 - concluir_lembrete: usuário diz que concluiu/fez/realizou um compromisso ou lembrete específico
   {"tipo":"concluir_lembrete","titulo":"descrição do que foi concluído"}
@@ -173,6 +178,7 @@ EXEMPLOS PONTO:
 "mostra meus contatos" → {"tipo":"listar_contatos"}
 "quais contatos tenho?" → {"tipo":"listar_contatos"}
 "lista meus contatos" → {"tipo":"listar_contatos"}
+"mostra minha lista de contatos" → {"tipo":"listar_contatos"}
 "o número da minha esposa é 43999998888" → {"tipo":"salvar_contato","nome":"esposa","phone":"43999998888","relation":"esposa","notes":null}
 "apaga o contato do João" → {"tipo":"deletar_contato","nome":"João"}
 "exclui o remédio Nebivolol" → {"tipo":"deletar_remedio","nome":"Nebivolol"}
@@ -180,7 +186,10 @@ EXEMPLOS PONTO:
 "cancela o remédio de tireóide" → {"tipo":"deletar_remedio","nome":"tireóide"}
 "remove a minha ex da lista" → {"tipo":"deletar_contato","nome":"minha ex"}
 "salva o contato do João: 11988887777" → {"tipo":"salvar_contato","nome":"João","phone":"11988887777","relation":null,"notes":null}
-"manda mensagem pro João dizendo que vou atrasar" → {"tipo":"enviar_mensagem","destinatario":"João","mensagem":"Vou atrasar, te aviso quando chegar!","phone":null}
+"manda mensagem pro João dizendo que vou atrasar" → {"tipo":"enviar_mensagem","destinatario":"João","mensagem":"Vou atrasar, te aviso quando chegar!","phone":null,"contato_numero":null}
+"envia pro 1 que preciso falar" → {"tipo":"enviar_mensagem","destinatario":null,"mensagem":"Preciso falar com você.","phone":null,"contato_numero":1}
+"envia pro contato 2 que a reunião foi cancelada" → {"tipo":"enviar_mensagem","destinatario":null,"mensagem":"A reunião foi cancelada.","phone":null,"contato_numero":2}
+"manda pro 3 que chego às 18h" → {"tipo":"enviar_mensagem","destinatario":null,"mensagem":"Chego às 18h.","phone":null,"contato_numero":3}
 "fala pra minha esposa que vou chegar às 19h" → {"tipo":"enviar_mensagem","destinatario":"esposa","mensagem":"Vou chegar às 19h 😊","phone":null}
 "manda mensagem pro meu amor perguntando se deu certo a planilha do frete" → {"tipo":"enviar_mensagem","destinatario":"meu amor","mensagem":"Deu certo a planilha do frete? 😊","phone":null}
 "fala pro João que a reunião foi cancelada" → {"tipo":"enviar_mensagem","destinatario":"João","mensagem":"A reunião foi cancelada 😊","phone":null}
