@@ -48,10 +48,16 @@ async function getUserContext(user) {
 // ─────────────────────────────────────────────
 // BOM DIA INTELIGENTE (07:05 — após remédios)
 // ─────────────────────────────────────────────
+// Lock global em memória para evitar race condition entre processos
+const _locksBomDia = new Set();
+const _locksBoaNoite = new Set();
+
 cron.schedule('5 7 * * *', async () => {
   try {
     const now = nowBRT();
     const hoje = dateBRT(now);
+    if (_locksBomDia.has(hoje)) { console.log('[Bom dia] já processando hoje'); return; }
+    _locksBomDia.add(hoje);
 
     // Lock: evita duplicata no mesmo dia
     const lockKey = `bom_dia_${hoje}`;
@@ -71,12 +77,17 @@ cron.schedule('5 7 * * *', async () => {
         if (await jaEnviouHoje(user.id, 'bom_dia_enviado')) continue;
 
         // Lock extra: verificar se enviou nos últimos 60 minutos (evita duplicata por restart)
-        // Lock por usuário — evita duplicata em restarts do Railway
-        const lockDia = await prisma.memory.findFirst({
-          where: { userId: user.id, type: `bom_dia_${hoje}` }
+        // Lock: verificar se já enviou nos últimos 60 minutos (cobre restarts do Railway)
+        const lockExistente = await prisma.memory.findFirst({
+          where: { userId: user.id, type: `bom_dia_${hoje}` },
+          orderBy: { createdAt: 'desc' }
         });
-        if (lockDia) { console.log(`[Bom dia] já enviado hoje para ${user.phone}`); continue; }
-        await prisma.memory.create({ data: { userId: user.id, type: `bom_dia_${hoje}`, content: '1' } }).catch(() => {});
+        if (lockExistente) {
+          console.log(`[Bom dia] já enviado hoje para ${user.phone}`);
+          continue;
+        }
+        // Salvar lock ANTES de enviar para evitar race condition
+        await prisma.memory.create({ data: { userId: user.id, type: `bom_dia_${hoje}`, content: new Date().toISOString() } });
 
         const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
         const fimHoje = new Date(`${hoje}T23:59:59-03:00`);
@@ -152,6 +163,8 @@ cron.schedule('30 21 * * *', async () => {
   try {
     const now = nowBRT();
     const hoje = dateBRT(now);
+    if (_locksBoaNoite.has(hoje)) { console.log('[Boa noite] já processando hoje'); return; }
+    _locksBoaNoite.add(hoje);
 
     // Lock: evita duplicata no mesmo dia
     const lockKey = `boa_noite_${hoje}`;
@@ -168,12 +181,16 @@ cron.schedule('30 21 * * *', async () => {
       try {
         if (await jaEnviouHoje(user.id, 'boa_noite_enviado')) continue;
 
-        // Lock por usuário — evita duplicata em restarts do Railway
-        const lockNoite = await prisma.memory.findFirst({
-          where: { userId: user.id, type: `boa_noite_${hoje}` }
+        // Lock: verificar se já enviou hoje
+        const lockNoiteExistente = await prisma.memory.findFirst({
+          where: { userId: user.id, type: `boa_noite_${hoje}` },
+          orderBy: { createdAt: 'desc' }
         });
-        if (lockNoite) { console.log(`[Boa noite] já enviado hoje para ${user.phone}`); continue; }
-        await prisma.memory.create({ data: { userId: user.id, type: `boa_noite_${hoje}`, content: '1' } }).catch(() => {});
+        if (lockNoiteExistente) {
+          console.log(`[Boa noite] já enviado hoje para ${user.phone}`);
+          continue;
+        }
+        await prisma.memory.create({ data: { userId: user.id, type: `boa_noite_${hoje}`, content: new Date().toISOString() } });
 
         const inicioAmanha = new Date(`${amanhaStr}T00:00:00-03:00`);
         const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
