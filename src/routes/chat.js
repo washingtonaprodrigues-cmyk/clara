@@ -251,6 +251,7 @@ router.post('/:phone', async (req, res) => {
         const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
         const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
 
+        let perfilPessoal = '';
         let _perfilPessoal = '';
         const [lembretes, meds, gastos] = await Promise.all([
           prisma.reminder.findMany({
@@ -301,7 +302,6 @@ router.post('/:phone', async (req, res) => {
     }
 
     let actionData = null;
-    let perfilPessoal = '';
 
     // Classificar a mensagem primeiro (necessário para saber se é lista antes de gerar resposta)
     const classified = privateMode ? { tipo: 'outro' } : await classify(message);
