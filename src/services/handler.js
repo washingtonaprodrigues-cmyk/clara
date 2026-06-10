@@ -207,24 +207,8 @@ function formatarListaWhatsApp(listaResult) {
   return `🛒 *${listaNome}*\n\n${itens}\n\n_${done}/${listaItems.length} itens marcados_`;
 }
 
-// ── Indicador "digitando..." na UazAPI ──
-async function setDigitando(phone, ativo = true) {
-  try {
-    const url = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
-    const token = process.env.UAZAPI_TOKEN;
-    await fetch(`${url}/chat/presence`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', token },
-      body: JSON.stringify({ phone: `${phone}@s.whatsapp.net`, presence: ativo ? 'composing' : 'paused' })
-    });
-  } catch(e) { /* silencioso */ }
-}
-
 async function responderLivre(user, phone, text, contextoExtra = '', skipContext = false) {
   try {
-    // Mostrar "digitando..." enquanto processa
-    setDigitando(phone, true);
-
     const history = await memory.getConversationHistory(user.id, 10);
     const preferences = await memory.getUserPreference(user.id);
 
@@ -1136,11 +1120,7 @@ async function checkConfirmacaoPendente(user, phone, text) {
       const remetente = await memory.getUserPreference(user.id);
       const nomeRemetente = remetente.name || 'seu contato';
       const foneFormatado = phone.replace('55', '').replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
-      const msgFormatada = `Oi! Sou a Clara, secretária virtual do ${nomeRemetente}. Ele(a) pediu pra enviar esse recado:
-
-_${dados.mensagem}_
-
-Não precisa me responder, tá? Dúvidas, é só chamar no WhatsApp do ${nomeRemetente}: ${foneFormatado} 😊`;
+      const msgFormatada = `Oi! Sou a Clara, assistente inteligente do ${nomeRemetente}.\n\n📌 Passando um lembrete:\n\n${dados.mensagem}\n\nNão precisa me responder! Se precisar de algo, é só chamar no WhatsApp: ${foneFormatado} 😊`;
 
       await sendMessage(dados.destinatarioPhone, msgFormatada);
       await prisma.memory.delete({ where: { id: pendente.id } });
