@@ -207,8 +207,24 @@ function formatarListaWhatsApp(listaResult) {
   return `🛒 *${listaNome}*\n\n${itens}\n\n_${done}/${listaItems.length} itens marcados_`;
 }
 
+// ── Indicador "digitando..." na UazAPI ──
+async function setDigitando(phone, ativo = true) {
+  try {
+    const url = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
+    const token = process.env.UAZAPI_TOKEN;
+    await fetch(`${url}/chat/presence`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', token },
+      body: JSON.stringify({ phone: `${phone}@s.whatsapp.net`, presence: ativo ? 'composing' : 'paused' })
+    });
+  } catch(e) { /* silencioso */ }
+}
+
 async function responderLivre(user, phone, text, contextoExtra = '', skipContext = false) {
   try {
+    // Mostrar "digitando..." enquanto processa
+    setDigitando(phone, true);
+
     const history = await memory.getConversationHistory(user.id, 10);
     const preferences = await memory.getUserPreference(user.id);
 
