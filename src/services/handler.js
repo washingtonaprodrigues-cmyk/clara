@@ -965,22 +965,34 @@ async function handleContatoAction(user, phone, classified) {
         }
       }
 
-      if (!scheduledAt || scheduledAt <= now) {
+      if (!scheduledAt || scheduledAt <= new Date()) {
         await sendMessage(phone, 'Não entendi quando quer enviar 😕 Me diz a hora certa, ex: "amanhã às 10h"');
         return;
       }
 
-      await prisma.scheduledMessage.create({
-        data: {
-          userId: user.id,
-          fromPhone: phone,
-          toPhone: phoneClean,
-          toName: destinatarioNome,
-          message: mensagem,
-          scheduledAt,
-        }
-      });
+      // Pedir confirmação antes de agendar
+      const horaPrev = scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+      const dataPrev = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long' });
 
+      await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
+        tipo: 'mensagem_agendada',
+        toPhone: phoneClean,
+        toName: destinatarioNome,
+        mensagem,
+        scheduledAt: scheduledAt.toISOString(),
+        expira: Date.now() + 2 * 60 * 1000,
+      }));
+
+      await sendMessage(phone, `📤 Vou enviar para *${destinatarioNome}*:
+
+_"${mensagem}"_
+
+📅 ${dataPrev} às ${horaPrev}
+
+Confirma? (sim/não)`);
+      return;
+
+      // unreachable — mantido para referência
       if (destinatarioNome && classified.phone) {
         await saveContact(user.id, { nome: destinatarioNome, phone: phoneClean }).catch(() => {});
       }
