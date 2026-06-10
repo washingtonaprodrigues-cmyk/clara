@@ -262,9 +262,18 @@ ${text}`
     }
 
     // Áudio — transcreve via Groq Whisper
-    if (body.message?.mediaType === 'audio' || body.message?.messageType === 'audioMessage') {
+    const audioMsgType = body.message?.messageType || body.message?.mediaType || body.message?.type || '';
+    const isAudio = ['audioMessage','audio','pttMessage','AudioMessage','media'].includes(audioMsgType) || body.message?.audio || body.message?.ptt || (body.message?.mimeType||'').includes('audio') || (body.message?.content?.mimeType||'').includes('audio');
+    
+    if (isAudio) {
+      console.log('[Áudio] Detectado. messageType:', audioMsgType, 'mimeType:', body.message?.mimeType || body.message?.content?.mimeType);
       transcribeAndProcess(phone, body).catch(console.error);
       return res.json({ ok: true });
+    }
+    
+    // Log para tipos não reconhecidos (debug)
+    if (msgType && msgType !== 'extendedTextMessage' && msgType !== 'conversation' && !text) {
+      console.log('[Webhook] Tipo não tratado:', msgType, 'keys:', Object.keys(body.message || {}).slice(0,8).join(','));
     }
 
     // Imagem, vídeo, documento
