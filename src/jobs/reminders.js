@@ -526,11 +526,7 @@ cron.schedule('* * * * *', async () => {
 
         if (grupo.reminders.length === 1) {
           const r = grupo.reminders[0];
-          const system = `Você é a Clara, assistente pessoal. ${nome ? `O usuário se chama ${nome}.` : ''}
-Envie uma notificação de lembrete calorosa e breve (máx 2 linhas).
-O lembrete é: "${r.message}" às ${grupo.hora}.
-Seja direta e encorajadora — não genérica.`;
-          msg = await freeResponse('Envie a notificação deste lembrete.', [], { _systemOverride: system });
+          msg = `🔔 Lembrete\n\n${r.message}\n⏰ ${grupo.hora}\n\n${random(finais)}`;
         } else {
           const titulos = grupo.reminders.map(r => `• ${r.message}`).join('\n');
           msg = `📌 Você tem ${grupo.reminders.length} lembretes agora\n\n${titulos}\n\n⏰ ${grupo.hora}\n\n${random(finais)}`;
