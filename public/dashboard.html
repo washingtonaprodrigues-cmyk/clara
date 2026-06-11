@@ -637,10 +637,113 @@ function selectMood(tom){applyMood(tom);}
 function dateBRTStr(d){return new Date(d).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});}
 function changeRemDate(delta){remViewDate=new Date(remViewDate);remViewDate.setDate(remViewDate.getDate()+delta);renderRem();}
 function goRemToday(){remViewDate=new Date();renderRem();}
-function renderRem(){const el=document.getElementById('rem-timeline');const now=new Date(),todayStr=dateBRTStr(now),viewStr=dateBRTStr(remViewDate),isToday=viewStr===todayStr;const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'],meses=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];const offset=-3*60,utc=remViewDate.getTime()+remViewDate.getTimezoneOffset()*60000,vd=new Date(utc+offset*60000);document.getElementById('rem-date-label').textContent=isToday?'Hoje':`${dias[vd.getDay()]}, ${pad(vd.getDate())} de ${meses[vd.getMonth()]}`;document.getElementById('rem-date-sub').textContent=isToday?`${dias[vd.getDay()]}, ${pad(vd.getDate())} de ${meses[vd.getMonth()]}` :'';document.getElementById('rem-today-btn').style.display=isToday?'none':'';const dayRems=allRem.filter(r=>dateBRTStr(r.scheduledAt)===viewStr);const pending=dayRems.filter(r=>!r.confirmed&&!r.sent).sort((a,b)=>new Date(a.scheduledAt)-new Date(b.scheduledAt));const vencidos=dayRems.filter(r=>!r.confirmed&&r.sent).sort((a,b)=>new Date(a.scheduledAt)-new Date(b.scheduledAt));const done=dayRems.filter(r=>r.confirmed).sort((a,b)=>new Date(a.scheduledAt)-new Date(b.scheduledAt));if(!dayRems.length){el.innerHTML='<div class="empty"><span class="empty-icon">📅</span>Nenhum lembrete neste dia</div>';return;}let html='<div style="padding-top:8px">';let nowInserted=false;pending.forEach(r=>{const t=new Date(r.scheduledAt);const hm=`${pad(t.getHours())}:${pad(t.getMinutes())}`;if(isToday&&!nowInserted&&t>now){nowInserted=true;html+=`<div class="rem-now-line"><span class="rem-now-time">${pad(now.getHours())}:${pad(now.getMinutes())}</span><div class="rem-now-bar"></div><div class="rem-now-dot"></div></div>`;}html+=`<div class="rem-row" id="ri-${r.id}"><span class="rem-row-time">${hm}</span><div class="rem-row-check" onclick="doneRem('${r.id}')"></div><div class="rem-row-title">${r.message}</div><button class="rem-del-btn" onclick="delRem('${r.id}')" title="Excluir">✕</button></div>`;});if(isToday&&!nowInserted)html+=`<div class="rem-now-line"><span class="rem-now-time">${pad(now.getHours())}:${pad(now.getMinutes())}</span><div class="rem-now-bar"></div><div class="rem-now-dot"></div></div>`;if(vencidos.length){html+='<div style="margin-top:8px"><div style="font-size:11px;font-weight:600;color:#F59E0B;padding:6px 0">⚠️ Não confirmados ('+vencidos.length+')</div>';vencidos.forEach(r=>{const t=new Date(r.scheduledAt);const hm=pad(t.getHours())+':'+pad(t.getMinutes());html+='<div class="rem-row vencido-row" data-id="'+r.id+'" style="border-color:rgba(245,158,11,.3);opacity:.85" onclick="doneRemVencido(this)"><span class="rem-row-time" style="color:#F59E0B">'+hm+'</span><div class="rem-row-check"></div><div class="rem-row-title">'+r.message+'</div><button class="rem-del-btn" onclick="event.stopPropagation();delRemVencido(this)">✕</button></div>';});html+='</div>';}
-if(done.length)html+=`<div style="margin-top:4px"><button class="rem-done-toggle" id="done-toggle" onclick="toggleDoneSection()"><svg viewBox="0 0 14 14"><path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg> Concluídos (${done.length})</button><div id="done-items" style="display:none">${done.map(r=>{const t=new Date(r.scheduledAt);return`<div class="rem-row done-row"><span class="rem-row-time" style="color:var(--text3)">${pad(t.getHours())}:${pad(t.getMinutes())}</span><div class="rem-row-check done"></div><div class="rem-row-title done">${r.message}</div></div>`;}).join('')}</div></div>`;html+='</div>';el.innerHTML=html;}
+function renderRem(){
+  const el=document.getElementById('rem-timeline');
+  const now=new Date(),todayStr=dateBRTStr(now),viewStr=dateBRTStr(remViewDate),isToday=viewStr===todayStr;
+  const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'],meses=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  const offset=-3*60,utc=remViewDate.getTime()+remViewDate.getTimezoneOffset()*60000,vd=new Date(utc+offset*60000);
+  document.getElementById('rem-date-label').textContent=isToday?'Hoje':`${dias[vd.getDay()]}, ${pad(vd.getDate())} de ${meses[vd.getMonth()]}`;
+  document.getElementById('rem-date-sub').textContent=isToday?`${dias[vd.getDay()]}, ${pad(vd.getDate())} de ${meses[vd.getMonth()]}`:'';
+  document.getElementById('rem-today-btn').style.display=isToday?'none':'';
+
+  // Só mostra não confirmados (sent=false) e não vencidos atrasados (sent=true) — sem concluídos
+  const dayRems=allRem.filter(r=>dateBRTStr(r.scheduledAt)===viewStr&&!r.confirmed);
+  const vencidos=dayRems.filter(r=>r.sent).sort((a,b)=>new Date(a.scheduledAt)-new Date(b.scheduledAt));
+  const avencer=dayRems.filter(r=>!r.sent).sort((a,b)=>new Date(a.scheduledAt)-new Date(b.scheduledAt));
+
+  if(!dayRems.length){el.innerHTML='<div class="empty"><span class="empty-icon">📅</span>Nenhum lembrete neste dia</div>';return;}
+
+  el.innerHTML='';
+  const wrap=document.createElement('div');wrap.style.paddingTop='8px';
+
+  function makeRow(r,overdue){
+    const t=new Date(r.scheduledAt),hm=pad(t.getHours())+':'+pad(t.getMinutes());
+    const row=document.createElement('div');
+    row.className='rem-row';
+    row.id='ri-'+r.id;
+    if(overdue)row.style.borderColor='rgba(245,158,11,.35)';
+
+    const timeSpan=document.createElement('span');
+    timeSpan.className='rem-row-time';
+    timeSpan.textContent=hm;
+    if(overdue)timeSpan.style.color='#F59E0B';
+    timeSpan.style.cssText+=(overdue?'color:#F59E0B;':'')+'cursor:pointer;text-decoration:underline;text-underline-offset:3px';
+    timeSpan.title='Alterar data/hora';
+    timeSpan.addEventListener('click',function(){abrirRemarcar(r.id,r.message);});
+
+    const check=document.createElement('div');
+    check.className='rem-row-check';
+    check.addEventListener('click',function(){doneRemCheck(r.id,check,row);});
+
+    const title=document.createElement('div');
+    title.className='rem-row-title';
+    title.textContent=r.message;
+
+    const del=document.createElement('button');
+    del.className='rem-del-btn';del.textContent='✕';del.title='Excluir';
+    del.addEventListener('click',function(){delRem(r.id);});
+
+    row.appendChild(timeSpan);row.appendChild(check);row.appendChild(title);row.appendChild(del);
+    return row;
+  }
+
+  if(vencidos.length){
+    const lbl=document.createElement('div');
+    lbl.style.cssText='font-size:11px;font-weight:600;color:#F59E0B;padding:10px 0 6px';
+    lbl.textContent='⚠️ Não confirmados ('+vencidos.length+')';
+    wrap.appendChild(lbl);
+    vencidos.forEach(r=>wrap.appendChild(makeRow(r,true)));
+  }
+
+  if(avencer.length){
+    const lbl=document.createElement('div');
+    lbl.style.cssText='font-size:11px;font-weight:600;color:var(--text3);padding:10px 0 6px;text-transform:uppercase;letter-spacing:.5px';
+    lbl.textContent='📌 A vencer ('+avencer.length+')';
+    wrap.appendChild(lbl);
+    let nowInserted=false;
+    avencer.forEach(r=>{
+      const t=new Date(r.scheduledAt);
+      if(isToday&&!nowInserted&&t>now){
+        nowInserted=true;
+        const nl=document.createElement('div');nl.className='rem-now-line';
+        nl.innerHTML='<span class="rem-now-time">'+pad(now.getHours())+':'+pad(now.getMinutes())+'</span><div class="rem-now-bar"></div><div class="rem-now-dot"></div>';
+        wrap.appendChild(nl);
+      }
+      wrap.appendChild(makeRow(r,false));
+    });
+    if(isToday&&!nowInserted){
+      const nl=document.createElement('div');nl.className='rem-now-line';
+      nl.innerHTML='<span class="rem-now-time">'+pad(now.getHours())+':'+pad(now.getMinutes())+'</span><div class="rem-now-bar"></div><div class="rem-now-dot"></div>';
+      wrap.appendChild(nl);
+    }
+  }
+
+  el.appendChild(wrap);
+}
 function toggleDoneSection(){const items=document.getElementById('done-items');const toggle=document.getElementById('done-toggle');const open=items.style.display==='none';items.style.display=open?'block':'none';toggle.classList.toggle('open',open);}
-async function doneRem(id){const el=document.getElementById('ri-'+id);if(!el)return;el.querySelector('.rem-row-check').classList.add('done');el.querySelector('.rem-row-title').classList.add('done');try{await fetch(`/forms/lembrete-concluir/${id}`,{method:'POST'});showToast('Concluído ✅');setTimeout(()=>{allRem=allRem.filter(x=>x.id!==id);renderRem();loadAll();},600);}catch{showToast('Erro ⚠️');}}
+async function doneRem(id){
+  const el=document.getElementById('ri-'+id);
+  if(!el)return;
+  const check=el.querySelector('.rem-row-check');
+  const title=el.querySelector('.rem-row-title');
+  if(check)check.classList.add('done');
+  if(title)title.classList.add('done');
+  try{
+    await fetch(`/forms/lembrete-concluir/${id}`,{method:'POST'});
+    showToast('Concluído ✅');
+    setTimeout(()=>{allRem=allRem.filter(x=>x.id!==id);renderRem();loadAll();},600);
+  }catch{showToast('Erro ⚠️');}
+}
+async function doneRemCheck(id,checkEl,rowEl){
+  if(checkEl)checkEl.classList.add('done');
+  const title=rowEl?.querySelector('.rem-row-title');
+  if(title)title.classList.add('done');
+  try{
+    await fetch('/forms/lembrete-concluir/'+id,{method:'POST'});
+    showToast('Confirmado ✅');
+    setTimeout(()=>{allRem=allRem.filter(x=>x.id!==id);renderRem();loadAll();},600);
+  }catch{showToast('Erro ⚠️');}
+}
 function renderSaude(){const el=document.getElementById('saude-body');if(!allMeds.length){el.innerHTML='<div class="empty"><span class="empty-icon">💊</span>Nenhum medicamento cadastrado</div>';return;}const now=new Date(),hm=`${pad(now.getHours())}:${pad(now.getMinutes())}`;const pendentes=[],concluidos=[];allMeds.forEach((m,i)=>{let times=[];try{times=JSON.parse(m.times);}catch{}const nextToday=times.find(t=>t>=hm);if(nextToday){pendentes.push({m,i,nextTime:nextToday,nextDay:'Hoje'});}else{concluidos.push({m,i,nextTime:times[0]||'—',nextDay:times.length?'Amanhã':'—'});}});let html='';if(pendentes.length){html+=`<div class="med-section-label">Próximas doses</div>`;pendentes.forEach(({m,i,nextTime,nextDay})=>{const ci=i%MED_COLORS.length;html+=`<div class="med-row"><div class="med-icon-wrap" style="background:${MED_COLORS[ci]};color:${MED_TEXT[ci]}"><svg viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></div><div class="med-info"><div class="med-name">${m.name}</div><div class="med-freq">${m.frequency}x por dia</div></div><div class="med-next"><div class="med-next-label">Próxima dose</div><div class="med-next-time" style="color:${MED_TEXT[ci]}">${nextTime}</div><div class="med-next-day">${nextDay}</div></div><div class="med-doses"><div class="med-doses-num">${m.remaining}</div><div>doses rest.</div></div><button class="med-action-btn tomar" onclick="takeMed('${m.id}',this)">Tomar agora</button><button class="med-del-btn" onclick="delMed('${m.id}')" title="Excluir">✕</button></div>`;});}if(concluidos.length){html+=`<div class="med-section-label" style="margin-top:8px;color:var(--green);opacity:.7">✓ Concluídos hoje</div>`;concluidos.forEach(({m,i,nextTime,nextDay})=>{const ci=i%MED_COLORS.length;html+=`<div class="med-row concluido"><div class="med-icon-wrap" style="background:${MED_COLORS[ci]};color:${MED_TEXT[ci]}"><svg viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></div><div class="med-info"><div class="med-name">${m.name}</div><div class="med-freq">${m.frequency}x por dia</div></div><div class="med-next"><div class="med-next-label">Próxima dose</div><div class="med-next-time" style="color:${MED_TEXT[ci]}">${nextTime}</div><div class="med-next-day">${nextDay}</div></div><div class="med-doses"><div class="med-doses-num">${m.remaining}</div><div>doses rest.</div></div><button class="med-action-btn concluido-btn" disabled>✓ Tomado</button><button class="med-del-btn" onclick="delMed('${m.id}')" title="Excluir">✕</button></div>`;});}if(!pendentes.length&&!concluidos.length)html='<div class="empty"><span class="empty-icon">💊</span>Nenhum medicamento</div>';html+=`<div class="med-tip"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div><div class="med-tip-title">Dica da Clara</div><div class="med-tip-text">Mantenha sua rotina de medicamentos em dia. Isso faz toda a diferença!</div></div></div>`;el.innerHTML=html;}
 async function takeMed(id,btn){btn.textContent='✓ Tomado';btn.disabled=true;btn.className='med-action-btn concluido-btn';try{await fetch(`/forms/remedio-tomado/${id}`,{method:'POST'});showToast('Dose registrada! 💊');setTimeout(()=>loadAll().then(()=>renderSaude()),800);}catch{showToast('Erro ⚠️');}}
 function renderFin(){const hist=document.getElementById('fin-history');const saldoEl=document.getElementById('fs-saldo');function atualizaSaldo(total){if(!saldoEl)return;if(currentSaldo!==null&&currentSaldo!==undefined){const restante=currentSaldo-total;saldoEl.textContent=brl(restante);saldoEl.style.color=restante<0?'var(--red)':restante<currentSaldo*0.2?'#FCD34D':'var(--text2)';}else{saldoEl.textContent='Não informado';saldoEl.style.color='var(--text2)';}}if(!allGastos.length){hist.innerHTML='<div class="empty"><span class="empty-icon">💰</span>Sem gastos registrados</div>';['fs-total','fs-count','fs-max','fs-avg'].forEach(id=>document.getElementById(id).textContent=id==='fs-total'?'R$ 0,00':id==='fs-count'?'0':'—');atualizaSaldo(0);return;}const total=allGastos.reduce((a,g)=>a+g.value,0),dias=new Date().getDate(),vals=allGastos.map(g=>g.value);document.getElementById('fs-total').textContent=brl(total);document.getElementById('fs-count').textContent=allGastos.length;document.getElementById('fs-max').textContent=brl(Math.max(...vals));document.getElementById('fs-avg').textContent=brl(total/dias);atualizaSaldo(total);let html=`<div class="fin-hist-header">Histórico</div>`;allGastos.slice(0,20).forEach(g=>{const name=g.description&&g.description!==g.category?g.description:(g.category.charAt(0).toUpperCase()+g.category.slice(1));html+=`<div class="fin-hist-item"><div class="fin-hist-icon" style="background:${CAT_BG[g.category]||'rgba(107,114,128,.12)'}">${CAT_ICONS[g.category]||'📦'}</div><div class="fin-hist-info"><div class="fin-hist-name">${name}</div><div class="fin-hist-date">${fmtD(g.createdAt)}</div></div><div class="fin-hist-val">-${brl(g.value)}</div></div>`;});hist.innerHTML=html;}
@@ -690,6 +793,29 @@ function toggleMic(){if(!('webkitSpeechRecognition' in window)&&!('SpeechRecogni
 function startMic(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;recognition=new SR();recognition.lang='pt-BR';recognition.continuous=false;recognition.interimResults=true;const btn=document.getElementById('mic-btn'),inp=document.getElementById('chat-msg');recognition.onstart=()=>{isListening=true;btn.classList.add('listening');inp.placeholder='🎤 Ouvindo...';};recognition.onresult=(e)=>{let t='';for(let i=e.resultIndex;i<e.results.length;i++){t+=e.results[i][0].transcript;}inp.value=t;inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,100)+'px';};recognition.onend=()=>{isListening=false;btn.classList.remove('listening');inp.placeholder='Pergunte ou peça algo para a Clara...';const text=inp.value.trim();if(text){if(!voiceMode){voiceMode=true;const chip=document.getElementById('voice-toggle-chip');chip.textContent='🔊 Voz ativa';chip.classList.add('voice-mode-on');}setTimeout(()=>sendChat(),300);}};recognition.onerror=(e)=>{isListening=false;btn.classList.remove('listening');inp.placeholder='Pergunte ou peça algo para a Clara...';if(e.error!=='no-speech')showToast('Erro no microfone: '+e.error,3000);};recognition.start();}
 function stopMic(){recognition?.stop();}
 
+// ── Remarcar lembrete ──
+var _remarcarId=null;
+function abrirRemarcar(id,titulo){
+  _remarcarId=id;
+  document.getElementById('remarcar-titulo').textContent=titulo;
+  var d=nowLocal();
+  document.getElementById('remarcar-data').value=d.data;
+  document.getElementById('remarcar-hora').value=d.hora;
+  openModal('m-remarcar');
+}
+async function salvarRemarcar(){
+  var data=document.getElementById('remarcar-data').value;
+  var hora=document.getElementById('remarcar-hora').value;
+  if(!data||!hora){showToast('Preencha data e hora ⚠️');return;}
+  var btn=document.getElementById('remarcar-btn');
+  btn.textContent='Salvando...';btn.disabled=true;
+  try{
+    var r=await fetch('/forms/lembrete-remarcar/'+_remarcarId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:data,hora:hora})});
+    if(r.ok){closeModal('m-remarcar');showToast('Remarcado! 📅');await loadAll();renderRem();}
+    else showToast('Erro ao remarcar ⚠️');
+  }catch(e){showToast('Erro ⚠️');}
+  btn.textContent='Salvar';btn.disabled=false;
+}
 // ── Excluir lembrete ──
 function doneRemVencido(el){const id=el.dataset.id;doneRem(id);}
 function delRemVencido(el){const id=el.closest('.vencido-row').dataset.id;delRem(id);}
