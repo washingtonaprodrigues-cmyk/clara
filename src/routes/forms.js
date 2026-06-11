@@ -49,7 +49,7 @@ router.get('/lembretes/:phone', async (req, res) => {
     const lembretes = await prisma.reminder.findMany({
       where: { userId: user.id },
       orderBy: { scheduledAt: 'asc' },
-      take: 50,
+      take: 100,
     });
     res.json(lembretes);
   } catch (e) {
@@ -177,7 +177,6 @@ router.post('/ponto-config/:phone', async (req, res) => {
     });
 
     await memory.saveMemory(user.id, 'ponto_config', JSON.stringify({ entrada, saida, almoco, jornada }));
-
     res.json({ ok: true });
   } catch (e) {
     console.error('Erro POST ponto-config:', e.message);
