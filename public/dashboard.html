@@ -986,12 +986,12 @@ function setFilter(f,btn){
 
 function mdToHtml(text){
   if(!text)return'';
+  // Remove markdown simples
   return text
-    .replace(/#{1,3}\s+/g,'')
-    .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g,'<em>$1</em>')
-    .replace(/
-/g,' ');
+    .split('\n').join(' ')
+    .replace(/###+\s*/g,'').replace(/##\s*/g,'').replace(/#\s*/g,'')
+    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g,'<em>$1</em>');
 }
 
 async function doSearch(){
