@@ -606,7 +606,7 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
       if (anoClassify >= anoAtual && anoClassify <= anoAtual + 1) {
         dataUsada = classified.data;
       } else {
-        console.warn(`[${phone}] Data inválida do Groq (${classified.data}), usando hoje`);
+        console.warn(`[DATA_INVALIDA] phone=${phone} titulo="${classified.titulo}" data_groq="${classified.data}" ano=${anoClassify} — ignorada, usando hoje`);
       }
     }
 
