@@ -225,6 +225,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .empty-icon{font-size:28px;display:block;margin-bottom:10px;opacity:.2}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;margin:24px auto}
+.clara-thinking{position:fixed;inset:0;background:rgba(8,9,13,.7);backdrop-filter:blur(4px);z-index:250;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;opacity:0;pointer-events:none;transition:opacity .3s ease}
+.clara-thinking.show{opacity:1;pointer-events:all}
+.ct-stars{position:relative;width:60px;height:60px;margin-bottom:16px}
+.ct-star{position:absolute;background:var(--accent);border-radius:50%;animation:lsSpin 1.6s ease-in-out infinite}
+.ct-star:nth-child(1){width:10px;height:10px;top:0;left:50%;transform:translateX(-50%);animation-delay:0s;background:#A855F7}
+.ct-star:nth-child(2){width:7px;height:7px;top:20%;right:0;animation-delay:.25s;background:#8B5CF6}
+.ct-star:nth-child(3){width:5px;height:5px;bottom:10%;right:8%;animation-delay:.5s;background:#C4B5FD}
+.ct-star:nth-child(4){width:8px;height:8px;bottom:0;left:50%;transform:translateX(-50%);animation-delay:.75s;background:#7C3AED}
+.ct-star:nth-child(5){width:6px;height:6px;top:20%;left:0;animation-delay:1s;background:#A855F7}
+.ct-star:nth-child(6){width:4px;height:4px;bottom:10%;left:8%;animation-delay:1.25s;background:#DDD6FE}
+.ct-text{font-family:'DM Serif Display',serif;font-size:18px;color:var(--text);letter-spacing:.3px}
+.ct-sub{font-size:11px;color:var(--text3);margin-top:6px;letter-spacing:1px}
 .toast{position:fixed;bottom:calc(20px + var(--safe-bot));left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid var(--border2);padding:9px 18px;border-radius:20px;font-size:12px;color:var(--text);z-index:300;opacity:0;pointer-events:none;transition:all .2s;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.4)}
 .toast.show{opacity:1}
 .rem-del-btn,.med-del-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:4px;border-radius:6px;transition:all .15s;flex-shrink:0;opacity:.4}
@@ -521,6 +533,14 @@ select option{background:var(--s2)}
 <div class="overlay" id="m-remedio"><div class="modal"><div class="modal-title">Cadastrar medicamento</div><div class="mf"><label>Nome</label><input type="text" id="mr-nome" placeholder="Ex: Nebivolol 5mg"/></div><div class="mf-row"><div class="mf"><label>Dose</label><input type="text" id="mr-dose" placeholder="1 comprimido"/></div><div class="mf"><label>A cada</label><select id="mr-int"><option value="4">4h</option><option value="6">6h</option><option value="8">8h</option><option value="12" selected>12h</option><option value="24">24h</option></select></div></div><div class="mf-row"><div class="mf"><label>Dias</label><input type="number" id="mr-dias" placeholder="30" min="1"/></div><div class="mf"><label>Primeira dose</label><input type="time" id="mr-inicio"/></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-remedio')">Cancelar</button><button class="btn-save" id="sr-btn" onclick="saveRemedio()">Cadastrar</button></div></div></div>
 <div class="overlay" id="m-gasto"><div class="modal"><div class="modal-title">Registrar gasto</div><div class="mf"><label>Valor (R$)</label><input type="number" id="mg-val" placeholder="0,00" step="0.01" min="0"/></div><div class="mf-row"><div class="mf"><label>Categoria</label><select id="mg-cat"><option value="alimentacao">🍔 Alimentação</option><option value="mercado">🛒 Mercado</option><option value="transporte">🚗 Transporte</option><option value="saude">💊 Saúde</option><option value="lazer">🎮 Lazer</option><option value="moradia">🏠 Moradia</option><option value="educacao">📚 Educação</option><option value="outro">📦 Outro</option></select></div><div class="mf"><label>Descrição</label><input type="text" id="mg-desc" placeholder="Opcional"/></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-gasto')">Cancelar</button><button class="btn-save" id="sg-btn" onclick="saveGasto()">Registrar</button></div></div></div>
 <div class="overlay" id="m-cofre"><div class="modal"><div class="modal-title">Novo segredo</div><div class="mf"><label>Tipo</label><select id="ct" onchange="updateCofreFields()"><option value="senha">🔑 Senha / Login</option><option value="cartao">💳 Cartão</option><option value="nota">📝 Nota secreta</option><option value="outro">📦 Outro</option></select></div><div class="mf"><label>Nome</label><input type="text" id="cn" placeholder="Ex: Gmail, Netflix..."/></div><div id="cf-senha"><div class="mf"><label>Email/Usuário</label><input type="text" id="ce" placeholder="seu@email.com"/></div><div class="mf"><label>Senha</label><input type="password" id="cs-pw" placeholder="••••••••"/></div><div class="mf"><label>URL</label><input type="text" id="cu" placeholder="https://..."/></div></div><div id="cf-cartao" style="display:none"><div class="mf"><label>Número</label><input type="text" id="cc-num" placeholder="•••• •••• •••• ••••"/></div><div class="mf-row"><div class="mf"><label>Validade</label><input type="text" id="cc-val" placeholder="MM/AA"/></div><div class="mf"><label>CVV</label><input type="password" id="cc-cvv" placeholder="•••"/></div></div></div><div id="cf-nota" style="display:none"><div class="mf"><label>Conteúdo</label><textarea id="cn-txt" placeholder="Nota secreta..."></textarea></div></div><div id="cf-outro" style="display:none"><div class="mf"><label>Conteúdo</label><textarea id="co-txt" placeholder="Informação importante..."></textarea></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-cofre')">Cancelar</button><button class="btn-save" id="sc-btn" onclick="saveCofre()">Salvar</button></div></div></div>
+<div class="clara-thinking" id="clara-thinking">
+  <div class="ct-stars">
+    <div class="ct-star"></div><div class="ct-star"></div><div class="ct-star"></div>
+    <div class="ct-star"></div><div class="ct-star"></div><div class="ct-star"></div>
+  </div>
+  <div class="ct-text" id="ct-text">Atualizando...</div>
+  <div class="ct-sub" id="ct-sub">um segundo</div>
+</div>
 <div class="toast" id="toast"></div>
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
@@ -543,6 +563,14 @@ const pad=n=>String(n).padStart(2,'0');
 const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 function nowLocal(){const n=new Date();return{data:`${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`,hora:`${pad(n.getHours())}:${pad(n.getMinutes())}`};}
 function fmtD(d){try{return new Date(d).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});}catch{return'—';}}
+function showThinking(texto='Pensando...', sub='um segundo'){
+  document.getElementById('ct-text').textContent=texto;
+  document.getElementById('ct-sub').textContent=sub;
+  document.getElementById('clara-thinking').classList.add('show');
+}
+function hideThinking(){
+  document.getElementById('clara-thinking').classList.remove('show');
+}
 function showToast(m,d=2500){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),d);}
 function getGreeting(){const h=new Date().getHours();if(h>=5&&h<12)return'BOM DIA';if(h>=12&&h<18)return'BOA TARDE';return'BOA NOITE';}
 function setNotifAtivo(ativo){
@@ -739,11 +767,14 @@ async function doneRemCheck(id,checkEl,rowEl){
   if(checkEl)checkEl.classList.add('done');
   const title=rowEl?.querySelector('.rem-row-title');
   if(title)title.classList.add('done');
+  showThinking('Confirmando...','marcando como feito');
   try{
     await fetch('/forms/lembrete-concluir/'+id,{method:'POST'});
+    await loadAll();
+    hideThinking();
+    renderRem();
     showToast('Confirmado ✅');
-    setTimeout(()=>{allRem=allRem.filter(x=>x.id!==id);renderRem();loadAll();},600);
-  }catch{showToast('Erro ⚠️');}
+  }catch{hideThinking();showToast('Erro ⚠️');}
 }
 function renderSaude(){const el=document.getElementById('saude-body');if(!allMeds.length){el.innerHTML='<div class="empty"><span class="empty-icon">💊</span>Nenhum medicamento cadastrado</div>';return;}const now=new Date(),hm=`${pad(now.getHours())}:${pad(now.getMinutes())}`;const pendentes=[],concluidos=[];allMeds.forEach((m,i)=>{let times=[];try{times=JSON.parse(m.times);}catch{}const nextToday=times.find(t=>t>=hm);if(nextToday){pendentes.push({m,i,nextTime:nextToday,nextDay:'Hoje'});}else{concluidos.push({m,i,nextTime:times[0]||'—',nextDay:times.length?'Amanhã':'—'});}});let html='';if(pendentes.length){html+=`<div class="med-section-label">Próximas doses</div>`;pendentes.forEach(({m,i,nextTime,nextDay})=>{const ci=i%MED_COLORS.length;html+=`<div class="med-row"><div class="med-icon-wrap" style="background:${MED_COLORS[ci]};color:${MED_TEXT[ci]}"><svg viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></div><div class="med-info"><div class="med-name">${m.name}</div><div class="med-freq">${m.frequency}x por dia</div></div><div class="med-next"><div class="med-next-label">Próxima dose</div><div class="med-next-time" style="color:${MED_TEXT[ci]}">${nextTime}</div><div class="med-next-day">${nextDay}</div></div><div class="med-doses"><div class="med-doses-num">${m.remaining}</div><div>doses rest.</div></div><button class="med-action-btn tomar" onclick="takeMed('${m.id}',this)">Tomar agora</button><button class="med-del-btn" onclick="delMed('${m.id}')" title="Excluir">✕</button></div>`;});}if(concluidos.length){html+=`<div class="med-section-label" style="margin-top:8px;color:var(--green);opacity:.7">✓ Concluídos hoje</div>`;concluidos.forEach(({m,i,nextTime,nextDay})=>{const ci=i%MED_COLORS.length;html+=`<div class="med-row concluido"><div class="med-icon-wrap" style="background:${MED_COLORS[ci]};color:${MED_TEXT[ci]}"><svg viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></div><div class="med-info"><div class="med-name">${m.name}</div><div class="med-freq">${m.frequency}x por dia</div></div><div class="med-next"><div class="med-next-label">Próxima dose</div><div class="med-next-time" style="color:${MED_TEXT[ci]}">${nextTime}</div><div class="med-next-day">${nextDay}</div></div><div class="med-doses"><div class="med-doses-num">${m.remaining}</div><div>doses rest.</div></div><button class="med-action-btn concluido-btn" disabled>✓ Tomado</button><button class="med-del-btn" onclick="delMed('${m.id}')" title="Excluir">✕</button></div>`;});}if(!pendentes.length&&!concluidos.length)html='<div class="empty"><span class="empty-icon">💊</span>Nenhum medicamento</div>';html+=`<div class="med-tip"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div><div class="med-tip-title">Dica da Clara</div><div class="med-tip-text">Mantenha sua rotina de medicamentos em dia. Isso faz toda a diferença!</div></div></div>`;el.innerHTML=html;}
 async function takeMed(id,btn){btn.textContent='✓ Tomado';btn.disabled=true;btn.className='med-action-btn concluido-btn';try{await fetch(`/forms/remedio-tomado/${id}`,{method:'POST'});showToast('Dose registrada! 💊');setTimeout(()=>loadAll().then(()=>renderSaude()),800);}catch{showToast('Erro ⚠️');}}
@@ -760,7 +791,7 @@ async function savePrefs(){const tom=currentMood,nome=document.getElementById('p
 function openModal(id){if(id==='m-lembrete'){const{data,hora}=nowLocal();document.getElementById('ml-data').value=data;document.getElementById('ml-hora').value=hora;document.getElementById('ml-titulo').value='';}if(id==='m-remedio'){const{hora}=nowLocal();document.getElementById('mr-inicio').value=hora;document.getElementById('mr-nome').value='';}if(id==='m-gasto'){document.getElementById('mg-val').value='';document.getElementById('mg-desc').value='';}document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
-async function saveLembrete(){const titulo=document.getElementById('ml-titulo').value.trim(),data=document.getElementById('ml-data').value,hora=document.getElementById('ml-hora').value;if(!titulo){showToast('Descreva o lembrete ⚠️');return;}const btn=document.getElementById('sl-btn');btn.textContent='...';btn.disabled=true;try{const r=await fetch(`/forms/lembrete/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titulo,data,hora})});if(r.ok){closeModal('m-lembrete');showToast('Lembrete criado! ✅');await loadAll();renderRem();}else showToast('Erro ⚠️');}catch{showToast('Erro ⚠️');}btn.textContent='Criar';btn.disabled=false;}
+async function saveLembrete(){const titulo=document.getElementById('ml-titulo').value.trim(),data=document.getElementById('ml-data').value,hora=document.getElementById('ml-hora').value;if(!titulo){showToast('Descreva o lembrete ⚠️');return;}const btn=document.getElementById('sl-btn');btn.textContent='...';btn.disabled=true;closeModal('m-lembrete');showThinking('Criando lembrete...','anotando pra você');try{const r=await fetch(`/forms/lembrete/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titulo,data,hora})});await loadAll();hideThinking();if(r.ok){renderRem();showToast('Lembrete criado! ✅');}else showToast('Erro ⚠️');}catch{hideThinking();showToast('Erro ⚠️');}btn.textContent='Criar';btn.disabled=false;}
 async function saveRemedio(){const nome=document.getElementById('mr-nome').value.trim(),dose=document.getElementById('mr-dose').value,intervalo=parseInt(document.getElementById('mr-int').value),dias=parseInt(document.getElementById('mr-dias').value)||0,horarioInicio=document.getElementById('mr-inicio').value;if(!nome){showToast('Informe o medicamento ⚠️');return;}const btn=document.getElementById('sr-btn');btn.textContent='...';btn.disabled=true;try{const r=await fetch(`/forms/remedio/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome,dose,intervalo,dias,horarioInicio})});if(r.ok){closeModal('m-remedio');showToast('Remédio cadastrado! ✅');await loadAll();renderSaude();}else showToast('Erro ⚠️');}catch{showToast('Erro ⚠️');}btn.textContent='Cadastrar';btn.disabled=false;}
 async function saveGasto(){const valor=parseFloat(document.getElementById('mg-val').value),categoria=document.getElementById('mg-cat').value,descricao=document.getElementById('mg-desc').value||categoria;if(!valor||valor<=0){showToast('Informe o valor ⚠️');return;}const btn=document.getElementById('sg-btn');btn.textContent='...';btn.disabled=true;try{const r=await fetch(`/forms/gasto/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({valor,categoria,descricao})});if(r.ok){closeModal('m-gasto');showToast('Gasto registrado! ✅');await loadAll();renderFin();}else showToast('Erro ⚠️');}catch{showToast('Erro ⚠️');}btn.textContent='Registrar';btn.disabled=false;}
 let swReg=null,vapidPublicKey='';
@@ -810,11 +841,15 @@ async function salvarRemarcar(){
   if(!data||!hora){showToast('Preencha data e hora ⚠️');return;}
   var btn=document.getElementById('remarcar-btn');
   btn.textContent='Salvando...';btn.disabled=true;
+  closeModal('m-remarcar');
+  showThinking('Remarcando...','atualizando sua agenda');
   try{
     var r=await fetch('/forms/lembrete-remarcar/'+_remarcarId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:data,hora:hora})});
-    if(r.ok){closeModal('m-remarcar');showToast('Remarcado! 📅');await loadAll();renderRem();}
+    await loadAll();
+    hideThinking();
+    if(r.ok){renderRem();showToast('Remarcado! 📅');}
     else showToast('Erro ao remarcar ⚠️');
-  }catch(e){showToast('Erro ⚠️');}
+  }catch(e){hideThinking();showToast('Erro ⚠️');}
   btn.textContent='Salvar';btn.disabled=false;
 }
 // ── Excluir lembrete ──
