@@ -64,7 +64,8 @@ TIPOS E FORMATOS:
 {"tipo":"preferencia","nome":"nome ou null","tom":"carinhoso/direto/divertido/sarcastico ou null"}
 {"tipo":"saldo","valor":1400.0}
 {"tipo":"lista_compras","nome":"título","itens":["item1","item2"]}
-{"tipo":"lista_marcar","numeros":[2,3]}
+{"tipo":"lista_marcar","numeros":[2,3],"nomes":["nome do item"],"lista":"nome da lista ou null"}
+  nomes: quando citar nome do item; lista: quando citar nome da lista
 {"tipo":"lista_adicionar","item":"nome"}
 {"tipo":"salvar_contato","nome":"nome","phone":"número","relation":"relação ou null","notes":null}
 {"tipo":"deletar_contato","nome":"nome"}
@@ -82,6 +83,10 @@ EXEMPLOS:
 "todo dia às 8h tomar remédio" → {"tipo":"tarefa","titulo":"tomar remédio","data":null,"hora":"08:00","recorrente":true,"frequencia":"diario"}
 "gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
 "tomo Losartana às 8h" → {"tipo":"medicamento","nome":"Losartana","quantidade":0,"frequencia":1,"horarios":["08:00"]}
+"já peguei o 2 e o 3" → {"tipo":"lista_marcar","numeros":[2,3],"nomes":null,"lista":null}
+"risca a aprovação do folheto" → {"tipo":"lista_marcar","numeros":[],"nomes":["aprovação do folheto"],"lista":null}
+"já fiz o item 3 da lista Copa de Ofertas" → {"tipo":"lista_marcar","numeros":[3],"nomes":null,"lista":"Copa de Ofertas"}
+"marca o vídeo varejo como feito" → {"tipo":"lista_marcar","numeros":[],"nomes":["vídeo varejo"],"lista":null}
 "arroz, feijão e leite" → {"tipo":"lista_compras","nome":"Lista do mercado","itens":["Arroz","Feijão","Leite"]}
 "manda pro João que vou atrasar" → {"tipo":"enviar_mensagem","destinatario":"João","mensagem":"Vou atrasar, te aviso quando chegar!","phone":null,"contato_numero":null}
 "envia pro contato 2 que a reunião foi cancelada" → {"tipo":"enviar_mensagem","destinatario":null,"mensagem":"A reunião foi cancelada.","phone":null,"contato_numero":2}
