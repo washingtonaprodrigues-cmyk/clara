@@ -11,9 +11,12 @@ router.get('/', async (req, res) => {
     if (!apiKey) return res.status(500).json({ error: 'Tavily não configurado' });
 
     const client = tavily({ apiKey });
-    const response = await client.search(q.trim(), {
+    // Adiciona contexto pt-BR para forçar resultados em português
+    const queryPT = q.trim();
+    const response = await client.search(queryPT, {
       maxResults: 6,
-      searchDepth: 'basic', // basic é mais rápido que advanced
+      searchDepth: 'basic',
+      country: 'BR',
       includeAnswer: true,
       includeImages: false,
     });
