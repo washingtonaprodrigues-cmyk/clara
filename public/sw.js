@@ -8,14 +8,13 @@ self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    )
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', e => {
-  // Só faz cache do dashboard
-  if(e.request.url.includes('/dashboard')){
+  if (e.request.method !== 'GET') return;
+  if (e.request.url.includes('/dashboard')) {
     e.respondWith(
       fetch(e.request)
         .then(res => {
@@ -32,12 +31,11 @@ self.addEventListener('fetch', e => {
 self.addEventListener('push', e => {
   let data = { title: 'Clara ✨', body: 'Você tem um novo lembrete!' };
   try { data = e.data.json(); } catch {}
-
   e.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,
-      icon: '/icons/icon-192.svg',
-      badge: '/icons/icon-192.svg',
+      icon: '/icon-192.svg',
+      badge: '/icon-192.svg',
       vibrate: [200, 100, 200],
       tag: 'clara-notification',
       renotify: true,
@@ -52,12 +50,12 @@ self.addEventListener('push', e => {
 
 self.addEventListener('notificationclick', e => {
   e.notification.close();
-  if(e.action === 'dismiss') return;
+  if (e.action === 'dismiss') return;
   e.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       const url = e.notification.data?.url || '/dashboard';
       const existing = list.find(c => c.url.includes('/dashboard'));
-      if(existing) return existing.focus();
+      if (existing) return existing.focus();
       return clients.openWindow(url);
     })
   );
