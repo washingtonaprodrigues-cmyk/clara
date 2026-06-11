@@ -648,8 +648,39 @@ async function handleContatoAction(user, phone, classified) {
     if (classified.tipo === 'deletar_contato') {
       const nome = classified.nome;
       if (!nome) { await sendMessage(phone, 'Qual contato quer apagar? Me diz o nome 😊'); return; }
-      const encontrados = await findContactByName(user.id, nome);
-      if (encontrados.length === 0) { await sendMessage(phone, `Não encontrei nenhum contato com o nome "${nome}" 😕`); return; }
+
+      // Tenta buscar por número primeiro se parece um telefone
+      const pareceNumero = /^\d{8,}$/.test(nome.replace(/\D/g,'')) && nome.replace(/\D/g,'').length >= 8;
+      let encontrados = [];
+
+      if (pareceNumero) {
+        const tel = nome.replace(/\D/g,'');
+        const todos = await prisma.contact.findMany({ where: { userId: user.id } });
+        encontrados = todos.filter(c => c.phone && c.phone.replace(/\D/g,'').endsWith(tel) || tel.endsWith(c.phone.replace(/\D/g,'')));
+      }
+
+      // Se não achou por número, tenta por número da lista ("contato 1", "1", etc)
+      if (!encontrados.length) {
+        const numLista = parseInt(nome);
+        if (!isNaN(numLista) && numLista >= 1) {
+          try {
+            const mem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'contatos_listados' } });
+            if (mem) {
+              const lista = JSON.parse(mem.content);
+              const c = lista[numLista - 1];
+              if (c) {
+                const found = await prisma.contact.findMany({ where: { userId: user.id, phone: c.phone } });
+                encontrados = found;
+              }
+            }
+          } catch(e) {}
+        }
+      }
+
+      // Fallback: busca por nome
+      if (!encontrados.length) encontrados = await findContactByName(user.id, nome);
+
+      if (encontrados.length === 0) { await sendMessage(phone, `Não encontrei nenhum contato com "${nome}" 😕`); return; }
       for (const c of encontrados) await prisma.contact.delete({ where: { id: c.id } });
       await sendMessage(phone, `✅ Contato${encontrados.length>1?'s':''} removido${encontrados.length>1?'s':''}: *${encontrados.map(c=>c.name).join(', ')}* 🗑️`);
       return;
