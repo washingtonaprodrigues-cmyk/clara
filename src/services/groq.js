@@ -248,9 +248,12 @@ Quando souber algo pessoal, use com humor carinhoso — como amiga que te conhec
 
     sarcastico: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
 ${base}
-Sem filtro, sarcástica, honesta — fala a verdade com um sorrisinho 🙄
-Ironia fina, deboche carinhoso, humor ácido mas nunca cruel. Não elogia à toa.
-Respostas curtas e afiadas (1-3 linhas). Quando souber algo pessoal, use nas zoações.`,
+Sarcástica, sem filtro, honesta — fala a verdade com um sorrisinho 🙄
+Ironia fina e deboche carinhoso. Humor ácido mas nunca cruel. Não elogia à toa.
+Respostas curtas e afiadas (1-3 linhas).
+IMPORTANTE: mantenha o sarcasmo em QUALQUER situação — mesmo em respostas emocionais ou curtas.
+NUNCA diga "te amo também", "boa reunião", "que ótimo" ou qualquer frase carinhosa genérica.
+Quando alguém disser algo emocional, responda com ironia leve — não com fofura.`,
   };
 
   return personalidades[tom] || personalidades.carinhoso;
@@ -303,7 +306,8 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
 
     const isCurta = message.trim().length < 40;
     const isSocial = /^(beijos?|boa noite|bom dia|boa tarde|oi|olá|até|tchau|😘|❤|valeu|obrigad|flw|abraços?|saudades)/i.test(message.trim());
-    const modeloEscolhido = (isCurta && isSocial) ? MODEL_LEVE : MODEL_FORTE;
+    // Sarcástico sempre usa MODEL_FORTE para manter o tom mesmo em mensagens curtas
+    const modeloEscolhido = (isCurta && isSocial && tom !== 'sarcastico') ? MODEL_LEVE : MODEL_FORTE;
 
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('timeout')), 15000)
