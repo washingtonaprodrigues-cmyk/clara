@@ -579,6 +579,24 @@ async function salvarPontoSilencioso(user, acoes) {
   }
 }
 
+// Palavras-chave que indicam urgência
+function detectarUrgencia(titulo) {
+  const t = (titulo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const palavras = [
+    'medico','medica','consulta','dentista','cirurgia','exame','laboratorio','farmacia',
+    'remedio','medicamento','vacina','hospital','clinica','psico','terapia','fisio','upa',
+    'documento','cartorio','contrato','assinar','entregar','protocolar','prazo','vencimento',
+    'vence','renovar','passaporte','rg','cnh',
+    'voo','aeroporto','embarque','onibus','trem',
+    'reuniao','apresentacao','entrevista','prova','concurso',
+    'buscar','pegar','retirar','entregar','entrega',
+    'cabelereiro','barbearia','manicure','cabeleireiro',
+    'marmita','almoco','janta','jantar',
+    'escola','creche',
+  ];
+  return palavras.some(p => t.includes(p));
+}
+
 async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
   await memory.saveMemory(user.id, 'tarefa', classified.titulo, { data: classified.data, hora: classified.hora });
 
@@ -621,8 +639,16 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
   }
 
   if (scheduledAt) {
-    await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
+    const novoLembrete = await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
     console.log(`[${phone}] Lembrete: "${classified.titulo}" → ${scheduledAt.toISOString()}`);
+    // Detectar urgência e salvar confirmação pendente
+    if (detectarUrgencia(classified.titulo)) {
+      await prisma.memory.create({ data: { userId: user.id, type: 'lembrete_urgente', content: novoLembrete.id } }).catch(() => {});
+      // Salvar confirmação pendente aguardando resposta "sim/não"
+      const expira = Date.now() + 5 * 60 * 1000; // 5 min para responder
+      await prisma.memory.create({ data: { userId: user.id, type: 'confirmacao_pendente', content: JSON.stringify({ tipo: 'urgente_confirmacao', lembreteId: novoLembrete.id, expira }) } }).catch(() => {});
+      return { lembreteUrgente: true, lembreteTitulo: classified.titulo };
+    }
     const antecedencia = classified.antecedencia;
     if (antecedencia && antecedencia > 0) {
       const scheduledAntes = new Date(scheduledAt.getTime() - antecedencia * 60 * 1000);
@@ -842,6 +868,32 @@ async function checkConfirmacaoPendente(user, phone, text) {
       await sendMessage(phone, 'Ok, cancelei o envio 😊');
       return true;
     }
+    // ── Resposta à pergunta de urgência (15min antes) ──
+    if (dados.tipo === 'urgente_confirmacao') {
+      const sim = /^(sim|s|claro|pode|quero|yes|ok|manda|ativa|coloca)/.test(textNorm);
+      const nao = /^(n[aã]o|nao|n|não precisa|dispenso|deixa|tá bom|ta bom)/.test(textNorm);
+      if (sim || nao) {
+        await prisma.memory.delete({ where: { id: pendente.id } });
+        if (sim) {
+          // Criar lembrete 15min antes
+          const rem = await prisma.reminder.findUnique({ where: { id: dados.lembreteId } }).catch(() => null);
+          if (rem) {
+            const quinzeAntes = new Date(rem.scheduledAt.getTime() - 15 * 60 * 1000);
+            if (quinzeAntes > new Date()) {
+              await prisma.reminder.create({
+                data: { userId: user.id, phone, message: `⚡ Em 15 minutos: ${rem.message}`, scheduledAt: quinzeAntes }
+              });
+              await prisma.memory.create({ data: { userId: user.id, type: 'urgente_antes_lock', content: rem.id } });
+            }
+          }
+          await sendMessage(phone, 'Feito! Vou te avisar 15 minutos antes 🔔');
+        } else {
+          await sendMessage(phone, 'Ok, te aviso só na hora 😊');
+        }
+        return true;
+      }
+    }
+
     return false;
   } catch (e) {
     console.error('[checkConfirmacaoPendente] Erro:', e.message);
