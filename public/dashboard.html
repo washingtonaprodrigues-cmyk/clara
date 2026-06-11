@@ -143,7 +143,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .chip:hover{border-color:rgba(139,92,246,.4);color:var(--text2)}
 .input-row{display:flex;align-items:center;gap:8px;background:var(--s2);border:1px solid var(--border);border-radius:14px;padding:8px 8px 8px 16px;transition:border-color .15s}
 .input-row:focus-within{border-color:rgba(139,92,246,.5)}
-.input-row textarea{flex:1;background:none;border:none;color:var(--text);font-family:'Inter',sans-serif;font-size:14px;outline:none;resize:none;max-height:100px;line-height:1.5;min-height:22px}
+.input-row textarea{flex:1;background:none;border:none;color:var(--text);font-family:'Inter',sans-serif;font-size:16px;outline:none;resize:none;max-height:100px;line-height:1.5;min-height:22px}
 .input-row textarea::placeholder{color:var(--text3)}
 .send-btn{width:36px;height:36px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 10px var(--glow);transition:transform .1s}
 .msg-lista-card{background:var(--s1);border:1px solid var(--border2);border-radius:12px;padding:12px;margin-top:8px;min-width:220px;max-width:300px}
@@ -508,7 +508,7 @@ onAuthStateChanged(auth,async(user)=>{if(user){window._currentUser=user;const p=
 <script>
 let phone='',privateMode=false,currentNav='chat';
 let allRem=[],allMeds=[],allGastos=[],allListas=[];
-let currentMood='carinhoso',remViewDate=new Date(),authTab='login';
+let currentMood='carinhoso',remViewDate=new Date(new Date().getFullYear(),new Date().getMonth(),new Date().getDate(),12,0,0),authTab='login';
 let pollInterval=null,sidebarCollapsed=false,currentSaldo=null;
 const CAT_ICONS={alimentacao:'🍔',mercado:'🛒',transporte:'🚗',saude:'💊',lazer:'🎮',moradia:'🏠',educacao:'📚',outro:'📦'};
 const CAT_BG={alimentacao:'rgba(245,158,11,.12)',mercado:'rgba(16,185,129,.12)',transporte:'rgba(59,130,246,.12)',saude:'rgba(239,68,68,.12)',lazer:'rgba(168,85,247,.12)',moradia:'rgba(236,72,153,.12)',educacao:'rgba(6,182,212,.12)',outro:'rgba(107,114,128,.12)'};
@@ -611,8 +611,16 @@ async function loadMood(){try{const r=await fetch(`/forms/preferencia/${phone}`)
 function applyMood(tom){currentMood=tom;document.querySelectorAll('.mood-card').forEach(b=>b.classList.toggle('active',b.dataset.mood===tom));}
 function selectMood(tom){applyMood(tom);}
 function dateBRTStr(d){return new Date(d).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});}
-function changeRemDate(delta){remViewDate=new Date(remViewDate);remViewDate.setDate(remViewDate.getDate()+delta);renderRem();}
-function goRemToday(){remViewDate=new Date();renderRem();}
+function changeRemDate(delta){
+  // Calcular a data atual em BRT e avançar/retroceder em dias BRT
+  var brtStr=dateBRTStr(remViewDate); // ex: "2025-06-11"
+  var parts=brtStr.split('-');
+  var y=parseInt(parts[0]),m=parseInt(parts[1])-1,d=parseInt(parts[2]);
+  var nd=new Date(y,m,d+delta,12,0,0); // meio-dia local, evita virada de dia
+  remViewDate=nd;
+  renderRem();
+}
+function goRemToday(){var n=new Date();remViewDate=new Date(n.getFullYear(),n.getMonth(),n.getDate(),12,0,0);renderRem();}
 function renderRem(){
   const el=document.getElementById('rem-timeline');
   const now=new Date(),todayStr=dateBRTStr(now),viewStr=dateBRTStr(remViewDate),isToday=viewStr===todayStr;
@@ -692,8 +700,10 @@ function renderSaude(){
   allMeds.forEach(function(m,i){
     var times=[];try{times=JSON.parse(m.times);}catch(e){}
     var nextToday=times.find(function(t){return t>=hm;});
-    if(nextToday)pendentes.push({m:m,i:i,nextTime:nextToday,nextDay:'Hoje'});
-    else concluidos.push({m:m,i:i,nextTime:times[0]||'—',nextDay:times.length?'Amanhã':'—'});
+    var allPassedToday=times.length>0&&times.every(function(t){return t<hm;});
+    if(nextToday){pendentes.push({m:m,i:i,nextTime:nextToday,nextDay:'Hoje'});}
+    else if(allPassedToday){concluidos.push({m:m,i:i,nextTime:times[0]||'—',nextDay:'Amanhã'});}
+    else{pendentes.push({m:m,i:i,nextTime:times[0]||'—',nextDay:'Amanhã'});}
   });
   function makeCard(p,concluido){
     var m=p.m,i=p.i,nextTime=p.nextTime,nextDay=p.nextDay;
