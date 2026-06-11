@@ -248,7 +248,6 @@ cron.schedule('0 8 * * *', async () => {
           }
         }
 
-        const hoje = dateBRT(now);
         const eventos = await prisma.event.findMany({ where: { userId: user.id, notified: false } });
         for (const ev of eventos) {
           const dataEv = new Date(ev.date);
@@ -540,6 +539,36 @@ Seja direta e encorajadora — não genérica.`;
       }
 
       await sendMessage(grupo.phone, msg);
+
+      // ── Feature 3: Recorrência — recria lembrete para próximo período ──
+      for (const r of grupo.reminders) {
+        if (r.recorrente && r.frequencia) {
+          try {
+            const proxima = new Date(r.scheduledAt);
+            if (r.frequencia === 'diario') proxima.setDate(proxima.getDate() + 1);
+            else if (r.frequencia === 'semanal') proxima.setDate(proxima.getDate() + 7);
+            else if (r.frequencia === 'mensal') proxima.setMonth(proxima.getMonth() + 1);
+
+            // Só recria se a próxima data for no futuro
+            if (proxima > new Date()) {
+              await prisma.reminder.create({
+                data: {
+                  userId: r.userId,
+                  phone: r.phone,
+                  message: r.message,
+                  scheduledAt: proxima,
+                  recorrente: true,
+                  frequencia: r.frequencia,
+                  sent: false,
+                  confirmed: false,
+                }
+              });
+              console.log(`[Recorrência] Recriado: "${r.message}" → ${proxima.toISOString()}`);
+            }
+          } catch(e) { console.error(`[Recorrência] Erro ao recriar lembrete ${r.id}:`, e.message); }
+        }
+      }
+
       await prisma.reminder.updateMany({
         where: { id: { in: grupo.reminders.map(r => r.id) } },
         data: { sent: true }
@@ -631,6 +660,37 @@ cron.schedule('0 4 * * *', async () => {
       console.log(`[Cleanup Lembretes] ${resultado.count} lembrete(s) não confirmados com mais de 48h removidos`);
     }
   } catch (e) { console.error('[Cleanup Lembretes] Erro:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ─────────────────────────────────────────────
+// FEATURE 4: ALERTA ESTOQUE BAIXO DE REMÉDIO (08:30)
+// ─────────────────────────────────────────────
+cron.schedule('30 8 * * *', async () => {
+  try {
+    const LIMITE_DOSES = 5;
+    const meds = await prisma.medication.findMany({
+      where: { active: true, remaining: { gt: 0, lte: LIMITE_DOSES } },
+      include: { user: true }
+    });
+
+    for (const med of meds) {
+      try {
+        const phone = med.user?.phone || (await prisma.user.findUnique({ where: { id: med.userId } }))?.phone;
+        if (!phone) continue;
+
+        // Lock: avisar no máximo 1x por dia por remédio
+        const lockKey = `estoque_baixo_${med.id}_${dateBRT()}`;
+        if (await prisma.memory.findFirst({ where: { type: 'estoque_lock', content: lockKey } })) continue;
+        await prisma.memory.create({ data: { userId: med.userId, type: 'estoque_lock', content: lockKey } });
+
+        const urgencia = med.remaining === 1 ? '🚨 Última dose!' : `⚠️ Restam apenas ${med.remaining} doses`;
+        await sendMessage(phone,
+          `💊 ${urgencia}\n\n*${med.name}* está acabando.\n\nNão esquece de comprar mais para não interromper o tratamento! 🏥`
+        );
+        console.log(`[Estoque] Alerta enviado: ${med.name} → ${phone} (${med.remaining} doses)`);
+      } catch (e) { console.error(`[Estoque] Erro ${med.id}:`, e.message); }
+    }
+  } catch (e) { console.error('[Estoque] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
 console.log('Clara scheduler iniciado 💜');
