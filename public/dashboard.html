@@ -986,23 +986,22 @@ function renderSearch(data){
   }
 
   h+='<div class="search-results">';
-  data.results.forEach(r=>{
-    let domain='';try{domain=new URL(r.url).hostname.replace('www.','');}catch{}
-    const favicon='https://www.google.com/s2/favicons?domain='+domain+'&sz=32';
-    const date=r.publishedDate?'<div class="sr-date">'+new Date(r.publishedDate).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})+'</div>':'';
-    const content=(r.content||'').replace(/#{1,3} /g,'').replace(/[*]{2}([^*]+)[*]{2}/g,'<b>$1</b>');
-    h+='<div class="search-result" onclick="window.open(''+r.url+'','_blank')">'
-      +'<div class="sr-source"><img class="sr-favicon" src="'+favicon+'" onerror="this.style.display='none'"/>'+domain+'</div>'
-      +'<div class="sr-title">'+r.title+'</div>'
-      +'<div class="sr-content">'+content+'</div>'
-      +date
-      +'</div>';
+  data.results.forEach(function(r){
+    var domain='';try{domain=new URL(r.url).hostname.replace('www.','');}catch(e){}
+    var favicon='https://www.google.com/s2/favicons?domain='+domain+'&sz=32';
+    var date=r.publishedDate?('<div class="sr-date">'+new Date(r.publishedDate).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})+'</div>'):'';
+    var cnt=(r.content||'').replace(/#{1,3} /g,'');
+    h+='<div class="search-result" onclick="window.open(this.dataset.url,'_blank')" data-url="'+r.url.replace(/"/g,'&quot;')+'">';
+    h+='<div class="sr-source"><img class="sr-favicon" src="'+favicon+'" onerror="this.style.display='none'"/>'+domain+'</div>';
+    h+='<div class="sr-title">'+r.title+'</div>';
+    h+='<div class="sr-content">'+cnt+'</div>';
+    h+=date+'</div>';
   });
   h+='</div></div>';
   body.innerHTML=h;
 }
 
-// Swipe da esquerda// Swipe da esquerda pra direita abre o drawer (mobile)
+// Swipe da esquerda pra direita abre o drawer (mobile)
 (function(){
   let startX=0,startY=0;
   document.addEventListener('touchstart',e=>{startX=e.touches[0].clientX;startY=e.touches[0].clientY;},{passive:true});
