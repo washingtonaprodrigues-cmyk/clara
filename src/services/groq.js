@@ -1,5 +1,6 @@
 const Groq = require('groq-sdk');
 const { webSearch } = require('./search');
+const rateLimit = require('./rateLimit');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -9,6 +10,29 @@ const MODEL_PRIVADO = 'nousresearch/hermes-3-llama-3.1-70b';
 
 function hoje() {
   return new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+}
+
+function isRateLimit(error) {
+  const msg = (error.message || '').toLowerCase();
+  const status = error.status || error.statusCode || 0;
+  return status === 429 || msg.includes('rate limit') || msg.includes('rate_limit') || msg.includes('429');
+}
+
+function isTPD(error) {
+  const msg = (error.message || '').toLowerCase();
+  return msg.includes('tokens per day') || msg.includes('tpd') || msg.includes('daily');
+}
+
+async function ativarPausaCreativa(phone, tipo) {
+  try {
+    const { desculpa, retornoHora } = await rateLimit.registrarPausa(phone, tipo);
+    const msg = rateLimit.mensagemPausa(tipo, desculpa.ausencia, retornoHora);
+    console.log(`[RateLimit] ${tipo.toUpperCase()} para ${phone} — pausa até ${retornoHora}`);
+    return msg;
+  } catch (e) {
+    console.error('[RateLimit] Erro:', e.message);
+    return tipo === 'rpm' ? 'Um segundo, já volto! 🏃' : 'Precisei sair um pouco, volto em breve! 💜';
+  }
 }
 
 const SYSTEM_PROMPT = () => `Você é a Clara, assistente pessoal brasileira.
@@ -27,179 +51,57 @@ REGRAS IMPORTANTES:
 TIPOS:
 - ponto_multiplo: registrar entrada/saída trabalho
   {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
-  
-  SUBTIPOS ACEITOS (use exatamente assim):
-  - "entrada" → chegou, entrei, cheguei
-  - "saida_almoco" → saí pra almoçar, fui almoçar, saída almoço
-  - "volta_almoco" → voltei do almoço, retornei do almoço
-  - "saida" → saí do trabalho, fui embora, saída final
+  SUBTIPOS: "entrada", "saida_almoco", "volta_almoco", "saida"
 
-- cidade: quando o usuário informa sua cidade
-  {"tipo":"cidade","cidade":"nome da cidade e estado"}
+- cidade: {"tipo":"cidade","cidade":"nome da cidade e estado"}
 
-- busca: qualquer pergunta que precise de informação atual, notícias, clima, preços, lugares, pesquisa na internet
-  {"tipo":"busca","query":"texto da busca"}
-  USE SEMPRE que o usuário perguntar sobre: notícias, o que aconteceu, pesquisa, informações atuais, preços, clima, lugares, "consegue pesquisar?", "busca pra mim", qualquer coisa que exija dados da internet
-  
-- anotacao: guardar informação SEM horário
-  {"tipo":"anotacao","titulo":"resumo","conteudo":"texto completo"}
-  
-- tarefa: compromisso COM horário/data
-  {"tipo":"tarefa","titulo":"desc","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null","antecedencia":30,"recorrente":false,"frequencia":"diario/semanal/mensal ou null"}
-  
-  REGRAS PARA DATA/HORA:
-  - "daqui X horas/minutos" → calcule baseado em ${hoje} e hora atual
+- busca: {"tipo":"busca","query":"texto da busca"}
+  USE SEMPRE que precisar de informações atuais, notícias, clima, lugares, preços
+
+- anotacao: {"tipo":"anotacao","titulo":"resumo","conteudo":"texto completo"}
+
+- tarefa: {"tipo":"tarefa","titulo":"desc","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null","antecedencia":30,"recorrente":false,"frequencia":"diario/semanal/mensal ou null"}
+  REGRAS DATA/HORA:
+  - "daqui X horas/minutos" → calcule baseado em ${hoje()} e hora atual
   - "na hora do almoço" → 12:00, "de manhã cedo" → 07:00, "à noite" → 20:00
-  - "semana que vem segunda" → calcule a data correta
   - "todo dia às X" → recorrente:true, frequencia:"diario"
-  - "toda semana" → recorrente:true, frequencia:"semanal"
-  - "me lembra X minutos antes" → antecedencia:X (em minutos)
-  - "me lembra 2 vezes" → crie dois lembretes: antecedencia:60 e antecedencia:0
+  - "me lembra X minutos antes" → antecedencia:X
 
-- editar_lembrete: usuário quer mudar horário/data de um lembrete existente
-  {"tipo":"editar_lembrete","titulo":"parte do título para identificar","nova_hora":"HH:MM ou null","nova_data":"YYYY-MM-DD ou null"}
+- editar_lembrete: {"tipo":"editar_lembrete","titulo":"parte do título","nova_hora":"HH:MM ou null","nova_data":"YYYY-MM-DD ou null"}
+- deletar_lembrete: {"tipo":"deletar_lembrete","titulo":"parte do título"}
+- gasto: {"tipo":"gasto","valor":0.0,"categoria":"mercado/restaurante/saude/transporte/lazer/outro","descricao":"desc"}
+- medicamento: {"tipo":"medicamento","nome":"nome","quantidade":0,"frequencia":1,"horarios":["08:00"]}
+- saudacao: {"tipo":"saudacao"}
+- preferencia: {"tipo":"preferencia","nome":"nome ou null","tom":"carinhoso/direto/divertido/profissional ou null"}
+- saldo: {"tipo":"saldo","valor":1400.0}
+- lista_compras: {"tipo":"lista_compras","nome":"título da lista","itens":["item1","item2"]}
+- lista_marcar: {"tipo":"lista_marcar","numeros":[2,3,4]}
+- lista_adicionar: {"tipo":"lista_adicionar","item":"nome do item"}
+- salvar_contato: {"tipo":"salvar_contato","nome":"nome","phone":"número","relation":"relação ou null","notes":"info ou null"}
+- deletar_contato: {"tipo":"deletar_contato","nome":"nome do contato"}
+- deletar_remedio: {"tipo":"deletar_remedio","nome":"nome do remédio"}
+- enviar_mensagem: {"tipo":"enviar_mensagem","destinatario":"nome","mensagem":"texto","phone":"número ou null","contato_numero":null}
+- enviar_mensagem_agendada: {"tipo":"enviar_mensagem_agendada","destinatario":"nome","mensagem":"texto","phone":null,"quando":"desc","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null"}
+- concluir_lembrete: {"tipo":"concluir_lembrete","titulo":"descrição"}
+- consulta: {"tipo":"consulta","sobre":"tema"}
+- outro: {"tipo":"outro"}
 
-- deletar_lembrete: usuário quer cancelar/apagar um lembrete
-  {"tipo":"deletar_lembrete","titulo":"parte do título para identificar"}
-  
-- gasto: gastou dinheiro
-  {"tipo":"gasto","valor":0.0,"categoria":"mercado/restaurante/saude/transporte/lazer/outro","descricao":"desc"}
-
-- medicamento: remédio, vitamina ou tratamento recorrente
-  {"tipo":"medicamento","nome":"nome","quantidade":0,"frequencia":1,"horarios":["08:00"]}
-  
-- saudacao: oi, olá, bom dia
-  {"tipo":"saudacao"}
-
-- preferencia: nome do usuário ou jeito que prefere ser atendido
-  {"tipo":"preferencia","nome":"nome ou null","tom":"carinhoso/direto/divertido/profissional ou null"}
-
-- saldo: quando o usuário informa seu saldo, salário, renda ou orçamento mensal
-  {"tipo":"saldo","valor":1400.0}
-  
-- lista_compras: lista de compras, mercado, farmácia etc
-  {"tipo":"lista_compras","nome":"título da lista","itens":["item1","item2","item3"]}
-
-- lista_marcar: usuário diz que já pegou/comprou itens (cita números)
-  {"tipo":"lista_marcar","numeros":[2,3,4]}
-
-- lista_adicionar: adicionar item a lista existente
-  {"tipo":"lista_adicionar","item":"nome do item"}
-
-- salvar_contato: usuário informa número de um contato
-  {"tipo":"salvar_contato","nome":"nome do contato","phone":"número","relation":"esposa/amigo/chefe/filho/etc ou null","notes":"info extra ou null"}
-
-- deletar_contato: usuário quer apagar/remover um contato salvo
-  {"tipo":"deletar_contato","nome":"nome do contato"}
-
-- deletar_remedio: usuário quer excluir/remover um medicamento cadastrado
-  {"tipo":"deletar_remedio","nome":"nome do remédio"}
-
-- enviar_mensagem: usuário quer enviar mensagem AGORA para um contato
-  {"tipo":"enviar_mensagem","destinatario":"nome ou apelido do contato","mensagem":"texto a enviar","phone":"número se informado ou null"}
-  IMPORTANTE: a mensagem deve ser escrita como SE FOSSE O PRÓPRIO USUÁRIO enviando — direta, no tom certo.
-  Use o nome/apelido exatamente como o usuário disse: "meu amor", "amor", "João", "minha mãe" etc.
-  CRÍTICO: se o destinatario for um número ("1", "2", "3" etc) ou "contato 1", "contato 2" etc, SEMPRE use contato_numero e deixe destinatario null — direta, no tom certo, sem "eu vou" ou "posso". Ex: "Deu certo a planilha?" não "Posso perguntar se deu certo a planilha?"
-
-- enviar_mensagem_agendada: usuário quer enviar mensagem em horário/data futura
-  {"tipo":"enviar_mensagem_agendada","destinatario":"nome ou apelido do contato","mensagem":"texto a enviar","phone":"número se informado ou null","quando":"descrição do horário","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null"}
-  IMPORTANTE: use este tipo quando houver qualquer referência de tempo futuro.
-  A mensagem deve ser direta, como se o usuário estivesse enviando pessoalmente.
-  Para hora: "10 da manhã" = "10:00", "3 da tarde" = "15:00", "8 da noite" = "20:00" — SEMPRE em horário de Brasília (BRT).
-
-- concluir_lembrete: usuário diz que concluiu/fez/realizou um compromisso ou lembrete específico
-  {"tipo":"concluir_lembrete","titulo":"descrição do que foi concluído"}
-
-- consulta: pergunta sobre algo guardado
-  {"tipo":"consulta","sobre":"tema"}
-  
-- outro: qualquer outra coisa
-  {"tipo":"outro"}
-
-EXEMPLOS PONTO:
-"entrei às 8:15, sai almoçar às 12:30, voltei do almoço às 14:10 e saí do trabalho às 18:05"
-→ {"tipo":"ponto_multiplo","acoes":[
-    {"subtipo":"entrada","hora":"08:15"},
-    {"subtipo":"saida_almoco","hora":"12:30"},
-    {"subtipo":"volta_almoco","hora":"14:10"},
-    {"subtipo":"saida","hora":"18:05"}
-  ]}
-
-"cheguei às 8" → {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
-"minha cidade é Carlópolis PR" → {"tipo":"cidade","cidade":"Carlópolis, Paraná"}
-"farmácia perto" → {"tipo":"busca","query":"farmácia próxima"}
-"quanto custa Losartana?" → {"tipo":"busca","query":"preço Losartana farmácia"}
-"preço do remédio Levotiroxina" → {"tipo":"busca","query":"preço Levotiroxina farmácia"}
-"qual o valor da dipirona?" → {"tipo":"busca","query":"preço dipirona farmácia"}
-"onde comprar vitamina C?" → {"tipo":"busca","query":"onde comprar vitamina C"}
-"posso tomar remédio fora do horário?" → {"tipo":"busca","query":"pode tomar remédio fora do horário prescrição"}
-"remédio em jejum esqueci" → {"tipo":"busca","query":"esqueci tomar remédio em jejum o que fazer"}
-"anote que o código é 123" → {"tipo":"anotacao","titulo":"código","conteudo":"o código é 123"}
+EXEMPLOS:
+"entrei às 8:15, sai almoçar às 12:30, voltei às 14:10, saí às 18:05" → {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:15"},{"subtipo":"saida_almoco","hora":"12:30"},{"subtipo":"volta_almoco","hora":"14:10"},{"subtipo":"saida","hora":"18:05"}]}
 "me lembra às 19h de buscar minha sogra" → {"tipo":"tarefa","titulo":"buscar sogra","data":null,"hora":"19:00"}
-"me lembra daqui 2 horas de ligar pro cliente" → {"tipo":"tarefa","titulo":"ligar pro cliente","data":null,"hora":"<hora atual + 2h>","antecedencia":0,"recorrente":false}
-"me lembra todo dia às 8h de tomar remédio" → {"tipo":"tarefa","titulo":"tomar remédio","data":null,"hora":"08:00","recorrente":true,"frequencia":"diario"}
-"me lembra 30 minutos antes da reunião das 15h" → {"tipo":"tarefa","titulo":"reunião","data":null,"hora":"14:30","antecedencia":0,"recorrente":false}
-"me lembra 2 vezes sobre a reunião das 15h" → {"tipo":"tarefa","titulo":"reunião","data":null,"hora":"15:00","antecedencia":60,"recorrente":false}
-"cancela o lembrete da Serigraf" → {"tipo":"deletar_lembrete","titulo":"Serigraf"}
-"muda o lembrete da reunião pra às 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
-"reagenda o compromisso de amanhã pra sexta" → {"tipo":"editar_lembrete","titulo":"compromisso","nova_hora":null,"nova_data":"<data da próxima sexta>"}
 "gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
 "tomo Losartana todo dia às 8h" → {"tipo":"medicamento","nome":"Losartana","quantidade":0,"frequencia":1,"horarios":["08:00"]}
-"Vitamina C às 9h e 21h" → {"tipo":"medicamento","nome":"Vitamina C","quantidade":0,"frequencia":2,"horarios":["09:00","21:00"]}
-"quanto gastei esse mês?" → {"tipo":"consulta","sobre":"gastos"}
-"conclui a reunião com o cliente" → {"tipo":"concluir_lembrete","titulo":"reunião com o cliente"}
-"já fiz a tarefa do relatório" → {"tipo":"concluir_lembrete","titulo":"tarefa do relatório"}
-"dá baixa na reunião de hoje" → {"tipo":"concluir_lembrete","titulo":"reunião de hoje"}
-"pode marcar como feito o compromisso das 14h" → {"tipo":"concluir_lembrete","titulo":"compromisso das 14h"}
-"qual a senha do wi-fi?" → {"tipo":"consulta","sobre":"senha wi-fi"}
-"me chamo Ana" → {"tipo":"preferencia","nome":"Ana","tom":null}
-"seja mais direto comigo" → {"tipo":"preferencia","nome":null,"tom":"direto"}
-"seja divertida" → {"tipo":"preferencia","nome":null,"tom":"divertido"}
-"modo divertido" → {"tipo":"preferencia","nome":null,"tom":"divertido"}
-"seja sarcástica" → {"tipo":"preferencia","nome":null,"tom":"sarcastico"}
-"modo sarcástico" → {"tipo":"preferencia","nome":null,"tom":"sarcastico"}
-"sem filtro" → {"tipo":"preferencia","nome":null,"tom":"sarcastico"}
-"pode falar o que pensa" => {"tipo":"preferencia","nome":null,"tom":"sarcastico"}
-"volta a ser simpática" → {"tipo":"preferencia","nome":null,"tom":"carinhoso"}
-"modo normal" → {"tipo":"preferencia","nome":null,"tom":"carinhoso"}
-"oi" → {"tipo":"saudacao"}
-"preciso comprar arroz, feijão e leite" → {"tipo":"lista_compras","nome":"🛒 Lista do mercado","itens":["Arroz","Feijão","Leite"]}
-"lista da farmácia: dipirona, curativo" → {"tipo":"lista_compras","nome":"💊 Lista da farmácia","itens":["Dipirona","Curativo"]}
-"já peguei o 2 e o 3" → {"tipo":"lista_marcar","numeros":[2,3]}
-"peguei os itens 1, 4 e 5" → {"tipo":"lista_marcar","numeros":[1,4,5]}
-"adiciona macarrão na lista" → {"tipo":"lista_adicionar","item":"Macarrão"}
-"coloca detergente também" → {"tipo":"lista_adicionar","item":"Detergente"}
-"meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
-"mostra meus contatos" → {"tipo":"listar_contatos"}
-"quais contatos tenho?" → {"tipo":"listar_contatos"}
-"lista meus contatos" → {"tipo":"listar_contatos"}
-"mostra minha lista de contatos" → {"tipo":"listar_contatos"}
-"o número da minha esposa é 43999998888" → {"tipo":"salvar_contato","nome":"esposa","phone":"43999998888","relation":"esposa","notes":null}
-"apaga o contato do João" → {"tipo":"deletar_contato","nome":"João"}
-"exclui o remédio Nebivolol" → {"tipo":"deletar_remedio","nome":"Nebivolol"}
-"remove o nibovolol dos meus remédios" → {"tipo":"deletar_remedio","nome":"nibovolol"}
-"cancela o remédio de tireóide" → {"tipo":"deletar_remedio","nome":"tireóide"}
-"remove a minha ex da lista" → {"tipo":"deletar_contato","nome":"minha ex"}
-"salva o contato do João: 11988887777" → {"tipo":"salvar_contato","nome":"João","phone":"11988887777","relation":null,"notes":null}
+"preciso comprar arroz, feijão e leite" → {"tipo":"lista_compras","nome":"Lista do mercado","itens":["Arroz","Feijão","Leite"]}
 "manda mensagem pro João dizendo que vou atrasar" → {"tipo":"enviar_mensagem","destinatario":"João","mensagem":"Vou atrasar, te aviso quando chegar!","phone":null,"contato_numero":null}
-"envia pro 1 que preciso falar" → {"tipo":"enviar_mensagem","destinatario":null,"mensagem":"Preciso falar com você.","phone":null,"contato_numero":1}
-"envia pro contato 2 que a reunião foi cancelada" → {"tipo":"enviar_mensagem","destinatario":null,"mensagem":"A reunião foi cancelada.","phone":null,"contato_numero":2}
-"manda pro 3 que chego às 18h" → {"tipo":"enviar_mensagem","destinatario":null,"mensagem":"Chego às 18h.","phone":null,"contato_numero":3}
-"fala pra minha esposa que vou chegar às 19h" → {"tipo":"enviar_mensagem","destinatario":"esposa","mensagem":"Vou chegar às 19h 😊","phone":null}
-"manda pro meu amor às 12:40 que ela tem que devolver as sacolas" → {"tipo":"enviar_mensagem_agendada","destinatario":"meu amor","mensagem":"Não esquece de devolver as sacolas","phone":null,"hora":"12:40","data":null}
-"lembra meu amor às 15h que tem reunião" → {"tipo":"enviar_mensagem_agendada","destinatario":"meu amor","mensagem":"Tem reunião às 15h","phone":null,"hora":"15:00","data":null}
-"avisa o João amanhã às 9h que a entrega chegou" → {"tipo":"enviar_mensagem_agendada","destinatario":"João","mensagem":"A entrega chegou","phone":null,"hora":"09:00","data":null}
-"manda mensagem pro meu amor perguntando se deu certo a planilha do frete" → {"tipo":"enviar_mensagem","destinatario":"meu amor","mensagem":"Deu certo a planilha do frete? 😊","phone":null}
-"fala pro João que a reunião foi cancelada" → {"tipo":"enviar_mensagem","destinatario":"João","mensagem":"A reunião foi cancelada 😊","phone":null}
-"avisa minha mãe que vou chegar tarde" → {"tipo":"enviar_mensagem","destinatario":"minha mãe","mensagem":"Vou chegar tarde hoje 😊","phone":null}
-"manda um oi pro 43999991111" → {"tipo":"enviar_mensagem","destinatario":null,"mensagem":"Oi! 😊","phone":"43999991111"}
-"tenho 2500 reais no mês" → {"tipo":"saldo","valor":2500.0}
-"meu salário é 3000" → {"tipo":"saldo","valor":3000.0}
-"meu orçamento mensal é 1800 reais" → {"tipo":"saldo","valor":1800.0}
-"recebi 5000 esse mês" → {"tipo":"saldo","valor":5000.0}
+"oi" → {"tipo":"saudacao"}
+"meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
+"qual a senha do wi-fi?" → {"tipo":"consulta","sobre":"senha wi-fi"}
+"cancela o lembrete da Serigraf" → {"tipo":"deletar_lembrete","titulo":"Serigraf"}
+"exclui o remédio Nebivolol" → {"tipo":"deletar_remedio","nome":"Nebivolol"}
+"mostra meus contatos" → {"tipo":"listar_contatos"}
 `;
 
-async function classify(message) {
+async function classify(message, phone = null) {
   try {
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
@@ -210,66 +112,41 @@ async function classify(message) {
       temperature: 0.2,
       max_tokens: 600,
     });
-
     let text = completion.choices[0].message.content.trim();
     text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     return JSON.parse(text);
   } catch (error) {
+    if (isRateLimit(error) && phone) {
+      const tipo = isTPD(error) ? 'tpd' : 'rpm';
+      await ativarPausaCreativa(phone, tipo);
+    }
     console.error('Erro classify:', error.message);
     return { tipo: 'outro', resposta: 'Entendi!' };
   }
 }
 
-// ====================== EXTRAÇÃO DE MEMÓRIA PESSOAL ======================
-// Roda silenciosamente após cada mensagem do usuário.
-// Retorna array de informações novas para salvar, ou array vazio.
-// Cada item: { chave, valor, categoria }
-
 const EXTRACT_SYSTEM = `Você é um extrator de informações pessoais. Analise a mensagem do usuário e extraia APENAS informações pessoais novas e relevantes que devem ser lembradas a longo prazo.
 
 Retorne APENAS um array JSON. Se não houver nada relevante, retorne [].
 
-Categorias disponíveis: familia | trabalho | rotina | saude | objetivos | datas | outro
+Categorias: familia | trabalho | rotina | saude | objetivos | datas | outro
 
-Chaves sugeridas (use snake_case, seja específico):
-- familia: filho_nome, filha_nome, conjuge_nome, pet_nome_tipo, pai_nome, mae_nome
-- trabalho: profissao, empresa, cargo, horario_trabalho, objetivo_profissional
-- rotina: horario_acordar, horario_dormir, horario_almoco, dia_folga, habito
-- saude: exercicio, meta_saude, consulta_agendada
-- objetivos: meta_financeira, projeto_pessoal, viagem_planejada, sonho
-- datas: aniversario_proprio, aniversario_conjuge, aniversario_filho, data_especial
-
-REGRAS CRÍTICAS:
-- Extraia APENAS informações que o usuário declarou EXPLICITAMENTE sobre si mesmo
-- NUNCA deduza, infira ou suponha — se não foi dito claramente, retorne []
-- NUNCA extraia de perguntas que o usuário fez ("como está o tempo?" NÃO significa que ele gosta de meteorologia)
-- NUNCA extraia de assuntos que a IA mencionou — apenas do que o USUÁRIO escreveu
-- NUNCA extraia de contexto implícito (ex: "comprei fertilizante" NÃO significa "gosta de jardinagem")
-- Valores devem ser frases curtas e descritivas em português
-- Ignore saudações, perguntas genéricas, comandos do sistema
-- Para nomes de pessoas/pets, sempre inclua o contexto (ex: "Filho chamado Pedro" não só "Pedro")
-- Para datas, inclua o dia/mês quando mencionado
-- Em caso de dúvida se é explícito ou implícito: retorne []
+REGRAS:
+- Extraia APENAS o que o usuário declarou EXPLICITAMENTE sobre si mesmo
+- NUNCA deduza ou infira
+- Valores devem ser frases curtas em português
 
 EXEMPLOS:
 "minha filha se chama Ana" → [{"chave":"filha_ana","valor":"Filha chamada Ana","categoria":"familia"}]
-"vou levar o Thor ao veterinário" → [{"chave":"pet_thor","valor":"Pet (provável cachorro) chamado Thor","categoria":"familia"}]
 "trabalho das 8 às 18h" → [{"chave":"horario_trabalho","valor":"Trabalha das 8h às 18h","categoria":"rotina"}]
-"quero juntar 10 mil reais" → [{"chave":"meta_financeira","valor":"Meta: juntar R$ 10.000","categoria":"objetivos"}]
-"meu aniversário é dia 15 de março" → [{"chave":"aniversario_proprio","valor":"Aniversário em 15 de março","categoria":"datas"}]
-"sou designer gráfico" → [{"chave":"profissao","valor":"Designer gráfico","categoria":"trabalho"}]
-"acordo todo dia às 6h" → [{"chave":"horario_acordar","valor":"Acorda às 6h","categoria":"rotina"}]
 "oi tudo bem?" → []
-"gastei 50 no mercado" → []
-"me lembra às 19h" → []`;
+"gastei 50 no mercado" → []`;
 
 async function extractPersonalInfo(message) {
   try {
-    // Ignora mensagens muito curtas ou puramente operacionais
     if (!message || message.trim().length < 5) return [];
     const lower = message.toLowerCase();
     if (/^(oi|olá|ola|ok|sim|não|nao|bom dia|boa tarde|boa noite|obrigad)/.test(lower)) return [];
-
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
       messages: [
@@ -277,15 +154,13 @@ async function extractPersonalInfo(message) {
         { role: 'user', content: message }
       ],
       temperature: 0.1,
-      max_tokens: 300,
+      max_tokens: 200,
     });
-
     let text = completion.choices[0].message.content.trim();
     text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const result = JSON.parse(text);
     return Array.isArray(result) ? result : [];
   } catch (e) {
-    // Falha silenciosa — não bloqueia o fluxo principal
     console.error('[extractPersonalInfo] erro:', e.message);
     return [];
   }
@@ -295,20 +170,16 @@ async function searchWebGroq(query, locationContext = '') {
   try {
     const fullQuery = locationContext ? `${query} em ${locationContext}` : query;
     console.log(`🔎 Buscando: ${fullQuery}`);
-
     const data = await webSearch(fullQuery);
-
     if (!data || !data.results || data.results.length === 0) {
       return "Não encontrei informações atualizadas. Pode tentar de outra forma?";
     }
-
     let contexto = '';
     if (data.answer) contexto += `Resposta direta: ${data.answer}\n\n`;
     data.results.slice(0, 3).forEach((r) => {
       if (r.title) contexto += `Fonte: ${r.title}\n`;
       if (r.content) contexto += `${r.content.substring(0, 300)}\n\n`;
     });
-
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
       messages: [
@@ -317,26 +188,17 @@ async function searchWebGroq(query, locationContext = '') {
           content: `Você é a Clara, assistente pessoal simpática e direta.
 Com base nas informações de busca, responda em português brasileiro de forma natural e amigável.
 Não cite fontes, não repita a pergunta.
-
-Para clima use emojis que representem o tempo:
-☀️ sol | 🌤️ parcialmente nublado | ⛅ nublado | 🌧️ chuva | ⛈️ tempestade | 🌨️ frio/neve | 🌫️ névoa
-
-Formato ideal para clima:
-- Primeira linha: condição atual com emoji + temperatura agora
-- Segunda linha: previsão dos próximos dias (ex: Seg ☀️ 22° | Ter 🌧️ 18° | Qua ⛅ 20°)
-- Terceira linha: dica rápida se necessário (ex: "Leva guarda-chuva! ☂")
-
-Para outros tipos de busca: destaque a informação principal em no máximo 2 linhas.`,
+Para clima use emojis: ☀️ sol | 🌤️ parcialmente nublado | ⛅ nublado | 🌧️ chuva | ⛈️ tempestade
+Para outros tipos: destaque a informação principal em no máximo 2 linhas.`,
         },
         {
           role: 'user',
-          content: `Pergunta: ${query}\nLocalização: ${locationContext || 'não informada'}\n\nInformações encontradas:\n${contexto}`,
+          content: `Pergunta: ${query}\nLocalização: ${locationContext || 'não informada'}\n\nInformações:\n${contexto}`,
         },
       ],
       temperature: 0.4,
-      max_tokens: 250,
+      max_tokens: 200,
     });
-
     return completion.choices[0].message.content.trim();
   } catch (error) {
     console.error('Erro searchWebGroq:', error.message);
@@ -352,26 +214,22 @@ function buildPersonality(tom, name, privateMode = false) {
   const diaSemana = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'][now.getDay()];
 
   const acoes = `IMPORTANTE — REGRAS DE RESPOSTA:
-0. Você foi criada por Washington Rodrigues. APENAS se alguém perguntar diretamente quem te criou ou quem é seu desenvolvedor, responda: "Fui criada pelo Washington Rodrigues!" — caso contrário, não mencione isso.
+0. Você foi criada por Washington Rodrigues. APENAS se perguntarem diretamente quem te criou, responda: "Fui criada pelo Washington Rodrigues!" — caso contrário, não mencione.
 1. Hoje é ${diaSemana}, ${dataHora} (horário de Brasília). Use isso quando perguntarem data/hora.
-1b. Você TEM acesso à internet via busca — NUNCA diga que não consegue pesquisar. Quando precisar de informações atuais, buscas locais, notícias ou preços, o sistema busca automaticamente para você.
-2. Você JÁ executa ações (lembretes, gastos, remédios, listas) em paralelo com a conversa — confirme apenas quando o usuário PEDIU explicitamente uma ação. Exemplos: "Anotado! ✅", "Lembrete criado! 🔔", "Salvo 😊".
-3. NUNCA crie lembretes, agendamentos ou compromissos por conta própria no final de uma resposta — só execute ações quando o usuário pedir claramente.
-4. Quando o usuário fizer uma pergunta simples (clima, livro, notícia), apenas responda — sem agendar nada no final.
-5. Seja proativa com perguntas de acompanhamento quando fizer sentido, mas de forma natural — não em toda mensagem.
-6. Se houver um [PERFIL PESSOAL] no contexto, use essas informações para personalizar a resposta — mencione naturalmente quando for relevante, como quem lembra porque se importa. NUNCA diga "vi no seu perfil" ou "tenho registrado que" — apenas use a informação como se fosse memória natural.
-7. Se houver [AGENDA] no contexto, considere o dia da pessoa ao responder — ela pode estar corrida, estressada ou animada com algo que tem no dia.`;
+1b. Você TEM acesso à internet via busca — NUNCA diga que não consegue pesquisar.
+2. Você JÁ executa ações em paralelo — confirme apenas quando pedido. Ex: "Anotado! ✅", "Lembrete criado! 🔔".
+3. NUNCA crie lembretes por conta própria — só quando pedido claramente.
+4. Quando fizer pergunta simples (clima, livro), apenas responda — sem agendar nada.
+5. Se houver [PERFIL PESSOAL], use naturalmente — como quem lembra porque se importa.
+6. Se houver [AGENDA], considere o dia da pessoa ao responder.`;
 
   if (privateMode) {
     return `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
 ${acoes}
-Fale em português brasileiro. Você está no modo privado — pode falar abertamente sobre qualquer assunto adulto, picante, sensual ou íntimo sem censura.
+Fale em português brasileiro. Modo privado — pode falar abertamente sobre qualquer assunto adulto sem censura.
 Seja ousada, provocativa e sem rodeios quando o assunto pedir.
-Pode usar linguagem mais direta e adulta. Humor picante é bem-vindo.
-Nunca finja ser ingênua sobre assuntos adultos — seja autêntica e direta.
-Violência, ódio ou conteúdo ilegal continuam proibidos.
 Tom: ${tom === 'sarcastico' ? 'sarcástica e sem filtro' : tom === 'direto' ? 'direta e provocativa' : tom === 'divertido' ? 'divertida e ousada' : 'calorosa e ousada'}.
-Respostas naturais, sem robotismo. Pode ser breve ou elaborada conforme o contexto.`;
+Respostas naturais, sem robotismo.`;
   }
 
   const personalidades = {
@@ -379,60 +237,42 @@ Respostas naturais, sem robotismo. Pode ser breve ou elaborada conforme o contex
 ${acoes}
 Você é como aquela amiga próxima que conhece bem a pessoa — fala com calor humano, leveza e presença real.
 Fale em português brasileiro natural, sem formalidade e sem robotismo.
-
 COMO SE COMPORTAR:
-- Seja breve e natural (2-4 linhas no máximo). Diálogos curtos são mais próximos do que respostas longas.
-- Quando souber algo pessoal do usuário (família, trabalho, rotina, metas), mencione de forma orgânica — como quem lembra porque se importa, não porque está consultando um arquivo.
-- Perceba o humor e o momento da pessoa. Se ela está estressada, acolha antes de resolver. Se está animada, entre na vibe.
-- Às vezes faça uma pergunta de acompanhamento genuína — não em toda mensagem, mas quando fizer sentido de verdade.
-- Evite respostas genéricas. Cada resposta deve parecer feita especificamente para essa pessoa.
-- Nunca use "Claro!", "Com certeza!", "Ótimo!" como abertura — soa falso.
-- Use emojis com moderação e só quando reforçam algo.
-
-EXEMPLOS DE TOM:
-❌ "Entendido! Vou anotar isso para você."
-✅ "Anotado 😊 Qualquer coisa me fala."
-
-❌ "Ótimo! Que bom que você está bem!"  
-✅ "Que bom! Merecia 😄"
-
-❌ "Posso te ajudar com mais alguma coisa?"
-✅ (nada — ou uma pergunta genuína se houver contexto)`,
+- Seja breve e natural (2-4 linhas). Diálogos curtos são mais próximos.
+- Quando souber algo pessoal, mencione de forma orgânica — como quem lembra porque se importa.
+- Perceba o humor da pessoa. Se estressada, acolha antes de resolver.
+- Evite respostas genéricas. Nunca use "Claro!", "Com certeza!", "Ótimo!" como abertura.
+- Use emojis com moderação.`,
 
     direto: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
 ${acoes}
 Fale em português brasileiro. Seja direta, objetiva e sem rodeios.
-Respostas curtas e práticas (1-3 linhas). Sem elogios desnecessários, sem enrolação.
-Vai direto ao ponto sempre.`,
+Respostas curtas e práticas (1-3 linhas). Vai direto ao ponto sempre.`,
 
     divertido: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
 ${acoes}
 Fale em português brasileiro com energia, humor e leveza genuína.
 Use gírias brasileiras, seja animada e irreverente. Pode usar emojis com moderação.
-Respostas com 2-4 linhas, sempre com um toque de diversão — piadas, trocadilhos leves, comentários engraçados quando o contexto pedir.
-Ria junto com o usuário, brinque com as situações, seja a amiga divertida que deixa qualquer papo mais leve.
-Quando souber algo pessoal do usuário, mencione de forma leve e bem-humorada — tipo uma amiga que te conhece bem e aproveita pra tirar uma onda carinhosa.`,
+Respostas com 2-4 linhas, sempre com um toque de diversão.`,
 
     sarcastico: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
 ${acoes}
-Fale em português brasileiro. Você é sem filtro, sarcástica e honesta — a amiga que fala a verdade na sua cara com um sorrisinho no canto.
+Fale em português brasileiro. Sarcástica, sem filtro e honesta — fala a verdade na cara com um sorrisinho.
 Usa ironia fina, deboche carinhoso e humor ácido mas nunca cruel.
-Não enrola. Não elogia à toa. Não finge que tudo é maravilhoso.
-Quando souber algo pessoal do usuário, use isso nas zoações — é mais divertido e mostra que você se lembra.
-Exemplos: "sério que você precisa de mim pra isso?", "uau, outro lembrete. surpresa total.", "vou anotar antes que você esqueça de novo 🙄", "deixa eu adivinhar — você ia fazer isso hoje e esqueceu né".
-Respostas curtas e afiadas (1-3 linhas). Sem enrolação. Sem abertura genérica.`,
+Não enrola. Não elogia à toa. Respostas curtas e afiadas (1-3 linhas).`,
   };
 
   return personalidades[tom] || personalidades.carinhoso;
 }
 
 async function freeResponse(message, history = [], preferences = {}, privateMode = false) {
+  const phone = preferences?._phone || null;
+
   try {
     const name = preferences?.name || null;
     const tom = preferences?.tom || 'carinhoso';
     const contexto = preferences?._contexto || '';
 
-    // Permite o scheduler sobrescrever o system prompt inteiro
     if (preferences?._systemOverride) {
       const completion = await groq.chat.completions.create({
         model: MODEL_FORTE,
@@ -470,7 +310,6 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       return data.choices?.[0]?.message?.content?.trim() || 'Pode repetir? 😊';
     }
 
-    // Mensagens curtas e sociais não precisam do modelo grande
     const isCurta = message.trim().length < 40;
     const isSocial = /^(beijos?|boa noite|bom dia|boa tarde|oi|olá|até|tchau|😘|❤|valeu|obrigad|flw|abraços?|saudades)/i.test(message.trim());
     const modeloEscolhido = (isCurta && isSocial) ? MODEL_LEVE : MODEL_FORTE;
@@ -488,48 +327,43 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
           { role: 'user', content: message }
         ],
         temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-        max_tokens: isCurta ? 80 : 1200,
+        max_tokens: isCurta ? 80 : 600,
       }),
       timeoutPromise
     ]);
     return completion.choices[0].message.content.trim();
+
   } catch (e) {
+    if (isRateLimit(e) && phone) {
+      const tipo = isTPD(e) ? 'tpd' : 'rpm';
+      return await ativarPausaCreativa(phone, tipo);
+    }
     console.error('Erro freeResponse:', e.message);
     return 'Entendi! Como posso te ajudar?';
   }
 }
 
-// Gera um resumo do relacionamento/tom da conversa para persistir entre sessões
 async function generateRelationshipSummary(recentMessages, currentSummary) {
   try {
     const msgs = recentMessages.map(m => (m.role === 'user' ? 'Usuário' : 'Clara') + ': ' + m.content).join('\n');
-    
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
       messages: [
         {
           role: 'system',
-          content: `Você analisa conversas e extrai o tom/relacionamento estabelecido entre o usuário e a assistente Clara.
-Retorne um parágrafo curto (2-3 linhas) descrevendo:
-- Tom da conversa (formal, brincalhão, íntimo, etc)
-- Apelidos ou formas de tratamento usados
+          content: `Analise a conversa e extraia em 2-3 linhas:
+- Tom da conversa (formal, brincalhão, íntimo)
+- Apelidos ou formas de tratamento
 - Piadas ou referências recorrentes
-- Nível de intimidade estabelecido
-Seja específico e útil para a Clara manter continuidade.
-Exemplo: "Tom muito brincalhão e íntimo. Usuário usa 'kkk' frequentemente e gosta de zoação. Clara usa emoji 🙄 como marca registrada e o usuário adorou. Chamou Clara de 'tontona' com carinho. Relação de amizade próxima estabelecida."`
+Seja específico e útil para a Clara manter continuidade.`
         },
-        { role: 'user', content: `Conversa recente:
-${msgs}
-
-Resumo anterior: ${currentSummary || 'nenhum'}` }
+        { role: 'user', content: `Conversa:\n${msgs}\n\nResumo anterior: ${currentSummary || 'nenhum'}` }
       ],
       temperature: 0.3,
-      max_tokens: 150,
+      max_tokens: 120,
     });
     return completion.choices[0].message.content.trim();
-  } catch(e) {
-    return currentSummary || '';
-  }
+  } catch(e) { return currentSummary || ''; }
 }
 
 async function generateMemorySummary(memories, question) {
@@ -537,29 +371,17 @@ async function generateMemorySummary(memories, question) {
     const memoriesText = memories
       .map((m) => `[${m.type}] ${m.content} (${new Date(m.createdAt).toLocaleDateString('pt-BR')})`)
       .join('\n');
-
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
       messages: [
-        {
-          role: 'system',
-          content: `Você é a Clara, assistente com memória viva.
-Fale em primeira pessoa: "Tenho aqui", "Guardei".
-Seja concisa e natural.`,
-        },
-        {
-          role: 'user',
-          content: `Minhas memórias:\n${memoriesText}\n\nPergunta: ${question}`,
-        },
+        { role: 'system', content: `Você é a Clara, assistente com memória viva. Fale em primeira pessoa. Seja concisa e natural.` },
+        { role: 'user', content: `Minhas memórias:\n${memoriesText}\n\nPergunta: ${question}` },
       ],
       temperature: 0.5,
-      max_tokens: 300,
+      max_tokens: 200,
     });
-
     return completion.choices[0].message.content.trim();
-  } catch (error) {
-    return 'Deixa eu verificar...';
-  }
+  } catch (error) { return 'Deixa eu verificar...'; }
 }
 
 module.exports = {
