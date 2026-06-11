@@ -132,20 +132,55 @@ async function executeListaAction(user, phone, classified) {
       }
       return { acao: 'nenhuma', listaNome: null, listaItems: [] };
     }
-    if (tipo === 'lista_marcar' && classified.numeros && classified.numeros.length > 0) {
-      const mems = await memory.getRecentMemories(user.id, 20);
-      const listaRef = mems.find(m => m.type === 'ultima_lista');
-      if (listaRef) {
-        const lista = await prisma.groceryList.findUnique({ where: { id: listaRef.content } });
-        if (lista) {
-          let items = []; try { items = JSON.parse(lista.items); } catch {}
-          items = items.map(i => classified.numeros.includes(i.id) ? { ...i, done: true } : i);
-          const allDone = items.every(i => i.done);
-          await prisma.groceryList.update({ where: { id: lista.id }, data: { items: JSON.stringify(items), done: allDone } });
-          return { acao: 'marcada', listaNome: lista.name, listaItems: items, allDone };
-        }
+    if (tipo === 'lista_marcar') {
+      const temNumeros = classified.numeros && classified.numeros.length > 0;
+      const temNomes = classified.nomes && classified.nomes.length > 0;
+      if (!temNumeros && !temNomes) return null;
+
+      // Determinar qual lista usar
+      let lista = null;
+
+      // Se informou nome da lista, busca por nome
+      if (classified.lista) {
+        const nomeLista = classified.lista.toLowerCase();
+        const todasListas = await prisma.groceryList.findMany({ where: { userId: user.id, done: false } });
+        lista = todasListas.find(l => l.name.toLowerCase().includes(nomeLista));
       }
-      return null;
+
+      // Fallback: usa última lista referenciada
+      if (!lista) {
+        const mems = await memory.getRecentMemories(user.id, 20);
+        const listaRef = mems.find(m => m.type === 'ultima_lista');
+        if (listaRef) lista = await prisma.groceryList.findUnique({ where: { id: listaRef.content } });
+      }
+
+      // Se ainda não achou, pega a lista ativa mais recente
+      if (!lista) {
+        lista = await prisma.groceryList.findFirst({ where: { userId: user.id, done: false }, orderBy: { createdAt: 'desc' } });
+      }
+
+      if (!lista) return null;
+
+      let items = []; try { items = JSON.parse(lista.items); } catch {}
+
+      // Marcar por número
+      if (temNumeros) {
+        items = items.map(i => classified.numeros.includes(i.id) ? { ...i, done: true } : i);
+      }
+
+      // Marcar por nome do item (busca parcial, case insensitive)
+      if (temNomes) {
+        items = items.map(i => {
+          const nomeItem = i.nome.toLowerCase();
+          const match = classified.nomes.some(n => nomeItem.includes(n.toLowerCase()) || n.toLowerCase().includes(nomeItem.split(' ')[0]));
+          return match ? { ...i, done: true } : i;
+        });
+      }
+
+      const allDone = items.every(i => i.done);
+      await prisma.groceryList.update({ where: { id: lista.id }, data: { items: JSON.stringify(items), done: allDone } });
+      await memory.saveMemory(user.id, 'ultima_lista', lista.id);
+      return { acao: 'marcada', listaNome: lista.name, listaItems: items, allDone };
     }
     if (tipo === 'lista_adicionar' && classified.item) {
       const mems2 = await memory.getRecentMemories(user.id, 20);
