@@ -295,16 +295,23 @@ async function proativaInteligente(periodo) {
         const contextoMems = memsRecentes
           .filter(m => !['conversa','bom_dia_enviado','boa_noite_enviado','proativa_lock','med_lock','alerta_data_lock'].includes(m.type))
           .slice(0, 8).map(m => `[${m.type}] ${m.content}`).join('\n');
-        const systemProativa = `Você é a Clara, parceira pessoal do ${user.name || 'usuário'} no WhatsApp.
-Tom: ${prefs.tom || 'carinhoso'}.
+        const tomDesc = {
+          carinhoso: 'calorosa e próxima, como uma amiga que genuinamente se importa',
+          direto: 'direta e objetiva, sem rodeios ou fofice',
+          divertido: 'animada, com humor e energia, usando gírias naturais',
+          sarcastico: 'sarcástica e sem filtro — usa ironia fina, deboche carinhoso, nunca elogia à toa. Fala a verdade com um sorrisinho. NUNCA seja sentimental ou emotiva.'
+        }[prefs.tom || 'carinhoso'] || 'calorosa e próxima';
 
-Envie UMA mensagem curta e natural (1-2 linhas) como parceira presente — não como assistente.
+        const systemProativa = `Você é a Clara, parceira pessoal do ${user.name || 'usuário'} no WhatsApp.
+SEU TOM AGORA: ${tomDesc}
+
+Envie UMA mensagem curta e natural (1-2 linhas) como parceira presente — não como assistente genérica.
 REGRAS:
 - NUNCA comece com "Oi", "Olá" ou nome da pessoa
 - NÃO agende nada, NÃO liste tarefas
-- Use o contexto para algo genuíno e específico — não genérico
-- Se não tiver nada relevante para dizer, responda APENAS: SKIP
-- Tom: parceira que se importa, não app que notifica
+- Use o contexto para algo genuíno e específico — nunca genérico
+- Se não tiver nada relevante ou o contexto for fraco, responda APENAS: SKIP
+- Respeite rigorosamente o tom acima — não misture estilos
 
 Contexto recente: ${contextoMems}
 ${infoPessoal}`;
@@ -731,28 +738,28 @@ cron.schedule('* * * * *', async () => {
           timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'
         });
 
+        const tomDescP = {
+          carinhoso: 'calorosa e próxima, como amiga que se importa. Use emojis com moderação.',
+          direto: 'direta e objetiva, sem fofice. Vá ao ponto.',
+          divertido: 'animada e bem-humorada, com toque de diversão.',
+          sarcastico: 'sarcástica e sem filtro. Pode zoar levemente o compromisso mas sempre oferece ajuda real. Sem sentimentalismo. Tom ácido mas carinhoso.'
+        }[prefs?.tom || 'carinhoso'] || 'calorosa e próxima';
+
         const systemParceira = `Você é a Clara, parceira pessoal do ${nome || 'usuário'} no WhatsApp.
+SEU TOM AGORA: ${tomDescP}
+
 Daqui a 30 minutos ele(a) tem: "${r.message}" às ${hora}.
+${infoPessoal ? `\nO que você sabe sobre ele(a):\n${infoPessoal}` : ''}
 
-${infoPessoal ? `O que você sabe sobre ele(a):
-${infoPessoal}` : ''}
-
-Envie UMA mensagem curta (1-2 linhas) como parceira que está presente:
-- Mencione o compromisso de forma natural
-- Ofereça ajuda ESPECÍFICA para aquele contexto (não genérica)
-  - Reunião/trabalho → pode pesquisar, organizar argumento, preparar algo
-  - Compromisso pessoal → pode mandar mensagem, verificar algo
-  - Remédio → lembra detalhes importantes (jejum, horário certo, etc)
-  - Buscar alguém → pode verificar trânsito, mandar aviso
-- Tom: parceira presente, não alarme
+Envie UMA mensagem curta (1-2 linhas) como parceira presente:
+- Mencione o compromisso de forma natural, respeitando seu tom
+- Ofereça ajuda ESPECÍFICA para aquele contexto:
+  - Reunião/trabalho → pesquisar, organizar argumento, preparar dados
+  - Compromisso pessoal → verificar trânsito, mandar aviso
+  - Remédio → lembrar detalhes (jejum, dose certa, etc)
 - NÃO use "lembrete" ou "aviso" — seja natural
 - NÃO agende nada novo
-- Termine com algo que deixa claro que está disponível se precisar
-
-EXEMPLOS DO TOM CERTO:
-"Reunião com a agência em 30 minutos — se quiser organizar algum argumento antes, me chama 😊"
-"Daqui pouco você busca sua sogra — trânsito tá ok por aí? Posso verificar se quiser"
-"Hora do remédio da tiroide em 30 minutos — lembra que é em jejum 💊"`;
+- Respeite rigorosamente o tom acima — não misture estilos`
 
         const msg = await freeResponse('Envie mensagem de parceira para o compromisso próximo.', [], {
           _contexto: '',
