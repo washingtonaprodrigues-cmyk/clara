@@ -531,7 +531,11 @@ cron.schedule('* * * * *', async () => {
         const prefs = user ? await prisma.preference.findFirst({ where: { userId: user.id } }) : null;
         const nome = prefs?.name || user?.name || null;
 
-        if (grupo.reminders.length === 1) {
+        // Follow-up urgente — mensagem especial
+        const isFollowup = grupo.reminders.length === 1 && grupo.reminders[0].message.startsWith('__followup__');
+        if (isFollowup) {
+          msg = grupo.reminders[0].message.replace('__followup__', '');
+        } else if (grupo.reminders.length === 1) {
           const r = grupo.reminders[0];
           msg = `🔔 Lembrete\n\n${r.message}\n⏰ ${grupo.hora}\n\n${random(finais)}`;
         } else {
@@ -545,6 +549,57 @@ cron.schedule('* * * * *', async () => {
       }
 
       await sendMessage(grupo.phone, msg);
+
+      // ── Urgência: criar lembrete 15min antes (se ainda não passou) e follow-up 15min depois ──
+      for (const r of grupo.reminders) {
+        try {
+          const isUrgente = await prisma.memory.findFirst({ where: { type: 'lembrete_urgente', content: r.id } });
+          if (!isUrgente) continue;
+
+          const user = await prisma.user.findFirst({ where: { phone: grupo.phone } });
+          const prefs = user ? await prisma.preference.findFirst({ where: { userId: user.id } }) : null;
+
+          // Lembrete antecipado 15min antes — só cria se ainda falta mais de 15min
+          const quinzeAntes = new Date(r.scheduledAt.getTime() - 15 * 60 * 1000);
+          if (quinzeAntes > new Date()) {
+            const jaTemAntes = await prisma.memory.findFirst({ where: { type: 'urgente_antes_lock', content: r.id } });
+            if (!jaTemAntes) {
+              await prisma.reminder.create({
+                data: { userId: r.userId, phone: grupo.phone, message: `⚡ Em 15 minutos: ${r.message}`, scheduledAt: quinzeAntes }
+              });
+              await prisma.memory.create({ data: { userId: r.userId, type: 'urgente_antes_lock', content: r.id } });
+              console.log(`[Urgência] Lembrete antecipado criado: "${r.message}"`);
+            }
+          }
+
+          // Follow-up 15min depois — pergunta se conseguiu fazer
+          const quinzeDepois = new Date(r.scheduledAt.getTime() + 15 * 60 * 1000);
+          const jaTemDepois = await prisma.memory.findFirst({ where: { type: 'urgente_followup_lock', content: r.id } });
+          if (!jaTemDepois) {
+            const tomDesc = {
+              carinhoso: 'calorosa e próxima',
+              direto: 'direta e objetiva',
+              divertido: 'animada e bem-humorada',
+              sarcastico: 'sarcástica e sem filtro, pode zoar mas com carinho'
+            }[prefs?.tom || 'carinhoso'] || 'calorosa';
+
+            const systemFollowup = `Você é a Clara, parceira pessoal. Tom: ${tomDesc}.
+O usuário tinha um compromisso urgente: "${r.message}".
+Já passou 15 minutos. Pergunte de forma natural e breve (1 linha) se conseguiu fazer.
+Respeite o tom — sarcástica não pergunta com fofice.`;
+
+            const msgFollowup = await freeResponse('Pergunta de follow-up.', [], {
+              _systemOverride: systemFollowup, tom: prefs?.tom || 'carinhoso'
+            }).catch(() => `E aí, conseguiu fazer "${r.message}"? 😊`);
+
+            await prisma.reminder.create({
+              data: { userId: r.userId, phone: grupo.phone, message: `__followup__${msgFollowup}`, scheduledAt: quinzeDepois }
+            });
+            await prisma.memory.create({ data: { userId: r.userId, type: 'urgente_followup_lock', content: r.id } });
+            console.log(`[Urgência] Follow-up agendado para "${r.message}"`);
+          }
+        } catch(e) { console.error(`[Urgência] Erro ${r.id}:`, e.message); }
+      }
 
       // ── Feature 3: Recorrência — recria lembrete para próximo período ──
       for (const r of grupo.reminders) {
