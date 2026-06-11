@@ -295,16 +295,19 @@ async function proativaInteligente(periodo) {
         const contextoMems = memsRecentes
           .filter(m => !['conversa','bom_dia_enviado','boa_noite_enviado','proativa_lock','med_lock','alerta_data_lock'].includes(m.type))
           .slice(0, 8).map(m => `[${m.type}] ${m.content}`).join('\n');
-        const systemProativa = `Você é a Clara, assistente pessoal íntima e proativa.
-${user.name ? `O nome do usuário é ${user.name}.` : ''}
+        const systemProativa = `Você é a Clara, parceira pessoal do ${user.name || 'usuário'} no WhatsApp.
 Tom: ${prefs.tom || 'carinhoso'}.
-Com base no que você sabe, envie UMA mensagem proativa curta e natural (1-3 linhas).
+
+Envie UMA mensagem curta e natural (1-2 linhas) como parceira presente — não como assistente.
 REGRAS:
-- Seja NATURAL, como uma amiga enviando mensagem
-- NÃO comece com "Olá" ou "Oi [nome]!"
+- NUNCA comece com "Oi", "Olá" ou nome da pessoa
 - NÃO agende nada, NÃO liste tarefas
-- Se não tiver contexto suficiente, responda APENAS: SKIP
-Contexto: ${contextoMems}\n${infoPessoal}`;
+- Use o contexto para algo genuíno e específico — não genérico
+- Se não tiver nada relevante para dizer, responda APENAS: SKIP
+- Tom: parceira que se importa, não app que notifica
+
+Contexto recente: ${contextoMems}
+${infoPessoal}`;
         const msg = await freeResponse('Envie uma mensagem proativa.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemProativa });
         if (!msg || msg.trim() === 'SKIP' || msg.length < 5) continue;
         await sendMessage(user.phone, msg);
@@ -691,6 +694,84 @@ cron.schedule('30 8 * * *', async () => {
       } catch (e) { console.error(`[Estoque] Erro ${med.id}:`, e.message); }
     }
   } catch (e) { console.error('[Estoque] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+
+// ─────────────────────────────────────────────
+// PARCEIRA — avisa 30min antes de cada lembrete (a cada minuto)
+// ─────────────────────────────────────────────
+cron.schedule('* * * * *', async () => {
+  try {
+    const now = nowBRT();
+    const em30min = new Date(now.getTime() + 30 * 60 * 1000);
+    const em31min = new Date(now.getTime() + 31 * 60 * 1000);
+
+    // Busca lembretes que disparam nos próximos 30 min (janela de 1 minuto para não duplicar)
+    const proximos = await prisma.reminder.findMany({
+      where: {
+        sent: false,
+        confirmed: false,
+        scheduledAt: { gte: em30min, lt: em31min }
+      }
+    });
+
+    if (!proximos.length) return;
+
+    for (const r of proximos) {
+      try {
+        // Lock: só avisa uma vez por lembrete
+        const lockKey = `parceira_${r.id}`;
+        if (await prisma.memory.findFirst({ where: { type: 'parceira_lock', content: lockKey } })) continue;
+        await prisma.memory.create({ data: { userId: r.userId, type: 'parceira_lock', content: lockKey } });
+
+        const user = await prisma.user.findFirst({ where: { id: r.userId } });
+        if (!user?.phone) continue;
+
+        const prefs = await prisma.preference.findFirst({ where: { userId: r.userId } }).catch(() => null);
+        const nome = prefs?.name || user.name || null;
+        const infoPessoal = await memory.buildPersonalContext(r.userId).catch(() => '');
+
+        const hora = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', {
+          timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'
+        });
+
+        const systemParceira = `Você é a Clara, parceira pessoal do ${nome || 'usuário'} no WhatsApp.
+Daqui a 30 minutos ele(a) tem: "${r.message}" às ${hora}.
+
+${infoPessoal ? `O que você sabe sobre ele(a):
+${infoPessoal}` : ''}
+
+Envie UMA mensagem curta (1-2 linhas) como parceira que está presente:
+- Mencione o compromisso de forma natural
+- Ofereça ajuda ESPECÍFICA para aquele contexto (não genérica)
+  - Reunião/trabalho → pode pesquisar, organizar argumento, preparar algo
+  - Compromisso pessoal → pode mandar mensagem, verificar algo
+  - Remédio → lembra detalhes importantes (jejum, horário certo, etc)
+  - Buscar alguém → pode verificar trânsito, mandar aviso
+- Tom: parceira presente, não alarme
+- NÃO use "lembrete" ou "aviso" — seja natural
+- NÃO agende nada novo
+- Termine com algo que deixa claro que está disponível se precisar
+
+EXEMPLOS DO TOM CERTO:
+"Reunião com a agência em 30 minutos — se quiser organizar algum argumento antes, me chama 😊"
+"Daqui pouco você busca sua sogra — trânsito tá ok por aí? Posso verificar se quiser"
+"Hora do remédio da tiroide em 30 minutos — lembra que é em jejum 💊"`;
+
+        const msg = await freeResponse('Envie mensagem de parceira para o compromisso próximo.', [], {
+          _contexto: '',
+          name: nome,
+          tom: prefs?.tom || 'carinhoso',
+          _systemOverride: systemParceira
+        });
+
+        if (!msg || msg.length < 5) continue;
+
+        await sendMessage(user.phone, msg);
+        console.log(`[Parceira] ${user.phone} → "${r.message}" em 30min`);
+      } catch (e) { console.error(`[Parceira] Erro lembrete ${r.id}:`, e.message); }
+    }
+  } catch (e) { console.error('[Parceira] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
 console.log('Clara scheduler iniciado 💜');
