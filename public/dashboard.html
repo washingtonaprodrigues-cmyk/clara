@@ -976,29 +976,62 @@ async function doSearch(){
 }
 
 function renderSearch(data){
-  const body=document.getElementById('search-body');
-  if(!data.results?.length){body.innerHTML='<div class="empty"><span class="empty-icon">🔍</span>Nenhum resultado encontrado</div>';return;}
+  var body=document.getElementById('search-body');
+  if(!data.results||!data.results.length){body.innerHTML='<div class="empty"><span class="empty-icon">🔍</span>Nenhum resultado encontrado</div>';return;}
+  body.innerHTML='';
 
-  let h='<div style="overflow-y:auto;flex:1;display:flex;flex-direction:column">';
+  var wrap=document.createElement('div');
+  wrap.style.cssText='overflow-y:auto;flex:1;display:flex;flex-direction:column';
 
   if(data.answer){
-    h+='<div class="search-answer"><div class="search-answer-label">✨ Resposta direta</div>'+data.answer+'</div>';
+    var ans=document.createElement('div');
+    ans.className='search-answer';
+    ans.innerHTML='<div class="search-answer-label">✨ Resposta direta</div>'+data.answer;
+    wrap.appendChild(ans);
   }
 
-  h+='<div class="search-results">';
+  var results=document.createElement('div');
+  results.className='search-results';
+
   data.results.forEach(function(r){
     var domain='';try{domain=new URL(r.url).hostname.replace('www.','');}catch(e){}
-    var favicon='https://www.google.com/s2/favicons?domain='+domain+'&sz=32';
-    var date=r.publishedDate?('<div class="sr-date">'+new Date(r.publishedDate).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})+'</div>'):'';
-    var cnt=(r.content||'').replace(/#{1,3} /g,'');
-    h+='<div class="search-result" onclick="window.open(this.dataset.url,'_blank')" data-url="'+r.url.replace(/"/g,'&quot;')+'">';
-    h+='<div class="sr-source"><img class="sr-favicon" src="'+favicon+'" onerror="this.style.display='none'"/>'+domain+'</div>';
-    h+='<div class="sr-title">'+r.title+'</div>';
-    h+='<div class="sr-content">'+cnt+'</div>';
-    h+=date+'</div>';
+    var el=document.createElement('div');
+    el.className='search-result';
+
+    var src=document.createElement('div');
+    src.className='sr-source';
+    var fav=document.createElement('img');
+    fav.className='sr-favicon';
+    fav.src='https://www.google.com/s2/favicons?domain='+domain+'&sz=32';
+    fav.onerror=function(){this.style.display='none';};
+    src.appendChild(fav);
+    src.appendChild(document.createTextNode(domain));
+
+    var title=document.createElement('div');
+    title.className='sr-title';
+    title.textContent=r.title;
+
+    var cnt=document.createElement('div');
+    cnt.className='sr-content';
+    cnt.textContent=(r.content||'').replace(/#{1,3} /g,'').substring(0,400);
+
+    el.appendChild(src);
+    el.appendChild(title);
+    el.appendChild(cnt);
+
+    if(r.publishedDate){
+      var dt=document.createElement('div');
+      dt.className='sr-date';
+      dt.textContent=new Date(r.publishedDate).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'});
+      el.appendChild(dt);
+    }
+
+    (function(url){el.addEventListener('click',function(){window.open(url,'_blank');});})(r.url);
+    results.appendChild(el);
   });
-  h+='</div></div>';
-  body.innerHTML=h;
+
+  wrap.appendChild(results);
+  body.appendChild(wrap);
 }
 
 // Swipe da esquerda pra direita abre o drawer (mobile)
