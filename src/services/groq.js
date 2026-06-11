@@ -1,325 +1,381 @@
-const express = require('express');
-const router = express.Router();
-const { freeResponse, classify, extractPersonalInfo } = require('../services/groq');
-const { searchWeb } = require('../services/groq');
-const memory = require('../services/memory');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-const { buildPersonalContext, savePersonalInfo } = memory;
+const Groq = require('groq-sdk');
+const { webSearch } = require('./search');
+const rateLimit = require('./rateLimit');
 
-function nowBRT() {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-}
-function dateBRT() {
-  const d = nowBRT();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-function calcularHorarioRelativo(texto) {
-  const t = (texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const minMatch = t.match(/daqui\s+(\d+)\s*(min|minuto|minutos)/);
-  if (minMatch) { const d = nowBRT(); d.setMinutes(d.getMinutes() + parseInt(minMatch[1])); return d; }
-  const hrMatch = t.match(/daqui\s+(\d+)\s*(h|hora|horas)/);
-  if (hrMatch) { const d = nowBRT(); d.setHours(d.getHours() + parseInt(hrMatch[1])); return d; }
-  const emMinMatch = t.match(/em\s+(\d+)\s*(min|minuto|minutos)/);
-  if (emMinMatch) { const d = nowBRT(); d.setMinutes(d.getMinutes() + parseInt(emMinMatch[1])); return d; }
-  const emHrMatch = t.match(/em\s+(\d+)\s*(h|hora|horas)/);
-  if (emHrMatch) { const d = nowBRT(); d.setHours(d.getHours() + parseInt(emHrMatch[1])); return d; }
-  return null;
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+const MODEL_LEVE = 'llama-3.1-8b-instant';
+const MODEL_FORTE = 'llama-3.3-70b-versatile';
+const MODEL_PRIVADO = 'nousresearch/hermes-3-llama-3.1-70b';
+
+function hoje() {
+  return new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 }
 
-async function executeActionFromChat(user, phone, classified, originalText) {
+function isRateLimit(error) {
+  const msg = (error.message || '').toLowerCase();
+  const status = error.status || error.statusCode || 0;
+  return status === 429 || msg.includes('rate limit') || msg.includes('rate_limit') || msg.includes('429');
+}
+
+function isTPD(error) {
+  const msg = (error.message || '').toLowerCase();
+  return msg.includes('tokens per day') || msg.includes('tpd') || msg.includes('daily');
+}
+
+async function ativarPausaCreativa(phone, tipo) {
   try {
-    switch (classified.tipo) {
-      case 'concluir_lembrete': {
-        if (classified.titulo) {
-          const lembretes = await prisma.reminder.findMany({
-            where: { userId: user.id, confirmed: false, sent: false },
-            orderBy: { scheduledAt: 'asc' }
-          });
-          const titulo = classified.titulo.toLowerCase();
-          const match = lembretes.find(r =>
-            r.message.toLowerCase().includes(titulo) ||
-            titulo.includes(r.message.toLowerCase().substring(0, 10))
-          ) || lembretes[0];
-          if (match) {
-            await prisma.reminder.update({ where: { id: match.id }, data: { confirmed: true, sent: true } });
-            console.log(`[chat] Lembrete concluído: "${match.message}"`);
-            return { lembreteId: match.id, lembreteTitulo: match.message };
-          }
-        }
-        return null;
-      }
-
-      case 'gasto':
-        if (classified.valor) {
-          await memory.saveExpense(user.id, { valor: classified.valor, categoria: classified.categoria || 'outro', descricao: classified.descricao || classified.categoria });
-        }
-        return null;
-
-      case 'saldo':
-        if (classified.valor !== undefined && classified.valor !== null) {
-          await memory.saveUserPreference(user.id, null, null, parseFloat(classified.valor));
-        }
-        return null;
-
-      case 'preferencia':
-        await memory.saveUserPreference(user.id, classified.nome, classified.tom, null);
-        return null;
-
-      case 'tarefa': {
-        let scheduledAt = null;
-        if (originalText) {
-          const relativo = calcularHorarioRelativo(originalText);
-          if (relativo) scheduledAt = relativo;
-        }
-        if (!scheduledAt && classified.hora) {
-          const anoAtual = new Date().getFullYear();
-          let dataUsada = classified.data || dateBRT();
-          if (classified.data) {
-            const anoData = new Date(classified.data + 'T12:00:00-03:00').getFullYear();
-            if (anoData < anoAtual || anoData > anoAtual + 1) {
-              console.warn(`[DATA_INVALIDA] chat titulo="${classified.titulo}" data="${classified.data}"`);
-              dataUsada = dateBRT();
-            }
-          }
-          const [h, m] = classified.hora.split(':').map(Number);
-          scheduledAt = new Date(`${dataUsada}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
-          if (!classified.data && scheduledAt < nowBRT()) scheduledAt.setDate(scheduledAt.getDate() + 1);
-        }
-        if (scheduledAt && classified.titulo) {
-          await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
-          console.log(`[chat] Lembrete: "${classified.titulo}" → ${scheduledAt.toISOString()}`);
-        }
-        return null;
-      }
-
-      case 'medicamento':
-        if (classified.nome) {
-          await memory.saveMedication(user.id, { nome: classified.nome, quantidade: classified.quantidade || 0, frequencia: classified.frequencia || 1, horarios: classified.horarios || ['08:00'] });
-        }
-        return null;
-
-      case 'anotacao':
-        await memory.saveMemory(user.id, 'anotacao', classified.conteudo || classified.titulo || originalText, { titulo: classified.titulo });
-        return null;
-
-      case 'cidade':
-        if (classified.cidade) await memory.saveMemory(user.id, 'cidade', classified.cidade);
-        return null;
-
-      case 'lista_buscar':
-      case 'lista_compras': {
-        if (classified.itens && classified.itens.length > 0) {
-          const itemsJson = classified.itens.map((nome, i) => ({ id: i + 1, nome, done: false }));
-          const lista = await prisma.groceryList.create({
-            data: { userId: user.id, name: classified.nome || '🛒 Lista de compras', items: JSON.stringify(itemsJson), done: false }
-          });
-          await memory.saveMemory(user.id, 'ultima_lista', lista.id);
-          return { listaId: lista.id, listaNome: lista.name, listaItems: itemsJson };
-        }
-        const mems = await memory.getRecentMemories(user.id, 20);
-        const listaRef = mems.find(m => m.type === 'ultima_lista');
-        if (listaRef) {
-          const lista = await prisma.groceryList.findUnique({ where: { id: listaRef.content } });
-          if (lista && !lista.done) {
-            let items = []; try { items = JSON.parse(lista.items); } catch {}
-            return { listaId: lista.id, listaNome: lista.name, listaItems: items };
-          }
-        }
-        const listaRecente = await prisma.groceryList.findFirst({ where: { userId: user.id, done: false }, orderBy: { createdAt: 'desc' } });
-        if (listaRecente) {
-          let items = []; try { items = JSON.parse(listaRecente.items); } catch {}
-          await memory.saveMemory(user.id, 'ultima_lista', listaRecente.id);
-          return { listaId: listaRecente.id, listaNome: listaRecente.name, listaItems: items };
-        }
-        return null;
-      }
-
-      case 'lista_marcar': {
-        const temNumeros = classified.numeros && classified.numeros.length > 0;
-        const temNomes = classified.nomes && classified.nomes.length > 0;
-        if (!temNumeros && !temNomes) return null;
-        let lista = null;
-        if (classified.lista) {
-          const todas = await prisma.groceryList.findMany({ where: { userId: user.id, done: false } });
-          lista = todas.find(l => l.name.toLowerCase().includes(classified.lista.toLowerCase()));
-        }
-        if (!lista) {
-          const mems = await memory.getRecentMemories(user.id, 20);
-          const ref = mems.find(m => m.type === 'ultima_lista');
-          if (ref) lista = await prisma.groceryList.findUnique({ where: { id: ref.content } });
-        }
-        if (!lista) lista = await prisma.groceryList.findFirst({ where: { userId: user.id, done: false }, orderBy: { createdAt: 'desc' } });
-        if (!lista) return null;
-        let items = []; try { items = JSON.parse(lista.items); } catch {}
-        if (temNumeros) items = items.map(i => classified.numeros.includes(i.id) ? { ...i, done: true } : i);
-        if (temNomes) items = items.map(i => { const nm = i.nome.toLowerCase(); const hit = classified.nomes.some(n => nm.includes(n.toLowerCase()) || n.toLowerCase().includes(nm.split(' ')[0])); return hit ? { ...i, done: true } : i; });
-        const allDone = items.every(i => i.done);
-        await prisma.groceryList.update({ where: { id: lista.id }, data: { items: JSON.stringify(items), done: allDone } });
-        return { listaId: lista.id, listaNome: lista.name, listaItems: items };
-      }
-
-      case 'lista_adicionar': {
-        if (classified.item) {
-          const mems2 = await memory.getRecentMemories(user.id, 20);
-          const ref2 = mems2.find(m => m.type === 'ultima_lista');
-          if (ref2) {
-            const lista2 = await prisma.groceryList.findUnique({ where: { id: ref2.content } });
-            if (lista2) {
-              let items2 = []; try { items2 = JSON.parse(lista2.items); } catch {}
-              const newId = items2.length > 0 ? Math.max(...items2.map(i => i.id)) + 1 : 1;
-              items2.push({ id: newId, nome: classified.item, done: false });
-              await prisma.groceryList.update({ where: { id: lista2.id }, data: { items: JSON.stringify(items2) } });
-              return { listaId: lista2.id, listaNome: lista2.name, listaItems: items2 };
-            }
-          }
-        }
-        return null;
-      }
-
-      default:
-        return null;
-    }
+    const { desculpa, retornoHora } = await rateLimit.registrarPausa(phone, tipo);
+    const msg = rateLimit.mensagemPausa(tipo, desculpa.ausencia, retornoHora);
+    console.log(`[RateLimit] ${tipo.toUpperCase()} para ${phone} — pausa até ${retornoHora}`);
+    return msg;
   } catch (e) {
-    console.error('[chat] Erro executeActionFromChat:', e.message);
-    return null;
+    console.error('[RateLimit] Erro:', e.message);
+    return tipo === 'rpm' ? 'Um segundo, já volto! 🏃' : 'Precisei sair um pouco, volto em breve! 💜';
   }
 }
 
-const SYNC_ACTION_TYPES = ['lista_compras', 'lista_buscar', 'lista_marcar', 'lista_adicionar', 'concluir_lembrete', 'tarefa'];
+// ── CLASSIFY PROMPT — enxuto mas completo ──
+const SYSTEM_PROMPT = () => `Você é a Clara, assistente pessoal brasileira.
+Retorne APENAS JSON. Hoje é ${hoje()}.
 
-router.post('/:phone', async (req, res) => {
+REGRAS:
+- Valor em dinheiro → gasto
+- Horário/data + intenção de lembrar → tarefa
+- Informação para guardar sem horário → anotacao
+- Pergunta sobre clima/notícia/preço/lugar/telefone → busca
+- Usuário informa saldo/salário/orçamento → saldo
+- Consultar algo já guardado → consulta
+
+TIPOS E FORMATOS:
+{"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
+  subtipos: entrada | saida_almoco | volta_almoco | saida
+
+{"tipo":"cidade","cidade":"nome e estado"}
+{"tipo":"busca","query":"texto"}
+{"tipo":"anotacao","titulo":"resumo","conteudo":"texto"}
+{"tipo":"tarefa","titulo":"desc","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null","antecedencia":0,"recorrente":false,"frequencia":null}
+  "daqui X min/h" → calcule; "todo dia" → recorrente:true,frequencia:"diario"; "me lembra X min antes" → antecedencia:X
+{"tipo":"editar_lembrete","titulo":"parte do título","nova_hora":"HH:MM ou null","nova_data":"YYYY-MM-DD ou null"}
+{"tipo":"deletar_lembrete","titulo":"parte do título"}
+{"tipo":"gasto","valor":0.0,"categoria":"mercado/restaurante/saude/transporte/lazer/outro","descricao":"desc"}
+{"tipo":"medicamento","nome":"nome","quantidade":0,"frequencia":1,"horarios":["08:00"]}
+{"tipo":"saudacao"}
+{"tipo":"preferencia","nome":"nome ou null","tom":"carinhoso/direto/divertido/sarcastico ou null"}
+{"tipo":"saldo","valor":1400.0}
+{"tipo":"lista_compras","nome":"título","itens":["item1","item2"]}
+{"tipo":"lista_marcar","numeros":[2,3],"nomes":["nome do item"],"lista":"nome da lista ou null"}
+  nomes: quando citar nome do item; lista: quando citar nome da lista
+{"tipo":"lista_adicionar","item":"nome"}
+{"tipo":"salvar_contato","nome":"nome","phone":"número","relation":"relação ou null","notes":null}
+{"tipo":"deletar_contato","nome":"nome"}
+{"tipo":"deletar_remedio","nome":"nome"}
+{"tipo":"enviar_mensagem","destinatario":"nome ou null","mensagem":"texto","phone":"número ou null","contato_numero":null}
+{"tipo":"enviar_mensagem_agendada","destinatario":"nome","mensagem":"texto","phone":null,"quando":"desc","data":null,"hora":"HH:MM"}
+{"tipo":"concluir_lembrete","titulo":"descrição"}
+{"tipo":"listar_contatos"}
+{"tipo":"consulta","sobre":"tema"}
+{"tipo":"outro"}
+
+EXEMPLOS:
+"entrei às 8h, sai almoçar 12h, voltei 13h, saí 17h" → {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"},{"subtipo":"saida_almoco","hora":"12:00"},{"subtipo":"volta_almoco","hora":"13:00"},{"subtipo":"saida","hora":"17:00"}]}
+"me lembra às 19h de buscar minha sogra" → {"tipo":"tarefa","titulo":"buscar sogra","data":null,"hora":"19:00","antecedencia":0,"recorrente":false,"frequencia":null}
+"todo dia às 8h tomar remédio" → {"tipo":"tarefa","titulo":"tomar remédio","data":null,"hora":"08:00","recorrente":true,"frequencia":"diario"}
+"gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
+"tomo Losartana às 8h" → {"tipo":"medicamento","nome":"Losartana","quantidade":0,"frequencia":1,"horarios":["08:00"]}
+"já peguei o 2 e o 3" → {"tipo":"lista_marcar","numeros":[2,3],"nomes":null,"lista":null}
+"risca a aprovação do folheto" → {"tipo":"lista_marcar","numeros":[],"nomes":["aprovação do folheto"],"lista":null}
+"já fiz o item 3 da lista Copa de Ofertas" → {"tipo":"lista_marcar","numeros":[3],"nomes":null,"lista":"Copa de Ofertas"}
+"marca o vídeo varejo como feito" → {"tipo":"lista_marcar","numeros":[],"nomes":["vídeo varejo"],"lista":null}
+"arroz, feijão e leite" → {"tipo":"lista_compras","nome":"Lista do mercado","itens":["Arroz","Feijão","Leite"]}
+"manda pro João que vou atrasar" → {"tipo":"enviar_mensagem","destinatario":"João","mensagem":"Vou atrasar, te aviso quando chegar!","phone":null,"contato_numero":null}
+"envia pro contato 2 que a reunião foi cancelada" → {"tipo":"enviar_mensagem","destinatario":null,"mensagem":"A reunião foi cancelada.","phone":null,"contato_numero":2}
+"manda pro meu amor às 15h que tem reunião" → {"tipo":"enviar_mensagem_agendada","destinatario":"meu amor","mensagem":"Tem reunião às 15h","phone":null,"quando":"às 15h","data":null,"hora":"15:00"}
+"cancela o lembrete da Serigraf" → {"tipo":"deletar_lembrete","titulo":"Serigraf"}
+"muda a reunião pra às 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
+"o número da minha esposa é 43999998888" → {"tipo":"salvar_contato","nome":"esposa","phone":"43999998888","relation":"esposa","notes":null}
+"exclui o remédio Nebivolol" → {"tipo":"deletar_remedio","nome":"Nebivolol"}
+"meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
+"qual a senha do wi-fi?" → {"tipo":"consulta","sobre":"senha wi-fi"}
+"mostra meus contatos" → {"tipo":"listar_contatos"}
+"oi" → {"tipo":"saudacao"}
+`;
+
+async function classify(message, phone = null) {
   try {
-    const { phone } = req.params;
-    const { message, privateMode } = req.body;
-    if (!message) return res.status(400).json({ error: 'Mensagem vazia' });
+    const completion = await groq.chat.completions.create({
+      model: MODEL_LEVE,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT() },
+        { role: 'user', content: message }
+      ],
+      temperature: 0.2,
+      max_tokens: 300,
+    });
+    let text = completion.choices[0].message.content.trim();
+    text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    return JSON.parse(text);
+  } catch (error) {
+    if (isRateLimit(error) && phone) {
+      const tipo = isTPD(error) ? 'tpd' : 'rpm';
+      await ativarPausaCreativa(phone, tipo);
+    }
+    console.error('Erro classify:', error.message);
+    return { tipo: 'outro', resposta: 'Entendi!' };
+  }
+}
 
-    const user = await memory.getOrCreateUser(phone);
-    const limit = privateMode ? 100 : 10;
-    const history = await memory.getConversationHistory(user.id, limit);
-    const preferences = await memory.getUserPreference(user.id);
+// ── EXTRACT — sem alteração, já estava enxuto ──
+const EXTRACT_SYSTEM = `Extrator de informações pessoais. Retorne APENAS array JSON ou [].
+Categorias: familia | trabalho | rotina | saude | objetivos | datas | outro
+Extraia APENAS o que o usuário declarou explicitamente sobre si mesmo. NUNCA deduza.
 
+"minha filha se chama Ana" → [{"chave":"filha_ana","valor":"Filha chamada Ana","categoria":"familia"}]
+"trabalho das 8 às 18h" → [{"chave":"horario_trabalho","valor":"Trabalha das 8h às 18h","categoria":"rotina"}]
+"oi" → []
+"gastei 50" → []`;
+
+async function extractPersonalInfo(message) {
+  try {
+    if (!message || message.trim().length < 5) return [];
+    const lower = message.toLowerCase();
+    if (/^(oi|olá|ola|ok|sim|não|nao|bom dia|boa tarde|boa noite|obrigad)/.test(lower)) return [];
+    const completion = await groq.chat.completions.create({
+      model: MODEL_LEVE,
+      messages: [
+        { role: 'system', content: EXTRACT_SYSTEM },
+        { role: 'user', content: message }
+      ],
+      temperature: 0.1,
+      max_tokens: 150,
+    });
+    let text = completion.choices[0].message.content.trim();
+    text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const result = JSON.parse(text);
+    return Array.isArray(result) ? result : [];
+  } catch (e) {
+    console.error('[extractPersonalInfo] erro:', e.message);
+    return [];
+  }
+}
+
+async function searchWebGroq(query, locationContext = '') {
+  try {
+    const fullQuery = locationContext ? `${query} em ${locationContext}` : query;
+    console.log(`🔎 Buscando: ${fullQuery}`);
+    const data = await webSearch(fullQuery);
+    if (!data || !data.results || data.results.length === 0) {
+      return "Não encontrei informações atualizadas. Pode tentar de outra forma?";
+    }
     let contexto = '';
-    let perfilPessoal = '';
-
-    if (!privateMode) {
-      try {
-        const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-        const pad = n => String(n).padStart(2,'0');
-        const hm = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-        const toDateStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-        const hoje = toDateStr(now);
-        const amanha = new Date(now); amanha.setDate(amanha.getDate()+1);
-        const amanhaStr = toDateStr(amanha);
-        const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
-        const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
-        const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
-
-        const [lembretes, meds, gastos] = await Promise.all([
-          prisma.reminder.findMany({ where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: inicioHoje, lte: fimAmanha } }, orderBy: { scheduledAt: 'asc' }, take: 20 }),
-          prisma.medication.findMany({ where: { userId: user.id, active: true, remaining: { gt: 0 } } }),
-          preferences.saldo != null ? prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } } }) : Promise.resolve([]),
-        ]);
-        perfilPessoal = await buildPersonalContext(user.id).catch(() => '');
-
-        if (lembretes.length > 0) {
-          const fmtLemb = (r) => {
-            const d = new Date(r.scheduledAt);
-            const dStr = toDateStr(d) === hoje ? 'Hoje' : 'Amanhã';
-            return `• ${dStr} às ${pad(d.getHours())}:${pad(d.getMinutes())} — ${r.message}`;
-          };
-          contexto += `\n\n[AGENDA]\n${lembretes.map(fmtLemb).join('\n')}`;
-        } else {
-          contexto += `\n\n[AGENDA]\nNenhum lembrete para hoje ou amanhã.`;
-        }
-
-        if (meds.length > 0) {
-          const fmtMed = (m) => {
-            let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
-            const proxima = times.find(t => t >= hm) || times[0] || '—';
-            const quando = times.find(t => t >= hm) ? 'hoje' : 'amanhã';
-            return `• ${m.name} — próxima dose: ${proxima} (${quando}), ${m.remaining} doses restantes`;
-          };
-          contexto += `\n\n[MEDICAMENTOS]\n${meds.map(fmtMed).join('\n')}`;
-        }
-
-        if (preferences.saldo != null) {
-          const totalGasto = gastos.reduce((a, g) => a + g.value, 0);
-          contexto += `\n\n[FINANCEIRO]\nOrçamento: R$ ${preferences.saldo.toFixed(2)}\nGasto: R$ ${totalGasto.toFixed(2)}\nSaldo: R$ ${(preferences.saldo - totalGasto).toFixed(2)}`;
-        }
-
-        if (contexto) contexto = `\n\nUse as informações abaixo quando relevante:${contexto}`;
-        if (perfilPessoal) contexto += perfilPessoal;
-      } catch (e) {
-        console.error('[chat] Erro contexto:', e.message);
-      }
-    }
-
-    // Classificar mensagem
-    const classified = privateMode ? { tipo: 'outro' } : await classify(message, phone);
-    let actionData = null;
-
-    // ── BUSCA WEB — executar ANTES do freeResponse ──
-    if (!privateMode && classified?.tipo === 'busca' && classified?.query) {
-      try {
-        console.log(`[chat] Busca web: "${classified.query}"`);
-        const cidade = await prisma.memory.findFirst({ where: { userId: user.id, type: 'cidade' } }).catch(() => null);
-        const locationContext = cidade?.content || '';
-        const resultadoBusca = await searchWeb(classified.query, locationContext);
-        if (resultadoBusca) {
-          contexto += `\n\n[RESULTADO DA BUSCA — use isso para responder, são dados reais e atuais]\n${resultadoBusca}`;
-          console.log(`[chat] Busca concluída para "${classified.query}"`);
-        } else {
-          contexto += `\n\n[BUSCA] Não encontrei resultados para "${classified.query}". Informe o usuário.`;
-        }
-      } catch (e) {
-        console.error('[chat] Erro busca:', e.message);
-        contexto += `\n\n[BUSCA] Erro ao buscar. Informe o usuário que não conseguiu pesquisar agora.`;
-      }
-    }
-
-    // Ações síncronas (listas, lembretes, etc)
-    if (!privateMode && SYNC_ACTION_TYPES.includes(classified?.tipo)) {
-      actionData = await executeActionFromChat(user, phone, classified, message);
-    }
-
-    // Contexto adicional por tipo de ação
-    if (actionData?.lembreteId) {
-      contexto += `\n\n[AÇÃO] Lembrete "${actionData.lembreteTitulo}" marcado como concluído. Confirme naturalmente.`;
-    }
-    if (actionData?.listaId) {
-      const itens = actionData.listaItems.map(i => `${i.id}. ${i.nome}`).join(', ');
-      const foiCriada = classified?.tipo === 'lista_compras' && classified?.itens?.length > 0;
-      contexto += foiCriada
-        ? `\n\n[AÇÃO] Lista "${actionData.listaNome}" criada com: ${itens}. Confirme de forma animada sem listar itens.`
-        : `\n\n[LISTA] Lista "${actionData.listaNome}": ${itens}. Apresente naturalmente sem listar itens.`;
-    }
-
-    const preferencesComContexto = { ...preferences, _contexto: contexto, _phone: phone };
-    const response = await freeResponse(message, history, preferencesComContexto, privateMode);
-
-    await memory.saveConversationMessage(user.id, 'user', message, privateMode);
-    await memory.saveConversationMessage(user.id, 'assistant', response, privateMode);
-
-    // Ações em background
-    if (!privateMode) {
-      extractPersonalInfo(message).then(async (infos) => {
-        for (const { chave, valor, categoria } of (infos || [])) {
-          if (!chave || !valor) continue;
-          await savePersonalInfo(user.id, chave, valor, categoria || 'outro');
-        }
-      }).catch(() => {});
-
-      if (!SYNC_ACTION_TYPES.includes(classified?.tipo) && classified?.tipo !== 'busca') {
-        executeActionFromChat(user, phone, classified, message).catch(() => {});
-      }
-    }
-
-    res.json({ reply: response, actionType: classified?.tipo || 'outro', actionData });
-  } catch (e) {
-    console.error('Erro chat:', e.message);
-    res.status(500).json({ error: 'Erro interno' });
+    if (data.answer) contexto += `Resposta direta: ${data.answer}\n\n`;
+    data.results.slice(0, 3).forEach((r) => {
+      if (r.title) contexto += `Fonte: ${r.title}\n`;
+      if (r.content) contexto += `${r.content.substring(0, 500)}\n\n`;
+    });
+    const completion = await groq.chat.completions.create({
+      model: MODEL_LEVE,
+      messages: [
+        {
+          role: 'system',
+          content: `Você é a Clara, assistente pessoal brasileira. Responda em português de forma natural e completa.
+REGRAS:
+- Use os dados reais da busca — NUNCA invente ou complete com suposições
+- Para clima: ☀️🌤️⛅🌧️⛈️ + temperatura atual + previsão dos próximos dias em 1 linha
+- Para escalações/times/pessoas: liste os nomes reais encontrados
+- Para notícias/eventos: resuma o que encontrou em 2-3 linhas
+- Para preços/lugares: seja direto com os dados reais
+- Se os dados forem insuficientes, diga o que encontrou e admita a limitação
+- NÃO cite fontes, NÃO repita a pergunta`,
+        },
+        {
+          role: 'user',
+          content: `Pergunta: ${query}\nLocalização: ${locationContext || 'não informada'}\n\nDados da busca:\n${contexto}`,
+        },
+      ],
+      temperature: 0.3,
+      max_tokens: 350,
+    });
+    return completion.choices[0].message.content.trim();
+  } catch (error) {
+    console.error('Erro searchWebGroq:', error.message);
+    return "Não consegui buscar essa informação agora.";
   }
-});
+}
 
-module.exports = router;
+// ── PERSONALIDADES — enxutas, identidade preservada ──
+function buildPersonality(tom, name, privateMode = false) {
+  const nomeTxt = name ? `O nome da pessoa é ${name}.` : '';
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const pad = n => String(n).padStart(2, '0');
+  const dataHora = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const diaSemana = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'][now.getDay()];
+
+  const base = `REGRAS:
+0. Criada por Washington Rodrigues — só mencione se perguntarem diretamente.
+1. Hoje é ${diaSemana}, ${dataHora} (Brasília).
+2. Você TEM acesso à internet — NUNCA diga que não consegue pesquisar.
+3. Ações já executadas em paralelo — confirme só quando pedido: "Anotado! ✅", "Lembrete criado! 🔔".
+4. NUNCA crie lembretes por conta própria.
+5. Use [PERFIL PESSOAL] e [AGENDA] naturalmente quando disponíveis — mas NUNCA invente compromissos, reuniões, tarefas ou listas que não estejam explicitamente no contexto. Se não souber, diga que não encontrou ou pergunte.`;
+
+  if (privateMode) {
+    return `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
+${base}
+Modo privado — pode falar sobre qualquer assunto adulto sem censura. Seja ousada e sem rodeios.
+Tom: ${tom === 'sarcastico' ? 'sarcástica e sem filtro' : tom === 'direto' ? 'direta e provocativa' : 'divertida e ousada'}.`;
+  }
+
+  const personalidades = {
+    carinhoso: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
+${base}
+Seja como uma amiga próxima — calor humano, leveza, presença real. Português natural, sem formalidade.
+- Respostas breves (2-4 linhas). Curto é mais próximo que longo.
+- Use informações pessoais de forma orgânica, como quem lembra porque se importa.
+- Perceba o humor da pessoa — se estressada, acolha antes de resolver.
+- Nunca abra com "Claro!", "Com certeza!", "Ótimo!". Emojis com moderação.`,
+
+    direto: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
+${base}
+Direta, objetiva, sem rodeios. Português claro.
+Respostas de 1-3 linhas. Vai ao ponto sempre. Sem elogios desnecessários.`,
+
+    divertido: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
+${base}
+Energia, humor e leveza genuína. Gírias brasileiras, animada, irreverente.
+Respostas de 2-4 linhas com toque de diversão. Emojis com moderação.
+Quando souber algo pessoal, use com humor carinhoso — como amiga que te conhece bem.`,
+
+    sarcastico: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
+${base}
+Sem filtro, sarcástica, honesta — fala a verdade com um sorrisinho 🙄
+Ironia fina, deboche carinhoso, humor ácido mas nunca cruel. Não elogia à toa.
+Respostas curtas e afiadas (1-3 linhas). Quando souber algo pessoal, use nas zoações.`,
+  };
+
+  return personalidades[tom] || personalidades.carinhoso;
+}
+
+async function freeResponse(message, history = [], preferences = {}, privateMode = false) {
+  const phone = preferences?._phone || null;
+
+  try {
+    const name = preferences?.name || null;
+    const tom = preferences?.tom || 'carinhoso';
+    const contexto = preferences?._contexto || '';
+
+    if (preferences?._systemOverride) {
+      const completion = await groq.chat.completions.create({
+        model: MODEL_FORTE,
+        messages: [
+          { role: 'system', content: preferences._systemOverride },
+          { role: 'user', content: message }
+        ],
+        temperature: 0.85,
+        max_tokens: 300,
+      });
+      return completion.choices[0].message.content.trim();
+    }
+
+    if (privateMode) {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://clara-production-949e.up.railway.app',
+          'X-Title': 'Clara IA',
+        },
+        body: JSON.stringify({
+          model: MODEL_PRIVADO,
+          messages: [
+            { role: 'system', content: buildPersonality(tom, name, true) + contexto },
+            ...history,
+            { role: 'user', content: message }
+          ],
+          temperature: 0.95,
+          max_tokens: 500,
+        }),
+      });
+      const data = await response.json();
+      return data.choices?.[0]?.message?.content?.trim() || 'Pode repetir? 😊';
+    }
+
+    const isCurta = message.trim().length < 40;
+    const isSocial = /^(beijos?|boa noite|bom dia|boa tarde|oi|olá|até|tchau|😘|❤|valeu|obrigad|flw|abraços?|saudades)/i.test(message.trim());
+    const modeloEscolhido = (isCurta && isSocial) ? MODEL_LEVE : MODEL_FORTE;
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 15000)
+    );
+
+    const completion = await Promise.race([
+      groq.chat.completions.create({
+        model: modeloEscolhido,
+        messages: [
+          { role: 'system', content: buildPersonality(tom, name, false) + contexto },
+          ...history,
+          { role: 'user', content: message }
+        ],
+        temperature: tom === 'sarcastico' ? 0.9 : 0.7,
+        max_tokens: isCurta ? 80 : 400,
+      }),
+      timeoutPromise
+    ]);
+    return completion.choices[0].message.content.trim();
+
+  } catch (e) {
+    if (isRateLimit(e) && phone) {
+      const tipo = isTPD(e) ? 'tpd' : 'rpm';
+      return await ativarPausaCreativa(phone, tipo);
+    }
+    console.error('Erro freeResponse:', e.message);
+    return 'Entendi! Como posso te ajudar?';
+  }
+}
+
+async function generateRelationshipSummary(recentMessages, currentSummary) {
+  try {
+    const msgs = recentMessages.map(m => (m.role === 'user' ? 'Usuário' : 'Clara') + ': ' + m.content).join('\n');
+    const completion = await groq.chat.completions.create({
+      model: MODEL_LEVE,
+      messages: [
+        {
+          role: 'system',
+          content: `Analise a conversa e extraia em 2-3 linhas: tom (formal/brincalhão/íntimo), apelidos usados, referências recorrentes. Seja específico para a Clara manter continuidade.`
+        },
+        { role: 'user', content: `Conversa:\n${msgs}\n\nResumo anterior: ${currentSummary || 'nenhum'}` }
+      ],
+      temperature: 0.3,
+      max_tokens: 100,
+    });
+    return completion.choices[0].message.content.trim();
+  } catch(e) { return currentSummary || ''; }
+}
+
+async function generateMemorySummary(memories, question) {
+  try {
+    const memoriesText = memories
+      .map((m) => `[${m.type}] ${m.content} (${new Date(m.createdAt).toLocaleDateString('pt-BR')})`)
+      .join('\n');
+    const completion = await groq.chat.completions.create({
+      model: MODEL_LEVE,
+      messages: [
+        { role: 'system', content: `Clara, assistente com memória. Fale em primeira pessoa, seja concisa.` },
+        { role: 'user', content: `Memórias:\n${memoriesText}\n\nPergunta: ${question}` },
+      ],
+      temperature: 0.5,
+      max_tokens: 150,
+    });
+    return completion.choices[0].message.content.trim();
+  } catch (error) { return 'Deixa eu verificar...'; }
+}
+
+module.exports = {
+  classify,
+  extractPersonalInfo,
+  searchWeb: searchWebGroq,
+  freeResponse,
+  generateMemorySummary,
+  generateRelationshipSummary,
+};
