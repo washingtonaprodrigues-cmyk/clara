@@ -643,33 +643,33 @@ function renderRem(){
   if(!dayRems.length){el.innerHTML='<div class="empty"><span class="empty-icon">📅</span>Nenhum lembrete neste dia</div>';return;}
   let html='<div style="padding-top:8px">';
   if(vencidos.length){
-    html+=`<div style="font-size:11px;font-weight:600;color:#F59E0B;padding:10px 0 6px">⚠️ Não confirmados (${vencidos.length})</div>`;
+    html+='<div style="font-size:11px;font-weight:600;color:#F59E0B;padding:10px 0 6px">⚠️ Não confirmados ('+vencidos.length+')</div>';
     vencidos.forEach(r=>{
       const t=new Date(r.scheduledAt),hm=pad(t.getHours())+':'+pad(t.getMinutes());
-      html+=`<div class="rem-row" data-id="${r.id}" style="border-color:rgba(245,158,11,.35)">
-        <span class="rem-row-time" style="color:#F59E0B;cursor:pointer;text-decoration:underline;text-underline-offset:3px" onclick="abrirRemarcar('${r.id}','${r.message.replace(/'/g,"\'").replace(/
-/g,' ')}')" title="Alterar data/hora">${hm}</span>
-        <div class="rem-row-check" onclick="doneRemCheck('${r.id}',this)"></div>
-        <div class="rem-row-title">${r.message}</div>
-        <button class="rem-del-btn" onclick="delRem('${r.id}')" title="Excluir">✕</button>
-      </div>`;
+      const safeMsg=r.message.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+      html+='<div class="rem-row" data-id="'+r.id+'" style="border-color:rgba(245,158,11,.35)">'
+        +'<span class="rem-row-time" style="color:#F59E0B;cursor:pointer;text-decoration:underline;text-underline-offset:3px" data-rid="'+r.id+'" data-msg="'+safeMsg+'" onclick="abrirRemarcarEl(this)" title="Alterar data/hora">'+hm+'</span>'
+        +'<div class="rem-row-check" onclick="doneRemCheck(''+r.id+'',this)"></div>'
+        +'<div class="rem-row-title">'+r.message+'</div>'
+        +'<button class="rem-del-btn" onclick="delRem(''+r.id+'')" title="Excluir">✕</button>'
+        +'</div>';
     });
   }
   if(avencer.length){
-    html+=`<div style="font-size:11px;font-weight:600;color:var(--text3);padding:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">📌 A vencer (${avencer.length})</div>`;
+    html+='<div style="font-size:11px;font-weight:600;color:var(--text3);padding:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">📌 A vencer ('+avencer.length+')</div>';
     let nowInserted=false;
     avencer.forEach(r=>{
-      const t=new Date(r.scheduledAt),hm=`${pad(t.getHours())}:${pad(t.getMinutes())}`;
-      if(isToday&&!nowInserted&&t>now){nowInserted=true;html+=`<div class="rem-now-line"><span class="rem-now-time">${pad(now.getHours())}:${pad(now.getMinutes())}</span><div class="rem-now-bar"></div><div class="rem-now-dot"></div></div>`;}
-      html+=`<div class="rem-row" id="ri-${r.id}">
-        <span class="rem-row-time" style="cursor:pointer;text-decoration:underline;text-underline-offset:3px" onclick="abrirRemarcar('${r.id}','${r.message.replace(/'/g,"\'").replace(/
-/g,' ')}')" title="Alterar data/hora">${hm}</span>
-        <div class="rem-row-check" onclick="doneRemCheck('${r.id}',this)"></div>
-        <div class="rem-row-title">${r.message}</div>
-        <button class="rem-del-btn" onclick="delRem('${r.id}')" title="Excluir">✕</button>
-      </div>`;
+      const t=new Date(r.scheduledAt),hm=pad(t.getHours())+':'+pad(t.getMinutes());
+      const safeMsg=r.message.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+      if(isToday&&!nowInserted&&t>now){nowInserted=true;html+='<div class="rem-now-line"><span class="rem-now-time">'+pad(now.getHours())+':'+pad(now.getMinutes())+'</span><div class="rem-now-bar"></div><div class="rem-now-dot"></div></div>';}
+      html+='<div class="rem-row" id="ri-'+r.id+'">'
+        +'<span class="rem-row-time" style="cursor:pointer;text-decoration:underline;text-underline-offset:3px" data-rid="'+r.id+'" data-msg="'+safeMsg+'" onclick="abrirRemarcarEl(this)" title="Alterar data/hora">'+hm+'</span>'
+        +'<div class="rem-row-check" onclick="doneRemCheck(''+r.id+'',this)"></div>'
+        +'<div class="rem-row-title">'+r.message+'</div>'
+        +'<button class="rem-del-btn" onclick="delRem(''+r.id+'')" title="Excluir">✕</button>'
+        +'</div>';
     });
-    if(isToday&&!nowInserted)html+=`<div class="rem-now-line"><span class="rem-now-time">${pad(now.getHours())}:${pad(now.getMinutes())}</span><div class="rem-now-bar"></div><div class="rem-now-dot"></div></div>`;
+    if(isToday&&!nowInserted)html+='<div class="rem-now-line"><span class="rem-now-time">'+pad(now.getHours())+':'+pad(now.getMinutes())+'</span><div class="rem-now-bar"></div><div class="rem-now-dot"></div></div>';
   }
   html+='</div>';
   el.innerHTML=html;
@@ -689,39 +689,25 @@ function renderSaude(){
   });
   const cardMed=({m,i,nextTime,nextDay},concluido)=>{
     const ci=i%MED_COLORS.length;
-    return `<div class="med-card${concluido?' concluido':''}">
-      <div class="med-card-head">
-        <div class="med-card-icon" style="background:${MED_COLORS[ci]};color:${MED_TEXT[ci]}">
-          <svg viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
-        </div>
-        <div style="flex:1;min-width:0">
-          <div class="med-card-name">${m.name}</div>
-          <div class="med-card-freq">${m.frequency}x por dia</div>
-        </div>
-        <button class="med-del-btn" onclick="delMed('${m.id}')" title="Excluir" style="opacity:.3">✕</button>
-      </div>
-      <div class="med-card-body">
-        <div class="med-card-cell">
-          <div class="med-card-cell-label">Próxima dose</div>
-          <div class="med-card-cell-val" style="color:${MED_TEXT[ci]}">${nextTime}</div>
-          <div class="med-card-cell-sub">${nextDay}</div>
-        </div>
-        <div class="med-card-cell">
-          <div class="med-card-cell-label">Restam</div>
-          <div class="med-card-cell-val">${m.remaining}</div>
-          <div class="med-card-cell-sub">doses</div>
-        </div>
-      </div>
-      ${concluido
-        ?`<button class="med-card-btn tomado" disabled>✓ Tomado</button>`
-        :`<button class="med-card-btn tomar" onclick="takeMed('${m.id}',this)">✓ Tomar agora</button>`}
-    </div>`;
+    return '<div class="med-card'+(concluido?' concluido':'')+'"><div class="med-card-head">'
+      +'<div class="med-card-icon" style="background:'+MED_COLORS[ci]+';color:'+MED_TEXT[ci]+'">'
+      +'<svg viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></div>'
+      +'<div style="flex:1;min-width:0"><div class="med-card-name">'+m.name+'</div><div class="med-card-freq">'+m.frequency+'x por dia</div></div>'
+      +'<button class="med-del-btn" onclick="delMed(''+m.id+'')" title="Excluir" style="opacity:.3">✕</button>'
+      +'</div><div class="med-card-body">'
+      +'<div class="med-card-cell"><div class="med-card-cell-label">Próxima dose</div><div class="med-card-cell-val" style="color:'+MED_TEXT[ci]+'">'+nextTime+'</div><div class="med-card-cell-sub">'+nextDay+'</div></div>'
+      +'<div class="med-card-cell"><div class="med-card-cell-label">Restam</div><div class="med-card-cell-val">'+m.remaining+'</div><div class="med-card-cell-sub">doses</div></div>'
+      +'</div>'
+      +(concluido
+        ?'<button class="med-card-btn tomado" disabled>✓ Tomado</button>'
+        :'<button class="med-card-btn tomar" onclick="takeMed(''+m.id+'',this)">✓ Tomar agora</button>')
+      +'</div>';
   };
   let html='';
-  if(pendentes.length){html+=`<div class="med-sec-label">Hoje</div>`;pendentes.forEach(p=>html+=cardMed(p,false));}
-  if(concluidos.length){html+=`<div class="med-sec-label" style="color:var(--green)">✓ Concluídos hoje</div>`;concluidos.forEach(p=>html+=cardMed(p,true));}
+  if(pendentes.length){html+='<div class="med-sec-label">Hoje</div>';pendentes.forEach(p=>html+=cardMed(p,false));}
+  if(concluidos.length){html+='<div class="med-sec-label" style="color:var(--green)">✓ Concluídos hoje</div>';concluidos.forEach(p=>html+=cardMed(p,true));}
   if(!pendentes.length&&!concluidos.length)html='<div class="empty"><span class="empty-icon">💊</span>Nenhum medicamento</div>';
-  html+=`<div class="med-tip" style="margin:4px 16px 16px"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div><div class="med-tip-title">Dica da Clara</div><div class="med-tip-text">Manter sua rotina de medicamentos em dia faz toda a diferença!</div></div></div>`;
+  html+='<div class="med-tip" style="margin:4px 16px 16px"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div><div class="med-tip-title">Dica da Clara</div><div class="med-tip-text">Manter sua rotina de medicamentos em dia faz toda a diferença!</div></div></div>';
   el.innerHTML=html;
 }
 async function takeMed(id,btn){btn.textContent='✓ Tomado';btn.disabled=true;btn.className='med-action-btn concluido-btn';try{await fetch(`/forms/remedio-tomado/${id}`,{method:'POST'});showToast('Dose registrada! 💊');setTimeout(()=>loadAll().then(()=>renderSaude()),800);}catch{showToast('Erro ⚠️');}}
@@ -774,6 +760,7 @@ function stopMic(){recognition?.stop();}
 
 // ── Remarcar lembrete ──
 let _remarcarId=null;
+function abrirRemarcarEl(el){abrirRemarcar(el.dataset.rid,el.dataset.msg);}
 function abrirRemarcar(id,titulo){
   _remarcarId=id;
   document.getElementById('remarcar-titulo').textContent=titulo;
@@ -789,7 +776,7 @@ async function salvarRemarcar(){
   const btn=document.getElementById('remarcar-btn');
   btn.textContent='Salvando...';btn.disabled=true;
   try{
-    const r=await fetch(`/forms/lembrete-remarcar/${_remarcarId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({data,hora})});
+    const r=await fetch('/forms/lembrete-remarcar/'+_remarcarId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({data,hora})});
     if(r.ok){closeModal('m-remarcar');showToast('Remarcado! 📅');await loadAll();renderRem();}
     else showToast('Erro ao remarcar ⚠️');
   }catch{showToast('Erro ⚠️');}
@@ -797,9 +784,9 @@ async function salvarRemarcar(){
 }
 async function doneRemCheck(id,checkEl){
   checkEl.classList.add('done');
-  checkEl.nextElementSibling?.classList.add('done');
+  if(checkEl.nextElementSibling)checkEl.nextElementSibling.classList.add('done');
   try{
-    await fetch(`/forms/lembrete-concluir/${id}`,{method:'POST'});
+    await fetch('/forms/lembrete-concluir/'+id,{method:'POST'});
     showToast('Confirmado ✅');
     setTimeout(()=>{allRem=allRem.filter(x=>x.id!==id);renderRem();loadAll();},600);
   }catch{showToast('Erro ⚠️');}
