@@ -16,7 +16,6 @@ router.get('/', async (req, res) => {
     const response = await client.search(queryPT, {
       maxResults: 6,
       searchDepth: 'basic',
-      country: 'BR',
       includeAnswer: true,
       includeImages: false,
     });
