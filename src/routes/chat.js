@@ -287,6 +287,9 @@ router.post('/:phone', async (req, res) => {
     if (actionData?.lembreteId) {
       contexto += `\n\n[AÇÃO] Lembrete "${actionData.lembreteTitulo}" marcado como concluído. Confirme naturalmente.`;
     }
+    if (actionData?.lembreteUrgente) {
+      contexto += `\n\n[AÇÃO] Lembrete urgente criado: "${actionData.lembreteTitulo}". Confirme que foi criado e pergunte de forma natural se quer ser avisado 15 minutos antes também. Seja breve e no seu tom habitual.`;
+    }
     if (actionData?.listaId) {
       const itens = actionData.listaItems.map(i => `${i.id}. ${i.nome}`).join(', ');
       const foiCriada = classified?.tipo === 'lista_compras' && classified?.itens?.length > 0;
