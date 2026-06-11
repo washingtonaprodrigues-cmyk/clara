@@ -984,14 +984,17 @@ function setFilter(f,btn){
   if(q)doSearch();
 }
 
-function mdToHtml(text){
-  if(!text)return'';
-  // Remove markdown simples
-  return text
-    .split('\n').join(' ')
-    .replace(/###+\s*/g,'').replace(/##\s*/g,'').replace(/#\s*/g,'')
-    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g,'<em>$1</em>');
+function mdToHtml(t){
+  if(!t)return'';
+  t=t.split('\n').join(' ');
+  // Remove headers markdown
+  while(t.includes('# '))t=t.replace('# ','');
+  while(t.includes('## '))t=t.replace('## ','');
+  while(t.includes('### '))t=t.replace('### ','');
+  // Remove bold/italic simples
+  t=t.replace(/[*]{2}([^*]+)[*]{2}/g,'<strong>$1</strong>');
+  t=t.replace(/[*]([^*]+)[*]/g,'<em>$1</em>');
+  return t;
 }
 
 async function doSearch(){
