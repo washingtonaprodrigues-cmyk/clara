@@ -267,6 +267,15 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .search-empty-icon{font-size:32px;margin-bottom:12px;opacity:.3;display:block}
 .search-empty-title{font-size:14px;font-weight:500;color:var(--text2);margin-bottom:6px}
 .search-empty-sub{font-size:12px}
+.search-filters{display:flex;gap:6px;padding:10px 20px 0;flex-shrink:0}
+.sf-btn{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:none;color:var(--text3);font-family:'Inter',sans-serif;transition:all .15s}
+.sf-btn:hover{border-color:var(--border2);color:var(--text2)}
+.sf-btn.active{background:rgba(139,92,246,.15);border-color:var(--accent);color:#C4B5FD}
+.search-images-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;padding:16px 20px}
+.search-img-card{position:relative;border-radius:10px;overflow:hidden;aspect-ratio:16/9;cursor:pointer;border:1px solid var(--border)}
+.search-img-card img{width:100%;height:100%;object-fit:cover;transition:transform .2s}
+.search-img-card:hover img{transform:scale(1.05)}
+.search-img-src{position:absolute;bottom:0;left:0;right:0;padding:4px 8px;background:linear-gradient(transparent,rgba(0,0,0,.7));font-size:10px;color:rgba(255,255,255,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 ::-webkit-scrollbar{width:3px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--s3);border-radius:2px}
@@ -523,6 +532,11 @@ select option{background:var(--s2)}
             <input type="text" id="search-input" placeholder="O que você quer pesquisar?" onkeydown="if(event.key==='Enter')doSearch()"/>
             <button class="search-btn" onclick="doSearch()">Buscar</button>
           </div>
+        </div>
+        <div class="search-filters">
+          <button class="sf-btn active" onclick="setFilter('tudo',this)">🔍 Tudo</button>
+          <button class="sf-btn" onclick="setFilter('imagens',this)">🖼️ Imagens</button>
+          <button class="sf-btn" onclick="setFilter('noticias',this)">📰 Notícias</button>
         </div>
         <div id="search-body" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
           <div class="search-empty">
@@ -961,13 +975,33 @@ async function delMed(id){
   }catch{showToast('Erro ⚠️');}
 }
 // ── Busca web ──
+let _searchFilter='tudo';
+function setFilter(f,btn){
+  _searchFilter=f;
+  document.querySelectorAll('.sf-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const q=document.getElementById('search-input').value.trim();
+  if(q)doSearch();
+}
+
+function mdToHtml(text){
+  if(!text)return'';
+  return text
+    .replace(/#{1,3}\s+/g,'')
+    .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g,'<em>$1</em>')
+    .replace(/
+/g,' ');
+}
+
 async function doSearch(){
   const q=document.getElementById('search-input').value.trim();
   if(!q)return;
   const body=document.getElementById('search-body');
   body.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:16px;padding:40px"><div class="ct-stars" style="width:48px;height:48px"><div class="ct-star"></div><div class="ct-star"></div><div class="ct-star"></div><div class="ct-star"></div><div class="ct-star"></div><div class="ct-star"></div></div><div style="font-size:13px;color:var(--text3)">Buscando...</div></div>';
   try{
-    const r=await fetch(`/search?q=${encodeURIComponent(q)}`);
+    const url=`/search?q=${encodeURIComponent(q)}&tipo=${_searchFilter}`;
+    const r=await fetch(url);
     const data=await r.json();
     renderSearch(data,q);
   }catch{body.innerHTML='<div class="empty"><span class="empty-icon">⚠️</span>Erro na busca. Tente novamente.</div>';}
@@ -975,33 +1009,44 @@ async function doSearch(){
 
 function renderSearch(data,q){
   const body=document.getElementById('search-body');
-  if(!data.results?.length){body.innerHTML='<div class="empty"><span class="empty-icon">🔍</span>Nenhum resultado encontrado</div>';return;}
-  let html='';
 
-  // Resposta direta
-  if(data.answer){
-    html+=`<div class="search-answer"><div class="search-answer-label">✨ Resposta direta</div>${data.answer}</div>`;
+  // Modo imagens
+  if(_searchFilter==='imagens'){
+    if(!data.images?.length){body.innerHTML='<div class="empty"><span class="empty-icon">🖼️</span>Nenhuma imagem encontrada</div>';return;}
+    body.innerHTML=`<div class="search-images-grid" style="overflow-y:auto;flex:1">${data.images.map(img=>{
+      try{const d=new URL(img).hostname.replace('www.','');return`<div class="search-img-card" onclick="window.open('${img}','_blank')"><img src="${img}" loading="lazy" onerror="this.parentElement.style.display='none'"/><div class="search-img-src">${d}</div></div>`;}catch{return'';}
+    }).join('')}</div>`;
+    return;
   }
 
-  // Imagens
-  if(data.images?.length){
-    html+=`<div class="search-images">${data.images.map(img=>`<img class="search-img" src="${img}" loading="lazy" onerror="this.style.display='none'" onclick="window.open('${img}','_blank')"/>`).join('')}</div>`;
+  if(!data.results?.length){body.innerHTML='<div class="empty"><span class="empty-icon">🔍</span>Nenhum resultado encontrado</div>';return;}
+  let html='<div style="overflow-y:auto;flex:1;display:flex;flex-direction:column">';
+
+  // Resposta direta
+  if(data.answer&&_searchFilter!=='noticias'){
+    html+=`<div class="search-answer"><div class="search-answer-label">✨ Resposta direta</div>${mdToHtml(data.answer)}</div>`;
+  }
+
+  // Imagens em modo tudo (carrossel)
+  if(data.images?.length&&_searchFilter==='tudo'){
+    html+=`<div class="search-images">${data.images.slice(0,5).map(img=>`<img class="search-img" src="${img}" loading="lazy" onerror="this.style.display='none'" onclick="window.open('${img}','_blank')"/>`).join('')}</div>`;
   }
 
   // Resultados
   html+=`<div class="search-results">`;
   data.results.forEach(r=>{
-    const domain=new URL(r.url).hostname.replace('www.','');
+    let domain='';try{domain=new URL(r.url).hostname.replace('www.','');}catch{}
     const favicon=`https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
     const date=r.publishedDate?`<div class="sr-date">${new Date(r.publishedDate).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})}</div>`:'';
+    const content=mdToHtml(r.content||'');
     html+=`<div class="search-result" onclick="window.open('${r.url}','_blank')">
       <div class="sr-source"><img class="sr-favicon" src="${favicon}" onerror="this.style.display='none'"/>${domain}</div>
       <div class="sr-title">${r.title}</div>
-      <div class="sr-content">${r.content||''}</div>
+      <div class="sr-content">${content}</div>
       ${date}
     </div>`;
   });
-  html+=`</div>`;
+  html+=`</div></div>`;
   body.innerHTML=html;
 }
 
