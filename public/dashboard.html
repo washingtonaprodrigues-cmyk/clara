@@ -242,31 +242,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .rem-del-btn,.med-del-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:4px;border-radius:6px;transition:all .15s;flex-shrink:0;opacity:.4}
 .rem-del-btn:hover,.med-del-btn:hover{background:rgba(239,68,68,.1);color:var(--red);opacity:1}
 .drawer-section{padding:10px 8px 4px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.7px}
-.search-box{padding:16px 20px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0}
-.search-input-row{display:flex;gap:8px;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:8px 8px 8px 16px;transition:border-color .15s}
-.search-input-row:focus-within{border-color:rgba(139,92,246,.5)}
-.search-input-row input{flex:1;background:none;border:none;color:var(--text);font-family:'Inter',sans-serif;font-size:15px;outline:none}
 .search-input-row input::placeholder{color:var(--text3)}
-.search-btn{padding:8px 16px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer}
-.search-answer{margin:16px 20px;padding:14px 16px;background:rgba(139,92,246,.06);border:1px solid rgba(139,92,246,.15);border-radius:var(--r);font-size:13px;color:var(--text);line-height:1.6}
-.search-answer-label{font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px}
-.search-images{display:flex;gap:8px;padding:0 20px 12px;overflow-x:auto;scrollbar-width:none;flex-shrink:0}
 .search-images::-webkit-scrollbar{display:none}
-.search-img{width:120px;height:80px;object-fit:cover;border-radius:8px;flex-shrink:0;cursor:pointer;border:1px solid var(--border);transition:opacity .15s}
 .search-img:hover{opacity:.85}
-.search-results{flex:1;overflow-y:auto;padding:0 20px 16px}
-.search-result{padding:14px 0;border-bottom:1px solid var(--border);cursor:pointer}
-.search-result:last-child{border-bottom:none}
-.search-result:hover .sr-title{color:var(--accent)}
-.sr-source{font-size:11px;color:var(--text3);margin-bottom:4px;display:flex;align-items:center;gap:5px}
-.sr-favicon{width:14px;height:14px;border-radius:3px}
-.sr-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:5px;line-height:1.4;transition:color .15s}
-.sr-content{font-size:12px;color:var(--text2);line-height:1.6}
-.sr-date{font-size:10px;color:var(--text3);margin-top:4px}
-.search-empty{text-align:center;padding:60px 20px;color:var(--text3)}
-.search-empty-icon{font-size:32px;margin-bottom:12px;opacity:.3;display:block}
-.search-empty-title{font-size:14px;font-weight:500;color:var(--text2);margin-bottom:6px}
-.search-empty-sub{font-size:12px}
 .sf-btn.active{background:rgba(139,92,246,.15);border-color:var(--accent);color:#C4B5FD}
 .search-img-card:hover img{transform:scale(1.05)}
 ::-webkit-scrollbar{width:3px}
@@ -433,7 +411,6 @@ select option{background:var(--s2)}
       <div class="s-item" onclick="navTo('financeiro')" data-nav="financeiro"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg><span class="s-item-label">Financeiro</span></div>
       <div class="s-item" onclick="navTo('listas')" data-nav="listas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span class="s-item-label">Listas</span><span class="s-badge" id="d-badge-list" style="display:none">0</span></div>
       <div class="s-item" onclick="navTo('cofre')" data-nav="cofre"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span class="s-item-label">Cofre</span></div>
-      <div class="s-item" onclick="navTo('busca')" data-nav="busca"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><span class="s-item-label">Buscar</span></div>
       <div class="sidebar-divider"></div>
       <div class="s-item" onclick="navTo('preferencias')" data-nav="preferencias"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="s-item-label">Configurações</span></div>
     </nav>
@@ -518,22 +495,6 @@ select option{background:var(--s2)}
         <div class="ph"><button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><div class="ph-icon" style="background:rgba(139,92,246,.1);color:#C4B5FD"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><div><div class="ph-title">Cofre</div><div class="ph-sub">Senhas e segredos protegidos</div></div><div class="ph-actions"><button class="btn-p" onclick="openModal('m-cofre')">+ Novo</button></div></div>
         <div class="scroll-body" style="padding:14px 20px" id="cofre-body"><div class="spin"></div></div>
       </div>
-      <div class="page" id="page-busca">
-        <div class="ph"><button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><div class="ph-icon" style="background:rgba(139,92,246,.1);color:#C4B5FD"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div><div><div class="ph-title">Buscar</div><div class="ph-sub">Pesquise na internet</div></div></div>
-        <div class="search-box">
-          <div class="search-input-row">
-            <input type="text" id="search-input" placeholder="O que você quer pesquisar?" onkeydown="if(event.key==='Enter')doSearch()"/>
-            <button class="search-btn" onclick="doSearch()">Buscar</button>
-          </div>
-        </div>
-        <div id="search-body" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
-          <div class="search-empty">
-            <span class="search-empty-icon">🔍</span>
-            <div class="search-empty-title">Pesquise qualquer coisa</div>
-            <div class="search-empty-sub">Resultados reais e atualizados da internet</div>
-          </div>
-        </div>
-      </div>
       <div class="page" id="page-preferencias">
         <div class="ph"><button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><div class="ph-icon" style="background:rgba(139,92,246,.1);color:#C4B5FD"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div><div><div class="ph-title">Configurações</div><div class="ph-sub">Personalize a Clara</div></div></div>
         <div class="scroll-body">
@@ -558,7 +519,6 @@ select option{background:var(--s2)}
     <div class="d-item" onclick="navTo('financeiro')" data-nav="financeiro"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> Financeiro</div>
     <div class="d-item" onclick="navTo('listas')" data-nav="listas"><svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Listas <span class="d-badge" id="d-badge-list2" style="display:none">0</span></div>
     <div class="d-item" onclick="navTo('cofre')" data-nav="cofre"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Cofre</div>
-    <div class="d-item" onclick="navTo('busca')" data-nav="busca"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Buscar</div>
     
     <div class="d-item" onclick="navTo('preferencias')" data-nav="preferencias"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Configurações</div>
   </div>
@@ -962,78 +922,6 @@ async function delMed(id){
     showToast('Medicamento excluído ✅');
   }catch{showToast('Erro ⚠️');}
 }
-// ── Busca web ──
-async function doSearch(){
-  const q=document.getElementById('search-input').value.trim();
-  if(!q)return;
-  const body=document.getElementById('search-body');
-  body.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:16px;padding:40px"><div class="ct-stars" style="width:48px;height:48px"><div class="ct-star"></div><div class="ct-star"></div><div class="ct-star"></div><div class="ct-star"></div><div class="ct-star"></div><div class="ct-star"></div></div><div style="font-size:13px;color:var(--text3)">Buscando...</div></div>';
-  try{
-    const r=await fetch('/search?q='+encodeURIComponent(q));
-    const data=await r.json();
-    renderSearch(data);
-  }catch{body.innerHTML='<div class="empty"><span class="empty-icon">⚠️</span>Erro na busca. Tente novamente.</div>';}
-}
-
-function renderSearch(data){
-  var body=document.getElementById('search-body');
-  if(!data.results||!data.results.length){body.innerHTML='<div class="empty"><span class="empty-icon">🔍</span>Nenhum resultado encontrado</div>';return;}
-  body.innerHTML='';
-
-  var wrap=document.createElement('div');
-  wrap.style.cssText='overflow-y:auto;flex:1;display:flex;flex-direction:column';
-
-  if(data.answer){
-    var ans=document.createElement('div');
-    ans.className='search-answer';
-    ans.innerHTML='<div class="search-answer-label">✨ Resposta direta</div>'+data.answer;
-    wrap.appendChild(ans);
-  }
-
-  var results=document.createElement('div');
-  results.className='search-results';
-
-  data.results.forEach(function(r){
-    var domain='';try{domain=new URL(r.url).hostname.replace('www.','');}catch(e){}
-    var el=document.createElement('div');
-    el.className='search-result';
-
-    var src=document.createElement('div');
-    src.className='sr-source';
-    var fav=document.createElement('img');
-    fav.className='sr-favicon';
-    fav.src='https://www.google.com/s2/favicons?domain='+domain+'&sz=32';
-    fav.onerror=function(){this.style.display='none';};
-    src.appendChild(fav);
-    src.appendChild(document.createTextNode(domain));
-
-    var title=document.createElement('div');
-    title.className='sr-title';
-    title.textContent=r.title;
-
-    var cnt=document.createElement('div');
-    cnt.className='sr-content';
-    var raw=(r.content||'').substring(0,400);while(raw.includes('##'))raw=raw.replace('##','');cnt.textContent=raw.trim();
-
-    el.appendChild(src);
-    el.appendChild(title);
-    el.appendChild(cnt);
-
-    if(r.publishedDate){
-      var dt=document.createElement('div');
-      dt.className='sr-date';
-      dt.textContent=new Date(r.publishedDate).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'});
-      el.appendChild(dt);
-    }
-
-    (function(url){el.addEventListener('click',function(){window.open(url,'_blank');});})(r.url);
-    results.appendChild(el);
-  });
-
-  wrap.appendChild(results);
-  body.appendChild(wrap);
-}
-
 // Swipe da esquerda pra direita abre o drawer (mobile)
 (function(){
   let startX=0,startY=0;
