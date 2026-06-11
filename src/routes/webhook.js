@@ -3,6 +3,7 @@ const router = express.Router();
 const { handleMessage } = require('../services/handler');
 const { sendMessage, sendButtons } = require('../services/whatsapp');
 const memory = require('../services/memory');
+const rateLimit = require('../services/rateLimit');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
@@ -10,24 +11,19 @@ function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 }
 
-// ── Respostas simples que NÃO precisam de IA ──
 const CONFIRMACOES = [
   /^(ok|okay|sim|s|feito|fiz|pronto|conclu[ií]do?|certo|beleza|combinado|entendido|anotado|perfeito|ótimo|otimo)$/i,
 ];
-
 const NEGACOES = [
   /^(n[aã]o|nao|nope|agora n[aã]o|depois|n)$/i,
 ];
-
 const TOMEI_REMEDIO = [
   /tomei|já tomei|ja tomei|tomado|dose tomada/i,
 ];
-
 const LEMBRETE_FEITO = [
   /^(feito|fiz|pronto|conclu[ií]do?|já fiz|ja fiz|feito!|pronto!)$/i,
 ];
 
-// Verifica se tem lembrete enviado recentemente (últimos 15 min pelo horário agendado)
 async function getLembretePendente(userId, phone) {
   const quinze = new Date(nowBRT().getTime() - 15 * 60 * 1000);
   return prisma.reminder.findFirst({
@@ -41,7 +37,6 @@ async function getLembretePendente(userId, phone) {
   });
 }
 
-// Verifica se tem remédio com dose no horário atual (±5 min)
 async function getRemedioRecente(userId) {
   const now = nowBRT();
   const pad = n => String(n).padStart(2, '0');
@@ -60,28 +55,18 @@ async function getRemedioRecente(userId) {
   return null;
 }
 
-// Extrai contatos de um vCard
 function parseVCard(vcard) {
   if (!vcard) return null;
   const lines = vcard.split('\n');
-  let nome = null;
-  let telefone = null;
-
+  let nome = null, telefone = null;
   for (const line of lines) {
-    if (line.startsWith('FN:')) {
-      nome = line.replace('FN:', '').trim();
-    }
+    if (line.startsWith('FN:')) nome = line.replace('FN:', '').trim();
     if (line.startsWith('TEL')) {
       const waidMatch = line.match(/waid=(\d+)/);
-      if (waidMatch) {
-        telefone = waidMatch[1];
-      } else {
-        const val = line.split(':').slice(1).join(':');
-        telefone = val.replace(/\D/g, '');
-      }
+      if (waidMatch) { telefone = waidMatch[1]; }
+      else { const val = line.split(':').slice(1).join(':'); telefone = val.replace(/\D/g, ''); }
     }
   }
-
   if (!nome || !telefone) return null;
   if (!telefone.startsWith('55') && telefone.length <= 11) telefone = '55' + telefone;
   return { nome, telefone };
@@ -94,10 +79,7 @@ async function handleSimpleResponse(phone, text) {
   if (TOMEI_REMEDIO.some(r => r.test(textLower))) {
     const med = await getRemedioRecente(user.id);
     if (med) {
-      await prisma.medication.update({
-        where: { id: med.id },
-        data: { remaining: { decrement: 1 } }
-      });
+      await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
       await sendMessage(phone, `✅ Ótimo! Marquei que você tomou o *${med.name}*. Restam ${med.remaining - 1} doses. 💊`);
       return true;
     }
@@ -106,16 +88,8 @@ async function handleSimpleResponse(phone, text) {
   if (LEMBRETE_FEITO.some(r => r.test(textLower))) {
     const lembrete = await getLembretePendente(user.id, phone);
     if (lembrete) {
-      await prisma.reminder.update({
-        where: { id: lembrete.id },
-        data: { confirmed: true }
-      });
-      const msgs = [
-        'Arrasou! ✅ Marcado como concluído 💜',
-        'Boa! ✅ Tá feito então 😊',
-        'Perfeito! ✅ Anotei que você concluiu 💜',
-        'Isso! ✅ Concluído com sucesso 🎉',
-      ];
+      await prisma.reminder.update({ where: { id: lembrete.id }, data: { confirmed: true } });
+      const msgs = ['Arrasou! ✅ Marcado como concluído 💜','Boa! ✅ Tá feito então 😊','Perfeito! ✅ Anotei que você concluiu 💜','Isso! ✅ Concluído com sucesso 🎉'];
       await sendMessage(phone, msgs[Math.floor(Math.random() * msgs.length)]);
       return true;
     }
@@ -123,10 +97,7 @@ async function handleSimpleResponse(phone, text) {
 
   if (CONFIRMACOES.some(r => r.test(textLower))) {
     const lembrete = await getLembretePendente(user.id, phone);
-    if (lembrete) {
-      await sendMessage(phone, `👍 Ok! Te lembro de: *${lembrete.message}*`);
-      return true;
-    }
+    if (lembrete) { await sendMessage(phone, `👍 Ok! Te lembro de: *${lembrete.message}*`); return true; }
     return false;
   }
 
@@ -134,10 +105,7 @@ async function handleSimpleResponse(phone, text) {
     const lembrete = await getLembretePendente(user.id, phone);
     if (lembrete) {
       const novoHorario = new Date(nowBRT().getTime() + 30 * 60 * 1000);
-      await prisma.reminder.update({
-        where: { id: lembrete.id },
-        data: { scheduledAt: novoHorario, sent: false }
-      });
+      await prisma.reminder.update({ where: { id: lembrete.id }, data: { scheduledAt: novoHorario, sent: false } });
       await sendMessage(phone, `⏰ Tudo bem! Vou te lembrar novamente em 30 minutos 😊`);
       return true;
     }
@@ -151,36 +119,48 @@ router.post('/', async (req, res) => {
   try {
     const body = req.body;
 
-    // Ignora mensagens enviadas pela própria Clara
     if (body.message?.fromMe === true) return res.json({ ok: true });
     if (body.message?.wasSentByApi === true) return res.json({ ok: true });
     if (body.message?.isGroup === true) return res.json({ ok: true });
 
-    // Extrai phone
-    const phone = (body.message?.sender_pn || '')
-      .replace('@s.whatsapp.net', '')
-      .replace(/\D/g, '');
+    const phone = (body.message?.sender_pn || '').replace('@s.whatsapp.net', '').replace(/\D/g, '');
     if (!phone) {
       console.log('⚠️ Webhook sem phone:', JSON.stringify(body).slice(0, 200));
       return res.json({ ok: true });
     }
 
     const text = body.message?.text || body.message?.content?.text || '';
-
-    // Extrai mensagem citada
     const quotedText = body.message?.quotedMsg?.body
       || body.message?.quotedMsg?.text
       || body.message?.contextInfo?.quotedMessage?.conversation
       || body.message?.content?.contextInfo?.quotedMessage?.conversation
       || '';
-
-    const textComContexto = quotedText && text
-      ? `[Mensagem citada: "${quotedText.slice(0, 200)}"]\n${text}`
-      : text;
+    const textComContexto = quotedText && text ? `[Mensagem citada: "${quotedText.slice(0, 200)}"]\n${text}` : text;
 
     console.log(`📨 WEBHOOK: ${phone} — "${text.slice(0, 80)}"${quotedText ? ` [citou: "${quotedText.slice(0, 40)}"]` : ''}`);
 
     if (text) {
+      // ── Verificar pausa criativa (rate limit) ──
+      const pausaStatus = await rateLimit.verificarPausa(phone);
+
+      if (pausaStatus && !pausaStatus.expirou) {
+        // Clara ainda está em pausa — responde contextualmente
+        const msg = rateLimit.mensagemDurantePausa(
+          pausaStatus.dados.tipo,
+          pausaStatus.dados.ausencia,
+          pausaStatus.dados.retornoHora
+        );
+        await sendMessage(phone, msg);
+        return res.json({ ok: true });
+      }
+
+      if (pausaStatus && pausaStatus.expirou) {
+        // Pausa expirou — Clara voltou! Manda mensagem de retorno
+        const msgRetorno = rateLimit.mensagemRetorno(pausaStatus.dados.tipo, pausaStatus.dados.retorno);
+        await sendMessage(phone, msgRetorno);
+        // Continua processando a mensagem normalmente
+      }
+
       const handled = await handleSimpleResponse(phone, text);
       if (!handled) {
         handleMessage(phone, textComContexto).catch(console.error);
@@ -188,86 +168,64 @@ router.post('/', async (req, res) => {
       return res.json({ ok: true });
     }
 
-    // ── CONTATO encaminhado pelo WhatsApp ──
+    // ── CONTATO encaminhado ──
     const msgType = body.message?.messageType || body.message?.type || '';
-    const isContact = msgType === 'contactMessage' ||
-                      msgType === 'contactsArrayMessage' ||
-                      body.message?.contact ||
-                      body.message?.contacts;
+    const isContact = msgType === 'contactMessage' || msgType === 'contactsArrayMessage'
+      || body.message?.contact || body.message?.contacts;
 
     if (isContact) {
       try {
         const user = await memory.getOrCreateUser(phone);
-
         const vcards = [];
         if (body.message?.contacts) {
-          for (const c of body.message.contacts) {
-            if (c.vcard) vcards.push(c.vcard);
-          }
+          for (const c of body.message.contacts) { if (c.vcard) vcards.push(c.vcard); }
         } else if (body.message?.contact?.vcard) {
           vcards.push(body.message.contact.vcard);
         } else if (body.message?.content?.vcard) {
           vcards.push(body.message.content.vcard);
         }
-
         if (vcards.length === 0) return res.json({ ok: true });
 
-        const salvos = [];
-        const erros = [];
-
+        const salvos = [], erros = [];
         for (const vcard of vcards) {
           const contato = parseVCard(vcard);
           if (!contato) { erros.push('vCard inválido'); continue; }
           try {
             await memory.saveContact(user.id, { nome: contato.nome, phone: contato.telefone });
             salvos.push(contato.nome);
-            console.log(`[Contato vCard] Salvo: ${contato.nome} → ${contato.telefone}`);
-          } catch (e) {
-            erros.push(contato.nome);
-            console.error(`[Contato vCard] Erro ao salvar ${contato.nome}:`, e.message);
-          }
+          } catch (e) { erros.push(contato.nome); }
         }
 
         if (salvos.length === 1) {
-          await sendMessage(phone, `✅ Contato salvo! *${salvos[0]}* está na minha lista agora 📱\n\nSempre que quiser enviar uma mensagem, é só me pedir!`);
+          await sendMessage(phone, `✅ Contato salvo! *${salvos[0]}* está na minha lista agora 📱`);
         } else if (salvos.length > 1) {
-          await sendMessage(phone, `✅ ${salvos.length} contatos salvos!\n\n${salvos.map(n => `• ${n}`).join('\n')}\n\nJá posso enviar mensagens para eles quando precisar 📱`);
+          await sendMessage(phone, `✅ ${salvos.length} contatos salvos!\n\n${salvos.map(n => `• ${n}`).join('\n')}\n\nJá posso enviar mensagens para eles 📱`);
         } else {
           await sendMessage(phone, 'Recebi o contato mas não consegui ler as informações 😕 Tenta encaminhar de novo!');
         }
-      } catch (e) {
-        console.error('[Contato vCard] Erro geral:', e.message);
-      }
+      } catch (e) { console.error('[Contato vCard] Erro:', e.message); }
       return res.json({ ok: true });
     }
 
-    // ── ÁUDIO — transcreve via Groq Whisper ──
+    // ── ÁUDIO ──
     const audioMsgType = body.message?.messageType || body.message?.mediaType || body.message?.type || '';
-    const isAudio = ['audioMessage', 'audio', 'pttMessage', 'AudioMessage', 'media'].includes(audioMsgType)
-      || body.message?.audio
-      || body.message?.ptt
+    const isAudio = ['audioMessage','audio','pttMessage','AudioMessage','media'].includes(audioMsgType)
+      || body.message?.audio || body.message?.ptt
       || (body.message?.mimeType || '').includes('audio')
       || (body.message?.content?.mimeType || '').includes('audio');
 
     if (isAudio) {
-      console.log('[Áudio] Detectado. messageType:', audioMsgType, 'mimeType:', body.message?.mimeType || body.message?.content?.mimeType);
+      console.log('[Áudio] Detectado. messageType:', audioMsgType);
       transcribeAndProcess(phone, body).catch(console.error);
       return res.json({ ok: true });
     }
 
-    // Log para tipos não reconhecidos
-    if (msgType && msgType !== 'extendedTextMessage' && msgType !== 'conversation' && !text) {
-      console.log('[Webhook] Tipo não tratado:', msgType, 'keys:', Object.keys(body.message || {}).slice(0, 8).join(','));
-    }
-
-    // Imagem, vídeo, documento
-    if (['image', 'video', 'document'].includes(body.message?.mediaType) ||
-        ['imageMessage', 'videoMessage', 'documentMessage'].includes(body.message?.messageType)) {
+    if (['image','video','document'].includes(body.message?.mediaType) ||
+        ['imageMessage','videoMessage','documentMessage'].includes(body.message?.messageType)) {
       sendMessage(phone, 'Por enquanto não consigo ver fotos, vídeos ou arquivos — mas se escrever pra mim eu ajudo! 😊').catch(console.error);
       return res.json({ ok: true });
     }
 
-    console.log('⚠️ Payload não reconhecido tipo:', body.message?.type || 'sem tipo');
     return res.json({ ok: true });
   } catch (error) {
     console.error('Erro webhook:', error);
@@ -278,81 +236,52 @@ router.post('/', async (req, res) => {
 router.post('/receive', (req, res) => res.json({ ok: true }));
 router.get('/test', (req, res) => res.json({ status: 'Clara funcionando ✅' }));
 
-// ── Transcrição de áudio via Groq Whisper ──
 async function transcribeAndProcess(phone, body) {
   try {
-    // Pega o ID da mensagem — tenta todos os campos possíveis
-    const messageId = body.message?.id
-      || body.message?.messageid
-      || body.message?.messageId
-      || body.message?.key?.id;
-
+    const messageId = body.message?.id || body.message?.messageid || body.message?.messageId || body.message?.key?.id;
     if (!messageId) {
-      console.log('[Áudio] ID não encontrado. Keys disponíveis:', Object.keys(body.message || {}).join(', '));
+      console.log('[Áudio] ID não encontrado. Keys:', Object.keys(body.message || {}).join(', '));
       await sendMessage(phone, 'Não consegui processar o áudio 😕 Pode digitar?');
       return;
     }
-
     console.log('[Áudio] Baixando messageId:', messageId);
-
     const UAZAPI_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
     const UAZAPI_TOKEN = process.env.UAZAPI_TOKEN;
-
-    // Endpoint correto: POST /message/download com id no body
     const dlRes = await fetch(`${UAZAPI_URL}/message/download`, {
       method: 'POST',
-      headers: {
-        'token': UAZAPI_TOKEN,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        id: messageId,
-        return_base64: true,
-        return_link: false,
-        generate_mp3: false, // OGG — compatível com Groq Whisper
-      }),
+      headers: { 'token': UAZAPI_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: messageId, return_base64: true, return_link: false, generate_mp3: false }),
     });
-
     if (!dlRes.ok) {
       const errText = await dlRes.text().catch(() => '');
       console.error('[Áudio] Falha no download:', dlRes.status, errText.slice(0, 200));
       await sendMessage(phone, 'Não consegui baixar o áudio 😕 Pode digitar?');
       return;
     }
-
     const dlData = await dlRes.json();
-    console.log('[Áudio] Download OK. mimetype:', dlData.mimetype, 'base64 length:', dlData.base64Data?.length || 0);
-
     if (!dlData.base64Data) {
-      console.error('[Áudio] base64Data vazio. Resposta:', JSON.stringify(dlData).slice(0, 200));
+      console.error('[Áudio] base64Data vazio.');
       await sendMessage(phone, 'Não consegui ler o áudio 😕 Pode digitar?');
       return;
     }
-
-    // Converte base64 para Buffer e transcreve via Groq Whisper
     const audioBuffer = Buffer.from(dlData.base64Data, 'base64');
     const mimeType = dlData.mimetype || 'audio/ogg';
     const ext = mimeType.includes('mp3') ? 'mp3' : 'ogg';
-
     const Groq = require('groq-sdk');
     const { toFile } = require('groq-sdk');
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
     const transcription = await groq.audio.transcriptions.create({
       file: await toFile(audioBuffer, `audio.${ext}`, { type: mimeType }),
       model: 'whisper-large-v3-turbo',
       language: 'pt',
     });
-
     const texto = transcription.text?.trim();
     if (!texto) {
       await sendMessage(phone, 'Não entendi o áudio 😕 Pode repetir digitando?');
       return;
     }
-
     console.log(`[Áudio] ${phone} transcrito: "${texto.slice(0, 80)}"`);
     await handleMessage(phone, texto);
-
   } catch (e) {
     console.error('[Áudio] Erro:', e.message);
     await sendMessage(phone, 'Tive um problema com o áudio 😕 Pode digitar?');
