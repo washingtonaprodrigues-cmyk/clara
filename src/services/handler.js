@@ -365,6 +365,11 @@ async function handleMessage(phone, text, location = null) {
     const classified = await classify(text, phone);
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
 
+    // ── Garante que editar_lembrete nunca vira lista_marcar ──
+    if (classified.tipo === 'lista_marcar' && (classified.nova_hora || classified.nova_data)) {
+      classified.tipo = 'editar_lembrete';
+    }
+
     if (LISTA_TIPOS.includes(classified.tipo)) {
       const listaResult = await executeListaAction(user, phone, classified);
       let contextoExtra = '';
@@ -376,7 +381,9 @@ async function handleMessage(phone, text, location = null) {
         else if (acao === 'marcada') contextoExtra = `\n\n[AÇÃO REALIZADA] Marquei itens na lista "${listaNome}".${allDone?' Todos concluídos! 🎉':''} Confirme.`;
         else if (acao === 'adicionado') contextoExtra = `\n\n[AÇÃO REALIZADA] Adicionei "${itemAdicionado}" à lista "${listaNome}". Confirme.`;
         await responderLivre(user, phone, text, contextoExtra);
-        if (['criada','encontrada','adicionado','marcada'].includes(acao) && listaItems.length > 0) {
+        // Só manda a lista se o usuário explicitamente pediu para ver/criar/marcar
+        const pedindoLista = /lista|compras|mercado|marcar|riscar|item|itens/i.test(text);
+        if (['criada','encontrada','adicionado','marcada'].includes(acao) && listaItems.length > 0 && pedindoLista) {
           await sendMessage(phone, formatarListaWhatsApp(listaResult));
         }
       } else {
@@ -415,9 +422,15 @@ async function handleMessage(phone, text, location = null) {
       return;
     }
 
-    executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
-    const isSaudacao = classified.tipo === 'saudacao';
-    await responderLivre(user, phone, text, '', isSaudacao);
+    // Tipos que têm seu próprio fluxo de confirmação — não chamar responderLivre
+    const tiposComConfirmacao = ['editar_lembrete', 'deletar_lembrete'];
+    if (tiposComConfirmacao.includes(classified.tipo)) {
+      await executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
+    } else {
+      executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
+      const isSaudacao = classified.tipo === 'saudacao';
+      await responderLivre(user, phone, text, '', isSaudacao);
+    }
     extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
   } catch (error) {
     console.error('Erro handleMessage:', error.message);
@@ -846,10 +859,16 @@ Para que hora quer ser lembrado?`);
 
 async function editarLembrete(user, phone, classified) {
   try {
-    const titulo = classified.titulo?.toLowerCase();
-    if (!titulo) { await sendMessage(phone, 'Qual lembrete quer alterar? Me diz o nome 😊'); return; }
-    const lembretes = await prisma.reminder.findMany({ where: { userId: user.id, sent: false, confirmed: false } });
-    const encontrado = lembretes.find(r => r.message.toLowerCase().includes(titulo));
+    const titulo = (classified.titulo || '').toLowerCase().trim();
+    const lembretes = await prisma.reminder.findMany({
+      where: { userId: user.id, sent: false, confirmed: false },
+      orderBy: { scheduledAt: 'asc' }
+    });
+    if (!lembretes.length) { await sendMessage(phone, 'Você não tem lembretes ativos 😊'); return; }
+    // Se título vazio ou não encontrado, usa o lembrete mais próximo
+    const encontrado = (titulo
+      ? lembretes.find(r => r.message.toLowerCase().includes(titulo))
+      : null) || lembretes[0];
     if (!encontrado) { await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕`); return; }
 
     // Se não veio hora nova, pede confirmação do horário
