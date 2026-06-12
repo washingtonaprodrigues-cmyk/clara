@@ -44,6 +44,8 @@ REGRAS:
 - Horário/data + intenção de lembrar → tarefa
 - Informação para guardar sem horário → anotacao
 - Pergunta sobre clima/notícia/preço/lugar/telefone → busca
+- Palavra solta que é tema/assunto (ex: "tecnologia", "futebol", "política", "economia", "clima") → busca
+- Uma palavra ou frase curta sem verbo que claramente é um tema de pesquisa → busca
 - Usuário informa saldo/salário/orçamento → saldo
 - Consultar algo já guardado → consulta
 
@@ -98,6 +100,9 @@ EXEMPLOS:
 "meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
 "qual a senha do wi-fi?" → {"tipo":"consulta","sobre":"senha wi-fi"}
 "mostra meus contatos" → {"tipo":"listar_contatos"}
+"tecnologia" → {"tipo":"busca","query":"notícias de tecnologia hoje"}
+"futebol" → {"tipo":"busca","query":"notícias de futebol hoje"}
+"clima" → {"tipo":"busca","query":"previsão do tempo hoje"}
 "oi" → {"tipo":"saudacao"}
 `;
 
