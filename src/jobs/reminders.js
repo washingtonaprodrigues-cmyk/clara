@@ -83,7 +83,7 @@ cron.schedule('5 7 * * *', async () => {
           }),
           prisma.event.findMany({
             where: { userId: user.id, date: { gte: inicioHoje, lte: new Date(`${amanhaStr}T23:59:59-03:00`) } }
-          }),
+          }).catch(() => []),
           memory.buildPersonalContext(user.id)
         ]);
 
@@ -248,7 +248,7 @@ cron.schedule('0 8 * * *', async () => {
           }
         }
 
-        const eventos = await prisma.event.findMany({ where: { userId: user.id, notified: false } });
+        const eventos = await prisma.event.findMany({ where: { userId: user.id, notified: false } }).catch(() => []);
         for (const ev of eventos) {
           const dataEv = new Date(ev.date);
           const diffDias = Math.round((dataEv - now) / (1000 * 60 * 60 * 24));
@@ -531,7 +531,6 @@ cron.schedule('* * * * *', async () => {
         const prefs = user ? await prisma.preference.findFirst({ where: { userId: user.id } }) : null;
         const nome = prefs?.name || user?.name || null;
 
-        // Follow-up urgente — mensagem especial
         const isFollowup = grupo.reminders.length === 1 && grupo.reminders[0].message.startsWith('__followup__');
         if (isFollowup) {
           msg = grupo.reminders[0].message.replace('__followup__', '');
@@ -550,7 +549,6 @@ cron.schedule('* * * * *', async () => {
 
       await sendMessage(grupo.phone, msg);
 
-      // ── Urgência: criar lembrete 15min antes (se ainda não passou) e follow-up 15min depois ──
       for (const r of grupo.reminders) {
         try {
           const isUrgente = await prisma.memory.findFirst({ where: { type: 'lembrete_urgente', content: r.id } });
@@ -559,7 +557,6 @@ cron.schedule('* * * * *', async () => {
           const user = await prisma.user.findFirst({ where: { phone: grupo.phone } });
           const prefs = user ? await prisma.preference.findFirst({ where: { userId: user.id } }) : null;
 
-          // Lembrete antecipado 15min antes — só cria se ainda falta mais de 15min
           const quinzeAntes = new Date(r.scheduledAt.getTime() - 15 * 60 * 1000);
           if (quinzeAntes > new Date()) {
             const jaTemAntes = await prisma.memory.findFirst({ where: { type: 'urgente_antes_lock', content: r.id } });
@@ -568,11 +565,9 @@ cron.schedule('* * * * *', async () => {
                 data: { userId: r.userId, phone: grupo.phone, message: `⚡ Em 15 minutos: ${r.message}`, scheduledAt: quinzeAntes }
               });
               await prisma.memory.create({ data: { userId: r.userId, type: 'urgente_antes_lock', content: r.id } });
-              console.log(`[Urgência] Lembrete antecipado criado: "${r.message}"`);
             }
           }
 
-          // Follow-up 15min depois — pergunta se conseguiu fazer
           const quinzeDepois = new Date(r.scheduledAt.getTime() + 15 * 60 * 1000);
           const jaTemDepois = await prisma.memory.findFirst({ where: { type: 'urgente_followup_lock', content: r.id } });
           if (!jaTemDepois) {
@@ -596,12 +591,10 @@ Respeite o tom — sarcástica não pergunta com fofice.`;
               data: { userId: r.userId, phone: grupo.phone, message: `__followup__${msgFollowup}`, scheduledAt: quinzeDepois }
             });
             await prisma.memory.create({ data: { userId: r.userId, type: 'urgente_followup_lock', content: r.id } });
-            console.log(`[Urgência] Follow-up agendado para "${r.message}"`);
           }
         } catch(e) { console.error(`[Urgência] Erro ${r.id}:`, e.message); }
       }
 
-      // ── Feature 3: Recorrência — recria lembrete para próximo período ──
       for (const r of grupo.reminders) {
         if (r.recorrente && r.frequencia) {
           try {
@@ -610,7 +603,6 @@ Respeite o tom — sarcástica não pergunta com fofice.`;
             else if (r.frequencia === 'semanal') proxima.setDate(proxima.getDate() + 7);
             else if (r.frequencia === 'mensal') proxima.setMonth(proxima.getMonth() + 1);
 
-            // Só recria se a próxima data for no futuro
             if (proxima > new Date()) {
               await prisma.reminder.create({
                 data: {
@@ -640,7 +632,7 @@ Respeite o tom — sarcástica não pergunta com fofice.`;
 }, { timezone: 'America/Sao_Paulo' });
 
 // ─────────────────────────────────────────────
-// MEDICAMENTOS (a cada minuto)
+// MEDICAMENTOS (a cada minuto) ── Fix: lock com verificação de tempo
 // ─────────────────────────────────────────────
 cron.schedule('* * * * *', async () => {
   try {
@@ -654,8 +646,23 @@ cron.schedule('* * * * *', async () => {
         if (!horarios.includes(minutoChave)) continue;
         const phone = med.user?.phone || (await prisma.user.findUnique({ where: { id: med.userId } }))?.phone;
         if (!phone) continue;
+
         const lockKey = `med_${med.id}_${minutoChave}`;
-        if (await prisma.memory.findFirst({ where: { type: 'med_lock', content: lockKey } })) continue;
+
+        // ── Fix: verifica se lock existe E se foi criado nos últimos 2 minutos ──
+        // Isso evita que locks de execuções anteriores bloqueiem notificações futuras
+        const lockExistente = await prisma.memory.findFirst({
+          where: { type: 'med_lock', content: lockKey },
+          orderBy: { createdAt: 'desc' }
+        });
+        if (lockExistente) {
+          const ageMs = Date.now() - new Date(lockExistente.createdAt).getTime();
+          if (ageMs < 120000) continue; // lock válido por 2 minutos
+          // Lock expirado (>2min) — apaga e reenvia
+          await prisma.memory.delete({ where: { id: lockExistente.id } }).catch(() => {});
+          console.log(`[Med] Lock expirado removido: ${lockKey}`);
+        }
+
         await prisma.memory.create({ data: { userId: med.userId, type: 'med_lock', content: lockKey } });
         const msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esquece de tomar certinho 😊\n\n💜 Restam ${med.remaining - 1} doses.`;
         await sendMessage(phone, msg);
@@ -693,7 +700,7 @@ cron.schedule('* * * * *', async () => {
 }, { timezone: 'America/Sao_Paulo' });
 
 // ─────────────────────────────────────────────
-// LIMPEZA DE LOCKS ANTIGOS (03:00)
+// LIMPEZA DE LOCKS ANTIGOS (03:00 e a cada hora)
 // ─────────────────────────────────────────────
 cron.schedule('0 3 * * *', async () => {
   try {
@@ -706,6 +713,17 @@ cron.schedule('0 3 * * *', async () => {
     });
     console.log('[Cleanup] Locks antigos removidos');
   } catch (e) { console.error('[Cleanup] Erro:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// Limpeza de med_lock a cada hora (evita acúmulo que bloqueia notificações)
+cron.schedule('0 * * * *', async () => {
+  try {
+    const doisMinutosAtras = new Date(Date.now() - 2 * 60 * 1000);
+    const resultado = await prisma.memory.deleteMany({
+      where: { type: 'med_lock', createdAt: { lt: doisMinutosAtras } }
+    });
+    if (resultado.count > 0) console.log(`[Cleanup Med Locks] ${resultado.count} locks removidos`);
+  } catch (e) { console.error('[Cleanup Med Locks] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
 // ─────────────────────────────────────────────
@@ -724,7 +742,7 @@ cron.schedule('0 4 * * *', async () => {
 }, { timezone: 'America/Sao_Paulo' });
 
 // ─────────────────────────────────────────────
-// FEATURE 4: ALERTA ESTOQUE BAIXO DE REMÉDIO (08:30)
+// ALERTA ESTOQUE BAIXO DE REMÉDIO (08:30)
 // ─────────────────────────────────────────────
 cron.schedule('30 8 * * *', async () => {
   try {
@@ -739,7 +757,6 @@ cron.schedule('30 8 * * *', async () => {
         const phone = med.user?.phone || (await prisma.user.findUnique({ where: { id: med.userId } }))?.phone;
         if (!phone) continue;
 
-        // Lock: avisar no máximo 1x por dia por remédio
         const lockKey = `estoque_baixo_${med.id}_${dateBRT()}`;
         if (await prisma.memory.findFirst({ where: { type: 'estoque_lock', content: lockKey } })) continue;
         await prisma.memory.create({ data: { userId: med.userId, type: 'estoque_lock', content: lockKey } });
@@ -754,9 +771,8 @@ cron.schedule('30 8 * * *', async () => {
   } catch (e) { console.error('[Estoque] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-
 // ─────────────────────────────────────────────
-// PARCEIRA — avisa 30min antes de cada lembrete (a cada minuto)
+// PARCEIRA — avisa 30min antes de cada lembrete
 // ─────────────────────────────────────────────
 cron.schedule('* * * * *', async () => {
   try {
@@ -764,7 +780,6 @@ cron.schedule('* * * * *', async () => {
     const em30min = new Date(now.getTime() + 30 * 60 * 1000);
     const em31min = new Date(now.getTime() + 31 * 60 * 1000);
 
-    // Busca lembretes que disparam nos próximos 30 min (janela de 1 minuto para não duplicar)
     const proximos = await prisma.reminder.findMany({
       where: {
         sent: false,
@@ -777,7 +792,6 @@ cron.schedule('* * * * *', async () => {
 
     for (const r of proximos) {
       try {
-        // Lock: só avisa uma vez por lembrete
         const lockKey = `parceira_${r.id}`;
         if (await prisma.memory.findFirst({ where: { type: 'parceira_lock', content: lockKey } })) continue;
         await prisma.memory.create({ data: { userId: r.userId, type: 'parceira_lock', content: lockKey } });
@@ -808,13 +822,10 @@ ${infoPessoal ? `\nO que você sabe sobre ele(a):\n${infoPessoal}` : ''}
 
 Envie UMA mensagem curta (1-2 linhas) como parceira presente:
 - Mencione o compromisso de forma natural, respeitando seu tom
-- Ofereça ajuda ESPECÍFICA para aquele contexto:
-  - Reunião/trabalho → pesquisar, organizar argumento, preparar dados
-  - Compromisso pessoal → verificar trânsito, mandar aviso
-  - Remédio → lembrar detalhes (jejum, dose certa, etc)
+- Ofereça ajuda ESPECÍFICA para aquele contexto
 - NÃO use "lembrete" ou "aviso" — seja natural
 - NÃO agende nada novo
-- Respeite rigorosamente o tom acima — não misture estilos`
+- Respeite rigorosamente o tom acima — não misture estilos`;
 
         const msg = await freeResponse('Envie mensagem de parceira para o compromisso próximo.', [], {
           _contexto: '',
