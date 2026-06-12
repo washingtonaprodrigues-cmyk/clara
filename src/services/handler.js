@@ -395,6 +395,24 @@ async function handleMessage(phone, text, location = null) {
       return;
     }
 
+    // ── Busca web — executa antes do freeResponse ──
+    if (classified.tipo === 'busca' && classified.query) {
+      const cidade = await memory.getRecentMemories(user.id, 5)
+        .then(mems => mems.find(m => m.type === 'cidade')?.content || '')
+        .catch(() => '');
+      const resultadoBusca = await searchWeb(classified.query, cidade);
+      if (resultadoBusca) {
+        await memory.saveConversationMessage(user.id, 'user', text);
+        await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca);
+        await sendMessage(phone, resultadoBusca);
+        extractAndSavePersonalInfo(user.id, text).catch(() => {});
+        return;
+      }
+      // Sem resultado — passa para o freeResponse com contexto
+      await responderLivre(user, phone, text, `\n\n[BUSCA] Não encontrei resultados para "${classified.query}". Informe de forma curta que não encontrou nada.`, false);
+      return;
+    }
+
     executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
     const isSaudacao = classified.tipo === 'saudacao';
     await responderLivre(user, phone, text, '', isSaudacao);
