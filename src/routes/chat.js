@@ -267,10 +267,12 @@ router.post('/:phone', async (req, res) => {
         const locationContext = cidade?.content || '';
         const resultadoBusca = await searchWeb(classified.query, locationContext);
         if (resultadoBusca) {
-          contexto += `\n\n[RESULTADO DA BUSCA — use isso para responder, são dados reais e atuais]\n${resultadoBusca}`;
-          console.log(`[chat] Busca concluída para "${classified.query}"`);
+          // Retorna direto o resultado sem passar pelo freeResponse
+          await memory.saveConversationMessage(user.id, 'user', message, privateMode);
+          await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca, privateMode);
+          return res.json({ reply: resultadoBusca, actionType: 'busca', actionData: null });
         } else {
-          contexto += `\n\n[BUSCA] Não encontrei resultados para "${classified.query}". Informe o usuário.`;
+          contexto += `\n\n[BUSCA] Não encontrei resultados para "${classified.query}". Diga que não encontrou nada sobre o assunto de forma curta e no seu tom.`;
         }
       } catch (e) {
         console.error('[chat] Erro busca:', e.message);
