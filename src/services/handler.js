@@ -861,7 +861,7 @@ async function editarLembrete(user, phone, classified) {
   try {
     const titulo = (classified.titulo || '').toLowerCase().trim();
     const lembretes = await prisma.reminder.findMany({
-      where: { userId: user.id, sent: false, confirmed: false },
+      where: { userId: user.id, confirmed: false }, // inclui sent:true (já disparado mas não confirmado)
       orderBy: { scheduledAt: 'asc' }
     });
     if (!lembretes.length) { await sendMessage(phone, 'Você não tem lembretes ativos 😊'); return; }
@@ -927,7 +927,7 @@ async function deletarLembretePorTitulo(user, phone, classified) {
   try {
     const titulo = classified.titulo?.toLowerCase();
     if (!titulo) { await sendMessage(phone, 'Qual lembrete quer cancelar? Me diz o nome 😊'); return; }
-    const lembretes = await prisma.reminder.findMany({ where: { userId: user.id, sent: false, confirmed: false } });
+    const lembretes = await prisma.reminder.findMany({ where: { userId: user.id, confirmed: false } });
     const encontrados = lembretes.filter(r => r.message.toLowerCase().includes(titulo));
     if (!encontrados.length) { await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕`); return; }
     await prisma.reminder.deleteMany({ where: { id: { in: encontrados.map(r => r.id) } } });
