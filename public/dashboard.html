@@ -310,7 +310,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .fin-action-btn.entrada{background:rgba(34,197,94,.12);color:#22C55E;border:1px solid rgba(34,197,94,.2)}
 .fin-action-btn.saida{background:rgba(239,68,68,.1);color:#EF4444;border:1px solid rgba(239,68,68,.2)}
 .fin-action-btn:hover{opacity:.85}
-.fin-history{flex:1;overflow-y:auto}
+.fin-history{flex:1;overflow-y:auto;overflow-x:hidden}
 .fin-hist-section{padding:12px 16px 6px;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px}
 .fin-hist-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);transition:background .1s}
 .fin-hist-item:hover{background:var(--s2)}
@@ -327,8 +327,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 /* ── Financeiro swipe+hover ── */
 .fin-hist-wrap{position:relative;overflow:hidden}
 .fin-hist-wrap+.fin-hist-wrap{border-top:1px solid var(--border)}
-.fin-hist-delete-bg{position:absolute;right:0;top:0;bottom:0;width:0;background:rgba(239,68,68,.15);display:flex;align-items:center;justify-content:center;color:var(--red);font-size:18px;pointer-events:none;transition:width .15s}
-.fin-hist-item{position:relative;background:transparent;touch-action:pan-y;transition:transform .2s ease}
+.fin-hist-delete-bg{position:absolute;right:0;top:0;bottom:0;width:0;background:rgba(239,68,68,.15);display:flex;align-items:center;justify-content:center;color:var(--red);font-size:18px;pointer-events:none;transition:width .15s;z-index:1}
+.fin-hist-item{position:relative;background:transparent;touch-action:pan-y;transition:transform .2s ease;z-index:2}
 .fin-hist-item:hover{background:var(--s2)}
 .fin-hist-del-btn{width:32px;height:32px;background:none;border:none;cursor:pointer;color:var(--text3);border-radius:8px;display:flex;align-items:center;justify-content:center;opacity:0;transition:all .15s;flex-shrink:0;margin-left:4px}
 .fin-hist-item:hover .fin-hist-del-btn{opacity:.5}
@@ -883,9 +883,15 @@ function renderFin(){
     const isEntrada=g.value<0;
     const absVal=Math.abs(g.value);
     const name=g.description&&g.description!==g.category?g.description:(g.category.charAt(0).toUpperCase()+g.category.slice(1));
-    const wrap=document.createElement('div');wrap.className='fin-hist-wrap';
-    const bg=document.createElement('div');bg.className='fin-hist-delete-bg';bg.innerHTML='🗑️';
-    const item=document.createElement('div');item.className='fin-hist-item';
+    const wrap=document.createElement('div');
+    wrap.className='fin-hist-wrap';
+    wrap.style.cssText='position:relative;overflow:hidden;border-bottom:1px solid rgba(255,255,255,.06)';
+    const bg=document.createElement('div');
+    bg.style.cssText='position:absolute;right:0;top:0;bottom:0;width:0;background:rgba(239,68,68,.15);display:flex;align-items:center;justify-content:center;color:#EF4444;font-size:18px;pointer-events:none;transition:width .15s;z-index:1';
+    bg.innerHTML='🗑️';
+    const item=document.createElement('div');
+    item.className='fin-hist-item';
+    item.style.cssText='display:flex;align-items:center;gap:12px;padding:12px 16px;position:relative;z-index:2;background:var(--bg,#08090D);transition:transform .2s ease;touch-action:pan-y';
     item.innerHTML=
       '<div class="fin-hist-icon" style="background:'+(isEntrada?'rgba(34,197,94,.12)':(CAT_BG[g.category]||'rgba(107,114,128,.12)'))+'">'+
         (isEntrada?'💰':(CAT_ICONS[g.category]||'📦'))+
@@ -897,13 +903,14 @@ function renderFin(){
       '<div class="fin-hist-right">'+
         '<div class="fin-hist-val '+(isEntrada?'pos':'neg')+'">'+(isEntrada?'+':'-')+brl(absVal)+'</div>'+
         '<div class="fin-hist-date">'+fmtD(g.createdAt)+'</div>'+
-      '</div>'+
-      '<button class="fin-hist-del-btn" title="Excluir">'+
-        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>'+
-      '</button>';
-    // Del button (desktop hover)
-    const delBtn=item.querySelector('.fin-hist-del-btn');
-    if(delBtn)delBtn.addEventListener('click',function(e){e.stopPropagation();delGasto(g.id,wrap);});
+      '</div>';
+    // Desktop: lixeira via hover (hidden on mobile via CSS)
+    const delBtn=document.createElement('button');
+    delBtn.className='fin-hist-del-btn';
+    delBtn.title='Excluir';
+    delBtn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+    delBtn.addEventListener('click',function(e){e.stopPropagation();delGasto(g.id,wrap);});
+    item.appendChild(delBtn);
     // Swipe mobile
     let sX=0,cX=0,sw=false;
     item.addEventListener('touchstart',e=>{sX=e.touches[0].clientX;sw=true;cX=0;},{passive:true});
