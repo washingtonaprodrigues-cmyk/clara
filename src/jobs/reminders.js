@@ -50,11 +50,6 @@ cron.schedule('5 7 * * *', async () => {
     if (_locksBomDia.has(hoje)) { console.log('[Bom dia] já processando hoje'); return; }
     _locksBomDia.add(hoje);
 
-    const lockKey = `bom_dia_${hoje}`;
-    const jaEnviou = await prisma.memory.findFirst({ where: { type: lockKey } });
-    if (jaEnviou) { console.log('[Bom dia] já enviado hoje, pulando'); return; }
-    await prisma.memory.create({ data: { userId: 'system', type: lockKey, content: '1' } }).catch(() => {});
-
     const amanha = new Date(now); amanha.setDate(amanha.getDate() + 1);
     const amanhaStr = dateBRT(amanha);
     const diasSemana = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
@@ -65,13 +60,11 @@ cron.schedule('5 7 * * *', async () => {
 
     for (const user of users) {
       try {
-        if (await jaEnviouHoje(user.id, 'bom_dia_enviado')) continue;
-
-        const lockExistente = await prisma.memory.findFirst({
-          where: { userId: user.id, type: `bom_dia_${hoje}` }, orderBy: { createdAt: 'desc' }
-        });
-        if (lockExistente) { console.log(`[Bom dia] já enviado hoje para ${user.phone}`); continue; }
-        await prisma.memory.create({ data: { userId: user.id, type: `bom_dia_${hoje}`, content: new Date().toISOString() } });
+        // Lock único por usuário — sem lock global separado
+        const lockKey = `bom_dia_user_${hoje}_${user.id}`;
+        const jaEnviou = await prisma.memory.findFirst({ where: { userId: user.id, type: 'bom_dia_lock', content: lockKey } });
+        if (jaEnviou) { console.log(`[Bom dia] já enviado hoje para ${user.phone}`); continue; }
+        await prisma.memory.create({ data: { userId: user.id, type: 'bom_dia_lock', content: lockKey } }).catch(() => {});
 
         const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
         const fimHoje = new Date(`${hoje}T23:59:59-03:00`);
@@ -115,11 +108,12 @@ REGRAS OBRIGATÓRIAS:
 - Máximo 3-4 linhas
 - Use o dia da semana de forma natural
 - Se tiver compromissos: mencione apenas o primeiro horário
-- Se não tiver compromissos: celebre levemente o dia livre
+- Se não tiver compromissos: diga algo positivo sobre o dia — NUNCA mencione que não há compromissos ou que a pessoa não fez nada
 - Varie sempre a abertura — NUNCA repita "Bom dia, [nome]! ☀️"
 - Use no máximo 1 emoji
 - Encerre com algo caloroso e breve
 - NÃO liste compromissos. NÃO pergunte. NÃO agende nada.
+- NUNCA diga que a pessoa não concluiu compromissos ou que a semana foi improdutiva
 Tom: ${prefs.tom || 'carinhoso'}.`;
 
         const msg = await freeResponse('Envie uma mensagem de bom dia para o usuário.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBomDia });
@@ -140,24 +134,17 @@ cron.schedule('30 21 * * *', async () => {
     if (_locksBoaNoite.has(hoje)) { console.log('[Boa noite] já processando hoje'); return; }
     _locksBoaNoite.add(hoje);
 
-    const lockKey = `boa_noite_${hoje}`;
-    const jaEnviou = await prisma.memory.findFirst({ where: { type: lockKey } });
-    if (jaEnviou) { console.log('[Boa noite] já enviado hoje, pulando'); return; }
-    await prisma.memory.create({ data: { userId: 'system', type: lockKey, content: '1' } }).catch(() => {});
-
     const amanha = new Date(now); amanha.setDate(amanha.getDate() + 1);
     const amanhaStr = dateBRT(amanha);
     const users = await prisma.user.findMany({ where: { blocked: false } });
 
     for (const user of users) {
       try {
-        if (await jaEnviouHoje(user.id, 'boa_noite_enviado')) continue;
-
-        const lockNoiteExistente = await prisma.memory.findFirst({
-          where: { userId: user.id, type: `boa_noite_${hoje}` }, orderBy: { createdAt: 'desc' }
-        });
-        if (lockNoiteExistente) { console.log(`[Boa noite] já enviado hoje para ${user.phone}`); continue; }
-        await prisma.memory.create({ data: { userId: user.id, type: `boa_noite_${hoje}`, content: new Date().toISOString() } });
+        // Lock único por usuário
+        const lockNoiteKey = `boa_noite_user_${hoje}_${user.id}`;
+        const jaEnviouNoite = await prisma.memory.findFirst({ where: { userId: user.id, type: 'boa_noite_lock', content: lockNoiteKey } });
+        if (jaEnviouNoite) { console.log(`[Boa noite] já enviado hoje para ${user.phone}`); continue; }
+        await prisma.memory.create({ data: { userId: user.id, type: 'boa_noite_lock', content: lockNoiteKey } }).catch(() => {});
 
         const inicioAmanha = new Date(`${amanhaStr}T00:00:00-03:00`);
         const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
@@ -343,7 +330,10 @@ cron.schedule('0 17 * * 5', async () => {
         ]);
         const totalGasto = gastosSemana.reduce((a, g) => a + g.value, 0);
         const infoPessoal = await memory.buildPersonalContext(user.id);
-        const ctx = `É sexta-feira à tarde.\nEssa semana o usuário concluiu ${tarefasSemana.length} compromisso(s)${totalGasto > 0 ? ` e registrou R$ ${totalGasto.toFixed(2)} em gastos` : ''}.\n${infoPessoal}`;
+        const ctxSexta = tarefasSemana.length > 0
+          ? `Essa semana o usuário concluiu ${tarefasSemana.length} compromisso(s)${totalGasto > 0 ? ` e registrou R$ ${totalGasto.toFixed(2)} em gastos` : ''}.`
+          : ``;  // não mencionar produtividade se zerada
+        const ctx = `É sexta-feira à tarde.\n${ctxSexta}\n${infoPessoal}`;
         const systemSexta = `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''}
 Envie uma mensagem de sexta-feira calorosa e breve (2-3 linhas).
 NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.
@@ -707,7 +697,7 @@ cron.schedule('0 3 * * *', async () => {
     const ontem = new Date(nowBRT()); ontem.setDate(ontem.getDate() - 2);
     await prisma.memory.deleteMany({
       where: {
-        type: { in: ['med_lock', 'alerta_data_lock', 'proativa_lock', 'sumico_lock'] },
+        type: { in: ['med_lock', 'alerta_data_lock', 'proativa_lock', 'sumico_lock', 'bom_dia_lock', 'boa_noite_lock'] },
         createdAt: { lt: ontem }
       }
     });
