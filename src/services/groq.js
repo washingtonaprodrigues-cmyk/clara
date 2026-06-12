@@ -35,7 +35,7 @@ async function ativarPausaCreativa(phone, tipo) {
   }
 }
 
-// ── CLASSIFY PROMPT — enxuto mas completo ──
+// ── CLASSIFY PROMPT ──
 const SYSTEM_PROMPT = () => `Você é a Clara, assistente pessoal brasileira.
 Retorne APENAS JSON. Hoje é ${hoje()}.
 
@@ -50,6 +50,9 @@ REGRAS:
 - Conversa casual sobre o que o usuário vai fazer → outro, NÃO busca
 - Usuário informa saldo/salário/orçamento → saldo
 - Consultar algo já guardado → consulta
+- Hora SEMPRE em formato 24h: "10 da manhã"→"10:00", "2 da tarde"→"14:00", "8 da noite"→"20:00", "meia noite"→"00:00", "meio dia"→"12:00"
+- Se o usuário disser "10h" ou "10:00" sem indicação de tarde/noite → mantenha exatamente essa hora, NÃO converta
+- NUNCA some 12 horas em horários como "9h", "10h", "11h" sem o usuário dizer "da tarde" ou "da noite"
 
 TIPOS E FORMATOS:
 {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
@@ -83,6 +86,9 @@ TIPOS E FORMATOS:
 
 EXEMPLOS:
 "entrei às 8h, sai almoçar 12h, voltei 13h, saí 17h" → {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"},{"subtipo":"saida_almoco","hora":"12:00"},{"subtipo":"volta_almoco","hora":"13:00"},{"subtipo":"saida","hora":"17:00"}]}
+"me lembra às 10 da manhã de fazer backup" → {"tipo":"tarefa","titulo":"fazer backup","data":null,"hora":"10:00","antecedencia":0,"recorrente":false,"frequencia":null}
+"me lembra às 2 da tarde de ligar pro médico" → {"tipo":"tarefa","titulo":"ligar pro médico","data":null,"hora":"14:00","antecedencia":0,"recorrente":false,"frequencia":null}
+"me lembra às 10h de fazer backup" → {"tipo":"tarefa","titulo":"fazer backup","data":null,"hora":"10:00","antecedencia":0,"recorrente":false,"frequencia":null}
 "me lembra às 19h de buscar minha sogra" → {"tipo":"tarefa","titulo":"buscar sogra","data":null,"hora":"19:00","antecedencia":0,"recorrente":false,"frequencia":null}
 "todo dia às 8h tomar remédio" → {"tipo":"tarefa","titulo":"tomar remédio","data":null,"hora":"08:00","recorrente":true,"frequencia":"diario"}
 "gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
@@ -134,7 +140,7 @@ async function classify(message, phone = null) {
   }
 }
 
-// ── EXTRACT — sem alteração, já estava enxuto ──
+// ── EXTRACT ──
 const EXTRACT_SYSTEM = `Extrator de informações pessoais. Retorne APENAS array JSON ou [].
 Categorias: familia | trabalho | rotina | saude | objetivos | datas | outro
 Extraia APENAS o que o usuário declarou explicitamente sobre si mesmo. NUNCA deduza.
@@ -177,10 +183,8 @@ async function searchWebGroq(query, locationContext = '') {
       return "Não encontrei informações atualizadas. Pode tentar de outra forma?";
     }
 
-    // Monta resposta direto dos dados do Tavily — sem passar pelo Groq
     let resposta = '';
 
-    // Se tem answer do Tavily e está em inglês, traduz com poucos tokens
     if (data.answer) {
       const isEnglish = /\b(the|is|are|was|were|has|have|with|that|this|from|for)\b/i.test(data.answer);
       if (isEnglish) {
@@ -196,14 +200,13 @@ async function searchWebGroq(query, locationContext = '') {
           });
           resposta = trad.choices[0].message.content.trim();
         } catch(e) {
-          resposta = data.answer; // fallback: mantém em inglês
+          resposta = data.answer;
         }
       } else {
         resposta = data.answer;
       }
     }
 
-    // Adiciona os melhores resultados em PT abaixo
     const resultsPT = data.results.filter(r => {
       const url = (r.url || '').toLowerCase();
       return url.includes('.br') || url.includes('pt.') || !(url.match(/\.com|\.org|\.net/));
@@ -226,7 +229,7 @@ async function searchWebGroq(query, locationContext = '') {
   }
 }
 
-// ── PERSONALIDADES — enxutas, identidade preservada ──
+// ── PERSONALIDADES ──
 function buildPersonality(tom, name, privateMode = false) {
   const nomeTxt = name ? `O nome da pessoa é ${name}.` : '';
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
@@ -329,7 +332,6 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
 
     const isCurta = message.trim().length < 40;
     const isSocial = /^(beijos?|boa noite|bom dia|boa tarde|oi|olá|até|tchau|😘|❤|valeu|obrigad|flw|abraços?|saudades)/i.test(message.trim());
-    // Sarcástico sempre usa MODEL_FORTE para manter o tom mesmo em mensagens curtas
     const modeloEscolhido = (isCurta && isSocial && tom !== 'sarcastico') ? MODEL_LEVE : MODEL_FORTE;
 
     const timeoutPromise = new Promise((_, reject) =>
