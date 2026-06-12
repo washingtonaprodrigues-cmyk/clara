@@ -93,6 +93,32 @@ router.get('/gastos/:phone', async (req, res) => {
   }
 });
 
+// ====================== REGISTRAR GASTO ======================
+router.post('/gasto/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const { valor, categoria, descricao } = req.body;
+    const user = await memory.getOrCreateUser(phone);
+    await memory.saveExpense(user.id, { valor, categoria, descricao });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro POST gasto:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== DELETAR GASTO ======================
+router.delete('/gasto/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.expense.delete({ where: { id } });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro DELETE gasto:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== PONTO: GET ======================
 router.get('/pontos/:phone', async (req, res) => {
   try {
@@ -282,20 +308,6 @@ router.post('/lembrete-concluir/:id', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error('Erro concluir lembrete:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== REGISTRAR GASTO ======================
-router.post('/gasto/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const { valor, categoria, descricao } = req.body;
-    const user = await memory.getOrCreateUser(phone);
-    await memory.saveExpense(user.id, { valor, categoria, descricao });
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Erro POST gasto:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
