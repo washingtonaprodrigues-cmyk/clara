@@ -278,7 +278,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .med-icon-wrap{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .med-icon-wrap svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 .med-info{flex:1;min-width:0}
-.med-name{font-size:14px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.med-name{font-size:13px;font-weight:600;color:var(--text)}
 .med-freq{font-size:11px;color:var(--text3);margin-top:2px}
 .med-next{text-align:center;flex-shrink:0;min-width:60px}
 .med-next-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px}
@@ -878,21 +878,21 @@ function renderSaude(){
   const now=new Date(),hm=`${pad(now.getHours())}:${pad(now.getMinutes())}`;
   const MED_COLORS=['rgba(139,92,246,.15)','rgba(59,130,246,.15)','rgba(16,185,129,.15)','rgba(245,158,11,.15)','rgba(239,68,68,.15)'];
   const MED_TEXT=['#C4B5FD','#93C5FD','#6EE7B7','#FCD34D','#FCA5A5'];
-  const pendentes=[],concluidos=[];
+  const pendentes=[];
   allMeds.forEach((m,i)=>{
     let times=[];try{times=JSON.parse(m.times);}catch{}
-    const nextToday=times.find(t=>t>=hm);
-    if(nextToday)pendentes.push({m,i,nextTime:nextToday,nextDay:'Hoje'});
-    else concluidos.push({m,i,nextTime:times[0]||'—',nextDay:times.length?'Amanhã':'—'});
+    // Próxima dose hoje ou amanhã
+    const nextHoje=times.find(t=>t>=hm);
+    const nextTime=nextHoje||times[0]||'—';
+    const nextDay=nextHoje?'Hoje':'Amanhã';
+    pendentes.push({m,i,nextTime,nextDay});
   });
 
-  function makeCard(m,i,nextTime,nextDay,done){
+  function makeCard(m,i,nextTime,nextDay){
     const ci=i%MED_COLORS.length;
     const card=document.createElement('div');
     card.className='med2-card';
-    if(done)card.style.opacity='.4';
 
-    // Top row: icon + name + del
     const top=document.createElement('div');top.className='med2-top';
     const icon=document.createElement('div');
     icon.className='med2-icon';
@@ -907,25 +907,24 @@ function renderSaude(){
     delBtn.addEventListener('click',()=>delMed(m.id));
     top.appendChild(icon);top.appendChild(titleWrap);top.appendChild(delBtn);
 
-    // Info boxes: próxima dose + doses restantes
     const info=document.createElement('div');info.className='med2-info';
     const box1=document.createElement('div');box1.className='med2-info-box';
     box1.innerHTML=
       '<div class="med2-info-label"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Próxima dose</div>'+
       '<div class="med2-info-val" style="color:'+MED_TEXT[ci]+'">'+nextTime+'</div>'+
-      '<div class="med2-info-sub" style="color:var(--text3)">'+nextDay+'</div>';
+      '<div class="med2-info-sub" style="color:'+(nextDay==='Hoje'?'var(--green)':'var(--text3)')+'">'+nextDay+'</div>';
     const box2=document.createElement('div');box2.className='med2-info-box';
     box2.innerHTML=
       '<div class="med2-info-label"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Restam</div>'+
-      '<div class="med2-info-val" style="color:var(--text)">'+m.remaining+'</div>'+
+      '<div class="med2-info-val" style="color:'+(m.remaining<=5?'var(--red)':'var(--text)')+'">'+m.remaining+'</div>'+
       '<div class="med2-info-sub" style="color:var(--text3)">doses</div>';
     info.appendChild(box1);info.appendChild(box2);
 
-    // Action button
+    // Botão: só permite tomar se a próxima dose é hoje
     const btn=document.createElement('button');
-    if(done){
+    if(nextDay==='Amanhã'){
       btn.className='med2-btn tomado';
-      btn.innerHTML='<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Tomado hoje';
+      btn.innerHTML='<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Todas as doses tomadas hoje';
       btn.disabled=true;
     }else{
       btn.className='med2-btn tomar';
@@ -940,17 +939,14 @@ function renderSaude(){
   el.innerHTML='';
 
   if(pendentes.length){
-    const lbl=document.createElement('div');lbl.className='med2-section-label';lbl.textContent='Hoje';
+    const lbl=document.createElement('div');lbl.className='med2-section-label';lbl.textContent='Medicamentos';
     el.appendChild(lbl);
-    pendentes.forEach(({m,i,nextTime,nextDay})=>el.appendChild(makeCard(m,i,nextTime,nextDay,false)));
-  }
-
-  if(!pendentes.length&&!concluidos.length){
+    pendentes.forEach(({m,i,nextTime,nextDay})=>el.appendChild(makeCard(m,i,nextTime,nextDay)));
+  }else{
     el.innerHTML='<div class="empty"><span class="empty-icon">💊</span>Nenhum medicamento</div>';
     return;
   }
 
-  // Dica da Clara
   const tip=document.createElement('div');
   tip.className='med-tip';tip.style.margin='4px 20px 16px';
   tip.innerHTML='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div><div class="med-tip-title">Dica da Clara</div><div class="med-tip-text">Mantenha sua rotina de medicamentos em dia. Isso faz toda a diferença!</div></div>';
