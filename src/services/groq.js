@@ -167,36 +167,50 @@ async function searchWebGroq(query, locationContext = '') {
     if (!data || !data.results || data.results.length === 0) {
       return "Não encontrei informações atualizadas. Pode tentar de outra forma?";
     }
-    let contexto = '';
-    if (data.answer) contexto += `Resposta direta: ${data.answer}\n\n`;
-    data.results.slice(0, 3).forEach((r) => {
-      if (r.title) contexto += `Fonte: ${r.title}\n`;
-      if (r.content) contexto += `${r.content.substring(0, 500)}\n\n`;
+
+    // Monta resposta direto dos dados do Tavily — sem passar pelo Groq
+    let resposta = '';
+
+    // Se tem answer do Tavily e está em inglês, traduz com poucos tokens
+    if (data.answer) {
+      const isEnglish = /\b(the|is|are|was|were|has|have|with|that|this|from|for)\b/i.test(data.answer);
+      if (isEnglish) {
+        try {
+          const trad = await groq.chat.completions.create({
+            model: MODEL_LEVE,
+            messages: [
+              { role: 'system', content: 'Traduza para português brasileiro de forma natural. Retorne APENAS a tradução, sem explicações.' },
+              { role: 'user', content: data.answer }
+            ],
+            temperature: 0.1,
+            max_tokens: 200,
+          });
+          resposta = trad.choices[0].message.content.trim();
+        } catch(e) {
+          resposta = data.answer; // fallback: mantém em inglês
+        }
+      } else {
+        resposta = data.answer;
+      }
+    }
+
+    // Adiciona os melhores resultados em PT abaixo
+    const resultsPT = data.results.filter(r => {
+      const url = (r.url || '').toLowerCase();
+      return url.includes('.br') || url.includes('pt.') || !(url.match(/\.com|\.org|\.net/));
     });
-    const completion = await groq.chat.completions.create({
-      model: MODEL_LEVE,
-      messages: [
-        {
-          role: 'system',
-          content: `Você é a Clara, assistente pessoal brasileira. Responda em português de forma natural e completa.
-REGRAS:
-- Use os dados reais da busca — NUNCA invente ou complete com suposições
-- Para clima: ☀️🌤️⛅🌧️⛈️ + temperatura atual + previsão dos próximos dias em 1 linha
-- Para escalações/times/pessoas: liste os nomes reais encontrados
-- Para notícias/eventos: resuma o que encontrou em 2-3 linhas
-- Para preços/lugares: seja direto com os dados reais
-- Se os dados forem insuficientes, diga o que encontrou e admita a limitação
-- NÃO cite fontes, NÃO repita a pergunta`,
-        },
-        {
-          role: 'user',
-          content: `Pergunta: ${query}\nLocalização: ${locationContext || 'não informada'}\n\nDados da busca:\n${contexto}`,
-        },
-      ],
-      temperature: 0.3,
-      max_tokens: 350,
-    });
-    return completion.choices[0].message.content.trim();
+    const resultsFinal = resultsPT.length > 0 ? resultsPT : data.results;
+
+    if (resultsFinal.length > 0 && !resposta) {
+      const r = resultsFinal[0];
+      resposta = r.content ? r.content.substring(0, 400) : r.title;
+    }
+
+    if (!resposta) return "Não encontrei informações sobre isso agora.";
+
+    console.log(`[Search] Resposta: ${resposta.substring(0, 80)}...`);
+    return resposta;
+
   } catch (error) {
     console.error('Erro searchWebGroq:', error.message);
     return "Não consegui buscar essa informação agora.";
