@@ -362,7 +362,16 @@ async function handleMessage(phone, text, location = null) {
 
     if (modoAtual === 'conversar') return await responderLivre(user, phone, text);
 
-    const classified = await classify(text, phone);
+    // Passa histórico recente para o classify resolver referências vagas
+    let contextoClassify = '';
+    try {
+      const histClassify = await memory.getConversationHistory(user.id, 3);
+      const temReferencia = /\b(lá|la|dela|deles|delas|de lá|de la|o telefone|o contato|o endereço|esse|essa|ele|ela|eles|elas)\b/i.test(text);
+      if (temReferencia && histClassify.length > 0) {
+        contextoClassify = histClassify.slice(-4).map(m => (m.role === 'user' ? 'Usuário' : 'Clara') + ': ' + m.content.substring(0, 150)).join('\n');
+      }
+    } catch(e) {}
+    const classified = await classify(text, phone, contextoClassify);
     if (classified) classified._textoOriginal = text;
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
 
@@ -405,7 +414,23 @@ async function handleMessage(phone, text, location = null) {
       const cidade = await memory.getRecentMemories(user.id, 5)
         .then(mems => mems.find(m => m.type === 'cidade')?.content || '')
         .catch(() => '');
-      const resultadoBusca = await searchWeb(classified.query, cidade);
+
+      // Resolve referências vagas usando histórico recente ("de lá", "dela", "deles", "o telefone")
+      let queryFinal = classified.query;
+      const temReferencia = /\b(lá|la|dela|deles|deles|delas|de lá|de la|o telefone|o contato|o endereço|o numero|o número)\b/i.test(text);
+      if (temReferencia) {
+        try {
+          const history = await memory.getConversationHistory(user.id, 4);
+          const contextoRecente = history.slice(-4).map(m => m.content).join(' ');
+          // Extrai o assunto mais recente do contexto (última entidade mencionada)
+          const ultimaResposta = history.filter(m => m.role === 'assistant').slice(-1)[0]?.content || '';
+          if (ultimaResposta) {
+            queryFinal = text + ' (contexto: ' + ultimaResposta.substring(0, 200) + ')';
+          }
+        } catch(e) {}
+      }
+
+      const resultadoBusca = await searchWeb(queryFinal, cidade);
       if (resultadoBusca) {
         await memory.saveConversationMessage(user.id, 'user', text);
         await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca);
