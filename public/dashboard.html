@@ -239,8 +239,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .ct-sub{font-size:11px;color:var(--text3);margin-top:6px;letter-spacing:1px}
 .toast{position:fixed;bottom:calc(20px + var(--safe-bot));left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid var(--border2);padding:9px 18px;border-radius:20px;font-size:12px;color:var(--text);z-index:300;opacity:0;pointer-events:none;transition:all .2s;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.4)}
 .toast.show{opacity:1}
-.rem-del-btn,.med-del-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:4px;border-radius:6px;transition:all .15s;flex-shrink:0;opacity:.4}
-.rem-del-btn:hover,.med-del-btn:hover{background:rgba(239,68,68,.1);color:var(--red);opacity:1}
+.rem-del-btn,.med-del-btn{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);cursor:pointer;color:#FCA5A5;font-size:14px;padding:6px 8px;border-radius:8px;transition:all .15s;flex-shrink:0;opacity:1;font-size:13px;min-width:32px;min-height:32px;display:flex;align-items:center;justify-content:center}
+.rem-del-btn:hover,.med-del-btn:hover{background:rgba(239,68,68,.25);color:#fff;border-color:rgba(239,68,68,.5)}
 .drawer-section{padding:10px 8px 4px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.7px}
 .search-input-row input::placeholder{color:var(--text3)}
 .search-images::-webkit-scrollbar{display:none}
@@ -310,7 +310,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .fin-action-btn.entrada{background:rgba(34,197,94,.12);color:#22C55E;border:1px solid rgba(34,197,94,.2)}
 .fin-action-btn.saida{background:rgba(239,68,68,.1);color:#EF4444;border:1px solid rgba(239,68,68,.2)}
 .fin-action-btn:hover{opacity:.85}
-.fin-history{flex:1;overflow-y:auto;overflow-x:hidden}
+.fin-history{flex:1;overflow-y:auto}
 .fin-hist-section{padding:12px 16px 6px;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px}
 .fin-hist-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);transition:background .1s}
 .fin-hist-item:hover{background:var(--s2)}
@@ -324,42 +324,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .fin-hist-val.neg{color:#EF4444}
 .fin-hist-val.pos{color:#22C55E}
 .fin-hist-date{font-size:10px;color:var(--text3);margin-top:2px}
-/* ── Financeiro swipe+hover ── */
-.fin-hist-wrap{position:relative;overflow:hidden}
-.fin-hist-wrap+.fin-hist-wrap{border-top:1px solid var(--border)}
-.fin-hist-delete-bg{position:absolute;right:0;top:0;bottom:0;width:0;background:rgba(239,68,68,.15);display:flex;align-items:center;justify-content:center;color:var(--red);font-size:18px;pointer-events:none;transition:width .15s;z-index:1}
-.fin-hist-item{position:relative;background:transparent;touch-action:pan-y;transition:transform .2s ease;z-index:2}
-.fin-hist-item:hover{background:var(--s2)}
-.fin-hist-del-btn{width:32px;height:32px;background:none;border:none;cursor:pointer;color:var(--text3);border-radius:8px;display:flex;align-items:center;justify-content:center;opacity:0;transition:all .15s;flex-shrink:0;margin-left:4px}
-.fin-hist-item:hover .fin-hist-del-btn{opacity:.5}
-.fin-hist-del-btn:hover{background:rgba(239,68,68,.12);color:var(--red);opacity:1!important}
-@media(max-width:768px){.fin-hist-del-btn{display:none!important}}
-/* ── Avatar shimmer ── */
-@keyframes avatarShimmer{0%{background-position:200% center}100%{background-position:-200% center}}
-.avatar-shimmer{background:linear-gradient(90deg,var(--s2) 25%,var(--s3) 50%,var(--s2) 75%);background-size:200% 100%;animation:avatarShimmer 1.4s ease-in-out infinite;border-radius:50%}
-/* ── Saúde: novo card ── */
-.med2-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin:0 20px 12px}
-.med2-top{display:flex;align-items:center;gap:12px;margin-bottom:14px}
-.med2-icon{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.med2-icon svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
-.med2-title{flex:1;min-width:0}
-.med2-name{font-size:15px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.med2-freq{font-size:12px;color:var(--text3);margin-top:2px}
-.med2-del{width:30px;height:30px;background:none;border:none;cursor:pointer;color:var(--text3);border-radius:8px;display:flex;align-items:center;justify-content:center;opacity:.4;transition:all .15s;flex-shrink:0}
-.med2-del:hover{opacity:1;color:var(--red);background:rgba(239,68,68,.1)}
-.med2-del svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
-.med2-info{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
-.med2-info-box{background:var(--s3);border-radius:10px;padding:10px 12px}
-.med2-info-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;display:flex;align-items:center;gap:5px}
-.med2-info-label svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;flex-shrink:0}
-.med2-info-val{font-size:20px;font-weight:700;line-height:1.1}
-.med2-info-sub{font-size:11px;margin-top:2px}
-.med2-btn{width:100%;padding:11px;border:none;border-radius:var(--r-sm);font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:opacity .15s}
-.med2-btn:hover{opacity:.85}
-.med2-btn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.med2-btn.tomar{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 4px 10px var(--glow)}
-.med2-btn.tomado{background:rgba(34,197,94,.08);color:#22C55E;border:1px solid rgba(34,197,94,.15);cursor:default}
-.med2-section-label{padding:16px 20px 8px;font-size:13px;font-weight:700;color:var(--text)}
 /* ── Financeiro: swipe delete + hover lixeira ── */
 .fin-hist-wrap{position:relative;overflow:hidden}
 .fin-hist-wrap+.fin-hist-wrap{border-top:1px solid var(--border)}
@@ -503,7 +467,7 @@ select option{background:var(--s2)}
           <button class="tb-expand-btn" id="tb-expand-btn" onclick="toggleSidebar()" style="display:none" title="Expandir menu">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
-          <div class="tb-clara-avatar avatar-shimmer" id="tb-avatar-wrap"><img src="/avatar" alt="Clara" style="opacity:0;transition:opacity .3s" onload="this.style.opacity=1;this.parentElement.classList.remove('avatar-shimmer')" onerror="this.parentElement.classList.remove('avatar-shimmer');this.parentElement.textContent='✨'"/></div>
+          <div class="tb-clara-avatar"><img src="/avatar" onerror="this.parentElement.textContent='✨'" alt="Clara"/></div>
           <div class="tb-info"><div class="tb-name">Clara</div><div class="tb-status">Online agora</div></div>
           <button class="tb-nova" onclick="newChat()">+ Novo Chat</button>
           <div class="tb-icon-btn" id="private-btn" onclick="togglePrivate()" style="cursor:pointer">🔓</div>
@@ -872,86 +836,7 @@ async function doneRemCheck(id,checkEl,rowEl){
     showToast('Confirmado ✅');
   }catch{hideThinking();showToast('Erro ⚠️');}
 }
-function renderSaude(){
-  const el=document.getElementById('saude-body');
-  if(!allMeds.length){el.innerHTML='<div class="empty"><span class="empty-icon">💊</span>Nenhum medicamento cadastrado</div>';return;}
-  const now=new Date(),hm=`${pad(now.getHours())}:${pad(now.getMinutes())}`;
-  const MED_COLORS=['rgba(139,92,246,.15)','rgba(59,130,246,.15)','rgba(16,185,129,.15)','rgba(245,158,11,.15)','rgba(239,68,68,.15)'];
-  const MED_TEXT=['#C4B5FD','#93C5FD','#6EE7B7','#FCD34D','#FCA5A5'];
-  const pendentes=[];
-  allMeds.forEach((m,i)=>{
-    let times=[];try{times=JSON.parse(m.times);}catch{}
-    // Próxima dose hoje ou amanhã
-    const nextHoje=times.find(t=>t>=hm);
-    const nextTime=nextHoje||times[0]||'—';
-    const nextDay=nextHoje?'Hoje':'Amanhã';
-    pendentes.push({m,i,nextTime,nextDay});
-  });
-
-  function makeCard(m,i,nextTime,nextDay){
-    const ci=i%MED_COLORS.length;
-    const card=document.createElement('div');
-    card.className='med2-card';
-
-    const top=document.createElement('div');top.className='med2-top';
-    const icon=document.createElement('div');
-    icon.className='med2-icon';
-    icon.style.cssText='background:'+MED_COLORS[ci]+';color:'+MED_TEXT[ci];
-    icon.innerHTML='<svg viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>';
-    const titleWrap=document.createElement('div');titleWrap.className='med2-title';
-    const nameEl=document.createElement('div');nameEl.className='med2-name';nameEl.textContent=m.name;
-    const freqEl=document.createElement('div');freqEl.className='med2-freq';freqEl.textContent=m.frequency+'x por dia';
-    titleWrap.appendChild(nameEl);titleWrap.appendChild(freqEl);
-    const delBtn=document.createElement('button');delBtn.className='med2-del';delBtn.title='Excluir';
-    delBtn.innerHTML='<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
-    delBtn.addEventListener('click',()=>delMed(m.id));
-    top.appendChild(icon);top.appendChild(titleWrap);top.appendChild(delBtn);
-
-    const info=document.createElement('div');info.className='med2-info';
-    const box1=document.createElement('div');box1.className='med2-info-box';
-    box1.innerHTML=
-      '<div class="med2-info-label"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Próxima dose</div>'+
-      '<div class="med2-info-val" style="color:'+MED_TEXT[ci]+'">'+nextTime+'</div>'+
-      '<div class="med2-info-sub" style="color:'+(nextDay==='Hoje'?'var(--green)':'var(--text3)')+'">'+nextDay+'</div>';
-    const box2=document.createElement('div');box2.className='med2-info-box';
-    box2.innerHTML=
-      '<div class="med2-info-label"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Restam</div>'+
-      '<div class="med2-info-val" style="color:'+(m.remaining<=5?'var(--red)':'var(--text)')+'">'+m.remaining+'</div>'+
-      '<div class="med2-info-sub" style="color:var(--text3)">doses</div>';
-    info.appendChild(box1);info.appendChild(box2);
-
-    // Botão: só permite tomar se a próxima dose é hoje
-    const btn=document.createElement('button');
-    if(nextDay==='Amanhã'){
-      btn.className='med2-btn tomado';
-      btn.innerHTML='<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Todas as doses tomadas hoje';
-      btn.disabled=true;
-    }else{
-      btn.className='med2-btn tomar';
-      btn.innerHTML='<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Marcar como tomado';
-      btn.addEventListener('click',()=>takeMed(m.id,btn));
-    }
-
-    card.appendChild(top);card.appendChild(info);card.appendChild(btn);
-    return card;
-  }
-
-  el.innerHTML='';
-
-  if(pendentes.length){
-    const lbl=document.createElement('div');lbl.className='med2-section-label';lbl.textContent='Medicamentos';
-    el.appendChild(lbl);
-    pendentes.forEach(({m,i,nextTime,nextDay})=>el.appendChild(makeCard(m,i,nextTime,nextDay)));
-  }else{
-    el.innerHTML='<div class="empty"><span class="empty-icon">💊</span>Nenhum medicamento</div>';
-    return;
-  }
-
-  const tip=document.createElement('div');
-  tip.className='med-tip';tip.style.margin='4px 20px 16px';
-  tip.innerHTML='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div><div class="med-tip-title">Dica da Clara</div><div class="med-tip-text">Mantenha sua rotina de medicamentos em dia. Isso faz toda a diferença!</div></div>';
-  el.appendChild(tip);
-}
+function renderSaude(){const el=document.getElementById('saude-body');if(!allMeds.length){el.innerHTML='<div class="empty"><span class="empty-icon">💊</span>Nenhum medicamento cadastrado</div>';return;}const now=new Date(),hm=`${pad(now.getHours())}:${pad(now.getMinutes())}`;const pendentes=[],concluidos=[];allMeds.forEach((m,i)=>{let times=[];try{times=JSON.parse(m.times);}catch{}const nextToday=times.find(t=>t>=hm);if(nextToday){pendentes.push({m,i,nextTime:nextToday,nextDay:'Hoje'});}else{concluidos.push({m,i,nextTime:times[0]||'—',nextDay:times.length?'Amanhã':'—'});}});let html='';if(pendentes.length){html+=`<div class="med-section-label">Próximas doses</div>`;pendentes.forEach(({m,i,nextTime,nextDay})=>{const ci=i%MED_COLORS.length;html+=`<div class="med-row"><div class="med-icon-wrap" style="background:${MED_COLORS[ci]};color:${MED_TEXT[ci]}"><svg viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></div><div class="med-info"><div class="med-name">${m.name}</div><div class="med-freq">${m.frequency}x por dia</div></div><div class="med-next"><div class="med-next-label">Próxima dose</div><div class="med-next-time" style="color:${MED_TEXT[ci]}">${nextTime}</div><div class="med-next-day">${nextDay}</div></div><div class="med-doses"><div class="med-doses-num">${m.remaining}</div><div>doses rest.</div></div><button class="med-action-btn tomar" onclick="takeMed('${m.id}',this)">Tomar agora</button><button class="med-del-btn" onclick="delMed('${m.id}')" title="Excluir">✕</button></div>`;});}if(concluidos.length){html+=`<div class="med-section-label" style="margin-top:8px;color:var(--green);opacity:.7">✓ Concluídos hoje</div>`;concluidos.forEach(({m,i,nextTime,nextDay})=>{const ci=i%MED_COLORS.length;html+=`<div class="med-row concluido"><div class="med-icon-wrap" style="background:${MED_COLORS[ci]};color:${MED_TEXT[ci]}"><svg viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></div><div class="med-info"><div class="med-name">${m.name}</div><div class="med-freq">${m.frequency}x por dia</div></div><div class="med-next"><div class="med-next-label">Próxima dose</div><div class="med-next-time" style="color:${MED_TEXT[ci]}">${nextTime}</div><div class="med-next-day">${nextDay}</div></div><div class="med-doses"><div class="med-doses-num">${m.remaining}</div><div>doses rest.</div></div><button class="med-action-btn concluido-btn" disabled>✓ Tomado</button><button class="med-del-btn" onclick="delMed('${m.id}')" title="Excluir">✕</button></div>`;});}if(!pendentes.length&&!concluidos.length)html='<div class="empty"><span class="empty-icon">💊</span>Nenhum medicamento</div>';html+=`<div class="med-tip"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div><div class="med-tip-title">Dica da Clara</div><div class="med-tip-text">Mantenha sua rotina de medicamentos em dia. Isso faz toda a diferença!</div></div></div>`;el.innerHTML=html;}
 async function takeMed(id,btn){btn.textContent='✓ Tomado';btn.disabled=true;btn.className='med-action-btn concluido-btn';try{await fetch(`/forms/remedio-tomado/${id}`,{method:'POST'});showToast('Dose registrada! 💊');setTimeout(()=>loadAll().then(()=>renderSaude()),800);}catch{showToast('Erro ⚠️');}}
 // Navegação por mês no financeiro
 let finMes=new Date().getMonth(), finAno=new Date().getFullYear();
@@ -988,14 +873,9 @@ function renderFin(){
     const isEntrada=g.value<0;
     const absVal=Math.abs(g.value);
     const name=g.description&&g.description!==g.category?g.description:(g.category.charAt(0).toUpperCase()+g.category.slice(1));
-    const wrap=document.createElement('div');
-    wrap.style.cssText='position:relative;overflow:hidden;border-bottom:1px solid rgba(255,255,255,.06)';
-    const bg=document.createElement('div');
-    bg.style.cssText='position:absolute;right:0;top:0;bottom:0;width:0;background:rgba(239,68,68,.15);display:flex;align-items:center;justify-content:center;color:#EF4444;font-size:18px;pointer-events:none;transition:width .15s;z-index:1';
-    bg.innerHTML='🗑️';
-    const item=document.createElement('div');
-    item.className='fin-hist-item';
-    item.style.cssText='display:flex;align-items:center;gap:12px;padding:12px 16px;position:relative;z-index:2;background:var(--bg,#08090D);transition:transform .2s ease;touch-action:pan-y';
+    const wrap=document.createElement('div');wrap.className='fin-hist-wrap';
+    const bg=document.createElement('div');bg.className='fin-hist-delete-bg';bg.innerHTML='🗑️';
+    const item=document.createElement('div');item.className='fin-hist-item';
     item.innerHTML=
       '<div class="fin-hist-icon" style="background:'+(isEntrada?'rgba(34,197,94,.12)':(CAT_BG[g.category]||'rgba(107,114,128,.12)'))+'">'+
         (isEntrada?'💰':(CAT_ICONS[g.category]||'📦'))+
@@ -1007,12 +887,11 @@ function renderFin(){
       '<div class="fin-hist-right">'+
         '<div class="fin-hist-val '+(isEntrada?'pos':'neg')+'">'+(isEntrada?'+':'-')+brl(absVal)+'</div>'+
         '<div class="fin-hist-date">'+fmtD(g.createdAt)+'</div>'+
-      '</div>';
-    const delBtn=document.createElement('button');
-    delBtn.className='fin-hist-del-btn';delBtn.title='Excluir';
-    delBtn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
-    delBtn.addEventListener('click',function(e){e.stopPropagation();delGasto(g.id,wrap);});
-    item.appendChild(delBtn);
+      '</div>'+
+      '<button class="fin-hist-del-btn" title="Excluir" onclick="event.stopPropagation();delGasto(''+g.id+'',this.closest('.fin-hist-wrap'))">'+
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>'+
+      '</button>';
+    // Swipe mobile
     let sX=0,cX=0,sw=false;
     item.addEventListener('touchstart',e=>{sX=e.touches[0].clientX;sw=true;cX=0;},{passive:true});
     item.addEventListener('touchmove',e=>{
@@ -1048,7 +927,19 @@ function updateCofreFields(){const t=document.getElementById('ct').value;['senha
 async function saveCofre(){const tipo=document.getElementById('ct').value,nome=document.getElementById('cn').value.trim();if(!nome){showToast('Informe o nome ⚠️');return;}let data={tipo,nome};if(tipo==='senha'){data.email=document.getElementById('ce').value;data.senha=document.getElementById('cs-pw').value;data.url=document.getElementById('cu').value;}else if(tipo==='cartao'){data.num=document.getElementById('cc-num').value;data.val=document.getElementById('cc-val').value;data.cvv=document.getElementById('cc-cvv').value;}else if(tipo==='nota'){data.nota=document.getElementById('cn-txt').value;}else{data.outro=document.getElementById('co-txt').value;}const btn=document.getElementById('sc-btn');btn.textContent='Salvando...';btn.disabled=true;try{const r=await fetch(`/forms/cofre/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conteudo:JSON.stringify(data)})});if(r.ok){closeModal('m-cofre');showToast('Salvo! 🔐');renderCofre();}else showToast('Erro ⚠️');}catch{showToast('Erro ⚠️');}btn.textContent='Salvar';btn.disabled=false;}
 async function loadPrefs(){try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();if(d.tom)applyMood(d.tom);if(d.name)document.getElementById('pref-nome').value=d.name;if(d.saldo!==undefined&&d.saldo!==null){document.getElementById('pref-saldo').value=d.saldo;currentSaldo=d.saldo;}}catch{}document.getElementById('pref-phone').value=phone.replace('55','');}
 async function savePrefs(){const tom=currentMood,nome=document.getElementById('pref-nome').value.trim();const saldoInput=document.getElementById('pref-saldo').value;const saldoNum=saldoInput!==''&&saldoInput!==undefined?parseFloat(saldoInput):null;let newPhone=document.getElementById('pref-phone').value.trim().replace(/\D/g,'');if(newPhone&&newPhone.length>=10){if(!newPhone.startsWith('55'))newPhone='55'+newPhone;phone=newPhone;const user=window._currentUser;if(user)localStorage.setItem(`clara_phone_${user.uid}`,newPhone);const sp=document.getElementById('sidebar-phone');if(sp)sp.textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');document.getElementById('drawer-phone').textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');}try{await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tom,nome,saldo:saldoNum})});if(saldoNum!==null)currentSaldo=saldoNum;showToast('Preferências salvas! ✅');if(currentNav==='financeiro')renderFin();}catch{showToast('Erro ⚠️');}}
-function openModal(id){if(id==='m-lembrete'){const{data,hora}=nowLocal();document.getElementById('ml-data').value=data;document.getElementById('ml-hora').value=hora;document.getElementById('ml-titulo').value='';}if(id==='m-remedio'){const{hora}=nowLocal();document.getElementById('mr-inicio').value=hora;document.getElementById('mr-nome').value='';}if(id==='m-gasto'){document.getElementById('mg-val').value='';document.getElementById('mg-desc').value='';}document.getElementById(id).classList.add('open');}
+function openModal(id){
+  if(id==='m-lembrete'){
+    const navDate=remViewDate||new Date();
+    const d=navDate.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+    const{hora}=nowLocal();
+    document.getElementById('ml-data').value=d;
+    document.getElementById('ml-hora').value=hora;
+    document.getElementById('ml-titulo').value='';
+  }
+  if(id==='m-remedio'){const{hora}=nowLocal();document.getElementById('mr-inicio').value=hora;document.getElementById('mr-nome').value='';}
+  if(id==='m-gasto'){document.getElementById('mg-val').value='';document.getElementById('mg-desc').value='';}
+  document.getElementById(id).classList.add('open');
+}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
 async function saveLembrete(){const titulo=document.getElementById('ml-titulo').value.trim(),data=document.getElementById('ml-data').value,hora=document.getElementById('ml-hora').value;if(!titulo){showToast('Descreva o lembrete ⚠️');return;}const btn=document.getElementById('sl-btn');btn.textContent='...';btn.disabled=true;closeModal('m-lembrete');showThinking('Criando lembrete...','anotando pra você');try{const r=await fetch(`/forms/lembrete/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titulo,data,hora})});await loadAll();hideThinking();if(r.ok){renderRem();showToast('Lembrete criado! ✅');}else showToast('Erro ⚠️');}catch{hideThinking();showToast('Erro ⚠️');}btn.textContent='Criar';btn.disabled=false;}
