@@ -1,5 +1,3 @@
-CSS patch: OK
-renderFin patch: OK
 <!DOCTYPE html>
 <html lang="pt-BR" style="background:#08090D">
 <head>
@@ -326,6 +324,16 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .fin-hist-val.neg{color:#EF4444}
 .fin-hist-val.pos{color:#22C55E}
 .fin-hist-date{font-size:10px;color:var(--text3);margin-top:2px}
+/* ── Financeiro swipe+hover ── */
+.fin-hist-wrap{position:relative;overflow:hidden}
+.fin-hist-wrap+.fin-hist-wrap{border-top:1px solid var(--border)}
+.fin-hist-delete-bg{position:absolute;right:0;top:0;bottom:0;width:0;background:rgba(239,68,68,.15);display:flex;align-items:center;justify-content:center;color:var(--red);font-size:18px;pointer-events:none;transition:width .15s}
+.fin-hist-item{position:relative;background:transparent;touch-action:pan-y;transition:transform .2s ease}
+.fin-hist-item:hover{background:var(--s2)}
+.fin-hist-del-btn{width:32px;height:32px;background:none;border:none;cursor:pointer;color:var(--text3);border-radius:8px;display:flex;align-items:center;justify-content:center;opacity:0;transition:all .15s;flex-shrink:0;margin-left:4px}
+.fin-hist-item:hover .fin-hist-del-btn{opacity:.5}
+.fin-hist-del-btn:hover{background:rgba(239,68,68,.12);color:var(--red);opacity:1!important}
+@media(max-width:768px){.fin-hist-del-btn{display:none!important}}
 /* ── Financeiro: swipe delete + hover lixeira ── */
 .fin-hist-wrap{position:relative;overflow:hidden}
 .fin-hist-wrap+.fin-hist-wrap{border-top:1px solid var(--border)}
@@ -890,9 +898,12 @@ function renderFin(){
         '<div class="fin-hist-val '+(isEntrada?'pos':'neg')+'">'+(isEntrada?'+':'-')+brl(absVal)+'</div>'+
         '<div class="fin-hist-date">'+fmtD(g.createdAt)+'</div>'+
       '</div>'+
-      '<button class="fin-hist-del-btn" title="Excluir" data-gasto-id="'+g.id+'">'+
+      '<button class="fin-hist-del-btn" title="Excluir">'+
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>'+
       '</button>';
+    // Del button (desktop hover)
+    const delBtn=item.querySelector('.fin-hist-del-btn');
+    if(delBtn)delBtn.addEventListener('click',function(e){e.stopPropagation();delGasto(g.id,wrap);});
     // Swipe mobile
     let sX=0,cX=0,sw=false;
     item.addEventListener('touchstart',e=>{sX=e.touches[0].clientX;sw=true;cX=0;},{passive:true});
@@ -905,9 +916,6 @@ function renderFin(){
       if(cX<-55){item.style.transform='translateX(-80px)';bg.style.width='80px';bg.style.pointerEvents='all';bg.onclick=()=>delGasto(g.id,wrap);}
       else{item.style.transform='';bg.style.width='0';bg.style.pointerEvents='none';}
     });
-    // Wire up del button via event listener (avoids quote issues in innerHTML)
-    const delBtn=item.querySelector('.fin-hist-del-btn');
-    if(delBtn)delBtn.addEventListener('click',function(e){e.stopPropagation();delGasto(g.id,wrap);});
     wrap.appendChild(bg);wrap.appendChild(item);container.appendChild(wrap);
   });
   hist.innerHTML='';hist.appendChild(container);
