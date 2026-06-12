@@ -166,12 +166,17 @@ EXEMPLOS:
 "oi" → {"tipo":"saudacao"}
 `;
 
-async function classify(message, phone = null) {
+async function classify(message, phone = null, contexto = '') {
   try {
+    // Se há contexto de conversa, injeta para resolver referências vagas
+    const systemContent = contexto
+      ? SYSTEM_PROMPT() + `\n\nCONTEXTO RECENTE DA CONVERSA (use para resolver "lá", "dela", "deles", "de lá"):\n${contexto}`
+      : SYSTEM_PROMPT();
+
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT() },
+        { role: 'system', content: systemContent },
         { role: 'user', content: message }
       ],
       temperature: 0.2,
