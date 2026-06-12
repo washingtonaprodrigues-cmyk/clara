@@ -1,4 +1,4 @@
-const CACHE = 'clara-v2';
+const CACHE = 'clara-v3';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
@@ -7,7 +7,7 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+      Promise.all(keys.map(k => caches.delete(k))) // apaga TODOS os caches, não só os antigos
     ).then(() => self.clients.claim())
   );
 });
@@ -15,8 +15,9 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   if (e.request.url.includes('/dashboard')) {
+    // Network first — sempre busca versão nova, cache só como fallback
     e.respondWith(
-      fetch(e.request)
+      fetch(e.request, { cache: 'no-store' })
         .then(res => {
           const clone = res.clone();
           caches.open(CACHE).then(c => c.put(e.request, clone));
