@@ -90,6 +90,8 @@ REGRAS:
 - Consultar algo já guardado → consulta
 - Frases vagas sobre ação concluída SEM mencionar explicitamente o lembrete ("já fiz", "ok feito", "pronto") → concluir_lembrete APENAS se houver lembrete claro no contexto; senão → outro
 - "já peguei X", "já fiz X", "já fui" onde X é objeto físico e NÃO é título de lembrete → anotacao ou outro, NUNCA concluir_lembrete nem lista_marcar automaticamente
+- "remarcar", "remarca", "muda", "mudar", "alterar", "altera", "adiar", "adianta", "move", "mover", "trocar hora", "trocar o horário", "pra X horas", "pra X da tarde/manhã" quando referente a lembrete existente → SEMPRE editar_lembrete, NUNCA lista_marcar
+- lista_marcar APENAS quando: usuário cita número de item ("peguei o 2"), nome de item de lista ("risca o arroz"), ou "lista" explicitamente
 - Hora SEMPRE em formato 24h: "10 da manhã"→"10:00", "2 da tarde"→"14:00", "8 da noite"→"20:00", "meia noite"→"00:00", "meio dia"→"12:00"
 - Se o usuário disser "10h" ou "10:00" sem indicação de tarde/noite → mantenha exatamente essa hora, NÃO converta
 - NUNCA some 12 horas em horários como "9h", "10h", "11h" sem o usuário dizer "da tarde" ou "da noite"
@@ -145,6 +147,12 @@ EXEMPLOS:
 "já peguei o cartão" → {"tipo":"anotacao","titulo":"cartão pego","conteudo":"Já pegou o cartão"}
 "já fiz isso" → {"tipo":"outro"}
 "muda a reunião pra às 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
+"remarca o backup pras 13 horas" → {"tipo":"editar_lembrete","titulo":"backup","nova_hora":"13:00","nova_data":null}
+"remarca pras 13 horas" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"13:00","nova_data":null}
+"remarca pra mim pras 13 horas" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"13:00","nova_data":null}
+"altera o lembrete pra amanhã" → {"tipo":"editar_lembrete","titulo":"","nova_hora":null,"nova_data":"amanha"}
+"adiar pra depois do almoço" → {"tipo":"editar_lembrete","titulo":"","nova_hora":null,"nova_data":null}
+"muda o horário pra 15h" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"15:00","nova_data":null}
 "o número da minha esposa é 43999998888" → {"tipo":"salvar_contato","nome":"esposa","phone":"43999998888","relation":"esposa","notes":null}
 "exclui o remédio Nebivolol" → {"tipo":"deletar_remedio","nome":"Nebivolol"}
 "meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
