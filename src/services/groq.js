@@ -46,6 +46,8 @@ REGRAS:
 - Pergunta sobre clima/notícia/preço/lugar/telefone → busca
 - Palavra solta que é tema/assunto (ex: "tecnologia", "futebol", "política", "economia", "clima") → busca
 - Uma palavra ou frase curta sem verbo que claramente é um tema de pesquisa → busca
+- Se a mensagem expressa intenção pessoal ou estado emocional ("acho que", "quero", "vou", "preciso", "tô com", "me sinto") → outro, NÃO busca
+- Conversa casual sobre o que o usuário vai fazer → outro, NÃO busca
 - Usuário informa saldo/salário/orçamento → saldo
 - Consultar algo já guardado → consulta
 
@@ -101,6 +103,8 @@ EXEMPLOS:
 "qual a senha do wi-fi?" → {"tipo":"consulta","sobre":"senha wi-fi"}
 "mostra meus contatos" → {"tipo":"listar_contatos"}
 "tecnologia" → {"tipo":"busca","query":"notícias de tecnologia hoje"}
+"acho que agora só um bom filme e descansar" → {"tipo":"outro"}
+"quero assistir algo legal hoje" → {"tipo":"outro"}
 "futebol" → {"tipo":"busca","query":"notícias de futebol hoje"}
 "clima" → {"tipo":"busca","query":"previsão do tempo hoje"}
 "oi" → {"tipo":"saudacao"}
