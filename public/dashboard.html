@@ -890,7 +890,7 @@ function renderFin(){
         '<div class="fin-hist-val '+(isEntrada?'pos':'neg')+'">'+(isEntrada?'+':'-')+brl(absVal)+'</div>'+
         '<div class="fin-hist-date">'+fmtD(g.createdAt)+'</div>'+
       '</div>'+
-      '<button class="fin-hist-del-btn" title="Excluir" onclick="event.stopPropagation();delGasto(''+g.id+'',this.closest('.fin-hist-wrap'))">'+
+      '<button class="fin-hist-del-btn" title="Excluir" data-gasto-id="'+g.id+'">'+
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>'+
       '</button>';
     // Swipe mobile
@@ -905,6 +905,9 @@ function renderFin(){
       if(cX<-55){item.style.transform='translateX(-80px)';bg.style.width='80px';bg.style.pointerEvents='all';bg.onclick=()=>delGasto(g.id,wrap);}
       else{item.style.transform='';bg.style.width='0';bg.style.pointerEvents='none';}
     });
+    // Wire up del button via event listener (avoids quote issues in innerHTML)
+    const delBtn=item.querySelector('.fin-hist-del-btn');
+    if(delBtn)delBtn.addEventListener('click',function(e){e.stopPropagation();delGasto(g.id,wrap);});
     wrap.appendChild(bg);wrap.appendChild(item);container.appendChild(wrap);
   });
   hist.innerHTML='';hist.appendChild(container);
