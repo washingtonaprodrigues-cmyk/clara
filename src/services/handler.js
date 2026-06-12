@@ -873,18 +873,37 @@ async function editarLembrete(user, phone, classified) {
     }
     // Se não achou pelo título classificado, tenta palavras do texto original
     if (!encontrado && classified._textoOriginal) {
+      const STOPWORDS = new Set(['para','pras','pros','mim','por','favor','horas','hora','hoje',
+        'amanha','amanhã','remarca','remarcar','muda','mudar','altera','alterar','adiar','adianta',
+        'move','mover','troca','trocar','pra','pro','das','nos','nas','que','uma','uns','uns',
+        'xarope','besta','amor','please','pfv','favor','obrigado','pode','seria','quero','preciso']);
       const palavras = classified._textoOriginal.toLowerCase()
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
         .split(/\s+/)
-        .filter(p => p.length > 3 && !['para','pras','mim','por','favor','horas','hora','hoje','amanha'].includes(p));
-      encontrado = lembretes.find(r => {
+        .filter(p => p.length > 3 && !STOPWORDS.has(p));
+
+      // Pontua cada lembrete pela quantidade de palavras que batem
+      let melhorPontuacao = 0;
+      lembretes.forEach(r => {
         const msg = r.message.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        return palavras.some(p => msg.includes(p));
+        const pontos = palavras.filter(p => msg.includes(p)).length;
+        if (pontos > melhorPontuacao) { melhorPontuacao = pontos; encontrado = r; }
       });
     }
-    // Fallback: lembrete mais próximo no tempo
-    if (!encontrado) encontrado = lembretes[0];
-    if (!encontrado) { await sendMessage(phone, 'Você não tem lembretes ativos 😊'); return; }
+    // Fallback: lembrete mais próximo no tempo (só se houver 1 lembrete)
+    if (!encontrado && lembretes.length === 1) encontrado = lembretes[0];
+    if (!encontrado) {
+      // Mais de 1 lembrete e não achou — pede para escolher
+      const listaLemb = lembretes.slice(0,5).map(function(r,i){ return (i+1) + '. ' + r.message; }).join('\n');
+      await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
+        tipo: 'aguardando_escolha_lembrete',
+        novaHora: classified.nova_hora,
+        novaData: classified.nova_data,
+        expira: Date.now() + 2 * 60 * 1000
+      }));
+      await sendMessage(phone, 'Qual lembrete você quer remarcar?\n\n' + listaLemb + '\n\nResponde com o número.');
+      return;
+    }
 
     // Se não veio hora nova, pede confirmação do horário
     if (!classified.nova_hora && !classified.nova_data) {
@@ -1124,6 +1143,37 @@ async function checkConfirmacaoPendente(user, phone, text) {
       return true;
     }
 
+    // ── Aguardando escolha de lembrete por número ──
+    if (dados.tipo === 'aguardando_escolha_lembrete') {
+      const num = parseInt(textNorm);
+      const lembretes = await prisma.reminder.findMany({
+        where: { userId: user.id, confirmed: false },
+        orderBy: { scheduledAt: 'asc' }
+      });
+      if (!isNaN(num) && num >= 1 && num <= lembretes.length) {
+        const escolhido = lembretes[num - 1];
+        await prisma.memory.delete({ where: { id: pendente.id } });
+        if (dados.novaHora) {
+          const [h2, m2] = dados.novaHora.split(':').map(Number);
+          const novoAt = new Date(`${dateBRT()}T${String(h2).padStart(2,'0')}:${String(m2).padStart(2,'0')}:00-03:00`);
+          const horaFmt = novoAt.toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
+          await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
+            tipo: 'confirmar_edicao_lembrete',
+            lembreteId: escolhido.id,
+            lembreteTitulo: escolhido.message,
+            novoScheduledAt: novoAt.toISOString(),
+            expira: Date.now() + 2 * 60 * 1000
+          }));
+          await sendMessage(phone, `📅 Remarcar *"${escolhido.message}"* para hoje às *${horaFmt}*?\n\nConfirma? (sim/não)`);
+        } else {
+          await sendMessage(phone, `Anotei! Para que hora quer remarcar *"${escolhido.message}"*?`);
+        }
+        return true;
+      }
+      await sendMessage(phone, 'Número inválido. Responde com 1, 2, 3...');
+      return true;
+    }
+
     // ── Aguardando hora para novo lembrete ──
     if (dados.tipo === 'aguardando_hora_lembrete') {
       // Tenta extrair hora da resposta
@@ -1253,15 +1303,12 @@ Confirma? (sim/não)`);
         return true;
       }
       // Não entendeu a correção — mantém pendente e pede esclarecimento
-      await sendMessage(phone, `Qual lembrete você quer remarcar? Tenho:
-
-${lembretes.slice(0,5).map((r,i)=>`${i+1}. ${r.message}`).join('
-')}`);
+      const listaLemb = lembretes.slice(0,5).map(function(r,i){ return (i+1) + '. ' + r.message; }).join('\n');
+      await sendMessage(phone, 'Qual lembrete você quer remarcar? Tenho:\n\n' + listaLemb);
       return true;
     }
 
     if (dados.tipo === 'urgente_confirmacao') {
-      const sim = /^(sim|s|claro|pode|quero|yes|ok|manda|ativa|coloca)/.test(textNorm);
       const nao = /^(n[aã]o|nao|n|não precisa|dispenso|deixa|tá bom|ta bom)/.test(textNorm);
       if (sim || nao) {
         await prisma.memory.delete({ where: { id: pendente.id } });
