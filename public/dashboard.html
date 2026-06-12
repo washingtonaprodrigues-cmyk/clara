@@ -10,6 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Clara"/>
 <meta name="theme-color" content="#08090D"/><meta name="msapplication-navbutton-color" content="#08090D"/><meta name="apple-mobile-web-app-status-bar-style" content="black"/>
 <style>*{-webkit-tap-highlight-color:transparent}html{background:#08090D!important;background-color:#08090D!important}body{background:#08090D!important;background-color:#08090D!important}#loading-screen{background:#08090D!important;background-color:#08090D!important}</style>
+<link rel="preload" href="/avatar" as="image"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=DM+Serif+Display:ital@0;1&family=Outfit:wght@300;400;500&display=swap" rel="stylesheet"/>
 <style>
 :root{--bg:#08090D;--s1:#0D0E15;--s2:#13141D;--s3:#1A1B26;--accent:#8B5CF6;--accent2:#A855F7;--glow:rgba(139,92,246,.2);--green:#22C55E;--red:#EF4444;--border:rgba(255,255,255,.06);--border2:rgba(255,255,255,.1);--text:#F8F8FF;--text2:#9CA3AF;--text3:#4B5563;--r:14px;--r-sm:10px;--safe-top:env(safe-area-inset-top,0px);--safe-bot:env(safe-area-inset-bottom,0px);--sidebar-w:220px;}
@@ -410,6 +411,7 @@ select option{background:var(--s2)}
   <div class="ls-title">Clara</div>
   <div class="ls-sub">Entrando...</div>
 </div>
+<img src="/avatar" style="display:none;position:absolute;width:0;height:0" alt="" aria-hidden="true" id="avatar-preload-img"/>
 <div id="auth-screen">
   <div class="auth-logo">✨</div>
   <div class="auth-title">Clara</div>
@@ -612,6 +614,14 @@ select option{background:var(--s2)}
   <div class="ct-sub" id="ct-sub">um segundo</div>
 </div>
 <div class="toast" id="toast"></div>
+<script>
+// Precarrega avatar enquanto a animação de loading roda
+(function(){
+  const img = new Image();
+  img.src = '/avatar';
+  window._avatarPreload = img;
+})();
+</script>
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import{getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signInWithPopup,GoogleAuthProvider,signOut,updateProfile}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
@@ -884,7 +894,6 @@ function renderFin(){
     const absVal=Math.abs(g.value);
     const name=g.description&&g.description!==g.category?g.description:(g.category.charAt(0).toUpperCase()+g.category.slice(1));
     const wrap=document.createElement('div');
-    wrap.className='fin-hist-wrap';
     wrap.style.cssText='position:relative;overflow:hidden;border-bottom:1px solid rgba(255,255,255,.06)';
     const bg=document.createElement('div');
     bg.style.cssText='position:absolute;right:0;top:0;bottom:0;width:0;background:rgba(239,68,68,.15);display:flex;align-items:center;justify-content:center;color:#EF4444;font-size:18px;pointer-events:none;transition:width .15s;z-index:1';
@@ -904,14 +913,12 @@ function renderFin(){
         '<div class="fin-hist-val '+(isEntrada?'pos':'neg')+'">'+(isEntrada?'+':'-')+brl(absVal)+'</div>'+
         '<div class="fin-hist-date">'+fmtD(g.createdAt)+'</div>'+
       '</div>';
-    // Desktop: lixeira via hover (hidden on mobile via CSS)
     const delBtn=document.createElement('button');
     delBtn.className='fin-hist-del-btn';
     delBtn.title='Excluir';
     delBtn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
     delBtn.addEventListener('click',function(e){e.stopPropagation();delGasto(g.id,wrap);});
     item.appendChild(delBtn);
-    // Swipe mobile
     let sX=0,cX=0,sw=false;
     item.addEventListener('touchstart',e=>{sX=e.touches[0].clientX;sw=true;cX=0;},{passive:true});
     item.addEventListener('touchmove',e=>{
