@@ -137,24 +137,20 @@ async function executeListaAction(user, phone, classified) {
       const temNomes = classified.nomes && classified.nomes.length > 0;
       if (!temNumeros && !temNomes) return null;
 
-      // Determinar qual lista usar
       let lista = null;
 
-      // Se informou nome da lista, busca por nome
       if (classified.lista) {
         const nomeLista = classified.lista.toLowerCase();
         const todasListas = await prisma.groceryList.findMany({ where: { userId: user.id, done: false } });
         lista = todasListas.find(l => l.name.toLowerCase().includes(nomeLista));
       }
 
-      // Fallback: usa última lista referenciada
       if (!lista) {
         const mems = await memory.getRecentMemories(user.id, 20);
         const listaRef = mems.find(m => m.type === 'ultima_lista');
         if (listaRef) lista = await prisma.groceryList.findUnique({ where: { id: listaRef.content } });
       }
 
-      // Se ainda não achou, pega a lista ativa mais recente
       if (!lista) {
         lista = await prisma.groceryList.findFirst({ where: { userId: user.id, done: false }, orderBy: { createdAt: 'desc' } });
       }
@@ -163,12 +159,10 @@ async function executeListaAction(user, phone, classified) {
 
       let items = []; try { items = JSON.parse(lista.items); } catch {}
 
-      // Marcar por número
       if (temNumeros) {
         items = items.map(i => classified.numeros.includes(i.id) ? { ...i, done: true } : i);
       }
 
-      // Marcar por nome do item (busca parcial, case insensitive)
       if (temNomes) {
         items = items.map(i => {
           const nomeItem = i.nome.toLowerCase();
@@ -216,7 +210,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
   try {
     const history = await memory.getConversationHistory(user.id, 10);
     const preferences = await memory.getUserPreference(user.id);
-    preferences._phone = phone; // para rate limit criativo
+    preferences._phone = phone;
 
     if (skipContext) {
       preferences._contexto = '';
@@ -284,9 +278,12 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       }
 
       if (preferences.saldo != null) {
-        const totalGasto = gastos.reduce((a, g) => a + g.value, 0);
-        const restante = preferences.saldo - totalGasto;
-        contexto += `\n\n[FINANCEIRO]\nOrçamento: R$ ${preferences.saldo.toFixed(2)}\nGasto: R$ ${totalGasto.toFixed(2)}\nSaldo: R$ ${restante.toFixed(2)}`;
+        const saidas = gastos.filter(g => g.value > 0);
+        const entradas = gastos.filter(g => g.value < 0);
+        const totalGasto = saidas.reduce((a, g) => a + g.value, 0);
+        const totalEntradas = entradas.reduce((a, g) => a + Math.abs(g.value), 0);
+        const restante = preferences.saldo - totalGasto + totalEntradas;
+        contexto += `\n\n[FINANCEIRO]\nOrçamento: R$ ${preferences.saldo.toFixed(2)}\nGasto: R$ ${totalGasto.toFixed(2)}\nEntradas: R$ ${totalEntradas.toFixed(2)}\nSaldo: R$ ${restante.toFixed(2)}`;
       }
 
       if (contexto) contexto = `\n\nUse as informações abaixo para responder com precisão:${contexto}`;
@@ -333,7 +330,7 @@ async function handleMessage(phone, text, location = null) {
 
     if (['ver lembretes','ver_lembretes'].includes(textLower)) return await listarLembretes(user, phone);
     if (['ver anotacoes','ver_anotacoes'].includes(textLower)) return await listarAnotacoes(user, phone);
-    if (['ver gastos','ver_gastos','resumo_mes'].includes(textLower)) return await listarGastos(user, phone);
+    if (['ver gastos','ver_gastos','resumo_mes','relatorio','relatorio do mes','relatorio financeiro'].includes(textLower)) return await listarGastos(user, phone);
     if (['ver horas hoje','ver_horas_hoje'].includes(textLower)) return await listarPontoHoje(user, phone);
     if (['ver medicamentos','ver_medicamentos'].includes(textLower)) return await listarMedicamentos(user, phone);
 
@@ -395,7 +392,7 @@ async function handleMessage(phone, text, location = null) {
       return;
     }
 
-    // ── Busca web — executa antes do freeResponse ──
+    // ── Busca web ──
     if (classified.tipo === 'busca' && classified.query) {
       const cidade = await memory.getRecentMemories(user.id, 5)
         .then(mems => mems.find(m => m.type === 'cidade')?.content || '')
@@ -408,8 +405,13 @@ async function handleMessage(phone, text, location = null) {
         extractAndSavePersonalInfo(user.id, text).catch(() => {});
         return;
       }
-      // Sem resultado — passa para o freeResponse com contexto
       await responderLivre(user, phone, text, `\n\n[BUSCA] Não encontrei resultados para "${classified.query}". Informe de forma curta que não encontrou nada.`, false);
+      return;
+    }
+
+    // ── Relatório financeiro via WhatsApp ──
+    if (classified.tipo === 'relatorio_financeiro' || classified.tipo === 'consulta_saldo') {
+      await gerarRelatorioFinanceiroWhatsApp(user, phone);
       return;
     }
 
@@ -420,6 +422,83 @@ async function handleMessage(phone, text, location = null) {
   } catch (error) {
     console.error('Erro handleMessage:', error.message);
     await sendMessage(phone, 'Ops, tive um probleminha. Pode repetir?');
+  }
+}
+
+// ── Relatório financeiro completo via WhatsApp ──
+async function gerarRelatorioFinanceiroWhatsApp(user, phone) {
+  try {
+    const now = nowBRT();
+    const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
+    const preferences = await memory.getUserPreference(user.id);
+
+    const gastos = await prisma.expense.findMany({
+      where: { userId: user.id, createdAt: { gte: inicioMes } },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const saidas = gastos.filter(g => g.value > 0);
+    const entradas = gastos.filter(g => g.value < 0);
+    const totalGasto = saidas.reduce((a, g) => a + g.value, 0);
+    const totalEntradas = entradas.reduce((a, g) => a + Math.abs(g.value), 0);
+
+    const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const nomeMes = meses[now.getMonth()];
+
+    const catIcones = { alimentacao:'🍔', mercado:'🛒', transporte:'🚗', saude:'💊', lazer:'🎮', moradia:'🏠', educacao:'📚', entrada:'💰', outro:'📦' };
+
+    // Agrupar saídas por categoria
+    const porCategoria = {};
+    saidas.forEach(g => {
+      const cat = g.category || 'outro';
+      if (!porCategoria[cat]) porCategoria[cat] = 0;
+      porCategoria[cat] += g.value;
+    });
+
+    let texto = `📊 *Relatório de ${nomeMes}*\n\n`;
+
+    if (entradas.length > 0) {
+      texto += `💰 *Entradas:* R$ ${totalEntradas.toFixed(2)}\n`;
+    }
+    texto += `💸 *Total gasto:* R$ ${totalGasto.toFixed(2)}\n`;
+
+    if (preferences.saldo != null) {
+      const saldo = preferences.saldo - totalGasto + totalEntradas;
+      texto += `💵 *Saldo restante:* R$ ${saldo.toFixed(2)}\n`;
+    }
+
+    texto += `\n`;
+
+    if (Object.keys(porCategoria).length > 0) {
+      texto += `*Por categoria:*\n`;
+      Object.entries(porCategoria)
+        .sort((a, b) => b[1] - a[1])
+        .forEach(([cat, val]) => {
+          texto += `${catIcones[cat] || '📦'} ${cat.charAt(0).toUpperCase() + cat.slice(1)}: R$ ${val.toFixed(2)}\n`;
+        });
+      texto += `\n`;
+    }
+
+    const ultimos = saidas.slice(0, 5);
+    if (ultimos.length > 0) {
+      texto += `*Últimos lançamentos:*\n`;
+      ultimos.forEach(g => {
+        const nome = g.description && g.description !== g.category ? g.description : g.category;
+        texto += `• ${catIcones[g.category]||'📦'} ${nome} — R$ ${g.value.toFixed(2)}\n`;
+      });
+    }
+
+    if (gastos.length === 0) {
+      texto = `📊 *Relatório de ${nomeMes}*\n\nNenhum lançamento este mês ainda 😊`;
+    }
+
+    await sendButtons(phone, texto, [
+      { id: 'novo_gasto', label: '➕ Registrar gasto' },
+      { id: 'menu', label: '🏠 Menu' }
+    ]);
+  } catch (e) {
+    console.error('[gerarRelatorioFinanceiro]', e.message);
+    await sendMessage(phone, 'Não consegui gerar o relatório agora. Tenta de novo?');
   }
 }
 
@@ -496,17 +575,66 @@ async function listarAnotacoes(user, phone) {
 }
 
 async function listarGastos(user, phone) {
-  const start = new Date(); start.setDate(1); start.setHours(0, 0, 0, 0);
-  const gastos = await prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: start } }, orderBy: { createdAt: 'desc' }, take: 10 });
-  if (gastos.length === 0) {
-    return await sendButtons(phone, `💰 *Seus gastos*\n\nNenhum gasto registrado este mês 😊`, [{ id: 'gasto', label: '➕ Registrar gasto' }, { id: 'menu', label: '🏠 Menu' }]);
+  try {
+    const now = nowBRT();
+    const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
+    const preferences = await memory.getUserPreference(user.id);
+
+    const gastos = await prisma.expense.findMany({
+      where: { userId: user.id, createdAt: { gte: inicioMes } },
+      orderBy: { createdAt: 'desc' },
+      take: 20
+    });
+
+    if (gastos.length === 0) {
+      return await sendButtons(phone, `💰 *Seus gastos*\n\nNenhum lançamento registrado este mês 😊`, [
+        { id: 'novo_gasto', label: '➕ Registrar gasto' },
+        { id: 'menu', label: '🏠 Menu' }
+      ]);
+    }
+
+    const saidas = gastos.filter(g => g.value > 0);
+    const entradas = gastos.filter(g => g.value < 0);
+    const totalGasto = saidas.reduce((acc, g) => acc + g.value, 0);
+    const totalEntradas = entradas.reduce((acc, g) => acc + Math.abs(g.value), 0);
+
+    const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const catIcones = { alimentacao:'🍔', mercado:'🛒', transporte:'🚗', saude:'💊', lazer:'🎮', moradia:'🏠', educacao:'📚', entrada:'💰', outro:'📦' };
+
+    let texto = `💰 *${meses[now.getMonth()]} — Resumo*\n\n`;
+
+    if (entradas.length > 0) {
+      texto += `💰 Entradas: *R$ ${totalEntradas.toFixed(2)}*\n`;
+    }
+    texto += `💸 Gastos: *R$ ${totalGasto.toFixed(2)}*\n`;
+
+    if (preferences.saldo != null) {
+      const saldo = preferences.saldo - totalGasto + totalEntradas;
+      texto += `💵 Saldo: *R$ ${saldo.toFixed(2)}*\n`;
+    }
+
+    texto += `\n`;
+
+    // Últimos lançamentos (mistura entradas e saídas)
+    gastos.slice(0, 8).forEach(g => {
+      const isEntrada = g.value < 0;
+      const absVal = Math.abs(g.value);
+      const nome = g.description && g.description !== g.category ? g.description : g.category;
+      const sinal = isEntrada ? '+' : '-';
+      const icon = isEntrada ? '💰' : (catIcones[g.category] || '📦');
+      texto += `${icon} ${nome} — *${sinal}R$ ${absVal.toFixed(2)}*\n`;
+    });
+
+    texto += `\n_${gastos.length} lançamento${gastos.length !== 1 ? 's' : ''} este mês_`;
+
+    await sendButtons(phone, texto, [
+      { id: 'novo_gasto', label: '➕ Novo gasto' },
+      { id: 'menu', label: '🏠 Menu' }
+    ]);
+  } catch (e) {
+    console.error('[listarGastos]', e.message);
+    await sendMessage(phone, 'Não consegui buscar os gastos agora. Tenta de novo?');
   }
-  const total = gastos.reduce((acc, g) => acc + g.value, 0);
-  const categoriaIcon = { mercado:'🛒',restaurante:'🍽️',saude:'💊',transporte:'🚗',lazer:'🎉',outro:'📦' };
-  let texto = `💰 *Gastos do mês*\n\n`;
-  gastos.forEach((g) => { texto += `${categoriaIcon[g.category]||'📦'} *${g.category}* — R$ ${g.value.toFixed(2)}\n🗓️ ${formatarDataBR(g.createdAt)}\n\n`; });
-  texto += `───────────────\n💵 *Total: R$ ${total.toFixed(2)}*`;
-  await sendButtons(phone, texto, [{ id: 'novo_gasto', label: '➕ Novo gasto' }, { id: 'menu', label: '🏠 Menu' }]);
 }
 
 async function listarPontoHoje(user, phone) {
@@ -530,7 +658,6 @@ async function listarMedicamentos(user, phone) {
 }
 
 async function executeAction(user, phone, classified, originalText) {
-  let contextoExtra = '';
   switch (classified.tipo) {
     case 'ponto_multiplo':
       await salvarPontoSilencioso(user, classified.acoes);
@@ -560,6 +687,40 @@ async function executeAction(user, phone, classified, originalText) {
       break;
     case 'gasto':
       await memory.saveExpense(user.id, { valor: classified.valor, categoria: classified.categoria || 'outro', descricao: classified.descricao || classified.categoria });
+      break;
+    // ── ENTRADA FINANCEIRA ──
+    case 'entrada_financeira':
+      if (classified.valor) {
+        await memory.saveExpense(user.id, {
+          valor: -Math.abs(classified.valor), // negativo = entrada
+          categoria: 'entrada',
+          descricao: classified.descricao || 'Entrada'
+        });
+      }
+      break;
+    // ── DELETAR GASTO ──
+    case 'deletar_gasto':
+      if (classified.descricao || classified.id) {
+        try {
+          if (classified.id) {
+            await prisma.expense.delete({ where: { id: classified.id } });
+          } else {
+            const descBusca = (classified.descricao || '').toLowerCase();
+            const inicioMes = new Date(nowBRT().getFullYear(), nowBRT().getMonth(), 1);
+            const gastos = await prisma.expense.findMany({
+              where: { userId: user.id, createdAt: { gte: inicioMes } },
+              orderBy: { createdAt: 'desc' }
+            });
+            const encontrado = gastos.find(g =>
+              (g.description || '').toLowerCase().includes(descBusca) ||
+              (g.category || '').toLowerCase().includes(descBusca)
+            );
+            if (encontrado) await prisma.expense.delete({ where: { id: encontrado.id } });
+          }
+        } catch(e) {
+          console.error('[deletar_gasto]', e.message);
+        }
+      }
       break;
     case 'medicamento':
       if (classified.nome) await memory.saveMedication(user.id, { nome: classified.nome, quantidade: classified.quantidade || 0, frequencia: classified.frequencia || 1, horarios: classified.horarios || ['08:00'] });
@@ -597,7 +758,6 @@ async function salvarPontoSilencioso(user, acoes) {
   }
 }
 
-// Palavras-chave que indicam urgência
 function detectarUrgencia(titulo) {
   const t = (titulo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const palavras = [
@@ -620,7 +780,6 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
 
   let scheduledAt = null;
 
-  // Prioridade 1: horário relativo ("daqui 2 horas")
   if (originalText) {
     const relativo = calcularHorarioRelativo(originalText);
     if (relativo) {
@@ -629,7 +788,6 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
     }
   }
 
-  // Prioridade 2: data+hora do classify com validação de ano
   if (!scheduledAt && classified.hora) {
     const hoje = dateBRT();
     let dataUsada = hoje;
@@ -638,7 +796,6 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
       const dataObj = new Date(classified.data + 'T12:00:00-03:00');
       const anoClassify = dataObj.getFullYear();
       const anoAtual = new Date().getFullYear();
-      // Só aceitar data do Groq se o ano for válido (atual ou próximo)
       if (anoClassify >= anoAtual && anoClassify <= anoAtual + 1) {
         dataUsada = classified.data;
       } else {
@@ -649,7 +806,6 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
     const [h, m] = classified.hora.split(':').map(Number);
     scheduledAt = new Date(`${dataUsada}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
 
-    // Se não tinha data e horário já passou hoje, agendar para amanhã
     if (!classified.data && scheduledAt < nowBRT()) {
       scheduledAt.setDate(scheduledAt.getDate() + 1);
       console.log(`[${phone}] Horário passou, agendado amanhã: ${scheduledAt}`);
@@ -659,11 +815,9 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
   if (scheduledAt) {
     const novoLembrete = await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
     console.log(`[${phone}] Lembrete: "${classified.titulo}" → ${scheduledAt.toISOString()}`);
-    // Detectar urgência e salvar confirmação pendente
     if (detectarUrgencia(classified.titulo)) {
       await prisma.memory.create({ data: { userId: user.id, type: 'lembrete_urgente', content: novoLembrete.id } }).catch(() => {});
-      // Salvar confirmação pendente aguardando resposta "sim/não"
-      const expira = Date.now() + 5 * 60 * 1000; // 5 min para responder
+      const expira = Date.now() + 5 * 60 * 1000;
       await prisma.memory.create({ data: { userId: user.id, type: 'confirmacao_pendente', content: JSON.stringify({ tipo: 'urgente_confirmacao', lembreteId: novoLembrete.id, expira }) } }).catch(() => {});
       return { lembreteUrgente: true, lembreteTitulo: classified.titulo };
     }
@@ -728,7 +882,6 @@ async function handleContatoAction(user, phone, classified) {
       const nome = classified.nome;
       if (!nome) { await sendMessage(phone, 'Qual contato quer apagar? Me diz o nome 😊'); return; }
 
-      // Tenta buscar por número primeiro se parece um telefone
       const pareceNumero = /^\d{8,}$/.test(nome.replace(/\D/g,'')) && nome.replace(/\D/g,'').length >= 8;
       let encontrados = [];
 
@@ -738,7 +891,6 @@ async function handleContatoAction(user, phone, classified) {
         encontrados = todos.filter(c => c.phone && c.phone.replace(/\D/g,'').endsWith(tel) || tel.endsWith(c.phone.replace(/\D/g,'')));
       }
 
-      // Se não achou por número, tenta por número da lista ("contato 1", "1", etc)
       if (!encontrados.length) {
         const numLista = parseInt(nome);
         if (!isNaN(numLista) && numLista >= 1) {
@@ -756,7 +908,6 @@ async function handleContatoAction(user, phone, classified) {
         }
       }
 
-      // Fallback: busca por nome
       if (!encontrados.length) encontrados = await findContactByName(user.id, nome);
 
       if (encontrados.length === 0) { await sendMessage(phone, `Não encontrei nenhum contato com "${nome}" 😕`); return; }
@@ -886,14 +1037,13 @@ async function checkConfirmacaoPendente(user, phone, text) {
       await sendMessage(phone, 'Ok, cancelei o envio 😊');
       return true;
     }
-    // ── Resposta à pergunta de urgência (15min antes) ──
+
     if (dados.tipo === 'urgente_confirmacao') {
       const sim = /^(sim|s|claro|pode|quero|yes|ok|manda|ativa|coloca)/.test(textNorm);
       const nao = /^(n[aã]o|nao|n|não precisa|dispenso|deixa|tá bom|ta bom)/.test(textNorm);
       if (sim || nao) {
         await prisma.memory.delete({ where: { id: pendente.id } });
         if (sim) {
-          // Criar lembrete 15min antes
           const rem = await prisma.reminder.findUnique({ where: { id: dados.lembreteId } }).catch(() => null);
           if (rem) {
             const quinzeAntes = new Date(rem.scheduledAt.getTime() - 15 * 60 * 1000);
