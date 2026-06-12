@@ -363,6 +363,7 @@ async function handleMessage(phone, text, location = null) {
     if (modoAtual === 'conversar') return await responderLivre(user, phone, text);
 
     const classified = await classify(text, phone);
+    if (classified) classified._textoOriginal = text;
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
 
     // ── Garante que editar_lembrete nunca vira lista_marcar ──
@@ -865,11 +866,25 @@ async function editarLembrete(user, phone, classified) {
       orderBy: { scheduledAt: 'asc' }
     });
     if (!lembretes.length) { await sendMessage(phone, 'Você não tem lembretes ativos 😊'); return; }
-    // Se título vazio ou não encontrado, usa o lembrete mais próximo
-    const encontrado = (titulo
-      ? lembretes.find(r => r.message.toLowerCase().includes(titulo))
-      : null) || lembretes[0];
-    if (!encontrado) { await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕`); return; }
+    // Busca por similaridade: título classificado OU palavras-chave do texto original
+    let encontrado = null;
+    if (titulo) {
+      encontrado = lembretes.find(r => r.message.toLowerCase().includes(titulo));
+    }
+    // Se não achou pelo título classificado, tenta palavras do texto original
+    if (!encontrado && classified._textoOriginal) {
+      const palavras = classified._textoOriginal.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .split(/\s+/)
+        .filter(p => p.length > 3 && !['para','pras','mim','por','favor','horas','hora','hoje','amanha'].includes(p));
+      encontrado = lembretes.find(r => {
+        const msg = r.message.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        return palavras.some(p => msg.includes(p));
+      });
+    }
+    // Fallback: lembrete mais próximo no tempo
+    if (!encontrado) encontrado = lembretes[0];
+    if (!encontrado) { await sendMessage(phone, 'Você não tem lembretes ativos 😊'); return; }
 
     // Se não veio hora nova, pede confirmação do horário
     if (!classified.nova_hora && !classified.nova_data) {
@@ -1207,7 +1222,42 @@ Confirma? (sim/não)`);
         await sendMessage(phone, 'Ok, mantive o horário original 😊');
         return true;
       }
-      return false;
+      // Usuário está corrigindo qual lembrete remarcar — busca pelo novo texto
+      const lembretes = await prisma.reminder.findMany({
+        where: { userId: user.id, confirmed: false },
+        orderBy: { scheduledAt: 'asc' }
+      });
+      const palavras = textNorm.normalize('NFD').replace(/[̀-ͯ]/g,'')
+        .split(/\s+/).filter(p => p.length > 3 && !['para','pras','mim','por','favor','horas','hora','hoje','amanha','nao','sim'].includes(p));
+      const correto = lembretes.find(r => {
+        const msg = r.message.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+        return palavras.some(p => msg.includes(p));
+      });
+      if (correto) {
+        // Atualiza a confirmação pendente com o lembrete correto
+        await prisma.memory.delete({ where: { id: pendente.id } });
+        const novoScheduledAt = new Date(dados.novoScheduledAt);
+        const horaFmt = novoScheduledAt.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
+        const hoje = dateBRT();
+        const diaLabel = novoScheduledAt.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}) === hoje ? 'hoje' : novoScheduledAt.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
+        await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
+          tipo: 'confirmar_edicao_lembrete',
+          lembreteId: correto.id,
+          lembreteTitulo: correto.message,
+          novoScheduledAt: dados.novoScheduledAt,
+          expira: Date.now() + 2 * 60 * 1000
+        }));
+        await sendMessage(phone, `📅 Remarcar *"${correto.message}"* para ${diaLabel} às *${horaFmt}*?
+
+Confirma? (sim/não)`);
+        return true;
+      }
+      // Não entendeu a correção — mantém pendente e pede esclarecimento
+      await sendMessage(phone, `Qual lembrete você quer remarcar? Tenho:
+
+${lembretes.slice(0,5).map((r,i)=>`${i+1}. ${r.message}`).join('
+')}`);
+      return true;
     }
 
     if (dados.tipo === 'urgente_confirmacao') {
