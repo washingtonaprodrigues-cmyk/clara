@@ -1126,7 +1126,9 @@ async function checkConfirmacaoPendente(user, phone, text) {
       return false;
     }
 
-    if (['sim','s','ok','confirma','envia','manda','pode','yes'].includes(textNorm)) {
+    // Generic sim - only for enviar_mensagem type
+    if (['sim','s','ok','confirma','envia','manda','pode','yes'].includes(textNorm) &&
+        (dados.tipo === 'enviar_mensagem' || dados.tipo === 'mensagem_agendada')) {
       const remetente = await memory.getUserPreference(user.id);
       const nomeRemetente = remetente.name || 'seu contato';
       const foneFormatado = phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
@@ -1137,7 +1139,8 @@ async function checkConfirmacaoPendente(user, phone, text) {
       return true;
     }
 
-    if (['nao','n','não','cancelar','cancela','para'].includes(textNorm)) {
+    if (['nao','n','não','cancelar','cancela','para'].includes(textNorm) &&
+        (dados.tipo === 'enviar_mensagem' || dados.tipo === 'mensagem_agendada')) {
       await prisma.memory.delete({ where: { id: pendente.id } });
       await sendMessage(phone, 'Ok, cancelei o envio 😊');
       return true;
