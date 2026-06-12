@@ -1,3 +1,5 @@
+CSS patch: OK
+renderFin patch: OK
 <!DOCTYPE html>
 <html lang="pt-BR" style="background:#08090D">
 <head>
@@ -324,6 +326,16 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .fin-hist-val.neg{color:#EF4444}
 .fin-hist-val.pos{color:#22C55E}
 .fin-hist-date{font-size:10px;color:var(--text3);margin-top:2px}
+/* ── Financeiro: swipe delete + hover lixeira ── */
+.fin-hist-wrap{position:relative;overflow:hidden}
+.fin-hist-wrap+.fin-hist-wrap{border-top:1px solid var(--border)}
+.fin-hist-delete-bg{position:absolute;right:0;top:0;bottom:0;width:0;background:rgba(239,68,68,.15);display:flex;align-items:center;justify-content:center;color:var(--red);font-size:18px;pointer-events:none;transition:width .15s}
+.fin-hist-item{position:relative;background:transparent;touch-action:pan-y;transition:transform .2s ease}
+.fin-hist-item:hover{background:var(--s2)}
+.fin-hist-del-btn{width:32px;height:32px;background:none;border:none;cursor:pointer;color:var(--text3);border-radius:8px;display:flex;align-items:center;justify-content:center;opacity:0;transition:all .15s;flex-shrink:0;margin-left:4px}
+.fin-hist-item:hover .fin-hist-del-btn{opacity:.5}
+.fin-hist-del-btn:hover{background:rgba(239,68,68,.12);color:var(--red);opacity:1!important}
+@media(max-width:768px){.fin-hist-del-btn{display:none}}
 .fin-empty{text-align:center;padding:40px 16px;color:var(--text3)}
 .cofre-card{background:var(--s2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r);padding:14px;margin-bottom:8px}
 .cofre-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
@@ -836,67 +848,78 @@ function finMesProximo(){finMes++;if(finMes>11){finMes=0;finAno++;}renderFin();}
 function renderFin(){
   const mesLabel=document.getElementById('fin-mes-label');
   if(mesLabel)mesLabel.textContent=MESES_PT[finMes]+' '+finAno;
-
   const hist=document.getElementById('fin-history');
   const saldoEl=document.getElementById('fs-saldo');
   const saldoSub=document.getElementById('fs-saldo-sub');
-
-  // Filtrar gastos do mês selecionado
-  const gastosMes=allGastos.filter(g=>{
-    const d=new Date(g.createdAt);
-    return d.getMonth()===finMes&&d.getFullYear()===finAno;
-  });
-
-  const total=gastosMes.reduce((a,g)=>a+g.value,0);
-
-  // Cards de resumo
+  const gastosMes=allGastos.filter(g=>{const d=new Date(g.createdAt);return d.getMonth()===finMes&&d.getFullYear()===finAno;});
+  const saidas=gastosMes.filter(g=>g.value>0);
+  const entradas=gastosMes.filter(g=>g.value<0);
+  const total=saidas.reduce((a,g)=>a+g.value,0);
+  const totalEntradas=entradas.reduce((a,g)=>a+Math.abs(g.value),0);
   const totalEl=document.getElementById('fs-total');
   const countSub=document.getElementById('fs-count-sub');
   if(totalEl)totalEl.textContent=brl(total);
   if(countSub)countSub.textContent=gastosMes.length+' lançamento'+(gastosMes.length!==1?'s':'');
-
   if(saldoEl){
     if(currentSaldo!==null&&currentSaldo!==undefined){
-      const restante=currentSaldo-total;
+      const restante=currentSaldo-total+totalEntradas;
       saldoEl.textContent=brl(restante);
       saldoEl.style.color=restante<0?'var(--red)':restante<currentSaldo*0.2?'#FCD34D':'#22C55E';
       if(saldoSub)saldoSub.textContent='de '+brl(currentSaldo)+' orçados';
-    }else{
-      saldoEl.textContent='—';
-      saldoEl.style.color='var(--text3)';
-      if(saldoSub)saldoSub.textContent='orçamento não definido';
-    }
+    }else{saldoEl.textContent='—';saldoEl.style.color='var(--text3)';if(saldoSub)saldoSub.textContent='orçamento não definido';}
   }
-
-  // Histórico
-  if(!gastosMes.length){
-    hist.innerHTML='<div class="fin-empty"><span style="font-size:32px;opacity:.2;display:block;margin-bottom:10px">💳</span>Nenhum lançamento em '+MESES_PT[finMes]+'</div>';
-    return;
-  }
-
-  const el=document.createElement('div');
-  el.innerHTML='<div class="fin-hist-section">Histórico</div>';
-
+  if(!gastosMes.length){hist.innerHTML='<div class="fin-empty"><span style="font-size:32px;opacity:.2;display:block;margin-bottom:10px">💳</span>Nenhum lançamento em '+MESES_PT[finMes]+'</div>';return;}
+  const container=document.createElement('div');
+  container.innerHTML='<div class="fin-hist-section">Histórico</div>';
   gastosMes.slice().reverse().forEach(g=>{
+    const isEntrada=g.value<0;
+    const absVal=Math.abs(g.value);
     const name=g.description&&g.description!==g.category?g.description:(g.category.charAt(0).toUpperCase()+g.category.slice(1));
-    const item=document.createElement('div');
-    item.className='fin-hist-item';
+    const wrap=document.createElement('div');wrap.className='fin-hist-wrap';
+    const bg=document.createElement('div');bg.className='fin-hist-delete-bg';bg.innerHTML='🗑️';
+    const item=document.createElement('div');item.className='fin-hist-item';
     item.innerHTML=
-      '<div class="fin-hist-icon" style="background:'+( CAT_BG[g.category]||'rgba(107,114,128,.12)')+'">'+( CAT_ICONS[g.category]||'📦')+'</div>'+
+      '<div class="fin-hist-icon" style="background:'+(isEntrada?'rgba(34,197,94,.12)':(CAT_BG[g.category]||'rgba(107,114,128,.12)'))+'">'+
+        (isEntrada?'💰':(CAT_ICONS[g.category]||'📦'))+
+      '</div>'+
       '<div class="fin-hist-info">'+
         '<div class="fin-hist-name">'+name+'</div>'+
-        '<div class="fin-hist-cat">'+( CAT_ICONS[g.category]||'📦')+' '+(g.category.charAt(0).toUpperCase()+g.category.slice(1))+'</div>'+
+        '<div class="fin-hist-cat">'+(isEntrada?'💰 Entrada':((CAT_ICONS[g.category]||'📦')+' '+(g.category.charAt(0).toUpperCase()+g.category.slice(1))))+'</div>'+
       '</div>'+
       '<div class="fin-hist-right">'+
-        '<div class="fin-hist-val neg">-'+brl(g.value)+'</div>'+
+        '<div class="fin-hist-val '+(isEntrada?'pos':'neg')+'">'+(isEntrada?'+':'-')+brl(absVal)+'</div>'+
         '<div class="fin-hist-date">'+fmtD(g.createdAt)+'</div>'+
-      '</div>';
-    el.appendChild(item);
+      '</div>'+
+      '<button class="fin-hist-del-btn" title="Excluir" onclick="event.stopPropagation();delGasto(''+g.id+'',this.closest('.fin-hist-wrap'))">'+
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>'+
+      '</button>';
+    // Swipe mobile
+    let sX=0,cX=0,sw=false;
+    item.addEventListener('touchstart',e=>{sX=e.touches[0].clientX;sw=true;cX=0;},{passive:true});
+    item.addEventListener('touchmove',e=>{
+      if(!sw)return;cX=e.touches[0].clientX-sX;
+      if(cX<0){const off=Math.max(cX,-80);item.style.transform='translateX('+off+'px)';bg.style.width=Math.abs(off)+'px';bg.style.pointerEvents=Math.abs(off)>55?'all':'none';}
+    },{passive:true});
+    item.addEventListener('touchend',()=>{
+      sw=false;
+      if(cX<-55){item.style.transform='translateX(-80px)';bg.style.width='80px';bg.style.pointerEvents='all';bg.onclick=()=>delGasto(g.id,wrap);}
+      else{item.style.transform='';bg.style.width='0';bg.style.pointerEvents='none';}
+    });
+    wrap.appendChild(bg);wrap.appendChild(item);container.appendChild(wrap);
   });
-
-  hist.innerHTML='';
-  hist.appendChild(el);
+  hist.innerHTML='';hist.appendChild(container);
 }
+async function delGasto(id,wrapEl){
+  try{
+    const r=await fetch('/forms/gasto/'+id,{method:'DELETE'});
+    if(r.ok){
+      if(wrapEl){wrapEl.style.transition='opacity .2s';wrapEl.style.opacity='0';}
+      setTimeout(()=>{allGastos=allGastos.filter(g=>g.id!==id);renderFin();},200);
+      showToast('Lançamento excluído ✅');
+    }else showToast('Erro ao excluir ⚠️');
+  }catch{showToast('Erro ⚠️');}
+}
+
 async function renderCofre(){const el=document.getElementById('cofre-body');el.innerHTML='<div class="spin"></div>';try{const r=await fetch(`/forms/cofre/${phone}`);const items=await r.json();displayCofre(items);}catch{el.innerHTML='<div class="empty"><span class="empty-icon">🔐</span>Nenhum segredo salvo</div>';}}
 function displayCofre(items){const el=document.getElementById('cofre-body');if(!items.length){el.innerHTML='<div class="empty"><span class="empty-icon">🔐</span>Nenhum segredo salvo ainda</div>';return;}const icons={senha:'🔑',cartao:'💳',nota:'📝',outro:'📦'};el.innerHTML=items.map(item=>{let d={};try{d=JSON.parse(item.content);}catch{}let fields='';if(d.tipo==='senha'){if(d.email)fields+=`<div class="cofre-field"><span style="min-width:50px">Email:</span><span class="cofre-val">${d.email}</span></div>`;if(d.senha)fields+=`<div class="cofre-field"><span style="min-width:50px">Senha:</span><span class="cofre-hidden" id="pw-${item.id}">••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.senha)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}else if(d.tipo==='cartao'){if(d.num)fields+=`<div class="cofre-field"><span style="min-width:50px">Número:</span><span class="cofre-hidden" id="pw-${item.id}">•••• •••• •••• ••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.num)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}else{const txt=d.nota||d.outro||'';if(txt)fields+=`<div class="cofre-field"><span class="cofre-hidden" id="pw-${item.id}">••••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(txt)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}return`<div class="cofre-card"><div class="cofre-top"><div class="cofre-name">${icons[d.tipo]||'🔐'} ${d.nome||'Sem nome'} <span class="cofre-badge">🔒</span></div><div class="cofre-actions"><button class="cofre-btn" onclick="copyCofre('${item.id}',${JSON.stringify(JSON.stringify(d))})"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button><button class="cofre-btn" onclick="delCofre('${item.id}')" style="color:var(--red)"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button></div></div>${fields}<div class="cofre-date">Salvo em ${fmtD(item.createdAt)}</div></div>`;}).join('');}
 function togglePw(id,b64){const el=document.getElementById('pw-'+id);if(!el)return;const decoded=decodeURIComponent(escape(atob(b64)));if(el.classList.contains('cofre-hidden')){el.textContent=decoded;el.classList.remove('cofre-hidden');el.classList.add('cofre-val');}else{el.textContent='••••••••';el.classList.add('cofre-hidden');el.classList.remove('cofre-val');}}
