@@ -812,6 +812,19 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
     }
   }
 
+  // Se não tem hora, salva a intenção e pede o horário
+  if (!scheduledAt) {
+    await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
+      tipo: 'aguardando_hora_lembrete',
+      titulo: classified.titulo,
+      expira: Date.now() + 5 * 60 * 1000
+    }));
+    await sendMessage(phone, `📌 Anotei: *"${classified.titulo}"*
+
+Para que hora quer ser lembrado?`);
+    return;
+  }
+
   if (scheduledAt) {
     const novoLembrete = await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
     console.log(`[${phone}] Lembrete: "${classified.titulo}" → ${scheduledAt.toISOString()}`);
@@ -838,17 +851,56 @@ async function editarLembrete(user, phone, classified) {
     const lembretes = await prisma.reminder.findMany({ where: { userId: user.id, sent: false, confirmed: false } });
     const encontrado = lembretes.find(r => r.message.toLowerCase().includes(titulo));
     if (!encontrado) { await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕`); return; }
+
+    // Se não veio hora nova, pede confirmação do horário
+    if (!classified.nova_hora && !classified.nova_data) {
+      await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
+        tipo: 'aguardando_hora_edicao',
+        lembreteId: encontrado.id,
+        lembreteTitulo: encontrado.message,
+        expira: Date.now() + 3 * 60 * 1000
+      }));
+      const horaAtual = new Date(encontrado.scheduledAt).toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
+      await sendMessage(phone, `📌 *${encontrado.message}*
+Atualmente: ${horaAtual}
+
+Para que hora quer remarcar?`);
+      return;
+    }
+
     let novoScheduledAt = new Date(encontrado.scheduledAt);
     if (classified.nova_hora) {
-      const [h, m] = classified.nova_hora.split(':').map(Number);
-      const data = classified.nova_data || encontrado.scheduledAt.toISOString().split('T')[0];
-      novoScheduledAt = new Date(`${data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
+      // Suporte a horário relativo ("daqui 1 hora", "em 30 min")
+      const relativo = calcularHorarioRelativo(classified.nova_hora + ' ' + (classified.nova_hora || ''));
+      if (relativo) {
+        novoScheduledAt = relativo;
+      } else {
+        const [h, m] = classified.nova_hora.split(':').map(Number);
+        const data = classified.nova_data || encontrado.scheduledAt.toISOString().split('T')[0];
+        novoScheduledAt = new Date(`${data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
+      }
     } else if (classified.nova_data) {
       const horaAtual = new Date(encontrado.scheduledAt).toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
       const [h, m] = horaAtual.split(':').map(Number);
       novoScheduledAt = new Date(`${classified.nova_data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
     }
-    await prisma.reminder.update({ where: { id: encontrado.id }, data: { scheduledAt: novoScheduledAt } });
+
+    // Pede confirmação antes de salvar
+    const novaHoraFmt = novoScheduledAt.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
+    const novaDataFmt = novoScheduledAt.toLocaleDateString('pt-BR', {timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit'});
+    const hoje = dateBRT();
+    const diaLabel = novoScheduledAt.toLocaleDateString('en-CA', {timeZone:'America/Sao_Paulo'}) === hoje ? 'hoje' : novaDataFmt;
+
+    await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
+      tipo: 'confirmar_edicao_lembrete',
+      lembreteId: encontrado.id,
+      lembreteTitulo: encontrado.message,
+      novoScheduledAt: novoScheduledAt.toISOString(),
+      expira: Date.now() + 2 * 60 * 1000
+    }));
+    await sendMessage(phone, `📅 Remarcar *"${encontrado.message}"* para ${diaLabel} às *${novaHoraFmt}*?
+
+Confirma? (sim/não)`);
   } catch(e) { console.error('[editarLembrete]', e.message); }
 }
 
@@ -1036,6 +1088,107 @@ async function checkConfirmacaoPendente(user, phone, text) {
       await prisma.memory.delete({ where: { id: pendente.id } });
       await sendMessage(phone, 'Ok, cancelei o envio 😊');
       return true;
+    }
+
+    // ── Aguardando hora para novo lembrete ──
+    if (dados.tipo === 'aguardando_hora_lembrete') {
+      // Tenta extrair hora da resposta
+      const relativo = calcularHorarioRelativo(text);
+      let scheduledAt = relativo;
+
+      if (!scheduledAt) {
+        // Tenta extrair hora no formato HH:MM ou "Xh"
+        const horaMatch = text.match(/(\d{1,2})[:h](\d{0,2})/i) || text.match(/(\d{1,2})\s*h(?:oras?)?/i);
+        if (horaMatch) {
+          const h = parseInt(horaMatch[1]);
+          const m = parseInt(horaMatch[2] || '0');
+          if (h >= 0 && h <= 23) {
+            scheduledAt = new Date(`${dateBRT()}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
+            if (scheduledAt < nowBRT()) scheduledAt.setDate(scheduledAt.getDate() + 1);
+          }
+        }
+      }
+
+      if (!scheduledAt) {
+        await sendMessage(phone, 'Não entendi o horário 😕 Me diz assim: "às 15h" ou "daqui 2 horas"');
+        return true;
+      }
+
+      await prisma.memory.delete({ where: { id: pendente.id } });
+      const novoLembrete = await prisma.reminder.create({
+        data: { userId: user.id, phone, message: dados.titulo, scheduledAt }
+      });
+      const horaFmt = scheduledAt.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
+      const hoje = dateBRT();
+      const diaLabel = scheduledAt.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}) === hoje ? 'hoje' : scheduledAt.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
+      await sendMessage(phone, `✅ Lembrete criado!
+
+📌 *${dados.titulo}*
+🕒 ${diaLabel} às ${horaFmt} 🔔`);
+      return true;
+    }
+
+    // ── Aguardando hora para edição de lembrete ──
+    if (dados.tipo === 'aguardando_hora_edicao') {
+      const relativo = calcularHorarioRelativo(text);
+      let novoScheduledAt = relativo;
+
+      if (!novoScheduledAt) {
+        const horaMatch = text.match(/(\d{1,2})[:h](\d{0,2})/i) || text.match(/(\d{1,2})\s*h(?:oras?)?/i);
+        if (horaMatch) {
+          const h = parseInt(horaMatch[1]);
+          const m = parseInt(horaMatch[2] || '0');
+          if (h >= 0 && h <= 23) {
+            novoScheduledAt = new Date(`${dateBRT()}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
+            if (novoScheduledAt < nowBRT()) novoScheduledAt.setDate(novoScheduledAt.getDate() + 1);
+          }
+        }
+      }
+
+      if (!novoScheduledAt) {
+        await sendMessage(phone, 'Não entendi o horário 😕 Me diz assim: "às 15h" ou "daqui 2 horas"');
+        return true;
+      }
+
+      // Pede confirmação
+      const horaFmt = novoScheduledAt.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
+      const hoje = dateBRT();
+      const diaLabel = novoScheduledAt.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}) === hoje ? 'hoje' : novoScheduledAt.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
+
+      await prisma.memory.delete({ where: { id: pendente.id } });
+      await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
+        tipo: 'confirmar_edicao_lembrete',
+        lembreteId: dados.lembreteId,
+        lembreteTitulo: dados.lembreteTitulo,
+        novoScheduledAt: novoScheduledAt.toISOString(),
+        expira: Date.now() + 2 * 60 * 1000
+      }));
+      await sendMessage(phone, `📅 Remarcar *"${dados.lembreteTitulo}"* para ${diaLabel} às *${horaFmt}*?
+
+Confirma? (sim/não)`);
+      return true;
+    }
+
+    // ── Confirmação de edição de lembrete ──
+    if (dados.tipo === 'confirmar_edicao_lembrete') {
+      const sim = ['sim','s','ok','confirma','pode','yes'].includes(textNorm);
+      const nao = ['nao','n','não','cancelar','cancela','para'].includes(textNorm);
+      if (sim) {
+        await prisma.memory.delete({ where: { id: pendente.id } });
+        const novoScheduledAt = new Date(dados.novoScheduledAt);
+        await prisma.reminder.update({ where: { id: dados.lembreteId }, data: { scheduledAt: novoScheduledAt, sent: false, confirmed: false } });
+        const horaFmt = novoScheduledAt.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
+        const hoje = dateBRT();
+        const diaLabel = novoScheduledAt.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}) === hoje ? 'hoje' : novoScheduledAt.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
+        await sendMessage(phone, `✅ Remarcado! *"${dados.lembreteTitulo}"* para ${diaLabel} às *${horaFmt}* 📅`);
+        return true;
+      }
+      if (nao) {
+        await prisma.memory.delete({ where: { id: pendente.id } });
+        await sendMessage(phone, 'Ok, mantive o horário original 😊');
+        return true;
+      }
+      return false;
     }
 
     if (dados.tipo === 'urgente_confirmacao') {
