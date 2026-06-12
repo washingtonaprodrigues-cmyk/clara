@@ -3,7 +3,20 @@ const express = require('express');
 const path = require('path');
 const app = express();
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../public')));
+
+// Static files com cache normal (imagens, CSS, JS de libs)
+app.use(express.static(path.join(__dirname, '../public'), {
+  etag: false,
+  setHeaders: (res, filePath) => {
+    // dashboard.html nunca fica em cache
+    if (filePath.endsWith('dashboard.html')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
+
 const webhookRoutes = require('./routes/webhook');
 const formsRoutes   = require('./routes/forms');
 const chatRoutes    = require('./routes/chat');
@@ -14,8 +27,10 @@ app.use('/forms',   formsRoutes);
 app.use('/chat',    chatRoutes);
 app.use('/push',    pushRoutes);
 app.use('/search',  searchRoutes);
+
 app.get('/sw.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, '../public/sw.js'));
 });
 app.get('/manifest.json', (req, res) => {
@@ -23,6 +38,9 @@ app.get('/manifest.json', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/manifest.json'));
 });
 app.get('/dashboard', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(__dirname, '../public/dashboard.html'));
 });
 app.get('/', (req, res) => {
