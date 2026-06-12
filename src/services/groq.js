@@ -1,6 +1,5 @@
 const Groq = require('groq-sdk');
 const { webSearch } = require('./search');
-const rateLimit = require('./rateLimit');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -23,16 +22,55 @@ function isTPD(error) {
   return msg.includes('tokens per day') || msg.includes('tpd') || msg.includes('daily');
 }
 
+// ── Desculpas criativas para rate limit — sem horário ──
+const DESCULPAS_RPM = [
+  'Um segundo, deixa eu respirar! 😅',
+  'Ei, muita coisa de uma vez! Já já tô aqui 🏃',
+  'Calma, tô chegando! Um instantinho 😄',
+  'Opa, travei aqui! Já volto ✨',
+  'Espera um pouquinho, tô organizando as ideias 😊',
+];
+
+const DESCULPAS_TPD = [
+  'Preciso dar uma pausa rápida, mas volto em breve! 💜',
+  'Saí um segundo, não some — já tô de volta 😊',
+  'Dá um tempinho, tô resolvendo uma coisa! Logo volto 🌟',
+  'Pausa relâmpago! Em breve tô aqui de novo ✨',
+  'Precisei sair um momento, mas não fui embora não 😄',
+];
+
+// Controle por phone para avisar quando voltar
+const _pausaAtiva = {};
+
 async function ativarPausaCreativa(phone, tipo) {
-  try {
-    const { desculpa, retornoHora } = await rateLimit.registrarPausa(phone, tipo);
-    const msg = rateLimit.mensagemPausa(tipo, desculpa.ausencia, retornoHora);
-    console.log(`[RateLimit] ${tipo.toUpperCase()} para ${phone} — pausa até ${retornoHora}`);
-    return msg;
-  } catch (e) {
-    console.error('[RateLimit] Erro:', e.message);
-    return tipo === 'rpm' ? 'Um segundo, já volto! 🏃' : 'Precisei sair um pouco, volto em breve! 💜';
+  const desculpas = tipo === 'rpm' ? DESCULPAS_RPM : DESCULPAS_TPD;
+  const msg = desculpas[Math.floor(Math.random() * desculpas.length)];
+  console.log(`[RateLimit] ${tipo.toUpperCase()} para ${phone}`);
+
+  // Agenda aviso de retorno após 60s (rpm) ou 5min (tpd)
+  const delay = tipo === 'rpm' ? 60000 : 300000;
+  if (!_pausaAtiva[phone]) {
+    _pausaAtiva[phone] = true;
+    setTimeout(async () => {
+      delete _pausaAtiva[phone];
+      try {
+        const { sendMessage } = require('./whatsapp');
+        const retornos = [
+          'Oi, voltei! 😊 O que você precisava?',
+          'Tô aqui de novo! Me conta o que você queria 💜',
+          'Voltei! Pode falar 😄',
+          'Pronta! O que eu perdi? ✨',
+          'De volta! Pode continuar 😊',
+        ];
+        const aviso = retornos[Math.floor(Math.random() * retornos.length)];
+        await sendMessage(phone, aviso);
+      } catch(e) {
+        console.error('[RateLimit] Erro ao avisar retorno:', e.message);
+      }
+    }, delay);
   }
+
+  return msg;
 }
 
 // ── CLASSIFY PROMPT ──
