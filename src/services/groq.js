@@ -88,6 +88,8 @@ REGRAS:
 - Conversa casual sobre o que o usuário vai fazer → outro, NÃO busca
 - Usuário informa saldo/salário/orçamento → saldo
 - Consultar algo já guardado → consulta
+- Frases vagas sobre ação concluída SEM mencionar explicitamente o lembrete ("já fiz", "ok feito", "pronto") → concluir_lembrete APENAS se houver lembrete claro no contexto; senão → outro
+- "já peguei X", "já fiz X", "já fui" onde X é objeto físico e NÃO é título de lembrete → anotacao ou outro, NUNCA concluir_lembrete nem lista_marcar automaticamente
 - Hora SEMPRE em formato 24h: "10 da manhã"→"10:00", "2 da tarde"→"14:00", "8 da noite"→"20:00", "meia noite"→"00:00", "meio dia"→"12:00"
 - Se o usuário disser "10h" ou "10:00" sem indicação de tarde/noite → mantenha exatamente essa hora, NÃO converta
 - NUNCA some 12 horas em horários como "9h", "10h", "11h" sem o usuário dizer "da tarde" ou "da noite"
@@ -140,6 +142,8 @@ EXEMPLOS:
 "envia pro contato 2 que a reunião foi cancelada" → {"tipo":"enviar_mensagem","destinatario":null,"mensagem":"A reunião foi cancelada.","phone":null,"contato_numero":2}
 "manda pro meu amor às 15h que tem reunião" → {"tipo":"enviar_mensagem_agendada","destinatario":"meu amor","mensagem":"Tem reunião às 15h","phone":null,"quando":"às 15h","data":null,"hora":"15:00"}
 "cancela o lembrete da Serigraf" → {"tipo":"deletar_lembrete","titulo":"Serigraf"}
+"já peguei o cartão" → {"tipo":"anotacao","titulo":"cartão pego","conteudo":"Já pegou o cartão"}
+"já fiz isso" → {"tipo":"outro"}
 "muda a reunião pra às 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
 "o número da minha esposa é 43999998888" → {"tipo":"salvar_contato","nome":"esposa","phone":"43999998888","relation":"esposa","notes":null}
 "exclui o remédio Nebivolol" → {"tipo":"deletar_remedio","nome":"Nebivolol"}
