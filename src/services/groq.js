@@ -391,7 +391,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         ],
         temperature: tom === 'sarcastico' ? 0.9 : 0.7,
         // ── FIX: aumentado para não cortar resposta de agenda longa ──
-        max_tokens: isCurta ? 80 : 600,
+        max_tokens: isCurta ? 80 : 500,
       }),
       timeoutPromise
     ]);
