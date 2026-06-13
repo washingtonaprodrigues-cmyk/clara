@@ -196,6 +196,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .lista-item-num{font-size:11px;color:var(--text3);min-width:20px;text-align:center;flex-shrink:0}
 .lista-item-nome{font-size:13px;color:var(--text);flex:1}
 .lista-item-del{width:22px;height:22px;background:none;border:none;cursor:pointer;color:var(--text3);opacity:0;transition:opacity .15s;display:flex;align-items:center;justify-content:center;font-size:14px;border-radius:4px}
+.lista-drag-handle{color:var(--text3);font-size:16px;cursor:grab;padding:0 4px;opacity:.35;flex-shrink:0;user-select:none;touch-action:none}
+.lista-drag-handle:active{cursor:grabbing}
+.lista-item.dragging{opacity:.4;background:var(--s3)}
+.lista-item.drag-over{border-top:2px solid var(--accent)}
 .lista-item:hover .lista-item-del{opacity:.5}
 .lista-item-del:hover{opacity:1!important;color:var(--red)!important}
 .lista-add-row{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
@@ -1043,7 +1047,55 @@ async function initPWA(){if(!('serviceWorker' in navigator)){['notif-btn','notif
 async function requestPushPermission(){if(!phone){showToast('Configure seu número primeiro');return;}if(!('Notification' in window)){showToast('Notificações não suportadas ⚠️');return;}if(!swReg){try{swReg=await navigator.serviceWorker.register('/sw.js');}catch{showToast('Instale o app primeiro 📱',4000);return;}}const perm=await Notification.requestPermission();if(perm!=='granted'){showToast('Permissão negada ⚠️');return;}try{const sub=await swReg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(vapidPublicKey)});await fetch(`/push/subscribe/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscription:sub})});setNotifAtivo(true);showToast('Notificações ativadas! 🔔',3000);}catch{showToast('Erro ao ativar notificações ⚠️');}}
 function urlBase64ToUint8Array(b){const p='='.repeat((4-b.length%4)%4);const s=(b+p).replace(/-/g,'+').replace(/_/g,'/');const r=atob(s);return Uint8Array.from([...r].map(c=>c.charCodeAt(0)));}
 async function renderListas(){const el=document.getElementById('listas-body');el.innerHTML='<div class="spin"></div>';try{const r=await fetch(`/forms/listas/${phone}`);allListas=await r.json();displayListas();const cnt=allListas.filter(l=>!l.done).length;['d-badge-list','d-badge-list2'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display=cnt?'':'none';if(cnt)el.textContent=cnt;}});}catch{document.getElementById('listas-body').innerHTML='<div class="empty"><span class="empty-icon">🛒</span>Nenhuma lista criada ainda</div>';}}
-function displayListas(){const el=document.getElementById('listas-body');if(!allListas.length){el.innerHTML='<div class="empty"><span class="empty-icon">🛒</span>Nenhuma lista ainda<br><span style="font-size:12px;margin-top:8px;display:block">Diga para a Clara: "preciso comprar arroz, feijão..."</span></div>';return;}el.innerHTML=allListas.map(lista=>{const items=Array.isArray(lista.items)?lista.items:[];const done=items.filter(i=>i.done).length;const total=items.length;const pct=total>0?Math.round((done/total)*100):0;const itemsHtml=items.map(item=>`<div class="lista-item${item.done?' done':''}" data-item-id="${item.id}" onclick="toggleItem('${lista.id}',${item.id})"><div class="lista-check"></div><span class="lista-item-num">${item.id}</span><span class="lista-item-nome" ondblclick="event.stopPropagation();editarItemLista('${lista.id}',${item.id})" title="Clique duplo para editar">${item.nome}</span><button class="lista-item-del"<button class="lista-item-del" onclick="event.stopPropagation();removeItem('${lista.id}',${item.id})">✕</button></div>`).join('');return`<div class="lista-card" id="lista-${lista.id}"><div class="lista-header"><div class="lista-titulo" ondblclick="editarTituloLista('${lista.id}')" title="Clique duplo para renomear" style="cursor:pointer">${lista.name}</div><div class="lista-contador">${done}/${total} itens</div></div>${itemsHtml}<div class="lista-add-row"><input class="lista-add-input" id="add-${lista.id}" placeholder="Adicionar item..." onkeydown="if(event.key==='Enter')addItem('${lista.id}')"/><button class="lista-add-btn" onclick="addItem('${lista.id}')">+</button></div><div class="lista-footer"><div class="lista-progress"><div class="lista-progress-bar" style="width:${pct}%"></div></div><button class="lista-arquivar" onclick="arquivarLista('${lista.id}')">Arquivar</button><button class="lista-arquivar" style="color:var(--red)" onclick="deletarLista('${lista.id}')">Excluir</button></div></div>`;}).join('');}
+function displayListas(){const el=document.getElementById('listas-body');if(!allListas.length){el.innerHTML='<div class="empty"><span class="empty-icon">🛒</span>Nenhuma lista ainda<br><span style="font-size:12px;margin-top:8px;display:block">Diga para a Clara: "preciso comprar arroz, feijão..."</span></div>';return;}el.innerHTML=allListas.map(lista=>{const items=Array.isArray(lista.items)?lista.items:[];const done=items.filter(i=>i.done).length;const total=items.length;const pct=total>0?Math.round((done/total)*100):0;const itemsHtml=items.map(item=>`<div class="lista-item${item.done?' done':''}" data-item-id="${item.id}" onclick="toggleItem('${lista.id}',${item.id})"><div class="lista-check"></div><span class="lista-drag-handle" draggable="false">⠿</span><span class="lista-item-nome" ondblclick="event.stopPropagation();editarItemLista('${lista.id}',${item.id})" title="Clique duplo para editar">${item.nome}</span><button class="lista-item-del" onclick="event.stopPropagation();removeItem('${lista.id}',${item.id})">✕</button></div>`).join('');return`<div class="lista-card" id="lista-${lista.id}"><div class="lista-header"><div class="lista-titulo" ondblclick="editarTituloLista('${lista.id}')" title="Clique duplo para renomear" style="cursor:pointer">${lista.name}</div><div class="lista-contador">${done}/${total} itens</div></div>${itemsHtml}<div class="lista-add-row"><input class="lista-add-input" id="add-${lista.id}" placeholder="Adicionar item..." onkeydown="if(event.key==='Enter')addItem('${lista.id}')"/><button class="lista-add-btn" onclick="addItem('${lista.id}')">+</button></div><div class="lista-footer"><div class="lista-progress"><div class="lista-progress-bar" style="width:${pct}%"></div></div><button class="lista-arquivar" style="color:var(--red)" onclick="deletarLista('${lista.id}')">Excluir lista</button></div></div>`;}).join('');}
+  allListas.forEach(l=>initDragDrop(l.id));
+function initDragDrop(listaId){
+  const card=document.getElementById('lista-'+listaId);
+  if(!card)return;
+  const items=card.querySelectorAll('.lista-item');
+  let dragSrc=null;
+  items.forEach(item=>{
+    const handle=item.querySelector('.lista-drag-handle');
+    if(!handle)return;
+    handle.addEventListener('mousedown',()=>{item.setAttribute('draggable','true');});
+    handle.addEventListener('touchstart',e=>{item.setAttribute('draggable','true');},{passive:true});
+    item.addEventListener('dragstart',e=>{
+      dragSrc=item;item.classList.add('dragging');
+      e.dataTransfer.effectAllowed='move';
+    });
+    item.addEventListener('dragend',()=>{
+      item.classList.remove('dragging');item.setAttribute('draggable','false');
+      card.querySelectorAll('.lista-item').forEach(i=>i.classList.remove('drag-over'));
+    });
+    item.addEventListener('dragover',e=>{
+      e.preventDefault();e.dataTransfer.dropEffect='move';
+      if(item!==dragSrc){
+        card.querySelectorAll('.lista-item').forEach(i=>i.classList.remove('drag-over'));
+        item.classList.add('drag-over');
+      }
+    });
+    item.addEventListener('drop',async e=>{
+      e.preventDefault();
+      if(!dragSrc||dragSrc===item)return;
+      const lista=allListas.find(l=>l.id===listaId);
+      if(!lista)return;
+      const items=[...lista.items];
+      const srcId=parseInt(dragSrc.dataset.itemId);
+      const dstId=parseInt(item.dataset.itemId);
+      const srcIdx=items.findIndex(i=>i.id===srcId);
+      const dstIdx=items.findIndex(i=>i.id===dstId);
+      if(srcIdx<0||dstIdx<0)return;
+      const [moved]=items.splice(srcIdx,1);
+      items.splice(dstIdx,0,moved);
+      lista.items=items;
+      displayListas();
+      try{
+        await fetch('/forms/lista-reorder/'+listaId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:items.map(i=>i.id)})});
+      }catch{}
+    });
+  });
+}
+
 async function toggleItem(listaId,itemId){try{const r=await fetch(`/forms/lista-item/${listaId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({itemId})});const d=await r.json();const lista=allListas.find(l=>l.id===listaId);if(lista)lista.items=d.items;displayListas();if(d.allDone)showToast('🎉 Lista concluída!',3000);}catch{showToast('Erro ⚠️');}}
 async function addItem(listaId){const inp=document.getElementById('add-'+listaId);const nome=inp?.value.trim();if(!nome)return;try{const r=await fetch(`/forms/lista-add-item/${listaId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome})});const d=await r.json();const lista=allListas.find(l=>l.id===listaId);if(lista)lista.items=d.items;if(inp)inp.value='';displayListas();}catch{showToast('Erro ⚠️');}}
 async function removeItem(listaId,itemId){try{const r=await fetch(`/forms/lista-item/${listaId}/${itemId}`,{method:'DELETE'});const d=await r.json();const lista=allListas.find(l=>l.id===listaId);if(lista)lista.items=d.items;displayListas();}catch{showToast('Erro ⚠️');}}
