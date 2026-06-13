@@ -221,14 +221,15 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
       const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
 
-      const [lembretes, meds, gastos, perfilPessoal] = await Promise.all([
+      const [lembretes, meds, gastos, perfilPessoal, relMemoria] = await Promise.all([
         prisma.reminder.findMany({
           where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: inicioHoje, lte: fimAmanha } },
           orderBy: { scheduledAt: 'asc' }, take: 20
         }),
         prisma.medication.findMany({ where: { userId: user.id, active: true, remaining: { gt: 0 } } }),
         preferences.saldo != null ? prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } } }) : Promise.resolve([]),
-        buildPersonalContext(user.id).catch(() => '')
+        buildPersonalContext(user.id).catch(() => ''),
+        prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null)
       ]);
 
       if (lembretes.length > 0) {
@@ -292,6 +293,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         }
       } catch(e) {}
 
+      if (relMemoria?.content) contexto += `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoria.content}`;
       if (contexto) contexto = `\n\nUse as informações abaixo para responder com precisão:${contexto}`;
       if (perfilPessoal) contexto += perfilPessoal;
       if (contextoExtra) contexto += contextoExtra;
@@ -974,7 +976,7 @@ async function extractAndSavePersonalInfo(userId, text) {
 async function updateRelationshipSummary(userId, history, lastReply) {
   try {
     const count = await prisma.memory.count({ where: { userId, type: 'conversation_message' } });
-    if (count % 5 !== 0) return;
+    if (count % 3 !== 0) return;
     const current = await prisma.memory.findFirst({ where: { userId, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } });
     const msgs = [...history.slice(-10), { role: 'assistant', content: lastReply }];
     const novoResumo = await generateRelationshipSummary(msgs, current?.content || '');
