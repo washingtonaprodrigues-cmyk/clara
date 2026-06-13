@@ -283,15 +283,15 @@ async function saveTask(userId, data) {
 // ====================== GASTOS ======================
 
 async function saveExpense(userId, data) {
-  const { valor, categoria, descricao } = data;
-  const expense = await prisma.expense.create({
-    data: {
-      userId,
-      value: parseFloat(valor) || 0,
-      category: categoria || 'outro',
-      description: descricao || '',
-    },
-  });
+  const { valor, categoria, descricao, createdAt } = data;
+  const expenseData = {
+    userId,
+    value: parseFloat(valor) || 0,
+    category: categoria || 'outro',
+    description: descricao || '',
+  };
+  if (createdAt) expenseData.createdAt = createdAt;
+  const expense = await prisma.expense.create({ data: expenseData });
   await saveMemory(userId, 'gasto', `R$ ${valor} em ${categoria}`);
   return expense;
 }
