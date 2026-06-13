@@ -770,7 +770,7 @@ function renderRem(){
   const wrap=document.createElement('div');wrap.style.paddingTop='8px';
 
   function makeRow(r,overdue){
-    const t=new Date(r.scheduledAt),hm=pad(t.getHours())+':'+pad(t.getMinutes());
+    const t=new Date(r.scheduledAt),hm=t.toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit',hour12:false});
     const row=document.createElement('div');
     row.className='rem-row';
     row.id='ri-'+r.id;
@@ -804,7 +804,36 @@ function renderRem(){
     const lbl=document.createElement('div');
     lbl.style.cssText='font-size:11px;font-weight:600;color:#F59E0B;padding:10px 0 6px';
     lbl.textContent='⚠️ Não confirmados ('+vencidos.length+')';
-}
+    wrap.appendChild(lbl);
+    vencidos.forEach(r=>wrap.appendChild(makeRow(r,true)));
+  }
+
+  if(avencer.length){
+    const lbl2=document.createElement('div');
+    lbl2.style.cssText='font-size:11px;font-weight:600;color:var(--text3);padding:10px 0 6px;text-transform:uppercase;letter-spacing:.5px';
+    lbl2.textContent='📌 A vencer ('+avencer.length+')';
+    wrap.appendChild(lbl2);
+    let nowInserted=false;
+    avencer.forEach(r=>{
+      const t=new Date(r.scheduledAt);
+      if(isToday&&!nowInserted&&t>now){
+        nowInserted=true;
+        const nl=document.createElement('div');nl.className='rem-now-line';
+        const nowHM=now.toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit',hour12:false});
+        nl.innerHTML='<span class="rem-now-time">'+nowHM+'</span><div class="rem-now-bar"></div><div class="rem-now-dot"></div>';
+        wrap.appendChild(nl);
+      }
+      wrap.appendChild(makeRow(r,false));
+    });
+    if(isToday&&!nowInserted){
+      const nl=document.createElement('div');nl.className='rem-now-line';
+      const nowHM=now.toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit',hour12:false});
+      nl.innerHTML='<span class="rem-now-time">'+nowHM+'</span><div class="rem-now-bar"></div><div class="rem-now-dot"></div>';
+      wrap.appendChild(nl);
+    }
+  }
+
+  el.appendChild(wrap);
 }
 
 function renderSaude(){
