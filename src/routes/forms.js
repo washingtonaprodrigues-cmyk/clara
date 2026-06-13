@@ -97,9 +97,11 @@ router.get('/gastos/:phone', async (req, res) => {
 router.post('/gasto/:phone', async (req, res) => {
   try {
     const { phone } = req.params;
-    const { valor, categoria, descricao } = req.body;
+    const { valor, categoria, descricao, data } = req.body;
     const user = await memory.getOrCreateUser(phone);
-    await memory.saveExpense(user.id, { valor, categoria, descricao });
+    // Se vier data customizada, usa ela; senão usa agora
+    const createdAt = data ? new Date(data + 'T12:00:00-03:00') : undefined;
+    await memory.saveExpense(user.id, { valor, categoria, descricao, createdAt });
     res.json({ ok: true });
   } catch (e) {
     console.error('Erro POST gasto:', e.message);
