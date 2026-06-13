@@ -95,10 +95,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .topbar{display:flex;height:56px;background:var(--s1);border-bottom:1px solid var(--border);align-items:center;padding:0 16px;gap:12px;flex-shrink:0;z-index:10}
 .tb-menu{width:36px;height:36px;background:none;border:none;cursor:pointer;display:none;flex-direction:column;justify-content:center;gap:5px;padding:6px;flex-shrink:0}
 .tb-menu span{display:block;height:1.5px;background:var(--text2);border-radius:2px}
-.tb-clara-avatar{width:34px;height:34px;border-radius:50%;overflow:hidden;flex-shrink:0;box-shadow:0 0 12px var(--glow);background:#08090D;position:relative}
-.tb-clara-avatar::after{content:'';position:absolute;inset:0;background:#08090D;border-radius:50%;z-index:3;opacity:1;transition:opacity .6s ease;pointer-events:none}
-.tb-clara-avatar img{width:100%;height:100%;object-fit:cover;position:relative;z-index:2;display:block}
-.tb-clara-avatar.revealed::after{opacity:0}
+.tb-clara-avatar{width:34px;height:34px;border-radius:50%;overflow:hidden;flex-shrink:0;box-shadow:0 0 12px var(--glow);background:linear-gradient(135deg,var(--accent),var(--accent2));position:relative}
+.tb-clara-avatar::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.15) 50%,transparent 100%);background-size:200% 100%;animation:avatarShimmer 1.5s ease-in-out infinite;z-index:1}
+.tb-clara-avatar img{width:100%;height:100%;object-fit:cover;position:relative;z-index:2}
+.tb-clara-avatar img.loaded{animation:none}
+@keyframes avatarShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .tb-info{min-width:0;flex:1}
 .tb-name{font-size:15px;font-weight:600;color:var(--text)}
 .tb-status{font-size:11px;color:var(--green);display:flex;align-items:center;gap:4px}
@@ -492,7 +493,7 @@ select option{background:var(--s2)}
           <button class="tb-expand-btn" id="tb-expand-btn" onclick="toggleSidebar()" style="display:none" title="Expandir menu">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
-          <div class="tb-clara-avatar"><img src="/avatar" onload="this.parentElement.classList.add('revealed')" onerror="this.parentElement.textContent='✨';this.parentElement.classList.add('revealed')" alt="Clara"/></div>
+          <div class="tb-clara-avatar"><img src="/avatar" onload="this.classList.add('loaded')" onerror="this.parentElement.textContent='✨'" alt="Clara"/></div>
           <div class="tb-info"><div class="tb-name">Clara</div><div class="tb-status">Online agora</div></div>
           <button class="tb-nova" onclick="newChat()">+ Novo Chat</button>
           <div class="tb-icon-btn" id="private-btn" onclick="togglePrivate()" style="cursor:pointer">🔓</div>
