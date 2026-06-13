@@ -273,6 +273,25 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         contexto += `\n\n[FINANCEIRO]\nOrçamento: R$ ${preferences.saldo.toFixed(2)}\nGasto: R$ ${totalGasto.toFixed(2)}\nEntradas: R$ ${totalEntradas.toFixed(2)}\nSaldo: R$ ${restante.toFixed(2)}`;
       }
 
+      // Listas ativas — evita Clara inventar listas
+      try {
+        const listas = await prisma.groceryList.findMany({
+          where: { userId: user.id, done: false },
+          orderBy: { createdAt: 'desc' }, take: 5
+        });
+        if (listas.length > 0) {
+          const listaCtx = listas.map(l => {
+            let items = []; try { items = JSON.parse(l.items); } catch {}
+            const pendentes = items.filter(i => !i.done).map(i => i.nome).join(', ');
+            const done = items.filter(i => i.done).length;
+            return `• "${l.name}" — ${done}/${items.length} concluídos${pendentes ? ` | Pendentes: ${pendentes}` : ' ✅'}`;
+          }).join('\n');
+          contexto += `\n\n[LISTAS ATIVAS]\n${listaCtx}`;
+        } else {
+          contexto += `\n\n[LISTAS ATIVAS]\nNenhuma lista ativa.`;
+        }
+      } catch(e) {}
+
       if (contexto) contexto = `\n\nUse as informações abaixo para responder com precisão:${contexto}`;
       if (perfilPessoal) contexto += perfilPessoal;
       if (contextoExtra) contexto += contextoExtra;
