@@ -252,6 +252,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .toast-undo.show{display:flex}
 .toast-undo-msg{color:var(--text2)}
 .toast-undo-btn{background:var(--accent);border:none;border-radius:10px;color:#fff;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;padding:4px 12px}
+.toast-undo-count{font-size:13px;font-weight:700;color:var(--accent);min-width:16px;text-align:center}
 .toast-undo-bar{position:fixed;bottom:calc(20px + var(--safe-bot));left:50%;transform:translateX(-50%);height:2px;background:var(--accent);z-index:301;transition:width linear;border-radius:2px}
 @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 .rem-del-btn,.med-del-btn{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);cursor:pointer;color:#FCA5A5;font-size:15px;padding:5px 8px;border-radius:8px;transition:all .15s;flex-shrink:0;opacity:.9}
@@ -365,6 +366,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .fin-hist-wrap{position:relative;overflow:hidden}
 .fin-hist-wrap+.fin-hist-wrap{border-top:1px solid var(--border)}
 .fin-hist-delete-bg{position:absolute;right:0;top:0;bottom:0;width:0;background:rgba(239,68,68,.15);display:flex;align-items:center;justify-content:center;color:var(--red);font-size:18px;pointer-events:none;transition:width .15s}
+@media(min-width:769px){.fin-hist-delete-bg{display:none}}
 .fin-hist-item{position:relative;background:transparent;touch-action:pan-y;transition:transform .2s ease}
 .fin-hist-item:hover{background:var(--s2)}
 .fin-hist-del-btn{width:32px;height:32px;background:none;border:none;cursor:pointer;color:var(--text3);border-radius:8px;display:flex;align-items:center;justify-content:center;opacity:0;transition:all .15s;flex-shrink:0;margin-left:4px}
@@ -831,8 +833,8 @@ select option{background:var(--s2)}
 <div class="overlay" id="m-remarcar"><div class="modal"><div class="modal-title">📅 Alterar data/hora</div><div class="mf"><label>Lembrete</label><div id="remarcar-titulo" style="font-size:13px;color:var(--text2);padding:6px 0;font-style:italic;line-height:1.4"></div></div><div class="mf-row"><div class="mf"><label>Nova data</label><input type="date" id="remarcar-data"/></div><div class="mf"><label>Novo horário</label><input type="time" id="remarcar-hora"/></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-remarcar')">Cancelar</button><button class="btn-save" id="remarcar-btn" onclick="salvarRemarcar()">Salvar</button></div></div></div>
 <div class="overlay" id="m-lembrete"><div class="modal"><div class="modal-title">Novo lembrete</div><div class="mf"><label>O que lembrar?</label><textarea id="ml-titulo" placeholder="Descreva o lembrete..."></textarea></div><div class="mf-row"><div class="mf"><label>Data</label><input type="date" id="ml-data"/></div><div class="mf"><label>Horário</label><input type="time" id="ml-hora"/></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-lembrete')">Cancelar</button><button class="btn-save" id="sl-btn" onclick="saveLembrete()">Criar</button></div></div></div>
 <div class="overlay" id="m-remedio"><div class="modal"><div class="modal-title">Cadastrar medicamento</div><div class="mf"><label>Nome</label><input type="text" id="mr-nome" placeholder="Ex: Nebivolol 5mg"/></div><div class="mf-row"><div class="mf"><label>Dose</label><input type="text" id="mr-dose" placeholder="1 comprimido"/></div><div class="mf"><label>A cada</label><select id="mr-int"><option value="4">4h</option><option value="6">6h</option><option value="8">8h</option><option value="12" selected>12h</option><option value="24">24h</option></select></div></div><div class="mf-row"><div class="mf"><label>Dias</label><input type="number" id="mr-dias" placeholder="30" min="1"/></div><div class="mf"><label>Primeira dose</label><input type="time" id="mr-inicio"/></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-remedio')">Cancelar</button><button class="btn-save" id="sr-btn" onclick="saveRemedio()">Cadastrar</button></div></div></div>
-<div class="overlay" id="m-entrada"><div class="modal"><div class="modal-title">💰 Registrar entrada</div><div class="mf"><label>Valor (R$)</label><input type="number" id="me-val" placeholder="0,00" step="0.01" min="0"/></div><div class="mf"><label>Descrição</label><input type="text" id="me-desc" placeholder="Ex: Salário, freelance..."/></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-entrada')">Cancelar</button><button class="btn-save" id="se-btn" onclick="saveEntrada()">Registrar</button></div></div></div>
-<div class="overlay" id="m-gasto"><div class="modal"><div class="modal-title">Registrar gasto</div><div class="mf"><label>Valor (R$)</label><input type="number" id="mg-val" placeholder="0,00" step="0.01" min="0"/></div><div class="mf-row"><div class="mf"><label>Categoria</label><select id="mg-cat"><option value="alimentacao">🍔 Alimentação</option><option value="mercado">🛒 Mercado</option><option value="transporte">🚗 Transporte</option><option value="saude">💊 Saúde</option><option value="lazer">🎮 Lazer</option><option value="moradia">🏠 Moradia</option><option value="educacao">📚 Educação</option><option value="outro">📦 Outro</option></select></div><div class="mf"><label>Descrição</label><input type="text" id="mg-desc" placeholder="Opcional"/></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-gasto')">Cancelar</button><button class="btn-save" id="sg-btn" onclick="saveGasto()">Registrar</button></div></div></div>
+<div class="overlay" id="m-entrada"><div class="modal"><div class="modal-title">💰 Registrar entrada</div><div class="mf"><label>Descrição</label><input type="text" id="me-desc" placeholder="Ex: Salário, freelance, pensão..."/></div><div class="mf"><label>Valor (R$)</label><input type="number" id="me-val" placeholder="0,00" step="0.01" min="0"/></div><div class="mf"><label>Data</label><input type="date" id="me-data"/></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-entrada')">Cancelar</button><button class="btn-save" id="se-btn" onclick="saveEntrada()">Registrar</button></div></div></div>
+<div class="overlay" id="m-gasto"><div class="modal"><div class="modal-title">Registrar gasto</div><div class="mf"><label>Descrição</label><input type="text" id="mg-desc" placeholder="Ex: Mercado, combustível..."/></div><div class="mf-row"><div class="mf"><label>Valor (R$)</label><input type="number" id="mg-val" placeholder="0,00" step="0.01" min="0"/></div><div class="mf"><label>Categoria</label><select id="mg-cat"><option value="alimentacao">🍔 Alimentação</option><option value="mercado">🛒 Mercado</option><option value="transporte">🚗 Transporte</option><option value="saude">💊 Saúde</option><option value="lazer">🎮 Lazer</option><option value="moradia">🏠 Moradia</option><option value="educacao">📚 Educação</option><option value="outro">📦 Outro</option></select></div></div><div class="mf"><label>Data</label><input type="date" id="mg-data"/></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-gasto')">Cancelar</button><button class="btn-save" id="sg-btn" onclick="saveGasto()">Registrar</button></div></div></div>
 <div class="overlay" id="m-cofre"><div class="modal"><div class="modal-title">Novo segredo</div><div class="mf"><label>Tipo</label><select id="ct" onchange="updateCofreFields()"><option value="senha">🔑 Senha / Login</option><option value="cartao">💳 Cartão</option><option value="nota">📝 Nota secreta</option><option value="outro">📦 Outro</option></select></div><div class="mf"><label>Nome</label><input type="text" id="cn" placeholder="Ex: Gmail, Netflix..."/></div><div id="cf-senha"><div class="mf"><label>Email/Usuário</label><input type="text" id="ce" placeholder="seu@email.com"/></div><div class="mf"><label>Senha</label><input type="password" id="cs-pw" placeholder="••••••••"/></div><div class="mf"><label>URL</label><input type="text" id="cu" placeholder="https://..."/></div></div><div id="cf-cartao" style="display:none"><div class="mf"><label>Número</label><input type="text" id="cc-num" placeholder="•••• •••• •••• ••••"/></div><div class="mf-row"><div class="mf"><label>Validade</label><input type="text" id="cc-val" placeholder="MM/AA"/></div><div class="mf"><label>CVV</label><input type="password" id="cc-cvv" placeholder="•••"/></div></div></div><div id="cf-nota" style="display:none"><div class="mf"><label>Conteúdo</label><textarea id="cn-txt" placeholder="Nota secreta..."></textarea></div></div><div id="cf-outro" style="display:none"><div class="mf"><label>Conteúdo</label><textarea id="co-txt" placeholder="Informação importante..."></textarea></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-cofre')">Cancelar</button><button class="btn-save" id="sc-btn" onclick="saveCofre()">Salvar</button></div></div></div>
 <div class="clara-thinking" id="clara-thinking">
   <div class="ct-stars">
@@ -845,6 +847,7 @@ select option{background:var(--s2)}
 <div class="toast" id="toast"></div>
 <div class="toast-undo" id="toast-undo">
   <span class="toast-undo-msg" id="toast-undo-msg">Lista excluída</span>
+  <span class="toast-undo-count" id="toast-undo-count">5</span>
   <button class="toast-undo-btn" onclick="undoDelete()">Desfazer</button>
 </div>
 <script type="module">
@@ -1274,7 +1277,16 @@ function openModal(id){
     document.getElementById('ml-titulo').value='';
   }
   if(id==='m-remedio'){const{hora}=nowLocal();document.getElementById('mr-inicio').value=hora;document.getElementById('mr-nome').value='';}
-  if(id==='m-gasto'){document.getElementById('mg-val').value='';document.getElementById('mg-desc').value='';}
+  if(id==='m-gasto'){
+    document.getElementById('mg-val').value='';
+    document.getElementById('mg-desc').value='';
+    document.getElementById('mg-data').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+  }
+  if(id==='m-entrada'){
+    document.getElementById('me-val').value='';
+    document.getElementById('me-desc').value='';
+    document.getElementById('me-data').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+  }
   document.getElementById(id).classList.add('open');
 }
 function closeModal(id){document.getElementById(id).classList.remove('open');}
@@ -1284,16 +1296,34 @@ async function saveRemedio(){const nome=document.getElementById('mr-nome').value
 async function saveEntrada(){
   const valor=parseFloat(document.getElementById('me-val').value);
   const descricao=document.getElementById('me-desc').value||'Entrada';
+  const dataInput=document.getElementById('me-data').value;
   if(!valor||valor<=0){showToast('Informe o valor ⚠️');return;}
   const btn=document.getElementById('se-btn');btn.textContent='...';btn.disabled=true;
   try{
-    const r=await fetch(`/forms/gasto/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({valor:-valor,categoria:'entrada',descricao})});
+    const body={valor:-valor,categoria:'entrada',descricao};
+    if(dataInput)body.data=dataInput;
+    const r=await fetch(`/forms/gasto/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(r.ok){closeModal('m-entrada');showToast('Entrada registrada! 💰');await loadAll();renderFin();}
     else showToast('Erro ⚠️');
   }catch{showToast('Erro ⚠️');}
   btn.textContent='Registrar';btn.disabled=false;
 }
-async function saveGasto(){const valor=parseFloat(document.getElementById('mg-val').value),categoria=document.getElementById('mg-cat').value,descricao=document.getElementById('mg-desc').value||categoria;if(!valor||valor<=0){showToast('Informe o valor ⚠️');return;}const btn=document.getElementById('sg-btn');btn.textContent='...';btn.disabled=true;try{const r=await fetch(`/forms/gasto/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({valor,categoria,descricao})});if(r.ok){closeModal('m-gasto');showToast('Gasto registrado! ✅');await loadAll();renderFin();}else showToast('Erro ⚠️');}catch{showToast('Erro ⚠️');}btn.textContent='Registrar';btn.disabled=false;}
+async function saveGasto(){
+  const valor=parseFloat(document.getElementById('mg-val').value);
+  const categoria=document.getElementById('mg-cat').value;
+  const descricao=document.getElementById('mg-desc').value||categoria;
+  const dataInput=document.getElementById('mg-data').value;
+  if(!valor||valor<=0){showToast('Informe o valor ⚠️');return;}
+  const btn=document.getElementById('sg-btn');btn.textContent='...';btn.disabled=true;
+  try{
+    const body={valor,categoria,descricao};
+    if(dataInput)body.data=dataInput;
+    const r=await fetch(`/forms/gasto/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(r.ok){closeModal('m-gasto');showToast('Gasto registrado! ✅');await loadAll();renderFin();}
+    else showToast('Erro ⚠️');
+  }catch{showToast('Erro ⚠️');}
+  btn.textContent='Registrar';btn.disabled=false;
+}
 let swReg=null,vapidPublicKey='';
 async function initPWA(){if(!('serviceWorker' in navigator))return;try{swReg=await navigator.serviceWorker.register('/sw.js?v=3');}catch(e){}}
 function urlBase64ToUint8Array(b){const p='='.repeat((4-b.length%4)%4);const s=(b+p).replace(/-/g,'+').replace(/_/g,'/');const r=atob(s);return Uint8Array.from([...r].map(c=>c.charCodeAt(0)));}
@@ -1319,22 +1349,31 @@ async function addItem(listaId){const inp=document.getElementById('add-'+listaId
 async function removeItem(listaId,itemId){try{const r=await fetch(`/forms/lista-item/${listaId}/${itemId}`,{method:'DELETE'});const d=await r.json();const lista=allListas.find(l=>l.id===listaId);if(lista)lista.items=d.items;displayListas();}catch{showToast('Erro ⚠️');}}
 let _undoTimer=null,_undoListaId=null,_undoListaData=null;
 
+let _undoCountInterval=null;
 async function deletarLista(listaId){
   const lista=allListas.find(l=>l.id===listaId);
   if(!lista)return;
-  // Remove da UI imediatamente
   _undoListaId=listaId;
   _undoListaData=lista;
   allListas=allListas.filter(l=>l.id!==listaId);
   displayListas();
-  // Mostra toast com desfazer
   const toastEl=document.getElementById('toast-undo');
+  const countEl=document.getElementById('toast-undo-count');
   document.getElementById('toast-undo-msg').textContent=`"${lista.name}" excluída`;
   toastEl.classList.add('show');
-  // Timer de 5s para deletar de verdade
+  // Countdown
+  let secs=5;
+  if(countEl)countEl.textContent=secs;
+  if(_undoCountInterval)clearInterval(_undoCountInterval);
+  _undoCountInterval=setInterval(()=>{
+    secs--;
+    if(countEl)countEl.textContent=secs;
+    if(secs<=0)clearInterval(_undoCountInterval);
+  },1000);
   if(_undoTimer)clearTimeout(_undoTimer);
   _undoTimer=setTimeout(async()=>{
     toastEl.classList.remove('show');
+    clearInterval(_undoCountInterval);
     try{await fetch(`/forms/lista/${listaId}`,{method:'DELETE'});}catch{}
     _undoListaId=null;_undoListaData=null;
   },5000);
@@ -1343,6 +1382,7 @@ async function deletarLista(listaId){
 function undoDelete(){
   if(!_undoListaData)return;
   clearTimeout(_undoTimer);
+  clearInterval(_undoCountInterval);
   allListas.unshift(_undoListaData);
   displayListas();
   document.getElementById('toast-undo').classList.remove('show');
