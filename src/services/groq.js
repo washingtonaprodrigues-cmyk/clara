@@ -352,19 +352,42 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       setTimeout(() => reject(new Error('timeout')), 15000)
     );
 
-    const completion = await Promise.race([
-      groq.chat.completions.create({
-        model: modeloEscolhido,
-        messages: [
-          { role: 'system', content: buildPersonality(tom, name, false) + contexto },
-          ...history.slice(-6), // ── Reduzido de 10 para 6 mensagens de histórico ──
-          { role: 'user', content: message }
-        ],
+    const msgs = [
+      { role: 'system', content: buildPersonality(tom, name, false) + contexto },
+      ...history.slice(-6),
+      { role: 'user', content: message }
+    ];
+
+    // Tenta com modelo escolhido, faz fallback para leve se der rate limit
+    async function tentarComModelo(modelo) {
+      return groq.chat.completions.create({
+        model: modelo,
+        messages: msgs,
         temperature: tom === 'sarcastico' ? 0.9 : 0.7,
         max_tokens: isCurta ? 80 : 420,
-      }),
-      timeoutPromise
-    ]);
+      });
+    }
+
+    let completion;
+    try {
+      completion = await Promise.race([tentarComModelo(modeloEscolhido), timeoutPromise]);
+    } catch (e1) {
+      if (isRateLimit(e1) && modeloEscolhido !== MODEL_LEVE) {
+        console.log(`[Fallback] ${modeloEscolhido} limitado, tentando ${MODEL_LEVE}...`);
+        try {
+          completion = await Promise.race([tentarComModelo(MODEL_LEVE), timeoutPromise]);
+        } catch (e2) {
+          if (isRateLimit(e2) && phone) {
+            const tipo = isTPD(e2) ? 'tpd' : 'rpm';
+            return await ativarPausaCreativa(phone, tipo);
+          }
+          throw e2;
+        }
+      } else {
+        throw e1;
+      }
+    }
+
     return completion.choices[0].message.content.trim();
 
   } catch (e) {
