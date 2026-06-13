@@ -39,13 +39,22 @@ async function getJornada(userId) {
 
 async function saveUserPreference(userId, name, tom, saldo = null) {
   const data = {};
-  if (name) data.name = name;
+
+  // ── FIX: só atualiza o nome se for uma string não vazia e não parecer apelido de contexto ──
+  // Nunca sobrescreve com null — só atualiza se vier explicitamente
+  if (name && typeof name === 'string' && name.trim().length > 0) {
+    data.name = name.trim();
+  }
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
   let meta = {};
   if (user?.metadata) { try { meta = JSON.parse(user.metadata); } catch {} }
 
-  if (tom) meta.tom = tom;
+  // ── FIX: só atualiza tom se vier explicitamente (não null, não undefined, não vazio) ──
+  if (tom && typeof tom === 'string' && tom.trim().length > 0) {
+    meta.tom = tom.trim();
+  }
+
   if (saldo !== null && saldo !== undefined && !isNaN(saldo)) meta.saldo = parseFloat(saldo);
 
   data.metadata = JSON.stringify(meta);
@@ -67,17 +76,13 @@ async function getUserPreference(userId) {
 }
 
 // ====================== MEMÓRIA PESSOAL ======================
-// Armazena informações pessoais extraídas das conversas
-// Ex: filhos, pets, profissão, rotina, datas importantes, objetivos
 
 const PERSONAL_INFO_TYPE = 'info_pessoal';
 
-// Salva ou atualiza uma informação pessoal por chave
-// chave: identificador único (ex: 'filho_nome_1', 'pet_thor', 'profissao')
-// valor: string com a informação
-// categoria: 'familia' | 'trabalho' | 'rotina' | 'saude' | 'objetivos' | 'datas' | 'outro'
+// ── FIX: lista de chaves que NÃO devem ser salvas como nome no preference ──
+const CHAVES_PROTEGIDAS_NOME = ['profissao', 'ocupacao', 'cargo', 'area', 'setor', 'empresa', 'trabalho'];
+
 async function savePersonalInfo(userId, chave, valor, categoria = 'outro') {
-  // Verifica se já existe uma memória com essa chave
   const existing = await prisma.memory.findFirst({
     where: {
       userId,
@@ -87,7 +92,6 @@ async function savePersonalInfo(userId, chave, valor, categoria = 'outro') {
   });
 
   if (existing) {
-    // Atualiza só se o valor mudou
     if (existing.content === valor) return existing;
     return prisma.memory.update({
       where: { id: existing.id },
@@ -108,7 +112,6 @@ async function savePersonalInfo(userId, chave, valor, categoria = 'outro') {
   });
 }
 
-// Retorna todas as infos pessoais do usuário, agrupadas por categoria
 async function getPersonalInfo(userId, categoria = null) {
   const where = { userId, type: PERSONAL_INFO_TYPE };
   const mems = await prisma.memory.findMany({
@@ -126,7 +129,6 @@ async function getPersonalInfo(userId, categoria = null) {
   return result;
 }
 
-// Formata o perfil pessoal como texto para injetar no contexto da IA
 async function buildPersonalContext(userId) {
   const infos = await getPersonalInfo(userId);
   if (Object.keys(infos).length === 0) return '';
@@ -303,15 +305,12 @@ async function getMonthExpenses(userId) {
   });
 }
 
-
 // ====================== CONTATOS ======================
 
 async function saveContact(userId, { nome, phone, relation = null, notes = null }) {
-  // Normaliza o telefone (só números, com 55 se necessário)
   let phoneClean = phone.replace(/\D/g, '');
   if (!phoneClean.startsWith('55') && phoneClean.length <= 11) phoneClean = '55' + phoneClean;
 
-  // Upsert: atualiza se já existe, cria se não
   const existing = await prisma.contact.findFirst({
     where: { userId, phone: phoneClean }
   });
@@ -335,15 +334,13 @@ async function getContacts(userId) {
   });
 }
 
-// Busca contato por nome (busca parcial, case-insensitive)
 async function findContactByName(userId, nome) {
-  const contacts = await prisma.contact.findMany({
+  return prisma.contact.findMany({
     where: {
       userId,
       name: { contains: nome, mode: 'insensitive' }
     }
   });
-  return contacts;
 }
 
 // ====================== EXPORTS ======================
