@@ -478,8 +478,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .modal-title{font-family:'Inter',sans-serif;font-size:16px;font-weight:600;color:var(--text);margin-bottom:18px}
 .mf{margin-bottom:12px}
 .mf label{display:block;font-size:11px;font-weight:500;color:var(--text2);margin-bottom:5px}
-.mf input,.mf select,.mf textarea{width:100%;padding:9px 12px;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none}
-.mf input[type="date"]{font-size:12px;padding:9px 6px}
+.mf input,.mf textarea{width:100%;padding:9px 12px;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none}
+.mf select{width:100%;padding:9px 32px 9px 12px;background:var(--s3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239CA3AF' stroke-width='2' stroke-linecap='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;cursor:pointer}
+.mf select:focus{border-color:var(--accent)}
+.mf input[type="date"]{font-size:13px;padding:9px 12px;cursor:pointer}
+.mf input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(.5);cursor:pointer}
 .mf textarea{resize:none;height:65px}
 .mf input:focus,.mf select:focus,.mf textarea:focus{border-color:var(--accent)}
 .mf-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
