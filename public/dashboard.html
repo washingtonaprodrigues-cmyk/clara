@@ -373,12 +373,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .cofre-btn{width:26px;height:26px;border:none;background:none;cursor:pointer;opacity:.4;transition:opacity .15s;border-radius:6px;display:flex;align-items:center;justify-content:center}
 .cofre-btn:hover{opacity:1;background:var(--s3)}
 .cofre-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
-.cofre-field{font-size:11px;color:var(--text3);margin-bottom:5px;display:flex;align-items:center;gap:5px}
+.cofre-field{font-size:11px;color:var(--text3);margin-bottom:8px;display:flex;align-items:center;gap:8px}
 .cofre-val{color:var(--text2);font-family:monospace}
 .cofre-hidden{letter-spacing:2px;color:var(--text3)}
-.cofre-eye{background:none;border:none;cursor:pointer;opacity:.4;transition:opacity .15s;display:flex;align-items:center}
-.cofre-eye:hover{opacity:1}
-.cofre-eye svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.cofre-eye{background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.15);cursor:pointer;opacity:.9;transition:all .15s;display:flex;align-items:center;padding:5px 8px;border-radius:8px;color:#C4B5FD}
+.cofre-eye:hover{opacity:1;background:rgba(139,92,246,.2)}
+.cofre-eye svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 .cofre-date{font-size:10px;color:var(--text3);margin-top:8px}
 .pref-section{padding:16px 20px;border-bottom:1px solid var(--border)}
 .pref-label{font-size:11px;font-weight:600;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.6px}
@@ -1004,7 +1004,7 @@ async function delGasto(id,wrapEl){
 }
 
 async function renderCofre(){const el=document.getElementById('cofre-body');el.innerHTML='<div class="spin"></div>';try{const r=await fetch(`/forms/cofre/${phone}`);const items=await r.json();displayCofre(items);}catch{el.innerHTML='<div class="empty"><span class="empty-icon">🔐</span>Nenhum segredo salvo</div>';}}
-function displayCofre(items){const el=document.getElementById('cofre-body');if(!items.length){el.innerHTML='<div class="empty"><span class="empty-icon">🔐</span>Nenhum segredo salvo ainda</div>';return;}const icons={senha:'🔑',cartao:'💳',nota:'📝',outro:'📦'};el.innerHTML=items.map(item=>{let d={};try{d=JSON.parse(item.content);}catch{}let fields='';if(d.tipo==='senha'){if(d.email)fields+=`<div class="cofre-field"><span style="min-width:50px">Email:</span><span class="cofre-val">${d.email}</span></div>`;if(d.senha)fields+=`<div class="cofre-field"><span style="min-width:50px">Senha:</span><span class="cofre-hidden" id="pw-${item.id}">••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.senha)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}else if(d.tipo==='cartao'){if(d.num)fields+=`<div class="cofre-field"><span style="min-width:50px">Número:</span><span class="cofre-hidden" id="pw-${item.id}">•••• •••• •••• ••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.num)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}else{const txt=d.nota||d.outro||'';if(txt)fields+=`<div class="cofre-field"><span class="cofre-hidden" id="pw-${item.id}">••••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(txt)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}return`<div class="cofre-card"><div class="cofre-top"><div class="cofre-name">${icons[d.tipo]||'🔐'} ${d.nome||'Sem nome'} <span class="cofre-badge">🔒</span></div><div class="cofre-actions"><button class="cofre-btn" onclick="copyCofre('${item.id}',${JSON.stringify(JSON.stringify(d))})"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button><button class="cofre-btn" onclick="delCofre('${item.id}')" style="color:var(--red)"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button></div></div>${fields}<div class="cofre-date">Salvo em ${fmtD(item.createdAt)}</div></div>`;}).join('');}
+function displayCofre(items){const el=document.getElementById('cofre-body');if(!items.length){el.innerHTML='<div class="empty"><span class="empty-icon">🔐</span>Nenhum segredo salvo ainda</div>';return;}const icons={senha:'🔑',cartao:'💳',nota:'📝',outro:'📦'};el.innerHTML=items.map(item=>{let d={};try{d=JSON.parse(item.content);}catch{}let fields='';if(d.tipo==='senha'){if(d.email)fields+=`<div class="cofre-field"><span style="min-width:50px">Email:</span><span class="cofre-val">${d.email}</span></div>`;if(d.senha)fields+=`<div class="cofre-field"><span style="min-width:50px">Senha:</span><span class="cofre-hidden" id="pw-${item.id}">••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.senha)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}else if(d.tipo==='cartao'){if(d.num)fields+=`<div class="cofre-field"><span style="min-width:50px">Número:</span><span class="cofre-hidden" id="pw-${item.id}">•••• •••• •••• ••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.num)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}else{const txt=d.nota||d.outro||'';if(txt)fields+=`<div class="cofre-field"><span class="cofre-hidden" id="pw-${item.id}">••••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(txt)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}return`<div class="cofre-card"><div class="cofre-top"><div class="cofre-name">${icons[d.tipo]||'🔐'} ${d.nome||'Sem nome'} <span class="cofre-badge">🔒</span></div><div class="cofre-actions"><button class="med2-del" onclick="delCofre('${item.id}')" title="Excluir"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button></div></div>${fields}<div class="cofre-date">Salvo em ${fmtD(item.createdAt)}</div></div>`;}).join('');}
 function togglePw(id,b64){const el=document.getElementById('pw-'+id);if(!el)return;const decoded=decodeURIComponent(escape(atob(b64)));if(el.classList.contains('cofre-hidden')){el.textContent=decoded;el.classList.remove('cofre-hidden');el.classList.add('cofre-val');}else{el.textContent='••••••••';el.classList.add('cofre-hidden');el.classList.remove('cofre-val');}}
 function copyCofre(id,ds){try{const d=JSON.parse(ds);navigator.clipboard.writeText(d.senha||d.num||d.nota||d.outro||'');showToast('Copiado! 📋');}catch{showToast('Erro ao copiar');}}
 async function delCofre(id){if(!confirm('Excluir?'))return;try{await fetch(`/forms/cofre/${id}`,{method:'DELETE'});showToast('Excluído ✅');renderCofre();}catch{showToast('Erro ⚠️');}}
@@ -1063,7 +1063,8 @@ function initDragDrop(listaId){
     if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragSrcId);}
   }
   function onDragEnd(){
-    getItems().forEach(i=>{i.classList.remove('dragging','drag-over');});
+    getItems().forEach(i=>{i.classList.remove('dragging','drag-over');i._dragging=false;});
+    if(dragSrc)dragSrc._dragging=true; // flag to block the click that fires after dragend
     dragSrc=null;
   }
   function onDragOver(e){
@@ -1135,7 +1136,9 @@ function initDragDrop(listaId){
 
   getItems().forEach(item=>{
     item.setAttribute('draggable','true');
+    item._dragging=false;
     item.addEventListener('dragstart',onDragStart);
+    item.addEventListener('click',function(e){if(this._dragging){e.stopImmediatePropagation();this._dragging=false;}});
     item.addEventListener('dragend',onDragEnd);
     item.addEventListener('dragover',onDragOver);
     item.addEventListener('drop',onDrop);
