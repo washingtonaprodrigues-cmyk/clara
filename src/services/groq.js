@@ -22,7 +22,6 @@ function isTPD(error) {
   return msg.includes('tokens per day') || msg.includes('tpd') || msg.includes('daily');
 }
 
-// ── Desculpas criativas para rate limit — sem horário ──
 const DESCULPAS_RPM = [
   'Um segundo, deixa eu respirar! 😅',
   'Ei, muita coisa de uma vez! Já já tô aqui 🏃',
@@ -39,15 +38,12 @@ const DESCULPAS_TPD = [
   'Precisei sair um momento, mas não fui embora não 😄',
 ];
 
-// Controle por phone para avisar quando voltar
 const _pausaAtiva = {};
 
 async function ativarPausaCreativa(phone, tipo) {
   const desculpas = tipo === 'rpm' ? DESCULPAS_RPM : DESCULPAS_TPD;
   const msg = desculpas[Math.floor(Math.random() * desculpas.length)];
   console.log(`[RateLimit] ${tipo.toUpperCase()} para ${phone}`);
-
-  // Agenda aviso de retorno após 60s (rpm) ou 5min (tpd)
   const delay = tipo === 'rpm' ? 60000 : 300000;
   if (!_pausaAtiva[phone]) {
     _pausaAtiva[phone] = true;
@@ -62,18 +58,15 @@ async function ativarPausaCreativa(phone, tipo) {
           'Pronta! O que eu perdi? ✨',
           'De volta! Pode continuar 😊',
         ];
-        const aviso = retornos[Math.floor(Math.random() * retornos.length)];
-        await sendMessage(phone, aviso);
+        await sendMessage(phone, retornos[Math.floor(Math.random() * retornos.length)]);
       } catch(e) {
         console.error('[RateLimit] Erro ao avisar retorno:', e.message);
       }
     }, delay);
   }
-
   return msg;
 }
 
-// ── CLASSIFY PROMPT ──
 const SYSTEM_PROMPT = () => `Você é a Clara, assistente pessoal brasileira.
 Retorne APENAS JSON. Hoje é ${hoje()}.
 
@@ -114,7 +107,6 @@ TIPOS E FORMATOS:
 {"tipo":"saldo","valor":1400.0}
 {"tipo":"lista_compras","nome":"título","itens":["item1","item2"]}
 {"tipo":"lista_marcar","numeros":[2,3],"nomes":["nome do item"],"lista":"nome da lista ou null"}
-  nomes: quando citar nome do item; lista: quando citar nome da lista
 {"tipo":"lista_adicionar","item":"nome"}
 {"tipo":"salvar_contato","nome":"nome","phone":"número","relation":"relação ou null","notes":null}
 {"tipo":"deletar_contato","nome":"nome"}
@@ -168,7 +160,6 @@ EXEMPLOS:
 
 async function classify(message, phone = null, contexto = '') {
   try {
-    // Se há contexto de conversa, injeta para resolver referências vagas
     const systemContent = contexto
       ? SYSTEM_PROMPT() + `\n\nCONTEXTO RECENTE DA CONVERSA (use para resolver "lá", "dela", "deles", "de lá"):\n${contexto}`
       : SYSTEM_PROMPT();
@@ -195,13 +186,14 @@ async function classify(message, phone = null, contexto = '') {
   }
 }
 
-// ── EXTRACT ──
 const EXTRACT_SYSTEM = `Extrator de informações pessoais. Retorne APENAS array JSON ou [].
 Categorias: familia | trabalho | rotina | saude | objetivos | datas | outro
 Extraia APENAS o que o usuário declarou explicitamente sobre si mesmo. NUNCA deduza.
+NUNCA extraia nome, apelido, profissão ou cargo como informação de nome — isso vai para preferência separada.
 
 "minha filha se chama Ana" → [{"chave":"filha_ana","valor":"Filha chamada Ana","categoria":"familia"}]
 "trabalho das 8 às 18h" → [{"chave":"horario_trabalho","valor":"Trabalha das 8h às 18h","categoria":"rotina"}]
+"sou marketeiro" → [{"chave":"profissao","valor":"Trabalha com marketing","categoria":"trabalho"}]
 "oi" → []
 "gastei 50" → []`;
 
@@ -254,9 +246,7 @@ async function searchWebGroq(query, locationContext = '') {
             max_tokens: 200,
           });
           resposta = trad.choices[0].message.content.trim();
-        } catch(e) {
-          resposta = data.answer;
-        }
+        } catch(e) { resposta = data.answer; }
       } else {
         resposta = data.answer;
       }
@@ -274,8 +264,6 @@ async function searchWebGroq(query, locationContext = '') {
     }
 
     if (!resposta) return "Não encontrei informações sobre isso agora.";
-
-    console.log(`[Search] Resposta: ${resposta.substring(0, 80)}...`);
     return resposta;
 
   } catch (error) {
@@ -284,7 +272,6 @@ async function searchWebGroq(query, locationContext = '') {
   }
 }
 
-// ── PERSONALIDADES ──
 function buildPersonality(tom, name, privateMode = false) {
   const nomeTxt = name ? `O nome da pessoa é ${name}.` : '';
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
@@ -298,7 +285,8 @@ function buildPersonality(tom, name, privateMode = false) {
 2. Você TEM acesso à internet — NUNCA diga que não consegue pesquisar.
 3. Ações já executadas em paralelo — confirme só quando pedido: "Anotado! ✅", "Lembrete criado! 🔔".
 4. NUNCA crie lembretes por conta própria.
-5. Use [PERFIL PESSOAL] e [AGENDA] naturalmente quando disponíveis — mas NUNCA invente compromissos, reuniões, tarefas ou listas que não estejam explicitamente no contexto. Se não souber, diga que não encontrou ou pergunte.`;
+5. Use [PERFIL PESSOAL] e [AGENDA] naturalmente quando disponíveis — mas NUNCA invente compromissos, reuniões, tarefas ou listas que não estejam explicitamente no contexto. Se não souber, diga que não encontrou ou pergunte.
+6. LIMITE DE RESPOSTA: ao listar agenda/lembretes, cite no máximo 3 itens e diga "e mais X" se houver mais. Respostas sempre abaixo de 250 palavras.`;
 
   if (privateMode) {
     return `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
@@ -402,7 +390,8 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
           { role: 'user', content: message }
         ],
         temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-        max_tokens: isCurta ? 80 : 400,
+        // ── FIX: aumentado para não cortar resposta de agenda longa ──
+        max_tokens: isCurta ? 80 : 600,
       }),
       timeoutPromise
     ]);
@@ -424,10 +413,7 @@ async function generateRelationshipSummary(recentMessages, currentSummary) {
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
       messages: [
-        {
-          role: 'system',
-          content: `Analise a conversa e extraia em 2-3 linhas: tom (formal/brincalhão/íntimo), apelidos usados, referências recorrentes. Seja específico para a Clara manter continuidade.`
-        },
+        { role: 'system', content: `Analise a conversa e extraia em 2-3 linhas: tom (formal/brincalhão/íntimo), apelidos usados, referências recorrentes. Seja específico para a Clara manter continuidade.` },
         { role: 'user', content: `Conversa:\n${msgs}\n\nResumo anterior: ${currentSummary || 'nenhum'}` }
       ],
       temperature: 0.3,
