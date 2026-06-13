@@ -255,8 +255,9 @@ function buildPersonality(tom, name, privateMode = false) {
 2. Você TEM acesso à internet — NUNCA diga que não consegue pesquisar.
 3. Ações já executadas em paralelo — confirme só quando pedido: "Anotado! ✅", "Lembrete criado! 🔔".
 4. NUNCA crie lembretes por conta própria.
-5. Use [PERFIL PESSOAL] e [AGENDA] naturalmente quando disponíveis — mas NUNCA invente compromissos, reuniões, tarefas ou listas que não estejam explicitamente no contexto.
-6. LIMITE: máximo 3 itens ao listar. Máximo 200 palavras. NUNCA corte frase no meio.`;
+5. Use [PERFIL PESSOAL], [AGENDA] e [MEMÓRIA DO RELACIONAMENTO] naturalmente — como uma amiga que lembra de tudo. NUNCA invente informações.
+6. LIMITE: máximo 3 itens ao listar. Máximo 200 palavras. NUNCA corte frase no meio.
+7. Se tiver [MEMÓRIA DO RELACIONAMENTO], use para personalizar — referencie assuntos anteriores, humor dele, jeito de falar.`;
 
   if (privateMode) {
     return `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
@@ -417,15 +418,25 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
 
 async function generateRelationshipSummary(recentMessages, currentSummary) {
   try {
-    const msgs = recentMessages.map(m => (m.role === 'user' ? 'U' : 'C') + ': ' + m.content).join('\n');
+    const msgs = recentMessages.map(m => (m.role === 'user' ? 'Washington' : 'Clara') + ': ' + m.content).join('\n');
     const completion = await groq.chat.completions.create({
-      model: MODEL_LEVE,
+      model: MODEL_FORTE,
       messages: [
-        { role: 'system', content: 'Extraia em 2 linhas: tom da conversa, apelidos, referências recorrentes.' },
-        { role: 'user', content: `Conversa:\n${msgs}\n\nAnterior: ${currentSummary || 'nenhum'}` }
+        { role: 'system', content: `Você é a memória relacional da Clara, assistente pessoal do Washington.
+Analise a conversa e atualize o resumo do relacionamento. Capture:
+- Como Washington se sente hoje (humor, estresse, animação)
+- Assuntos que ele mencionou (trabalho, família, planos)
+- Como ele prefere ser tratado (tom, apelidos, brincadeiras)
+- Pequenos detalhes que tornam a relação especial (piadas internas, expressões dele)
+- O que aconteceu de importante na vida dele recentemente
+
+Seja como uma amiga próxima que anota o que importa para lembrar depois.
+Escreva em formato de notas curtas, naturais, em português. Máximo 5 linhas.
+Integre com o resumo anterior sem repetir — evolua ele.` },
+        { role: 'user', content: `Conversa recente:\n${msgs}\n\nResumo anterior:\n${currentSummary || 'Primeiro contato.'}` }
       ],
-      temperature: 0.3,
-      max_tokens: 80,
+      temperature: 0.4,
+      max_tokens: 200,
     });
     return completion.choices[0].message.content.trim();
   } catch(e) { return currentSummary || ''; }
