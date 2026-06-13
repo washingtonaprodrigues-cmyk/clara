@@ -373,35 +373,12 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     try {
       completion = await Promise.race([tentarComModelo(modeloEscolhido), timeoutPromise]);
     } catch (e1) {
-      if (isRateLimit(e1) && modeloEscolhido !== MODEL_LEVE) {
-        console.log(`[Fallback] ${modeloEscolhido} limitado, tentando ${MODEL_LEVE}...`);
-        try {
-          // No fallback, simplifica o contexto para o 8b não se confundir
-          const sistemaSimples = buildPersonality(tom, name, false);
-          const msgsFallback = [
-            { role: 'system', content: sistemaSimples },
-            ...history.slice(-4),
-            { role: 'user', content: message }
-          ];
-          completion = await Promise.race([
-            groq.chat.completions.create({
-              model: MODEL_LEVE,
-              messages: msgsFallback,
-              temperature: 0.7,
-              max_tokens: isCurta ? 60 : 300,
-            }),
-            timeoutPromise
-          ]);
-        } catch (e2) {
-          if (isRateLimit(e2) && phone) {
-            const tipo = isTPD(e2) ? 'tpd' : 'rpm';
-            return await ativarPausaCreativa(phone, tipo);
-          }
-          throw e2;
-        }
-      } else {
-        throw e1;
+      // Se der rate limit, ativa pausa — melhor pausar do que perder a personalidade
+      if (isRateLimit(e1) && phone) {
+        const tipo = isTPD(e1) ? 'tpd' : 'rpm';
+        return await ativarPausaCreativa(phone, tipo);
       }
+      throw e1;
     }
 
     return completion.choices[0].message.content.trim();
