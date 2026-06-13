@@ -365,8 +365,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .fin-hist-del-btn:hover{background:rgba(239,68,68,.12);color:var(--red);opacity:1!important}
 @media(max-width:768px){.fin-hist-del-btn{display:none}}
 .fin-empty{text-align:center;padding:40px 16px;color:var(--text3)}
-.cofre-card{background:var(--s2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r);padding:14px;margin-bottom:8px}
-.cofre-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.cofre-card{background:var(--s2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r);padding:14px 14px 14px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px}
+.cofre-card-body{flex:1;min-width:0}
+.cofre-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px}
 .cofre-name{font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:7px}
 .cofre-badge{font-size:10px;font-weight:600;padding:2px 7px;border-radius:6px;background:rgba(239,68,68,.12);color:#FCA5A5}
 .cofre-actions{display:flex;gap:5px}
@@ -1004,7 +1005,7 @@ async function delGasto(id,wrapEl){
 }
 
 async function renderCofre(){const el=document.getElementById('cofre-body');el.innerHTML='<div class="spin"></div>';try{const r=await fetch(`/forms/cofre/${phone}`);const items=await r.json();displayCofre(items);}catch{el.innerHTML='<div class="empty"><span class="empty-icon">🔐</span>Nenhum segredo salvo</div>';}}
-function displayCofre(items){const el=document.getElementById('cofre-body');if(!items.length){el.innerHTML='<div class="empty"><span class="empty-icon">🔐</span>Nenhum segredo salvo ainda</div>';return;}const icons={senha:'🔑',cartao:'💳',nota:'📝',outro:'📦'};el.innerHTML=items.map(item=>{let d={};try{d=JSON.parse(item.content);}catch{}let fields='';if(d.tipo==='senha'){if(d.email)fields+=`<div class="cofre-field"><span style="min-width:50px">Email:</span><span class="cofre-val">${d.email}</span></div>`;if(d.senha)fields+=`<div class="cofre-field"><span style="min-width:50px">Senha:</span><span class="cofre-hidden" id="pw-${item.id}">••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.senha)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}else if(d.tipo==='cartao'){if(d.num)fields+=`<div class="cofre-field"><span style="min-width:50px">Número:</span><span class="cofre-hidden" id="pw-${item.id}">•••• •••• •••• ••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.num)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}else{const txt=d.nota||d.outro||'';if(txt)fields+=`<div class="cofre-field"><span class="cofre-hidden" id="pw-${item.id}">••••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(txt)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}return`<div class="cofre-card"><div class="cofre-top"><div class="cofre-name">${icons[d.tipo]||'🔐'} ${d.nome||'Sem nome'} <span class="cofre-badge">🔒</span></div><div class="cofre-actions"><button class="med2-del" onclick="delCofre('${item.id}')" title="Excluir"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button></div></div>${fields}<div class="cofre-date">Salvo em ${fmtD(item.createdAt)}</div></div>`;}).join('');}
+function displayCofre(items){const el=document.getElementById('cofre-body');if(!items.length){el.innerHTML='<div class="empty"><span class="empty-icon">🔐</span>Nenhum segredo salvo ainda</div>';return;}const icons={senha:'🔑',cartao:'💳',nota:'📝',outro:'📦'};el.innerHTML=items.map(item=>{let d={};try{d=JSON.parse(item.content);}catch{}let fields='';if(d.tipo==='senha'){if(d.email)fields+=`<div class="cofre-field"><span style="min-width:50px">Email:</span><span class="cofre-val">${d.email}</span></div>`;if(d.senha)fields+=`<div class="cofre-field"><span style="min-width:50px">Senha:</span><span class="cofre-hidden" id="pw-${item.id}">••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.senha)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}else if(d.tipo==='cartao'){if(d.num)fields+=`<div class="cofre-field"><span style="min-width:50px">Número:</span><span class="cofre-hidden" id="pw-${item.id}">•••• •••• •••• ••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.num)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}else{const txt=d.nota||d.outro||'';if(txt)fields+=`<div class="cofre-field"><span class="cofre-hidden" id="pw-${item.id}">••••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(txt)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}return`<div class="cofre-card"><div class="cofre-card-body"><div class="cofre-top"><div class="cofre-name">${icons[d.tipo]||'🔐'} ${d.nome||'Sem nome'} <span class="cofre-badge">🔒</span></div></div>${fields}<div class="cofre-date">Salvo em ${fmtD(item.createdAt)}</div></div><button class="med2-del" onclick="delCofre('${item.id}')" title="Excluir" style="flex-shrink:0;align-self:center"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button></div>`;}).join('');}
 function togglePw(id,b64){const el=document.getElementById('pw-'+id);if(!el)return;const decoded=decodeURIComponent(escape(atob(b64)));if(el.classList.contains('cofre-hidden')){el.textContent=decoded;el.classList.remove('cofre-hidden');el.classList.add('cofre-val');}else{el.textContent='••••••••';el.classList.add('cofre-hidden');el.classList.remove('cofre-val');}}
 function copyCofre(id,ds){try{const d=JSON.parse(ds);navigator.clipboard.writeText(d.senha||d.num||d.nota||d.outro||'');showToast('Copiado! 📋');}catch{showToast('Erro ao copiar');}}
 async function delCofre(id){if(!confirm('Excluir?'))return;try{await fetch(`/forms/cofre/${id}`,{method:'DELETE'});showToast('Excluído ✅');renderCofre();}catch{showToast('Erro ⚠️');}}
@@ -1052,19 +1053,19 @@ function displayListas(){const el=document.getElementById('listas-body');if(!all
 function initDragDrop(listaId){
   const card=document.getElementById('lista-'+listaId);
   if(!card)return;
-  let dragSrc=null,dragSrcId=null;
 
   function getItems(){return Array.from(card.querySelectorAll('.lista-item'));}
 
+  // ── Desktop: drag nativo ──
+  let dragSrc=null,dragSrcId=null;
   function onDragStart(e){
-    dragSrc=this;
-    dragSrcId=parseInt(this.dataset.itemId);
+    dragSrc=this;dragSrcId=parseInt(this.dataset.itemId);
     this.classList.add('dragging');
-    if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragSrcId);}
+    e.dataTransfer.effectAllowed='move';
+    e.dataTransfer.setData('text/plain',''+dragSrcId);
   }
   function onDragEnd(){
-    getItems().forEach(i=>{i.classList.remove('dragging','drag-over');i._dragging=false;});
-    if(dragSrc)dragSrc._dragging=true; // flag to block the click that fires after dragend
+    getItems().forEach(i=>i.classList.remove('dragging','drag-over'));
     dragSrc=null;
   }
   function onDragOver(e){
@@ -1076,76 +1077,67 @@ function initDragDrop(listaId){
   async function onDrop(e){
     e.preventDefault();
     if(!dragSrc||this===dragSrc)return;
-    const lista=allListas.find(l=>l.id===listaId);
-    if(!lista)return;
-    const arr=[...lista.items];
-    const srcIdx=arr.findIndex(i=>i.id===dragSrcId);
-    const dstIdx=arr.findIndex(i=>i.id===parseInt(this.dataset.itemId));
-    if(srcIdx<0||dstIdx<0)return;
-    const[moved]=arr.splice(srcIdx,1);
-    arr.splice(dstIdx,0,moved);
-    lista.items=arr;
-    displayListas();
-    try{await fetch('/forms/lista-reorder/'+listaId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:arr.map(i=>i.id)})});}catch{}
+    await reorderItems(listaId,dragSrcId,parseInt(this.dataset.itemId));
   }
 
-  // Touch drag
-  let touchDragSrc=null,touchDragId=null,touchClone=null;
+  // ── Mobile: touch com clone visual ──
+  let touchSrc=null,touchSrcId=null,clone=null,touchTarget=null;
   function onTouchStart(e){
     const item=this.closest('.lista-item');
     if(!item)return;
-    touchDragSrc=item;
-    touchDragId=parseInt(item.dataset.itemId);
-    touchClone=item.cloneNode(true);
-    touchClone.style.cssText='position:fixed;opacity:.7;pointer-events:none;z-index:9999;width:'+item.offsetWidth+'px;background:var(--s3);border-radius:8px;';
-    document.body.appendChild(touchClone);
-    item.classList.add('dragging');
+    e.stopPropagation();
+    touchSrc=item;touchSrcId=parseInt(item.dataset.itemId);
+    const rect=item.getBoundingClientRect();
+    clone=item.cloneNode(true);
+    clone.style.cssText=`position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;opacity:.75;pointer-events:none;z-index:9999;border-radius:10px;background:var(--s3);box-shadow:0 8px 24px rgba(0,0,0,.5);`;
+    document.body.appendChild(clone);
+    item.style.opacity='.3';
   }
   function onTouchMove(e){
-    if(!touchDragSrc)return;
+    if(!touchSrc)return;
     e.preventDefault();
     const t=e.touches[0];
-    if(touchClone){touchClone.style.left=(t.clientX-40)+'px';touchClone.style.top=(t.clientY-20)+'px';}
+    if(clone){
+      clone.style.left=(t.clientX-clone.offsetWidth/2)+'px';
+      clone.style.top=(t.clientY-20)+'px';
+    }
     getItems().forEach(i=>i.classList.remove('drag-over'));
     const el=document.elementFromPoint(t.clientX,t.clientY);
-    const target=el?.closest('.lista-item');
-    if(target&&target!==touchDragSrc)target.classList.add('drag-over');
+    touchTarget=el?.closest('.lista-item');
+    if(touchTarget&&touchTarget!==touchSrc)touchTarget.classList.add('drag-over');
   }
   async function onTouchEnd(e){
-    if(!touchDragSrc)return;
-    if(touchClone){document.body.removeChild(touchClone);touchClone=null;}
-    const t=e.changedTouches[0];
-    const el=document.elementFromPoint(t.clientX,t.clientY);
-    const target=el?.closest('.lista-item');
-    getItems().forEach(i=>i.classList.remove('dragging','drag-over'));
-    if(target&&target!==touchDragSrc){
-      const lista=allListas.find(l=>l.id===listaId);
-      if(lista){
-        const arr=[...lista.items];
-        const srcIdx=arr.findIndex(i=>i.id===touchDragId);
-        const dstIdx=arr.findIndex(i=>i.id===parseInt(target.dataset.itemId));
-        if(srcIdx>=0&&dstIdx>=0){
-          const[moved]=arr.splice(srcIdx,1);arr.splice(dstIdx,0,moved);
-          lista.items=arr;displayListas();
-          try{await fetch('/forms/lista-reorder/'+listaId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:arr.map(i=>i.id)})});}catch{}
-        }
-      }
+    if(!touchSrc)return;
+    if(clone){document.body.removeChild(clone);clone=null;}
+    touchSrc.style.opacity='';
+    getItems().forEach(i=>i.classList.remove('drag-over'));
+    if(touchTarget&&touchTarget!==touchSrc){
+      await reorderItems(listaId,touchSrcId,parseInt(touchTarget.dataset.itemId));
     }
-    touchDragSrc=null;touchDragId=null;
+    touchSrc=null;touchTarget=null;
+  }
+
+  async function reorderItems(listaId,srcId,dstId){
+    const lista=allListas.find(l=>l.id===listaId);
+    if(!lista)return;
+    const arr=[...lista.items];
+    const si=arr.findIndex(i=>i.id===srcId),di=arr.findIndex(i=>i.id===dstId);
+    if(si<0||di<0)return;
+    const[moved]=arr.splice(si,1);arr.splice(di,0,moved);
+    lista.items=arr;displayListas();
+    try{await fetch('/forms/lista-reorder/'+listaId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:arr.map(i=>i.id)})});}catch{}
   }
 
   getItems().forEach(item=>{
     item.setAttribute('draggable','true');
-    item._dragging=false;
     item.addEventListener('dragstart',onDragStart);
-    item.addEventListener('click',function(e){if(this._dragging){e.stopImmediatePropagation();this._dragging=false;}});
     item.addEventListener('dragend',onDragEnd);
     item.addEventListener('dragover',onDragOver);
     item.addEventListener('drop',onDrop);
     const handle=item.querySelector('.lista-drag-handle');
     if(handle){
       handle.addEventListener('touchstart',onTouchStart,{passive:true});
-      handle.addEventListener('touchmove',onTouchMove,{passive:false});
+      document.addEventListener('touchmove',onTouchMove,{passive:false,once:false});
       handle.addEventListener('touchend',onTouchEnd,{passive:true});
     }
   });
