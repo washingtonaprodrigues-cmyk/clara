@@ -752,6 +752,9 @@ function goRemToday(){remViewDate=new Date();renderRem();}
 function renderRem(){
   const el=document.getElementById('rem-timeline');
   const now=new Date(),todayStr=dateBRTStr(now),viewStr=dateBRTStr(remViewDate),isToday=viewStr===todayStr;
+  // Debug: log allRem dates
+  console.log('[renderRem] viewStr='+viewStr+' todayStr='+todayStr+' allRem='+allRem.length);
+  allRem.forEach(r=>console.log('  rem: confirmed='+r.confirmed+' sent='+r.sent+' date='+dateBRTStr(r.scheduledAt)+' msg='+r.message.substring(0,30)));
   const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'],meses=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
   const offset=-3*60,utc=remViewDate.getTime()+remViewDate.getTimezoneOffset()*60000,vd=new Date(utc+offset*60000);
   document.getElementById('rem-date-label').textContent=isToday?'Hoje':`${dias[vd.getDay()]}, ${pad(vd.getDate())} de ${meses[vd.getMonth()]}`;
