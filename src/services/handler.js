@@ -709,31 +709,50 @@ async function editarLembrete(user, phone, classified) {
   try {
     let titulo = (classified.titulo || '').toLowerCase().trim();
 
-    // ── FIX: título vazio → pega lembrete mais recente enviado/disparado ──
+    // Busca todos os lembretes não confirmados
+    const todosLembretes = await prisma.reminder.findMany({
+      where: { userId: user.id, confirmed: false },
+      orderBy: { scheduledAt: 'asc' }
+    });
+
     let encontrado = null;
+
     if (!titulo) {
-      // Tenta o último lembrete disparado (sent=true, não confirmado) ou o próximo a vencer
-      const lembretes = await prisma.reminder.findMany({
-        where: { userId: user.id, confirmed: false },
-        orderBy: { scheduledAt: 'asc' }
-      });
-      // Prefere o mais recente enviado (vencido)
-      encontrado = lembretes.find(r => r.sent) || lembretes[0] || null;
+      // Sem título: pega o último disparado (o que acabou de notificar)
+      // Ordena por scheduledAt desc para pegar o mais recente disparado
+      const enviados = todosLembretes.filter(r => r.sent)
+        .sort((a,b) => new Date(b.scheduledAt) - new Date(a.scheduledAt));
+      encontrado = enviados[0] || null;
+
+      // Se não tem nenhum sent, pega o próximo a vencer
+      if (!encontrado) {
+        encontrado = todosLembretes[0] || null;
+      }
     } else {
-      const lembretes = await prisma.reminder.findMany({
-        where: { userId: user.id, confirmed: false }
-      });
-      // Busca por similaridade no título
-      encontrado = lembretes.find(r => r.message.toLowerCase().includes(titulo));
-      // Fallback: busca por palavras-chave
+      // Com título: busca por correspondência
+      encontrado = todosLembretes.find(r => r.message.toLowerCase().includes(titulo));
+
+      // Fallback: palavras-chave com mais de 3 chars
       if (!encontrado) {
         const palavras = titulo.split(' ').filter(p => p.length > 3);
-        encontrado = lembretes.find(r =>
+        encontrado = todosLembretes.find(r =>
           palavras.some(p => r.message.toLowerCase().includes(p))
         );
       }
+
+      // Fallback: usa contexto da conversa para inferir
+      if (!encontrado && contextoClassify) {
+        const linhasCtx = contextoClassify.split('\n');
+        for (const linha of linhasCtx) {
+          const match = todosLembretes.find(r =>
+            linha.toLowerCase().includes(r.message.toLowerCase().substring(0, 15))
+          );
+          if (match) { encontrado = match; break; }
+        }
+      }
+
       if (!encontrado) {
-        await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕\n\nMe diz o nome certinho ou parte dele!`);
+        await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕\n\nMe diz o nome certinho!`);
         return;
       }
     }
