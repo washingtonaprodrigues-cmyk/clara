@@ -434,17 +434,22 @@ router.post('/lembrete/:phone', async (req, res) => {
 
     await memory.saveMemory(user.id, 'tarefa', titulo, { data, hora });
 
-    const { sendButtons } = require('../services/whatsapp');
-    const dataFormatada = scheduledAt.toLocaleString('pt-BR', {
-      timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short'
-    });
-
-    await sendButtons(phone,
-      `✅ Lembrete criado!\n\n📌 ${titulo}\n🕒 ${dataFormatada}\n\nVou te avisar no horário certinho.`,
-      [{ id: 'ver_lembretes', label: '📋 Ver lembretes' }, { id: 'menu', label: '🏠 Menu' }]
-    );
-
+    // ── FIX: res.json antes do sendButtons para não depender do WhatsApp ──
     res.json({ ok: true });
+
+    // Notifica no WhatsApp em background (não bloqueia a resposta)
+    try {
+      const { sendButtons } = require('../services/whatsapp');
+      const dataFormatada = scheduledAt.toLocaleString('pt-BR', {
+        timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short'
+      });
+      await sendButtons(phone,
+        `✅ Lembrete criado!\n\n📌 ${titulo}\n🕒 ${dataFormatada}\n\nVou te avisar no horário certinho.`,
+        [{ id: 'ver_lembretes', label: '📋 Ver lembretes' }, { id: 'menu', label: '🏠 Menu' }]
+      );
+    } catch(wErr) {
+      console.error('[lembrete] Erro ao notificar WhatsApp:', wErr.message);
+    }
   } catch (e) {
     console.error('Erro form lembrete:', e.message);
     res.status(500).json({ error: e.message });
