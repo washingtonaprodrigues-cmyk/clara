@@ -347,8 +347,22 @@ async function handleMessage(phone, text, location = null) {
 
     if (modoAtual === 'conversar') return await responderLivre(user, phone, text);
 
-    const classified = await classify(text, phone);
+    // ── Passa contexto da conversa para o classify resolver referências vagas ──
+    let contextoClassify = '';
+    try {
+      const history = await memory.getConversationHistory(user.id, 4);
+      if (history.length > 0) {
+        contextoClassify = history.map(m => `${m.role === 'user' ? 'Usuário' : 'Clara'}: ${m.content}`).join('\n');
+      }
+    } catch(e) {}
+
+    const classified = await classify(text, phone, contextoClassify);
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
+
+    // ── Intercepta: lista_marcar com hora → editar_lembrete ──
+    if (classified.tipo === 'lista_marcar' && (classified.nova_hora || classified.nova_data)) {
+      classified.tipo = 'editar_lembrete';
+    }
 
     if (LISTA_TIPOS.includes(classified.tipo)) {
       const listaResult = await executeListaAction(user, phone, classified);
@@ -395,6 +409,16 @@ async function handleMessage(phone, text, location = null) {
 
     if (classified.tipo === 'relatorio_financeiro' || classified.tipo === 'consulta_saldo') {
       await gerarRelatorioFinanceiroWhatsApp(user, phone);
+      return;
+    }
+
+    // ── editar_lembrete e deletar_lembrete: executa sem responderLivre depois ──
+    if (classified.tipo === 'editar_lembrete') {
+      await editarLembrete(user, phone, classified);
+      return;
+    }
+    if (classified.tipo === 'deletar_lembrete') {
+      await deletarLembretePorTitulo(user, phone, classified);
       return;
     }
 
@@ -552,12 +576,6 @@ async function executeAction(user, phone, classified, originalText) {
     case 'tarefa':
       await salvarTarefaSilenciosa(user, phone, classified, originalText);
       break;
-    case 'editar_lembrete':
-      await editarLembrete(user, phone, classified);
-      break;
-    case 'deletar_lembrete':
-      await deletarLembretePorTitulo(user, phone, classified);
-      break;
     case 'deletar_remedio':
       if (classified.nome) {
         const nomeRemedio = classified.nome.toLowerCase();
@@ -591,13 +609,10 @@ async function executeAction(user, phone, classified, originalText) {
       if (classified.nome) await memory.saveMedication(user.id, { nome: classified.nome, quantidade: classified.quantidade || 0, frequencia: classified.frequencia || 1, horarios: classified.horarios || ['08:00'] });
       break;
     case 'preferencia':
-      // ── FIX: só salva nome se vier explicitamente de uma preferência declarada ──
-      // Nunca salva apelidos/contexto como nome
       if (classified.tom && typeof classified.tom === 'string' && classified.tom.trim()) {
         await memory.saveUserPreference(user.id, null, classified.tom, null);
       }
       if (classified.nome && typeof classified.nome === 'string' && classified.nome.trim()) {
-        // Só atualiza nome se a mensagem era claramente sobre nome (ex: "me chama de X")
         await memory.saveUserPreference(user.id, classified.nome, null, null);
       }
       break;
@@ -673,23 +688,63 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
 
 async function editarLembrete(user, phone, classified) {
   try {
-    const titulo = classified.titulo?.toLowerCase();
-    if (!titulo) { await sendMessage(phone, 'Qual lembrete quer alterar? Me diz o nome 😊'); return; }
-    const lembretes = await prisma.reminder.findMany({ where: { userId: user.id, sent: false, confirmed: false } });
-    const encontrado = lembretes.find(r => r.message.toLowerCase().includes(titulo));
-    if (!encontrado) { await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕`); return; }
+    let titulo = (classified.titulo || '').toLowerCase().trim();
+
+    // ── FIX: título vazio → pega lembrete mais recente enviado/disparado ──
+    let encontrado = null;
+    if (!titulo) {
+      // Tenta o último lembrete disparado (sent=true, não confirmado) ou o próximo a vencer
+      const lembretes = await prisma.reminder.findMany({
+        where: { userId: user.id, confirmed: false },
+        orderBy: { scheduledAt: 'asc' }
+      });
+      // Prefere o mais recente enviado (vencido)
+      encontrado = lembretes.find(r => r.sent) || lembretes[0] || null;
+    } else {
+      const lembretes = await prisma.reminder.findMany({
+        where: { userId: user.id, confirmed: false }
+      });
+      // Busca por similaridade no título
+      encontrado = lembretes.find(r => r.message.toLowerCase().includes(titulo));
+      // Fallback: busca por palavras-chave
+      if (!encontrado) {
+        const palavras = titulo.split(' ').filter(p => p.length > 3);
+        encontrado = lembretes.find(r =>
+          palavras.some(p => r.message.toLowerCase().includes(p))
+        );
+      }
+      if (!encontrado) {
+        await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕\n\nMe diz o nome certinho ou parte dele!`);
+        return;
+      }
+    }
+
+    if (!encontrado) {
+      await sendMessage(phone, 'Não encontrei nenhum lembrete pra remarcar 😕');
+      return;
+    }
+
     let novoScheduledAt = new Date(encontrado.scheduledAt);
     if (classified.nova_hora) {
       const [h, m] = classified.nova_hora.split(':').map(Number);
-      const data = classified.nova_data || encontrado.scheduledAt.toISOString().split('T')[0];
-      novoScheduledAt = new Date(`${data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
+      const dataBase = classified.nova_data || new Date(encontrado.scheduledAt).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+      novoScheduledAt = new Date(`${dataBase}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
     } else if (classified.nova_data) {
-      const horaAtual = new Date(encontrado.scheduledAt).toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
+      const horaAtual = new Date(encontrado.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
       const [h, m] = horaAtual.split(':').map(Number);
       novoScheduledAt = new Date(`${classified.nova_data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
     }
-    await prisma.reminder.update({ where: { id: encontrado.id }, data: { scheduledAt: novoScheduledAt } });
-  } catch(e) { console.error('[editarLembrete]', e.message); }
+
+    await prisma.reminder.update({ where: { id: encontrado.id }, data: { scheduledAt: novoScheduledAt, sent: false } });
+
+    const horaFormatada = novoScheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+    const dataFormatada = novoScheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short' });
+    await sendMessage(phone, `✅ Remarcado!\n\n📌 ${encontrado.message}\n🕒 ${dataFormatada} às ${horaFormatada}`);
+
+  } catch(e) {
+    console.error('[editarLembrete]', e.message);
+    await sendMessage(phone, 'Ops, erro ao remarcar 😕');
+  }
 }
 
 async function deletarLembretePorTitulo(user, phone, classified) {
@@ -700,6 +755,7 @@ async function deletarLembretePorTitulo(user, phone, classified) {
     const encontrados = lembretes.filter(r => r.message.toLowerCase().includes(titulo));
     if (!encontrados.length) { await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕`); return; }
     await prisma.reminder.deleteMany({ where: { id: { in: encontrados.map(r => r.id) } } });
+    await sendMessage(phone, `✅ Lembrete cancelado: "${encontrados[0].message}"`);
   } catch(e) { console.error('[deletarLembrete]', e.message); }
 }
 
@@ -872,8 +928,6 @@ async function extractAndSavePersonalInfo(userId, text) {
   if (!infos || infos.length === 0) return;
   for (const { chave, valor, categoria } of infos) {
     if (!chave || !valor) continue;
-    // ── FIX: não salva info pessoal como nome no preference ──
-    // info pessoal vai só para memory, nunca para user.name
     await savePersonalInfo(userId, chave, valor, categoria || 'outro');
     console.log(`[memória pessoal] salvo: ${chave} = "${valor}"`);
   }
