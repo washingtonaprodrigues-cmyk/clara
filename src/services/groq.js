@@ -375,7 +375,22 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       if (isRateLimit(e1) && modeloEscolhido !== MODEL_LEVE) {
         console.log(`[Fallback] ${modeloEscolhido} limitado, tentando ${MODEL_LEVE}...`);
         try {
-          completion = await Promise.race([tentarComModelo(MODEL_LEVE), timeoutPromise]);
+          // No fallback, simplifica o contexto para o 8b não se confundir
+          const sistemaSimples = buildPersonality(tom, name, false);
+          const msgsFallback = [
+            { role: 'system', content: sistemaSimples },
+            ...history.slice(-4),
+            { role: 'user', content: message }
+          ];
+          completion = await Promise.race([
+            groq.chat.completions.create({
+              model: MODEL_LEVE,
+              messages: msgsFallback,
+              temperature: 0.7,
+              max_tokens: isCurta ? 60 : 300,
+            }),
+            timeoutPromise
+          ]);
         } catch (e2) {
           if (isRateLimit(e2) && phone) {
             const tipo = isTPD(e2) ? 'tpd' : 'rpm';
