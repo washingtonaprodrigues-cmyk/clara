@@ -248,6 +248,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .ct-sub{font-size:11px;color:var(--text3);margin-top:6px;letter-spacing:1px}
 .toast{position:fixed;bottom:calc(20px + var(--safe-bot));left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid var(--border2);padding:9px 18px;border-radius:20px;font-size:12px;color:var(--text);z-index:300;opacity:0;pointer-events:none;transition:all .2s;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.4)}
 .toast.show{opacity:1}
+.toast-undo{position:fixed;bottom:calc(20px + var(--safe-bot));left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid var(--border2);padding:10px 16px;border-radius:20px;font-size:12px;color:var(--text);z-index:300;display:none;align-items:center;gap:12px;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.5);animation:toastIn .2s ease}
+.toast-undo.show{display:flex}
+.toast-undo-msg{color:var(--text2)}
+.toast-undo-btn{background:var(--accent);border:none;border-radius:10px;color:#fff;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;padding:4px 12px}
+.toast-undo-bar{position:fixed;bottom:calc(20px + var(--safe-bot));left:50%;transform:translateX(-50%);height:2px;background:var(--accent);z-index:301;transition:width linear;border-radius:2px}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 .rem-del-btn,.med-del-btn{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);cursor:pointer;color:#FCA5A5;font-size:15px;padding:5px 8px;border-radius:8px;transition:all .15s;flex-shrink:0;opacity:.9}
 .rem-del-btn:hover,.med-del-btn:hover{background:rgba(239,68,68,.25);color:#fff;opacity:1;border-color:rgba(239,68,68,.5)}
 .drawer-section{padding:10px 8px 4px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.7px}
@@ -638,6 +644,10 @@ select option{background:var(--s2)}
   <div class="ct-sub" id="ct-sub">um segundo</div>
 </div>
 <div class="toast" id="toast"></div>
+<div class="toast-undo" id="toast-undo">
+  <span class="toast-undo-msg" id="toast-undo-msg">Lista excluída</span>
+  <button class="toast-undo-btn" onclick="undoDelete()">Desfazer</button>
+</div>
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import{getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signInWithPopup,GoogleAuthProvider,signOut,updateProfile}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
@@ -1088,14 +1098,37 @@ async function moveItem(listaId, itemId, dir){
 async function toggleItem(listaId,itemId){try{const r=await fetch(`/forms/lista-item/${listaId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({itemId})});const d=await r.json();const lista=allListas.find(l=>l.id===listaId);if(lista)lista.items=d.items;displayListas();if(d.allDone)showToast('🎉 Lista concluída!',3000);}catch{showToast('Erro ⚠️');}}
 async function addItem(listaId){const inp=document.getElementById('add-'+listaId);const nome=inp?.value.trim();if(!nome)return;try{const r=await fetch(`/forms/lista-add-item/${listaId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome})});const d=await r.json();const lista=allListas.find(l=>l.id===listaId);if(lista)lista.items=d.items;if(inp)inp.value='';displayListas();}catch{showToast('Erro ⚠️');}}
 async function removeItem(listaId,itemId){try{const r=await fetch(`/forms/lista-item/${listaId}/${itemId}`,{method:'DELETE'});const d=await r.json();const lista=allListas.find(l=>l.id===listaId);if(lista)lista.items=d.items;displayListas();}catch{showToast('Erro ⚠️');}}
+let _undoTimer=null,_undoListaId=null,_undoListaData=null;
+
 async function deletarLista(listaId){
-  if(!confirm('Excluir esta lista permanentemente?'))return;
-  try{
-    await fetch(`/forms/lista/${listaId}`,{method:'DELETE'});
-    allListas=allListas.filter(l=>l.id!==listaId);
-    displayListas();
-    showToast('Lista excluída ✅');
-  }catch{showToast('Erro ⚠️');}
+  const lista=allListas.find(l=>l.id===listaId);
+  if(!lista)return;
+  // Remove da UI imediatamente
+  _undoListaId=listaId;
+  _undoListaData=lista;
+  allListas=allListas.filter(l=>l.id!==listaId);
+  displayListas();
+  // Mostra toast com desfazer
+  const toastEl=document.getElementById('toast-undo');
+  document.getElementById('toast-undo-msg').textContent=`"${lista.name}" excluída`;
+  toastEl.classList.add('show');
+  // Timer de 5s para deletar de verdade
+  if(_undoTimer)clearTimeout(_undoTimer);
+  _undoTimer=setTimeout(async()=>{
+    toastEl.classList.remove('show');
+    try{await fetch(`/forms/lista/${listaId}`,{method:'DELETE'});}catch{}
+    _undoListaId=null;_undoListaData=null;
+  },5000);
+}
+
+function undoDelete(){
+  if(!_undoListaData)return;
+  clearTimeout(_undoTimer);
+  allListas.unshift(_undoListaData);
+  displayListas();
+  document.getElementById('toast-undo').classList.remove('show');
+  showToast('Desfeito ✅');
+  _undoListaId=null;_undoListaData=null;_undoTimer=null;
 }
 
 async function arquivarLista(listaId){try{await fetch(`/forms/lista-arquivar/${listaId}`,{method:'POST'});allListas=allListas.filter(l=>l.id!==listaId);displayListas();showToast('Lista arquivada ✅');}catch{showToast('Erro ⚠️');}}
