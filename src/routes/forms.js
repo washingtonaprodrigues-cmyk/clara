@@ -975,4 +975,24 @@ router.post('/lista-arquivar/:id', async (req, res) => {
   }
 });
 
+// ====================== LISTA: REORDENAR ======================
+router.put('/lista-reorder/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { items: newOrder } = req.body; // array de ids na nova ordem
+    const lista = await prisma.groceryList.findUnique({ where: { id } });
+    if (!lista) return res.status(404).json({ error: 'Lista não encontrada' });
+    let items = []; try { items = JSON.parse(lista.items); } catch {}
+    // Reordena mantendo os dados de cada item
+    const reordered = newOrder.map(id => items.find(i => i.id === id)).filter(Boolean);
+    // Adiciona itens que não estavam no newOrder (segurança)
+    items.forEach(i => { if (!reordered.find(r => r.id === i.id)) reordered.push(i); });
+    await prisma.groceryList.update({ where: { id }, data: { items: JSON.stringify(reordered) } });
+    res.json({ ok: true, items: reordered });
+  } catch (e) {
+    console.error('Erro reorder lista:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;
