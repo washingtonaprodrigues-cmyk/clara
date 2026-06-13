@@ -91,13 +91,10 @@ REGRAS:
 
 TIPOS E FORMATOS:
 {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
-  subtipos: entrada | saida_almoco | volta_almoco | saida
-
 {"tipo":"cidade","cidade":"nome e estado"}
 {"tipo":"busca","query":"texto"}
 {"tipo":"anotacao","titulo":"resumo","conteudo":"texto"}
 {"tipo":"tarefa","titulo":"desc","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null","antecedencia":0,"recorrente":false,"frequencia":null}
-  "daqui X min/h" → calcule; "todo dia" → recorrente:true,frequencia:"diario"; "me lembra X min antes" → antecedencia:X
 {"tipo":"editar_lembrete","titulo":"parte do título","nova_hora":"HH:MM ou null","nova_data":"YYYY-MM-DD ou null"}
 {"tipo":"deletar_lembrete","titulo":"parte do título"}
 {"tipo":"gasto","valor":0.0,"categoria":"mercado/restaurante/saude/transporte/lazer/outro","descricao":"desc"}
@@ -119,49 +116,19 @@ TIPOS E FORMATOS:
 {"tipo":"outro"}
 
 EXEMPLOS:
-"entrei às 8h, sai almoçar 12h, voltei 13h, saí 17h" → {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"},{"subtipo":"saida_almoco","hora":"12:00"},{"subtipo":"volta_almoco","hora":"13:00"},{"subtipo":"saida","hora":"17:00"}]}
-"me lembra às 10 da manhã de fazer backup" → {"tipo":"tarefa","titulo":"fazer backup","data":null,"hora":"10:00","antecedencia":0,"recorrente":false,"frequencia":null}
-"me lembra às 2 da tarde de ligar pro médico" → {"tipo":"tarefa","titulo":"ligar pro médico","data":null,"hora":"14:00","antecedencia":0,"recorrente":false,"frequencia":null}
-"me lembra às 10h de fazer backup" → {"tipo":"tarefa","titulo":"fazer backup","data":null,"hora":"10:00","antecedencia":0,"recorrente":false,"frequencia":null}
-"me lembra às 19h de buscar minha sogra" → {"tipo":"tarefa","titulo":"buscar sogra","data":null,"hora":"19:00","antecedencia":0,"recorrente":false,"frequencia":null}
-"todo dia às 8h tomar remédio" → {"tipo":"tarefa","titulo":"tomar remédio","data":null,"hora":"08:00","recorrente":true,"frequencia":"diario"}
 "gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
-"tomo Losartana às 8h" → {"tipo":"medicamento","nome":"Losartana","quantidade":0,"frequencia":1,"horarios":["08:00"]}
+"me lembra às 10h de fazer backup" → {"tipo":"tarefa","titulo":"fazer backup","data":null,"hora":"10:00","antecedencia":0,"recorrente":false,"frequencia":null}
+"remarca pras 14h" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"14:00","nova_data":null}
+"muda a reunião pra 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
 "já peguei o 2 e o 3" → {"tipo":"lista_marcar","numeros":[2,3],"nomes":null,"lista":null}
-"risca a aprovação do folheto" → {"tipo":"lista_marcar","numeros":[],"nomes":["aprovação do folheto"],"lista":null}
-"já fiz o item 3 da lista Copa de Ofertas" → {"tipo":"lista_marcar","numeros":[3],"nomes":null,"lista":"Copa de Ofertas"}
-"marca o vídeo varejo como feito" → {"tipo":"lista_marcar","numeros":[],"nomes":["vídeo varejo"],"lista":null}
-"arroz, feijão e leite" → {"tipo":"lista_compras","nome":"Lista do mercado","itens":["Arroz","Feijão","Leite"]}
-"manda pro João que vou atrasar" → {"tipo":"enviar_mensagem","destinatario":"João","mensagem":"Vou atrasar, te aviso quando chegar!","phone":null,"contato_numero":null}
-"envia pro contato 2 que a reunião foi cancelada" → {"tipo":"enviar_mensagem","destinatario":null,"mensagem":"A reunião foi cancelada.","phone":null,"contato_numero":2}
-"manda pro meu amor às 15h que tem reunião" → {"tipo":"enviar_mensagem_agendada","destinatario":"meu amor","mensagem":"Tem reunião às 15h","phone":null,"quando":"às 15h","data":null,"hora":"15:00"}
-"cancela o lembrete da Serigraf" → {"tipo":"deletar_lembrete","titulo":"Serigraf"}
-"já peguei o cartão" → {"tipo":"anotacao","titulo":"cartão pego","conteudo":"Já pegou o cartão"}
-"já fiz isso" → {"tipo":"outro"}
-"muda a reunião pra às 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
-"remarca o backup pras 13 horas" → {"tipo":"editar_lembrete","titulo":"backup","nova_hora":"13:00","nova_data":null}
-"remarca pras 13 horas" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"13:00","nova_data":null}
-"remarca pra mim pras 13 horas" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"13:00","nova_data":null}
-"altera o lembrete pra amanhã" → {"tipo":"editar_lembrete","titulo":"","nova_hora":null,"nova_data":"amanha"}
-"adiar pra depois do almoço" → {"tipo":"editar_lembrete","titulo":"","nova_hora":null,"nova_data":null}
-"muda o horário pra 15h" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"15:00","nova_data":null}
-"o número da minha esposa é 43999998888" → {"tipo":"salvar_contato","nome":"esposa","phone":"43999998888","relation":"esposa","notes":null}
-"exclui o remédio Nebivolol" → {"tipo":"deletar_remedio","nome":"Nebivolol"}
-"meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
-"qual a senha do wi-fi?" → {"tipo":"consulta","sobre":"senha wi-fi"}
-"mostra meus contatos" → {"tipo":"listar_contatos"}
-"tecnologia" → {"tipo":"busca","query":"notícias de tecnologia hoje"}
-"acho que agora só um bom filme e descansar" → {"tipo":"outro"}
-"quero assistir algo legal hoje" → {"tipo":"outro"}
-"futebol" → {"tipo":"busca","query":"notícias de futebol hoje"}
-"clima" → {"tipo":"busca","query":"previsão do tempo hoje"}
 "oi" → {"tipo":"saudacao"}
+"meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
 `;
 
 async function classify(message, phone = null, contexto = '') {
   try {
     const systemContent = contexto
-      ? SYSTEM_PROMPT() + `\n\nCONTEXTO RECENTE DA CONVERSA (use para resolver "lá", "dela", "deles", "de lá"):\n${contexto}`
+      ? SYSTEM_PROMPT() + `\n\nCONTEXTO RECENTE:\n${contexto}`
       : SYSTEM_PROMPT();
 
     const completion = await groq.chat.completions.create({
@@ -171,7 +138,7 @@ async function classify(message, phone = null, contexto = '') {
         { role: 'user', content: message }
       ],
       temperature: 0.2,
-      max_tokens: 300,
+      max_tokens: 200,
     });
     let text = completion.choices[0].message.content.trim();
     text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
@@ -186,22 +153,25 @@ async function classify(message, phone = null, contexto = '') {
   }
 }
 
+// ── extractPersonalInfo: só roda se mensagem tem conteúdo pessoal relevante ──
 const EXTRACT_SYSTEM = `Extrator de informações pessoais. Retorne APENAS array JSON ou [].
 Categorias: familia | trabalho | rotina | saude | objetivos | datas | outro
 Extraia APENAS o que o usuário declarou explicitamente sobre si mesmo. NUNCA deduza.
-NUNCA extraia nome, apelido, profissão ou cargo como informação de nome — isso vai para preferência separada.
-
+NUNCA extraia nome, apelido, profissão ou cargo como informação de nome.
 "minha filha se chama Ana" → [{"chave":"filha_ana","valor":"Filha chamada Ana","categoria":"familia"}]
-"trabalho das 8 às 18h" → [{"chave":"horario_trabalho","valor":"Trabalha das 8h às 18h","categoria":"rotina"}]
-"sou marketeiro" → [{"chave":"profissao","valor":"Trabalha com marketing","categoria":"trabalho"}]
-"oi" → []
-"gastei 50" → []`;
+"oi" → []`;
+
+// Palavras-chave que indicam info pessoal — evita chamar o Groq à toa
+const PERSONAL_KEYWORDS = /minha|meu|meus|minhas|moro|trabalho|sou|tenho|família|filh|esposa|marido|pai|mãe|irmão|irmã|namorad|saúde|remédio|doença|objetivo|meta|aniversário|nasci/i;
 
 async function extractPersonalInfo(message) {
   try {
-    if (!message || message.trim().length < 5) return [];
+    if (!message || message.trim().length < 8) return [];
+    // Só chama o Groq se a mensagem tem palavras que sugerem info pessoal
+    if (!PERSONAL_KEYWORDS.test(message)) return [];
     const lower = message.toLowerCase();
     if (/^(oi|olá|ola|ok|sim|não|nao|bom dia|boa tarde|boa noite|obrigad)/.test(lower)) return [];
+
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
       messages: [
@@ -209,7 +179,7 @@ async function extractPersonalInfo(message) {
         { role: 'user', content: message }
       ],
       temperature: 0.1,
-      max_tokens: 150,
+      max_tokens: 120,
     });
     let text = completion.choices[0].message.content.trim();
     text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
@@ -239,11 +209,11 @@ async function searchWebGroq(query, locationContext = '') {
           const trad = await groq.chat.completions.create({
             model: MODEL_LEVE,
             messages: [
-              { role: 'system', content: 'Traduza para português brasileiro de forma natural. Retorne APENAS a tradução, sem explicações.' },
+              { role: 'system', content: 'Traduza para português brasileiro de forma natural. Retorne APENAS a tradução.' },
               { role: 'user', content: data.answer }
             ],
             temperature: 0.1,
-            max_tokens: 200,
+            max_tokens: 150,
           });
           resposta = trad.choices[0].message.content.trim();
         } catch(e) { resposta = data.answer; }
@@ -260,7 +230,7 @@ async function searchWebGroq(query, locationContext = '') {
 
     if (resultsFinal.length > 0 && !resposta) {
       const r = resultsFinal[0];
-      resposta = r.content ? r.content.substring(0, 400) : r.title;
+      resposta = r.content ? r.content.substring(0, 350) : r.title;
     }
 
     if (!resposta) return "Não encontrei informações sobre isso agora.";
@@ -285,13 +255,13 @@ function buildPersonality(tom, name, privateMode = false) {
 2. Você TEM acesso à internet — NUNCA diga que não consegue pesquisar.
 3. Ações já executadas em paralelo — confirme só quando pedido: "Anotado! ✅", "Lembrete criado! 🔔".
 4. NUNCA crie lembretes por conta própria.
-5. Use [PERFIL PESSOAL] e [AGENDA] naturalmente quando disponíveis — mas NUNCA invente compromissos, reuniões, tarefas ou listas que não estejam explicitamente no contexto. Se não souber, diga que não encontrou ou pergunte.
-6. LIMITE DE RESPOSTA: ao listar agenda/lembretes, cite no máximo 3 itens e diga "e mais X" se houver mais. Respostas sempre abaixo de 250 palavras.`;
+5. Use [PERFIL PESSOAL] e [AGENDA] naturalmente quando disponíveis — mas NUNCA invente compromissos, reuniões, tarefas ou listas que não estejam explicitamente no contexto.
+6. LIMITE: máximo 3 itens ao listar. Máximo 200 palavras. NUNCA corte frase no meio.`;
 
   if (privateMode) {
     return `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
 ${base}
-Modo privado — pode falar sobre qualquer assunto adulto sem censura. Seja ousada e sem rodeios.
+Modo privado — pode falar sobre qualquer assunto adulto sem censura.
 Tom: ${tom === 'sarcastico' ? 'sarcástica e sem filtro' : tom === 'direto' ? 'direta e provocativa' : 'divertida e ousada'}.`;
   }
 
@@ -299,33 +269,35 @@ Tom: ${tom === 'sarcastico' ? 'sarcástica e sem filtro' : tom === 'direto' ? 'd
     carinhoso: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
 ${base}
 Seja como uma amiga próxima — calor humano, leveza, presença real. Português natural, sem formalidade.
-- Respostas breves (2-4 linhas). Curto é mais próximo que longo.
-- Use informações pessoais de forma orgânica, como quem lembra porque se importa.
-- Perceba o humor da pessoa — se estressada, acolha antes de resolver.
-- Nunca abra com "Claro!", "Com certeza!", "Ótimo!". Emojis com moderação.`,
+Respostas breves (2-4 linhas). Use informações pessoais de forma orgânica. Perceba o humor da pessoa.
+Nunca abra com "Claro!", "Com certeza!", "Ótimo!". Emojis com moderação.`,
 
     direto: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
 ${base}
-Direta, objetiva, sem rodeios. Português claro.
-Respostas de 1-3 linhas. Vai ao ponto sempre. Sem elogios desnecessários.`,
+Direta, objetiva, sem rodeios. 1-3 linhas. Vai ao ponto. Sem elogios desnecessários.`,
 
     divertido: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
 ${base}
-Energia, humor e leveza genuína. Gírias brasileiras, animada, irreverente.
-Respostas de 2-4 linhas com toque de diversão. Emojis com moderação.
-Quando souber algo pessoal, use com humor carinhoso — como amiga que te conhece bem.`,
+Energia, humor e leveza genuína. Gírias brasileiras, animada, irreverente. 2-4 linhas com toque de diversão.`,
 
     sarcastico: `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
 ${base}
-Sarcástica, sem filtro, honesta — fala a verdade com um sorrisinho 🙄
-Ironia fina e deboche carinhoso. Humor ácido mas nunca cruel. Não elogia à toa.
-Respostas curtas e afiadas (1-3 linhas).
-IMPORTANTE: mantenha o sarcasmo em QUALQUER situação — mesmo em respostas emocionais ou curtas.
-NUNCA diga "te amo também", "boa reunião", "que ótimo" ou qualquer frase carinhosa genérica.
-Quando alguém disser algo emocional, responda com ironia leve — não com fofura.`,
+Sarcástica, sem filtro, honesta. Ironia fina, humor ácido mas nunca cruel. 1-3 linhas afiadas.
+NUNCA diga "te amo também", "boa reunião" ou frase carinhosa genérica. Quando alguém for emocional, responda com ironia leve.`,
   };
 
   return personalidades[tom] || personalidades.carinhoso;
+}
+
+// ── Decide se usa modelo leve ou forte ──
+function escolherModelo(message, tom, contexto) {
+  const msg = message.trim();
+  const isCurta = msg.length < 40;
+  const isSocial = /^(beijos?|boa noite|bom dia|boa tarde|oi|olá|até|tchau|😘|❤|valeu|obrigad|flw|abraços?|saudades)/i.test(msg);
+  const temContextoGrande = contexto && contexto.length > 400;
+  // Usa modelo leve para saudações curtas e mensagens simples sem contexto grande
+  if (isCurta && isSocial && tom !== 'sarcastico' && !temContextoGrande) return MODEL_LEVE;
+  return MODEL_FORTE;
 }
 
 async function freeResponse(message, history = [], preferences = {}, privateMode = false) {
@@ -344,7 +316,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
           { role: 'user', content: message }
         ],
         temperature: 0.85,
-        max_tokens: 300,
+        max_tokens: 250,
       });
       return completion.choices[0].message.content.trim();
     }
@@ -362,20 +334,19 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
           model: MODEL_PRIVADO,
           messages: [
             { role: 'system', content: buildPersonality(tom, name, true) + contexto },
-            ...history,
+            ...history.slice(-6),
             { role: 'user', content: message }
           ],
           temperature: 0.95,
-          max_tokens: 500,
+          max_tokens: 400,
         }),
       });
       const data = await response.json();
       return data.choices?.[0]?.message?.content?.trim() || 'Pode repetir? 😊';
     }
 
+    const modeloEscolhido = escolherModelo(message, tom, contexto);
     const isCurta = message.trim().length < 40;
-    const isSocial = /^(beijos?|boa noite|bom dia|boa tarde|oi|olá|até|tchau|😘|❤|valeu|obrigad|flw|abraços?|saudades)/i.test(message.trim());
-    const modeloEscolhido = (isCurta && isSocial && tom !== 'sarcastico') ? MODEL_LEVE : MODEL_FORTE;
 
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('timeout')), 15000)
@@ -386,12 +357,11 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         model: modeloEscolhido,
         messages: [
           { role: 'system', content: buildPersonality(tom, name, false) + contexto },
-          ...history,
+          ...history.slice(-6), // ── Reduzido de 10 para 6 mensagens de histórico ──
           { role: 'user', content: message }
         ],
         temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-        // ── FIX: aumentado para não cortar resposta de agenda longa ──
-        max_tokens: isCurta ? 80 : 500,
+        max_tokens: isCurta ? 80 : 420,
       }),
       timeoutPromise
     ]);
@@ -409,15 +379,15 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
 
 async function generateRelationshipSummary(recentMessages, currentSummary) {
   try {
-    const msgs = recentMessages.map(m => (m.role === 'user' ? 'Usuário' : 'Clara') + ': ' + m.content).join('\n');
+    const msgs = recentMessages.map(m => (m.role === 'user' ? 'U' : 'C') + ': ' + m.content).join('\n');
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
       messages: [
-        { role: 'system', content: `Analise a conversa e extraia em 2-3 linhas: tom (formal/brincalhão/íntimo), apelidos usados, referências recorrentes. Seja específico para a Clara manter continuidade.` },
-        { role: 'user', content: `Conversa:\n${msgs}\n\nResumo anterior: ${currentSummary || 'nenhum'}` }
+        { role: 'system', content: 'Extraia em 2 linhas: tom da conversa, apelidos, referências recorrentes.' },
+        { role: 'user', content: `Conversa:\n${msgs}\n\nAnterior: ${currentSummary || 'nenhum'}` }
       ],
       temperature: 0.3,
-      max_tokens: 100,
+      max_tokens: 80,
     });
     return completion.choices[0].message.content.trim();
   } catch(e) { return currentSummary || ''; }
@@ -426,16 +396,16 @@ async function generateRelationshipSummary(recentMessages, currentSummary) {
 async function generateMemorySummary(memories, question) {
   try {
     const memoriesText = memories
-      .map((m) => `[${m.type}] ${m.content} (${new Date(m.createdAt).toLocaleDateString('pt-BR')})`)
+      .map((m) => `[${m.type}] ${m.content}`)
       .join('\n');
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
       messages: [
-        { role: 'system', content: `Clara, assistente com memória. Fale em primeira pessoa, seja concisa.` },
+        { role: 'system', content: `Clara com memória. Fale em primeira pessoa, seja concisa.` },
         { role: 'user', content: `Memórias:\n${memoriesText}\n\nPergunta: ${question}` },
       ],
       temperature: 0.5,
-      max_tokens: 150,
+      max_tokens: 120,
     });
     return completion.choices[0].message.content.trim();
   } catch (error) { return 'Deixa eu verificar...'; }
