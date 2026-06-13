@@ -700,7 +700,7 @@ function showMainApp(user,savedPhone){
   }
   document.getElementById('welcome-greeting').textContent=getGreeting();
   document.getElementById('welcome-name').textContent=name.split(' ')[0];
-  loadAll();loadMood();loadSaldo();initPWA();
+  loadAll().then(()=>{if(currentNav==='lembretes')renderRem();if(currentNav==='saude')renderSaude();});loadMood();loadSaldo();initPWA();
   if(pollInterval)clearInterval(pollInterval);
   pollInterval=setInterval(async()=>{await Promise.all([loadAll(),loadSaldo()]);if(currentNav==='lembretes')renderRem();if(currentNav==='saude')renderSaude();if(currentNav==='financeiro')renderFin();if(currentNav==='cofre')renderCofre();},30000);
 }
