@@ -136,33 +136,21 @@ async function executeListaAction(user, phone, classified) {
       const temNumeros = classified.numeros && classified.numeros.length > 0;
       const temNomes = classified.nomes && classified.nomes.length > 0;
       if (!temNumeros && !temNomes) return null;
-
       let lista = null;
-
       if (classified.lista) {
         const nomeLista = classified.lista.toLowerCase();
         const todasListas = await prisma.groceryList.findMany({ where: { userId: user.id, done: false } });
         lista = todasListas.find(l => l.name.toLowerCase().includes(nomeLista));
       }
-
       if (!lista) {
         const mems = await memory.getRecentMemories(user.id, 20);
         const listaRef = mems.find(m => m.type === 'ultima_lista');
         if (listaRef) lista = await prisma.groceryList.findUnique({ where: { id: listaRef.content } });
       }
-
-      if (!lista) {
-        lista = await prisma.groceryList.findFirst({ where: { userId: user.id, done: false }, orderBy: { createdAt: 'desc' } });
-      }
-
+      if (!lista) lista = await prisma.groceryList.findFirst({ where: { userId: user.id, done: false }, orderBy: { createdAt: 'desc' } });
       if (!lista) return null;
-
       let items = []; try { items = JSON.parse(lista.items); } catch {}
-
-      if (temNumeros) {
-        items = items.map(i => classified.numeros.includes(i.id) ? { ...i, done: true } : i);
-      }
-
+      if (temNumeros) items = items.map(i => classified.numeros.includes(i.id) ? { ...i, done: true } : i);
       if (temNomes) {
         items = items.map(i => {
           const nomeItem = i.nome.toLowerCase();
@@ -170,7 +158,6 @@ async function executeListaAction(user, phone, classified) {
           return match ? { ...i, done: true } : i;
         });
       }
-
       const allDone = items.every(i => i.done);
       await prisma.groceryList.update({ where: { id: lista.id }, data: { items: JSON.stringify(items), done: allDone } });
       await memory.saveMemory(user.id, 'ultima_lista', lista.id);
@@ -294,9 +281,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       console.error(`[${phone}] Erro contexto:`, e.message);
     }
 
-    console.log(`[${phone}] Chamando freeResponse...`);
     const resp = await freeResponse(text, history, preferences);
-    console.log(`[${phone}] Resposta: ${String(resp).slice(0, 80)}`);
     await memory.saveConversationMessage(user.id, 'user', text);
     await memory.saveConversationMessage(user.id, 'assistant', resp);
     await sendMessage(phone, resp);
@@ -362,23 +347,8 @@ async function handleMessage(phone, text, location = null) {
 
     if (modoAtual === 'conversar') return await responderLivre(user, phone, text);
 
-    // Passa histórico recente para o classify resolver referências vagas
-    let contextoClassify = '';
-    try {
-      const histClassify = await memory.getConversationHistory(user.id, 3);
-      const temReferencia = /\b(lá|la|dela|deles|delas|de lá|de la|o telefone|o contato|o endereço|esse|essa|ele|ela|eles|elas)\b/i.test(text);
-      if (temReferencia && histClassify.length > 0) {
-        contextoClassify = histClassify.slice(-4).map(m => (m.role === 'user' ? 'Usuário' : 'Clara') + ': ' + m.content.substring(0, 150)).join('\n');
-      }
-    } catch(e) {}
-    const classified = await classify(text, phone, contextoClassify);
-    if (classified) classified._textoOriginal = text;
+    const classified = await classify(text, phone);
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
-
-    // ── Garante que editar_lembrete nunca vira lista_marcar ──
-    if (classified.tipo === 'lista_marcar' && (classified.nova_hora || classified.nova_data)) {
-      classified.tipo = 'editar_lembrete';
-    }
 
     if (LISTA_TIPOS.includes(classified.tipo)) {
       const listaResult = await executeListaAction(user, phone, classified);
@@ -391,9 +361,7 @@ async function handleMessage(phone, text, location = null) {
         else if (acao === 'marcada') contextoExtra = `\n\n[AÇÃO REALIZADA] Marquei itens na lista "${listaNome}".${allDone?' Todos concluídos! 🎉':''} Confirme.`;
         else if (acao === 'adicionado') contextoExtra = `\n\n[AÇÃO REALIZADA] Adicionei "${itemAdicionado}" à lista "${listaNome}". Confirme.`;
         await responderLivre(user, phone, text, contextoExtra);
-        // Só manda a lista se o usuário explicitamente pediu para ver/criar/marcar
-        const pedindoLista = /lista|compras|mercado|marcar|riscar|item|itens/i.test(text);
-        if (['criada','encontrada','adicionado','marcada'].includes(acao) && listaItems.length > 0 && pedindoLista) {
+        if (['criada','encontrada','adicionado','marcada'].includes(acao) && listaItems.length > 0) {
           await sendMessage(phone, formatarListaWhatsApp(listaResult));
         }
       } else {
@@ -409,28 +377,11 @@ async function handleMessage(phone, text, location = null) {
       return;
     }
 
-    // ── Busca web ──
     if (classified.tipo === 'busca' && classified.query) {
       const cidade = await memory.getRecentMemories(user.id, 5)
         .then(mems => mems.find(m => m.type === 'cidade')?.content || '')
         .catch(() => '');
-
-      // Resolve referências vagas usando histórico recente ("de lá", "dela", "deles", "o telefone")
-      let queryFinal = classified.query;
-      const temReferencia = /\b(lá|la|dela|deles|deles|delas|de lá|de la|o telefone|o contato|o endereço|o numero|o número)\b/i.test(text);
-      if (temReferencia) {
-        try {
-          const history = await memory.getConversationHistory(user.id, 4);
-          const contextoRecente = history.slice(-4).map(m => m.content).join(' ');
-          // Extrai o assunto mais recente do contexto (última entidade mencionada)
-          const ultimaResposta = history.filter(m => m.role === 'assistant').slice(-1)[0]?.content || '';
-          if (ultimaResposta) {
-            queryFinal = text + ' (contexto: ' + ultimaResposta.substring(0, 200) + ')';
-          }
-        } catch(e) {}
-      }
-
-      const resultadoBusca = await searchWeb(queryFinal, cidade);
+      const resultadoBusca = await searchWeb(classified.query, cidade);
       if (resultadoBusca) {
         await memory.saveConversationMessage(user.id, 'user', text);
         await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca);
@@ -442,21 +393,14 @@ async function handleMessage(phone, text, location = null) {
       return;
     }
 
-    // ── Relatório financeiro via WhatsApp ──
     if (classified.tipo === 'relatorio_financeiro' || classified.tipo === 'consulta_saldo') {
       await gerarRelatorioFinanceiroWhatsApp(user, phone);
       return;
     }
 
-    // Tipos que têm seu próprio fluxo de confirmação — não chamar responderLivre
-    const tiposComConfirmacao = ['editar_lembrete', 'deletar_lembrete'];
-    if (tiposComConfirmacao.includes(classified.tipo)) {
-      await executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
-    } else {
-      executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
-      const isSaudacao = classified.tipo === 'saudacao';
-      await responderLivre(user, phone, text, '', isSaudacao);
-    }
+    executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
+    const isSaudacao = classified.tipo === 'saudacao';
+    await responderLivre(user, phone, text, '', isSaudacao);
     extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
   } catch (error) {
     console.error('Erro handleMessage:', error.message);
@@ -464,86 +408,39 @@ async function handleMessage(phone, text, location = null) {
   }
 }
 
-// ── Relatório financeiro completo via WhatsApp ──
 async function gerarRelatorioFinanceiroWhatsApp(user, phone) {
   try {
     const now = nowBRT();
     const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
     const preferences = await memory.getUserPreference(user.id);
-
-    const gastos = await prisma.expense.findMany({
-      where: { userId: user.id, createdAt: { gte: inicioMes } },
-      orderBy: { createdAt: 'desc' }
-    });
-
+    const gastos = await prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } }, orderBy: { createdAt: 'desc' } });
     const saidas = gastos.filter(g => g.value > 0);
     const entradas = gastos.filter(g => g.value < 0);
     const totalGasto = saidas.reduce((a, g) => a + g.value, 0);
     const totalEntradas = entradas.reduce((a, g) => a + Math.abs(g.value), 0);
-
     const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
     const nomeMes = meses[now.getMonth()];
-
     const catIcones = { alimentacao:'🍔', mercado:'🛒', transporte:'🚗', saude:'💊', lazer:'🎮', moradia:'🏠', educacao:'📚', entrada:'💰', outro:'📦' };
-
-    // Agrupar saídas por categoria
     const porCategoria = {};
-    saidas.forEach(g => {
-      const cat = g.category || 'outro';
-      if (!porCategoria[cat]) porCategoria[cat] = 0;
-      porCategoria[cat] += g.value;
-    });
-
+    saidas.forEach(g => { const cat = g.category || 'outro'; if (!porCategoria[cat]) porCategoria[cat] = 0; porCategoria[cat] += g.value; });
     let texto = `📊 *Relatório de ${nomeMes}*\n\n`;
-
-    if (entradas.length > 0) {
-      texto += `💰 *Entradas:* R$ ${totalEntradas.toFixed(2)}\n`;
-    }
+    if (entradas.length > 0) texto += `💰 *Entradas:* R$ ${totalEntradas.toFixed(2)}\n`;
     texto += `💸 *Total gasto:* R$ ${totalGasto.toFixed(2)}\n`;
-
-    if (preferences.saldo != null) {
-      const saldo = preferences.saldo - totalGasto + totalEntradas;
-      texto += `💵 *Saldo restante:* R$ ${saldo.toFixed(2)}\n`;
-    }
-
+    if (preferences.saldo != null) { const saldo = preferences.saldo - totalGasto + totalEntradas; texto += `💵 *Saldo restante:* R$ ${saldo.toFixed(2)}\n`; }
     texto += `\n`;
-
     if (Object.keys(porCategoria).length > 0) {
       texto += `*Por categoria:*\n`;
-      Object.entries(porCategoria)
-        .sort((a, b) => b[1] - a[1])
-        .forEach(([cat, val]) => {
-          texto += `${catIcones[cat] || '📦'} ${cat.charAt(0).toUpperCase() + cat.slice(1)}: R$ ${val.toFixed(2)}\n`;
-        });
+      Object.entries(porCategoria).sort((a, b) => b[1] - a[1]).forEach(([cat, val]) => { texto += `${catIcones[cat] || '📦'} ${cat.charAt(0).toUpperCase() + cat.slice(1)}: R$ ${val.toFixed(2)}\n`; });
       texto += `\n`;
     }
-
     const ultimos = saidas.slice(0, 5);
-    if (ultimos.length > 0) {
-      texto += `*Últimos lançamentos:*\n`;
-      ultimos.forEach(g => {
-        const nome = g.description && g.description !== g.category ? g.description : g.category;
-        texto += `• ${catIcones[g.category]||'📦'} ${nome} — R$ ${g.value.toFixed(2)}\n`;
-      });
-    }
-
-    if (gastos.length === 0) {
-      texto = `📊 *Relatório de ${nomeMes}*\n\nNenhum lançamento este mês ainda 😊`;
-    }
-
-    await sendButtons(phone, texto, [
-      { id: 'novo_gasto', label: '➕ Registrar gasto' },
-      { id: 'menu', label: '🏠 Menu' }
-    ]);
+    if (ultimos.length > 0) { texto += `*Últimos lançamentos:*\n`; ultimos.forEach(g => { const nome = g.description && g.description !== g.category ? g.description : g.category; texto += `• ${catIcones[g.category]||'📦'} ${nome} — R$ ${g.value.toFixed(2)}\n`; }); }
+    if (gastos.length === 0) texto = `📊 *Relatório de ${nomeMes}*\n\nNenhum lançamento este mês ainda 😊`;
+    await sendButtons(phone, texto, [{ id: 'novo_gasto', label: '➕ Registrar gasto' }, { id: 'menu', label: '🏠 Menu' }]);
   } catch (e) {
     console.error('[gerarRelatorioFinanceiro]', e.message);
     await sendMessage(phone, 'Não consegui gerar o relatório agora. Tenta de novo?');
   }
-}
-
-async function getCidadeUsuario(userId) {
-  const mems = await memory.getRecentMemories(userId, 50);
-  return mems.find(m => m.type === 'cidade')?.content || null;
 }
 
 function convertToDateWithTime(horaStr) {
@@ -561,11 +458,9 @@ async function gerarResumoDoBanco(pontos, userId) {
   if (entrada && saidaAlmoco) tempoManha = (new Date(saidaAlmoco.timestamp) - new Date(entrada.timestamp)) / 60000;
   if (voltaAlmoco && saida) tempoTarde = (new Date(saida.timestamp) - new Date(voltaAlmoco.timestamp)) / 60000;
   if (tempoManha !== null && tempoTarde !== null) { totalTrabalhado = tempoManha + tempoTarde; horasExtras = totalTrabalhado - jornada; }
-
   let texto = entrada && !saida
     ? `📍 *Entrada registrada!*\n\n🕘 Você iniciou seu expediente às *${horaStr(entrada.timestamp)}*.\n\nTenha um ótimo trabalho hoje 💜\n\n`
     : `✨ *Resumo do seu dia*\n\n`;
-
   texto += `🟢 Entrada: *${horaStr(entrada?.timestamp)}*\n`;
   texto += `🍽️ Saída almoço: *${horaStr(saidaAlmoco?.timestamp)}*\n`;
   if (tempoManha !== null) texto += `⏱️ Manhã: *${minutesToHours(tempoManha)}*\n`;
@@ -584,19 +479,11 @@ async function gerarResumoDoBanco(pontos, userId) {
 
 async function listarLembretes(user, phone) {
   const agora = new Date();
-  const reminders = await prisma.reminder.findMany({
-    where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: agora } },
-    orderBy: { scheduledAt: 'asc' }, take: 10,
-  });
-  if (reminders.length === 0) {
-    return await sendButtons(phone, `📋 *Seus lembretes*\n\nVocê não tem lembretes ativos no momento 😊`, [{ id: 'lembrete', label: '➕ Criar lembrete' }, { id: 'menu', label: '🏠 Menu' }]);
-  }
+  const reminders = await prisma.reminder.findMany({ where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: agora } }, orderBy: { scheduledAt: 'asc' }, take: 10 });
+  if (reminders.length === 0) return await sendButtons(phone, `📋 *Seus lembretes*\n\nVocê não tem lembretes ativos no momento 😊`, [{ id: 'lembrete', label: '➕ Criar lembrete' }, { id: 'menu', label: '🏠 Menu' }]);
   const numeros = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
   let texto = `📋 *Seus lembretes ativos*\n\n`;
-  reminders.forEach((r, i) => {
-    texto += `${numeros[i] || `${i+1}.`} 📌 ${r.message}\n`;
-    texto += `    🗓️ ${formatarDataHoraBR(r.scheduledAt)}\n\n`;
-  });
+  reminders.forEach((r, i) => { texto += `${numeros[i] || `${i+1}.`} 📌 ${r.message}\n`; texto += `    🗓️ ${formatarDataHoraBR(r.scheduledAt)}\n\n`; });
   texto += `_${reminders.length} lembrete${reminders.length > 1 ? 's' : ''} ativo${reminders.length > 1 ? 's' : ''}_ ✨`;
   await sendButtons(phone, texto, [{ id: 'criar_lembrete', label: '➕ Criar lembrete' }, { id: 'menu', label: '🏠 Menu' }]);
 }
@@ -604,9 +491,7 @@ async function listarLembretes(user, phone) {
 async function listarAnotacoes(user, phone) {
   const mems = await memory.getRecentMemories(user.id, 50);
   const anotacoes = mems.filter(m => m.type === 'anotacao').slice(0, 10);
-  if (anotacoes.length === 0) {
-    return await sendButtons(phone, `📝 *Suas anotações*\n\nVocê ainda não tem anotações salvas 😊`, [{ id: 'anotacao', label: '➕ Nova anotação' }, { id: 'menu', label: '🏠 Menu' }]);
-  }
+  if (anotacoes.length === 0) return await sendButtons(phone, `📝 *Suas anotações*\n\nVocê ainda não tem anotações salvas 😊`, [{ id: 'anotacao', label: '➕ Nova anotação' }, { id: 'menu', label: '🏠 Menu' }]);
   let texto = `📝 *Suas anotações*\n\n`;
   anotacoes.forEach((a) => { texto += `📌 _"${a.content}"_\n🗓️ ${formatarDataBR(a.createdAt)}\n\n`; });
   texto += `_${anotacoes.length} anotaç${anotacoes.length > 1 ? 'ões' : 'ão'} salva${anotacoes.length > 1 ? 's' : ''}_ 💜`;
@@ -618,79 +503,36 @@ async function listarGastos(user, phone) {
     const now = nowBRT();
     const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
     const preferences = await memory.getUserPreference(user.id);
-
-    const gastos = await prisma.expense.findMany({
-      where: { userId: user.id, createdAt: { gte: inicioMes } },
-      orderBy: { createdAt: 'desc' },
-      take: 20
-    });
-
-    if (gastos.length === 0) {
-      return await sendButtons(phone, `💰 *Seus gastos*\n\nNenhum lançamento registrado este mês 😊`, [
-        { id: 'novo_gasto', label: '➕ Registrar gasto' },
-        { id: 'menu', label: '🏠 Menu' }
-      ]);
-    }
-
+    const gastos = await prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } }, orderBy: { createdAt: 'desc' }, take: 20 });
+    if (gastos.length === 0) return await sendButtons(phone, `💰 *Seus gastos*\n\nNenhum lançamento registrado este mês 😊`, [{ id: 'novo_gasto', label: '➕ Registrar gasto' }, { id: 'menu', label: '🏠 Menu' }]);
     const saidas = gastos.filter(g => g.value > 0);
     const entradas = gastos.filter(g => g.value < 0);
     const totalGasto = saidas.reduce((acc, g) => acc + g.value, 0);
     const totalEntradas = entradas.reduce((acc, g) => acc + Math.abs(g.value), 0);
-
     const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
     const catIcones = { alimentacao:'🍔', mercado:'🛒', transporte:'🚗', saude:'💊', lazer:'🎮', moradia:'🏠', educacao:'📚', entrada:'💰', outro:'📦' };
-
     let texto = `💰 *${meses[now.getMonth()]} — Resumo*\n\n`;
-
-    if (entradas.length > 0) {
-      texto += `💰 Entradas: *R$ ${totalEntradas.toFixed(2)}*\n`;
-    }
+    if (entradas.length > 0) texto += `💰 Entradas: *R$ ${totalEntradas.toFixed(2)}*\n`;
     texto += `💸 Gastos: *R$ ${totalGasto.toFixed(2)}*\n`;
-
-    if (preferences.saldo != null) {
-      const saldo = preferences.saldo - totalGasto + totalEntradas;
-      texto += `💵 Saldo: *R$ ${saldo.toFixed(2)}*\n`;
-    }
-
+    if (preferences.saldo != null) { const saldo = preferences.saldo - totalGasto + totalEntradas; texto += `💵 Saldo: *R$ ${saldo.toFixed(2)}*\n`; }
     texto += `\n`;
-
-    // Últimos lançamentos (mistura entradas e saídas)
-    gastos.slice(0, 8).forEach(g => {
-      const isEntrada = g.value < 0;
-      const absVal = Math.abs(g.value);
-      const nome = g.description && g.description !== g.category ? g.description : g.category;
-      const sinal = isEntrada ? '+' : '-';
-      const icon = isEntrada ? '💰' : (catIcones[g.category] || '📦');
-      texto += `${icon} ${nome} — *${sinal}R$ ${absVal.toFixed(2)}*\n`;
-    });
-
+    gastos.slice(0, 8).forEach(g => { const isEntrada = g.value < 0; const absVal = Math.abs(g.value); const nome = g.description && g.description !== g.category ? g.description : g.category; const sinal = isEntrada ? '+' : '-'; const icon = isEntrada ? '💰' : (catIcones[g.category] || '📦'); texto += `${icon} ${nome} — *${sinal}R$ ${absVal.toFixed(2)}*\n`; });
     texto += `\n_${gastos.length} lançamento${gastos.length !== 1 ? 's' : ''} este mês_`;
-
-    await sendButtons(phone, texto, [
-      { id: 'novo_gasto', label: '➕ Novo gasto' },
-      { id: 'menu', label: '🏠 Menu' }
-    ]);
-  } catch (e) {
-    console.error('[listarGastos]', e.message);
-    await sendMessage(phone, 'Não consegui buscar os gastos agora. Tenta de novo?');
-  }
+    await sendButtons(phone, texto, [{ id: 'novo_gasto', label: '➕ Novo gasto' }, { id: 'menu', label: '🏠 Menu' }]);
+  } catch (e) { console.error('[listarGastos]', e.message); await sendMessage(phone, 'Não consegui buscar os gastos agora. Tenta de novo?'); }
 }
 
 async function listarPontoHoje(user, phone) {
   const hoje = dateBRT();
   const pontos = await prisma.workLog.findMany({ where: { userId: user.id, date: hoje }, orderBy: { timestamp: 'asc' } });
-  if (pontos.length === 0) {
-    return await sendButtons(phone, `📍 *Ponto de hoje*\n\nNenhum registro de ponto hoje ainda 😊`, [{ id: 'ponto', label: '📍 Bater ponto' }, { id: 'menu', label: '🏠 Menu' }]);
-  }
+  if (pontos.length === 0) return await sendButtons(phone, `📍 *Ponto de hoje*\n\nNenhum registro de ponto hoje ainda 😊`, [{ id: 'ponto', label: '📍 Bater ponto' }, { id: 'menu', label: '🏠 Menu' }]);
   const resumo = await gerarResumoDoBanco(pontos, user.id);
   await sendButtons(phone, resumo, [{ id: 'bater_ponto', label: '📍 Bater ponto' }, { id: 'menu', label: '🏠 Menu' }]);
 }
 
 async function listarMedicamentos(user, phone) {
   const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true }, orderBy: { createdAt: 'desc' } });
-  if (meds.length === 0) {
-    return await sendButtons(phone, `💊 *Seus medicamentos*\n\nNenhum medicamento cadastrado ainda 😊`, [{ id: 'saude', label: '➕ Cadastrar remédio' }, { id: 'menu', label: '🏠 Menu' }]);
-  }
+  if (meds.length === 0) return await sendButtons(phone, `💊 *Seus medicamentos*\n\nNenhum medicamento cadastrado ainda 😊`, [{ id: 'saude', label: '➕ Cadastrar remédio' }, { id: 'menu', label: '🏠 Menu' }]);
   let texto = `💊 *Seus medicamentos ativos*\n\n`;
   meds.forEach((m) => { const horarios = JSON.parse(m.times || '[]').join(', '); texto += `💊 *${m.name}*\n⏰ ${horarios} — ${m.frequency}x por dia\n💊 Restam: ${m.remaining}\n\n`; });
   await sendButtons(phone, texto, [{ id: 'novo_remedio', label: '➕ Novo remédio' }, { id: 'menu', label: '🏠 Menu' }]);
@@ -727,17 +569,9 @@ async function executeAction(user, phone, classified, originalText) {
     case 'gasto':
       await memory.saveExpense(user.id, { valor: classified.valor, categoria: classified.categoria || 'outro', descricao: classified.descricao || classified.categoria });
       break;
-    // ── ENTRADA FINANCEIRA ──
     case 'entrada_financeira':
-      if (classified.valor) {
-        await memory.saveExpense(user.id, {
-          valor: -Math.abs(classified.valor), // negativo = entrada
-          categoria: 'entrada',
-          descricao: classified.descricao || 'Entrada'
-        });
-      }
+      if (classified.valor) await memory.saveExpense(user.id, { valor: -Math.abs(classified.valor), categoria: 'entrada', descricao: classified.descricao || 'Entrada' });
       break;
-    // ── DELETAR GASTO ──
     case 'deletar_gasto':
       if (classified.descricao || classified.id) {
         try {
@@ -746,26 +580,26 @@ async function executeAction(user, phone, classified, originalText) {
           } else {
             const descBusca = (classified.descricao || '').toLowerCase();
             const inicioMes = new Date(nowBRT().getFullYear(), nowBRT().getMonth(), 1);
-            const gastos = await prisma.expense.findMany({
-              where: { userId: user.id, createdAt: { gte: inicioMes } },
-              orderBy: { createdAt: 'desc' }
-            });
-            const encontrado = gastos.find(g =>
-              (g.description || '').toLowerCase().includes(descBusca) ||
-              (g.category || '').toLowerCase().includes(descBusca)
-            );
+            const gastos = await prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } }, orderBy: { createdAt: 'desc' } });
+            const encontrado = gastos.find(g => (g.description || '').toLowerCase().includes(descBusca) || (g.category || '').toLowerCase().includes(descBusca));
             if (encontrado) await prisma.expense.delete({ where: { id: encontrado.id } });
           }
-        } catch(e) {
-          console.error('[deletar_gasto]', e.message);
-        }
+        } catch(e) { console.error('[deletar_gasto]', e.message); }
       }
       break;
     case 'medicamento':
       if (classified.nome) await memory.saveMedication(user.id, { nome: classified.nome, quantidade: classified.quantidade || 0, frequencia: classified.frequencia || 1, horarios: classified.horarios || ['08:00'] });
       break;
     case 'preferencia':
-      await memory.saveUserPreference(user.id, classified.nome, classified.tom, null);
+      // ── FIX: só salva nome se vier explicitamente de uma preferência declarada ──
+      // Nunca salva apelidos/contexto como nome
+      if (classified.tom && typeof classified.tom === 'string' && classified.tom.trim()) {
+        await memory.saveUserPreference(user.id, null, classified.tom, null);
+      }
+      if (classified.nome && typeof classified.nome === 'string' && classified.nome.trim()) {
+        // Só atualiza nome se a mensagem era claramente sobre nome (ex: "me chama de X")
+        await memory.saveUserPreference(user.id, classified.nome, null, null);
+      }
       break;
     case 'concluir_lembrete': {
       if (classified.titulo) {
@@ -799,74 +633,30 @@ async function salvarPontoSilencioso(user, acoes) {
 
 function detectarUrgencia(titulo) {
   const t = (titulo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const palavras = [
-    'medico','medica','consulta','dentista','cirurgia','exame','laboratorio','farmacia',
-    'remedio','medicamento','vacina','hospital','clinica','psico','terapia','fisio','upa',
-    'documento','cartorio','contrato','assinar','entregar','protocolar','prazo','vencimento',
-    'vence','renovar','passaporte','rg','cnh',
-    'voo','aeroporto','embarque','onibus','trem',
-    'reuniao','apresentacao','entrevista','prova','concurso',
-    'buscar','pegar','retirar','entregar','entrega',
-    'cabelereiro','barbearia','manicure','cabeleireiro',
-    'marmita','almoco','janta','jantar',
-    'escola','creche',
-  ];
+  const palavras = ['medico','medica','consulta','dentista','cirurgia','exame','laboratorio','farmacia','remedio','medicamento','vacina','hospital','clinica','psico','terapia','fisio','upa','documento','cartorio','contrato','assinar','entregar','protocolar','prazo','vencimento','vence','renovar','passaporte','rg','cnh','voo','aeroporto','embarque','onibus','trem','reuniao','apresentacao','entrevista','prova','concurso','buscar','pegar','retirar','entregar','entrega','cabelereiro','barbearia','manicure','cabeleireiro','marmita','almoco','janta','jantar','escola','creche'];
   return palavras.some(p => t.includes(p));
 }
 
 async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
   await memory.saveMemory(user.id, 'tarefa', classified.titulo, { data: classified.data, hora: classified.hora });
-
   let scheduledAt = null;
-
-  if (originalText) {
-    const relativo = calcularHorarioRelativo(originalText);
-    if (relativo) {
-      scheduledAt = relativo;
-      console.log(`[${phone}] Horário relativo: ${scheduledAt}`);
-    }
-  }
-
+  if (originalText) { const relativo = calcularHorarioRelativo(originalText); if (relativo) { scheduledAt = relativo; } }
   if (!scheduledAt && classified.hora) {
     const hoje = dateBRT();
     let dataUsada = hoje;
-
     if (classified.data) {
       const dataObj = new Date(classified.data + 'T12:00:00-03:00');
       const anoClassify = dataObj.getFullYear();
       const anoAtual = new Date().getFullYear();
-      if (anoClassify >= anoAtual && anoClassify <= anoAtual + 1) {
-        dataUsada = classified.data;
-      } else {
-        console.warn(`[DATA_INVALIDA] phone=${phone} titulo="${classified.titulo}" data_groq="${classified.data}" ano=${anoClassify} — ignorada, usando hoje`);
-      }
+      if (anoClassify >= anoAtual && anoClassify <= anoAtual + 1) dataUsada = classified.data;
+      else console.warn(`[DATA_INVALIDA] phone=${phone} titulo="${classified.titulo}" data_groq="${classified.data}" — ignorada, usando hoje`);
     }
-
     const [h, m] = classified.hora.split(':').map(Number);
     scheduledAt = new Date(`${dataUsada}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
-
-    if (!classified.data && scheduledAt < nowBRT()) {
-      scheduledAt.setDate(scheduledAt.getDate() + 1);
-      console.log(`[${phone}] Horário passou, agendado amanhã: ${scheduledAt}`);
-    }
+    if (!classified.data && scheduledAt < nowBRT()) { scheduledAt.setDate(scheduledAt.getDate() + 1); }
   }
-
-  // Se não tem hora, salva a intenção e pede o horário
-  if (!scheduledAt) {
-    await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
-      tipo: 'aguardando_hora_lembrete',
-      titulo: classified.titulo,
-      expira: Date.now() + 5 * 60 * 1000
-    }));
-    await sendMessage(phone, `📌 Anotei: *"${classified.titulo}"*
-
-Para que hora quer ser lembrado?`);
-    return;
-  }
-
   if (scheduledAt) {
     const novoLembrete = await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
-    console.log(`[${phone}] Lembrete: "${classified.titulo}" → ${scheduledAt.toISOString()}`);
     if (detectarUrgencia(classified.titulo)) {
       await prisma.memory.create({ data: { userId: user.id, type: 'lembrete_urgente', content: novoLembrete.id } }).catch(() => {});
       const expira = Date.now() + 5 * 60 * 1000;
@@ -876,109 +666,29 @@ Para que hora quer ser lembrado?`);
     const antecedencia = classified.antecedencia;
     if (antecedencia && antecedencia > 0) {
       const scheduledAntes = new Date(scheduledAt.getTime() - antecedencia * 60 * 1000);
-      if (scheduledAntes > new Date()) {
-        await prisma.reminder.create({ data: { userId: user.id, phone, message: `⏰ Em ${antecedencia} minutos: ${classified.titulo}`, scheduledAt: scheduledAntes } });
-      }
+      if (scheduledAntes > new Date()) await prisma.reminder.create({ data: { userId: user.id, phone, message: `⏰ Em ${antecedencia} minutos: ${classified.titulo}`, scheduledAt: scheduledAntes } });
     }
   }
 }
 
 async function editarLembrete(user, phone, classified) {
   try {
-    const titulo = (classified.titulo || '').toLowerCase().trim();
-    const lembretes = await prisma.reminder.findMany({
-      where: { userId: user.id, confirmed: false }, // inclui sent:true (já disparado mas não confirmado)
-      orderBy: { scheduledAt: 'asc' }
-    });
-    if (!lembretes.length) { await sendMessage(phone, 'Você não tem lembretes ativos 😊'); return; }
-    // Busca por similaridade: título classificado OU palavras-chave do texto original
-    let encontrado = null;
-    if (titulo) {
-      encontrado = lembretes.find(r => r.message.toLowerCase().includes(titulo));
-    }
-    // Se não achou pelo título classificado, tenta palavras do texto original
-    if (!encontrado && classified._textoOriginal) {
-      const STOPWORDS = new Set(['para','pras','pros','mim','por','favor','horas','hora','hoje',
-        'amanha','amanhã','remarca','remarcar','muda','mudar','altera','alterar','adiar','adianta',
-        'move','mover','troca','trocar','pra','pro','das','nos','nas','que','uma','uns','uns',
-        'xarope','besta','amor','please','pfv','favor','obrigado','pode','seria','quero','preciso']);
-      const palavras = classified._textoOriginal.toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .split(/\s+/)
-        .filter(p => p.length > 3 && !STOPWORDS.has(p));
-
-      // Pontua cada lembrete pela quantidade de palavras que batem
-      let melhorPontuacao = 0;
-      lembretes.forEach(r => {
-        const msg = r.message.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        const pontos = palavras.filter(p => msg.includes(p)).length;
-        if (pontos > melhorPontuacao) { melhorPontuacao = pontos; encontrado = r; }
-      });
-    }
-    // Fallback: lembrete mais próximo no tempo (só se houver 1 lembrete)
-    if (!encontrado && lembretes.length === 1) encontrado = lembretes[0];
-    if (!encontrado) {
-      // Mais de 1 lembrete e não achou — pede para escolher
-      const listaLemb = lembretes.slice(0,5).map(function(r,i){ return (i+1) + '. ' + r.message; }).join('\n');
-      await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
-        tipo: 'aguardando_escolha_lembrete',
-        novaHora: classified.nova_hora,
-        novaData: classified.nova_data,
-        expira: Date.now() + 2 * 60 * 1000
-      }));
-      await sendMessage(phone, 'Qual lembrete você quer remarcar?\n\n' + listaLemb + '\n\nResponde com o número.');
-      return;
-    }
-
-    // Se não veio hora nova, pede confirmação do horário
-    if (!classified.nova_hora && !classified.nova_data) {
-      await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
-        tipo: 'aguardando_hora_edicao',
-        lembreteId: encontrado.id,
-        lembreteTitulo: encontrado.message,
-        expira: Date.now() + 3 * 60 * 1000
-      }));
-      const horaAtual = new Date(encontrado.scheduledAt).toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
-      await sendMessage(phone, `📌 *${encontrado.message}*
-Atualmente: ${horaAtual}
-
-Para que hora quer remarcar?`);
-      return;
-    }
-
+    const titulo = classified.titulo?.toLowerCase();
+    if (!titulo) { await sendMessage(phone, 'Qual lembrete quer alterar? Me diz o nome 😊'); return; }
+    const lembretes = await prisma.reminder.findMany({ where: { userId: user.id, sent: false, confirmed: false } });
+    const encontrado = lembretes.find(r => r.message.toLowerCase().includes(titulo));
+    if (!encontrado) { await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕`); return; }
     let novoScheduledAt = new Date(encontrado.scheduledAt);
     if (classified.nova_hora) {
-      // Suporte a horário relativo ("daqui 1 hora", "em 30 min")
-      const relativo = calcularHorarioRelativo(classified.nova_hora + ' ' + (classified.nova_hora || ''));
-      if (relativo) {
-        novoScheduledAt = relativo;
-      } else {
-        const [h, m] = classified.nova_hora.split(':').map(Number);
-        const data = classified.nova_data || encontrado.scheduledAt.toISOString().split('T')[0];
-        novoScheduledAt = new Date(`${data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
-      }
+      const [h, m] = classified.nova_hora.split(':').map(Number);
+      const data = classified.nova_data || encontrado.scheduledAt.toISOString().split('T')[0];
+      novoScheduledAt = new Date(`${data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
     } else if (classified.nova_data) {
       const horaAtual = new Date(encontrado.scheduledAt).toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
       const [h, m] = horaAtual.split(':').map(Number);
       novoScheduledAt = new Date(`${classified.nova_data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
     }
-
-    // Pede confirmação antes de salvar
-    const novaHoraFmt = novoScheduledAt.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
-    const novaDataFmt = novoScheduledAt.toLocaleDateString('pt-BR', {timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit'});
-    const hoje = dateBRT();
-    const diaLabel = novoScheduledAt.toLocaleDateString('en-CA', {timeZone:'America/Sao_Paulo'}) === hoje ? 'hoje' : novaDataFmt;
-
-    await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
-      tipo: 'confirmar_edicao_lembrete',
-      lembreteId: encontrado.id,
-      lembreteTitulo: encontrado.message,
-      novoScheduledAt: novoScheduledAt.toISOString(),
-      expira: Date.now() + 2 * 60 * 1000
-    }));
-    await sendMessage(phone, `📅 Remarcar *"${encontrado.message}"* para ${diaLabel} às *${novaHoraFmt}*?
-
-Confirma? (sim/não)`);
+    await prisma.reminder.update({ where: { id: encontrado.id }, data: { scheduledAt: novoScheduledAt } });
   } catch(e) { console.error('[editarLembrete]', e.message); }
 }
 
@@ -986,7 +696,7 @@ async function deletarLembretePorTitulo(user, phone, classified) {
   try {
     const titulo = classified.titulo?.toLowerCase();
     if (!titulo) { await sendMessage(phone, 'Qual lembrete quer cancelar? Me diz o nome 😊'); return; }
-    const lembretes = await prisma.reminder.findMany({ where: { userId: user.id, confirmed: false } });
+    const lembretes = await prisma.reminder.findMany({ where: { userId: user.id, sent: false, confirmed: false } });
     const encontrados = lembretes.filter(r => r.message.toLowerCase().includes(titulo));
     if (!encontrados.length) { await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕`); return; }
     await prisma.reminder.deleteMany({ where: { id: { in: encontrados.map(r => r.id) } } });
@@ -1000,59 +710,33 @@ async function handleContatoAction(user, phone, classified) {
       if (!contatos.length) { await sendMessage(phone, 'Você ainda não tem contatos salvos. Me diz o número de alguém: "o número do João é 43999998888" 😊'); return; }
       const lista = contatos.map((c, i) => `${i+1}. *${c.name}*${c.relation?` (${c.relation})`:''} — ${c.phone}`).join('\n');
       await sendMessage(phone, `📋 *Seus contatos:*\n\n${lista}\n\nPode dizer "envia mensagem pro contato 2" ou "lembra o contato 1 de tal coisa" 😊`);
-      await prisma.memory.upsert({
-        where: { userId_type: { userId: user.id, type: 'contatos_listados' } },
-        update: { content: JSON.stringify(contatos) },
-        create: { userId: user.id, type: 'contatos_listados', content: JSON.stringify(contatos) }
-      }).catch(() => {});
+      await prisma.memory.upsert({ where: { userId_type: { userId: user.id, type: 'contatos_listados' } }, update: { content: JSON.stringify(contatos) }, create: { userId: user.id, type: 'contatos_listados', content: JSON.stringify(contatos) } }).catch(() => {});
       return;
     }
-
     if (classified.tipo === 'deletar_contato') {
       const nome = classified.nome;
       if (!nome) { await sendMessage(phone, 'Qual contato quer apagar? Me diz o nome 😊'); return; }
-
       const pareceNumero = /^\d{8,}$/.test(nome.replace(/\D/g,'')) && nome.replace(/\D/g,'').length >= 8;
       let encontrados = [];
-
-      if (pareceNumero) {
-        const tel = nome.replace(/\D/g,'');
-        const todos = await prisma.contact.findMany({ where: { userId: user.id } });
-        encontrados = todos.filter(c => c.phone && c.phone.replace(/\D/g,'').endsWith(tel) || tel.endsWith(c.phone.replace(/\D/g,'')));
-      }
-
+      if (pareceNumero) { const tel = nome.replace(/\D/g,''); const todos = await prisma.contact.findMany({ where: { userId: user.id } }); encontrados = todos.filter(c => c.phone && c.phone.replace(/\D/g,'').endsWith(tel) || tel.endsWith(c.phone.replace(/\D/g,''))); }
       if (!encontrados.length) {
         const numLista = parseInt(nome);
         if (!isNaN(numLista) && numLista >= 1) {
-          try {
-            const mem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'contatos_listados' } });
-            if (mem) {
-              const lista = JSON.parse(mem.content);
-              const c = lista[numLista - 1];
-              if (c) {
-                const found = await prisma.contact.findMany({ where: { userId: user.id, phone: c.phone } });
-                encontrados = found;
-              }
-            }
-          } catch(e) {}
+          try { const mem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'contatos_listados' } }); if (mem) { const lista = JSON.parse(mem.content); const c = lista[numLista - 1]; if (c) { const found = await prisma.contact.findMany({ where: { userId: user.id, phone: c.phone } }); encontrados = found; } } } catch(e) {}
         }
       }
-
       if (!encontrados.length) encontrados = await findContactByName(user.id, nome);
-
       if (encontrados.length === 0) { await sendMessage(phone, `Não encontrei nenhum contato com "${nome}" 😕`); return; }
       for (const c of encontrados) await prisma.contact.delete({ where: { id: c.id } });
       await sendMessage(phone, `✅ Contato${encontrados.length>1?'s':''} removido${encontrados.length>1?'s':''}: *${encontrados.map(c=>c.name).join(', ')}* 🗑️`);
       return;
     }
-
     if (classified.tipo === 'salvar_contato') {
       if (!classified.nome || !classified.phone) { await sendMessage(phone, 'Preciso do nome e do número para salvar o contato 😊'); return; }
       await saveContact(user.id, { nome: classified.nome, phone: classified.phone, relation: classified.relation || null, notes: classified.notes || null });
       await sendMessage(phone, `✅ Contato salvo! ${classified.nome}${classified.relation?` (${classified.relation})`:''} 📱`);
       return;
     }
-
     if (classified.tipo === 'enviar_mensagem_agendada') {
       let destinatarioPhone = classified.phone || null;
       let destinatarioNome = classified.destinatario || null;
@@ -1065,8 +749,7 @@ async function handleContatoAction(user, phone, classified) {
           await sendMessage(phone, `Encontrei mais de um contato:\n\n${lista}\n\nQual você quer? Responde com o número (1, 2...)`);
           return;
         }
-        destinatarioPhone = encontrados[0].phone;
-        destinatarioNome = encontrados[0].name;
+        destinatarioPhone = encontrados[0].phone; destinatarioNome = encontrados[0].name;
       }
       if (!destinatarioPhone) { await sendMessage(phone, 'Para quem quer enviar? Me diz o nome ou número 😊'); return; }
       let phoneClean = destinatarioPhone.replace(/\D/g, '');
@@ -1085,15 +768,11 @@ async function handleContatoAction(user, phone, classified) {
       await sendMessage(phone,`📤 Vou enviar para *${destinatarioNome}*:\n\n_"${mensagem}"_\n\n📅 ${dataPrev} às ${horaPrev}\n\nConfirma? (sim/não)`);
       return;
     }
-
     if (classified.tipo === 'enviar_mensagem') {
       let destinatarioPhone = classified.phone || null;
       let destinatarioNome = classified.destinatario || null;
       if (classified.contato_numero) {
-        try {
-          const mem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'contatos_listados' } });
-          if (mem) { const lista = JSON.parse(mem.content); const c = lista[classified.contato_numero-1]; if (c) { destinatarioNome = c.name; destinatarioPhone = c.phone; } }
-        } catch(e) {}
+        try { const mem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'contatos_listados' } }); if (mem) { const lista = JSON.parse(mem.content); const c = lista[classified.contato_numero-1]; if (c) { destinatarioNome = c.name; destinatarioPhone = c.phone; } } } catch(e) {}
       }
       if (!destinatarioPhone && destinatarioNome) {
         const encontrados = await findContactByName(user.id, destinatarioNome);
@@ -1129,8 +808,7 @@ async function checkConfirmacaoPendente(user, phone, text) {
     if (!pendente) return false;
     let dados; try { dados = JSON.parse(pendente.content); } catch { return false; }
     if (Date.now() > dados.expira) { await prisma.memory.delete({ where: { id: pendente.id } }); return false; }
-    const textNorm = text.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-
+    const textNorm = text.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (dados.tipo === 'selecao_contato') {
       const num = parseInt(textNorm);
       if (!isNaN(num) && num >= 1 && num <= dados.opcoes.length) {
@@ -1138,22 +816,15 @@ async function checkConfirmacaoPendente(user, phone, text) {
         await prisma.memory.delete({ where: { id: pendente.id } });
         let phoneClean = escolhido.phone.replace(/\D/g, '');
         if (!phoneClean.startsWith('55') && phoneClean.length <= 11) phoneClean = '55' + phoneClean;
-        if (dados.mensagem) {
-          await memory.saveMemory(user.id,'confirmacao_pendente',JSON.stringify({tipo:'enviar_mensagem',destinatarioPhone:phoneClean,destinatarioNome:escolhido.nome,mensagem:dados.mensagem,expira:Date.now()+2*60*1000}));
-          await sendMessage(phone,`📤 Vou enviar para *${escolhido.nome}*:\n\n_"${dados.mensagem}"_\n\nConfirma? (sim/não)`);
-        } else {
-          await sendMessage(phone, `Ok! ${escolhido.nome} selecionado. O que quer enviar?`);
-        }
+        if (dados.mensagem) { await memory.saveMemory(user.id,'confirmacao_pendente',JSON.stringify({tipo:'enviar_mensagem',destinatarioPhone:phoneClean,destinatarioNome:escolhido.nome,mensagem:dados.mensagem,expira:Date.now()+2*60*1000})); await sendMessage(phone,`📤 Vou enviar para *${escolhido.nome}*:\n\n_"${dados.mensagem}"_\n\nConfirma? (sim/não)`); }
+        else { await sendMessage(phone, `Ok! ${escolhido.nome} selecionado. O que quer enviar?`); }
         return true;
       }
       if (!isNaN(num)) { await sendMessage(phone, `Número inválido. Escolha entre 1 e ${dados.opcoes.length}.`); return true; }
       if (['nao','n','não','cancelar','cancela'].includes(textNorm)) { await prisma.memory.delete({ where: { id: pendente.id } }); await sendMessage(phone, 'Ok, cancelei 😊'); return true; }
       return false;
     }
-
-    // Generic sim - only for enviar_mensagem type
-    if (['sim','s','ok','confirma','envia','manda','pode','yes'].includes(textNorm) &&
-        (dados.tipo === 'enviar_mensagem' || dados.tipo === 'mensagem_agendada')) {
+    if (['sim','s','ok','confirma','envia','manda','pode','yes'].includes(textNorm)) {
       const remetente = await memory.getUserPreference(user.id);
       const nomeRemetente = remetente.name || 'seu contato';
       const foneFormatado = phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
@@ -1163,180 +834,13 @@ async function checkConfirmacaoPendente(user, phone, text) {
       await sendMessage(phone, `✅ Mensagem enviada para *${dados.destinatarioNome}*! 📤`);
       return true;
     }
-
-    if (['nao','n','não','cancelar','cancela','para'].includes(textNorm) &&
-        (dados.tipo === 'enviar_mensagem' || dados.tipo === 'mensagem_agendada')) {
+    if (['nao','n','não','cancelar','cancela','para'].includes(textNorm)) {
       await prisma.memory.delete({ where: { id: pendente.id } });
       await sendMessage(phone, 'Ok, cancelei o envio 😊');
       return true;
     }
-
-    // ── Aguardando escolha de lembrete por número ──
-    if (dados.tipo === 'aguardando_escolha_lembrete') {
-      const num = parseInt(textNorm);
-      const lembretes = await prisma.reminder.findMany({
-        where: { userId: user.id, confirmed: false },
-        orderBy: { scheduledAt: 'asc' }
-      });
-      if (!isNaN(num) && num >= 1 && num <= lembretes.length) {
-        const escolhido = lembretes[num - 1];
-        await prisma.memory.delete({ where: { id: pendente.id } });
-        if (dados.novaHora) {
-          const [h2, m2] = dados.novaHora.split(':').map(Number);
-          const novoAt = new Date(`${dateBRT()}T${String(h2).padStart(2,'0')}:${String(m2).padStart(2,'0')}:00-03:00`);
-          const horaFmt = novoAt.toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
-          await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
-            tipo: 'confirmar_edicao_lembrete',
-            lembreteId: escolhido.id,
-            lembreteTitulo: escolhido.message,
-            novoScheduledAt: novoAt.toISOString(),
-            expira: Date.now() + 2 * 60 * 1000
-          }));
-          await sendMessage(phone, `📅 Remarcar *"${escolhido.message}"* para hoje às *${horaFmt}*?\n\nConfirma? (sim/não)`);
-        } else {
-          await sendMessage(phone, `Anotei! Para que hora quer remarcar *"${escolhido.message}"*?`);
-        }
-        return true;
-      }
-      await sendMessage(phone, 'Número inválido. Responde com 1, 2, 3...');
-      return true;
-    }
-
-    // ── Aguardando hora para novo lembrete ──
-    if (dados.tipo === 'aguardando_hora_lembrete') {
-      // Tenta extrair hora da resposta
-      const relativo = calcularHorarioRelativo(text);
-      let scheduledAt = relativo;
-
-      if (!scheduledAt) {
-        // Tenta extrair hora no formato HH:MM ou "Xh"
-        const horaMatch = text.match(/(\d{1,2})[:h](\d{0,2})/i) || text.match(/(\d{1,2})\s*h(?:oras?)?/i);
-        if (horaMatch) {
-          const h = parseInt(horaMatch[1]);
-          const m = parseInt(horaMatch[2] || '0');
-          if (h >= 0 && h <= 23) {
-            scheduledAt = new Date(`${dateBRT()}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
-            if (scheduledAt < nowBRT()) scheduledAt.setDate(scheduledAt.getDate() + 1);
-          }
-        }
-      }
-
-      if (!scheduledAt) {
-        await sendMessage(phone, 'Não entendi o horário 😕 Me diz assim: "às 15h" ou "daqui 2 horas"');
-        return true;
-      }
-
-      await prisma.memory.delete({ where: { id: pendente.id } });
-      const novoLembrete = await prisma.reminder.create({
-        data: { userId: user.id, phone, message: dados.titulo, scheduledAt }
-      });
-      const horaFmt = scheduledAt.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
-      const hoje = dateBRT();
-      const diaLabel = scheduledAt.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}) === hoje ? 'hoje' : scheduledAt.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
-      await sendMessage(phone, `✅ Lembrete criado!
-
-📌 *${dados.titulo}*
-🕒 ${diaLabel} às ${horaFmt} 🔔`);
-      return true;
-    }
-
-    // ── Aguardando hora para edição de lembrete ──
-    if (dados.tipo === 'aguardando_hora_edicao') {
-      const relativo = calcularHorarioRelativo(text);
-      let novoScheduledAt = relativo;
-
-      if (!novoScheduledAt) {
-        const horaMatch = text.match(/(\d{1,2})[:h](\d{0,2})/i) || text.match(/(\d{1,2})\s*h(?:oras?)?/i);
-        if (horaMatch) {
-          const h = parseInt(horaMatch[1]);
-          const m = parseInt(horaMatch[2] || '0');
-          if (h >= 0 && h <= 23) {
-            novoScheduledAt = new Date(`${dateBRT()}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
-            if (novoScheduledAt < nowBRT()) novoScheduledAt.setDate(novoScheduledAt.getDate() + 1);
-          }
-        }
-      }
-
-      if (!novoScheduledAt) {
-        await sendMessage(phone, 'Não entendi o horário 😕 Me diz assim: "às 15h" ou "daqui 2 horas"');
-        return true;
-      }
-
-      // Pede confirmação
-      const horaFmt = novoScheduledAt.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
-      const hoje = dateBRT();
-      const diaLabel = novoScheduledAt.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}) === hoje ? 'hoje' : novoScheduledAt.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
-
-      await prisma.memory.delete({ where: { id: pendente.id } });
-      await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
-        tipo: 'confirmar_edicao_lembrete',
-        lembreteId: dados.lembreteId,
-        lembreteTitulo: dados.lembreteTitulo,
-        novoScheduledAt: novoScheduledAt.toISOString(),
-        expira: Date.now() + 2 * 60 * 1000
-      }));
-      await sendMessage(phone, `📅 Remarcar *"${dados.lembreteTitulo}"* para ${diaLabel} às *${horaFmt}*?
-
-Confirma? (sim/não)`);
-      return true;
-    }
-
-    // ── Confirmação de edição de lembrete ──
-    if (dados.tipo === 'confirmar_edicao_lembrete') {
-      const sim = ['sim','s','ok','confirma','pode','yes'].includes(textNorm);
-      const nao = ['nao','n','não','cancelar','cancela','para'].includes(textNorm);
-      if (sim) {
-        await prisma.memory.delete({ where: { id: pendente.id } });
-        const novoScheduledAt = new Date(dados.novoScheduledAt);
-        await prisma.reminder.update({ where: { id: dados.lembreteId }, data: { scheduledAt: novoScheduledAt, sent: false, confirmed: false } });
-        const horaFmt = novoScheduledAt.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
-        const hoje = dateBRT();
-        const diaLabel = novoScheduledAt.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}) === hoje ? 'hoje' : novoScheduledAt.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
-        await sendMessage(phone, `✅ Remarcado! *"${dados.lembreteTitulo}"* para ${diaLabel} às *${horaFmt}* 📅`);
-        return true;
-      }
-      if (nao) {
-        await prisma.memory.delete({ where: { id: pendente.id } });
-        await sendMessage(phone, 'Ok, mantive o horário original 😊');
-        return true;
-      }
-      // Usuário está corrigindo qual lembrete remarcar — busca pelo novo texto
-      const lembretes = await prisma.reminder.findMany({
-        where: { userId: user.id, confirmed: false },
-        orderBy: { scheduledAt: 'asc' }
-      });
-      const palavras = textNorm.normalize('NFD').replace(/[̀-ͯ]/g,'')
-        .split(/\s+/).filter(p => p.length > 3 && !['para','pras','mim','por','favor','horas','hora','hoje','amanha','nao','sim'].includes(p));
-      const correto = lembretes.find(r => {
-        const msg = r.message.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
-        return palavras.some(p => msg.includes(p));
-      });
-      if (correto) {
-        // Atualiza a confirmação pendente com o lembrete correto
-        await prisma.memory.delete({ where: { id: pendente.id } });
-        const novoScheduledAt = new Date(dados.novoScheduledAt);
-        const horaFmt = novoScheduledAt.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
-        const hoje = dateBRT();
-        const diaLabel = novoScheduledAt.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}) === hoje ? 'hoje' : novoScheduledAt.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
-        await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({
-          tipo: 'confirmar_edicao_lembrete',
-          lembreteId: correto.id,
-          lembreteTitulo: correto.message,
-          novoScheduledAt: dados.novoScheduledAt,
-          expira: Date.now() + 2 * 60 * 1000
-        }));
-        await sendMessage(phone, `📅 Remarcar *"${correto.message}"* para ${diaLabel} às *${horaFmt}*?
-
-Confirma? (sim/não)`);
-        return true;
-      }
-      // Não entendeu a correção — mantém pendente e pede esclarecimento
-      const listaLemb = lembretes.slice(0,5).map(function(r,i){ return (i+1) + '. ' + r.message; }).join('\n');
-      await sendMessage(phone, 'Qual lembrete você quer remarcar? Tenho:\n\n' + listaLemb);
-      return true;
-    }
-
     if (dados.tipo === 'urgente_confirmacao') {
+      const sim = /^(sim|s|claro|pode|quero|yes|ok|manda|ativa|coloca)/.test(textNorm);
       const nao = /^(n[aã]o|nao|n|não precisa|dispenso|deixa|tá bom|ta bom)/.test(textNorm);
       if (sim || nao) {
         await prisma.memory.delete({ where: { id: pendente.id } });
@@ -1345,9 +849,7 @@ Confirma? (sim/não)`);
           if (rem) {
             const quinzeAntes = new Date(rem.scheduledAt.getTime() - 15 * 60 * 1000);
             if (quinzeAntes > new Date()) {
-              await prisma.reminder.create({
-                data: { userId: user.id, phone, message: `⚡ Em 15 minutos: ${rem.message}`, scheduledAt: quinzeAntes }
-              });
+              await prisma.reminder.create({ data: { userId: user.id, phone, message: `⚡ Em 15 minutos: ${rem.message}`, scheduledAt: quinzeAntes } });
               await prisma.memory.create({ data: { userId: user.id, type: 'urgente_antes_lock', content: rem.id } });
             }
           }
@@ -1358,7 +860,6 @@ Confirma? (sim/não)`);
         return true;
       }
     }
-
     return false;
   } catch (e) {
     console.error('[checkConfirmacaoPendente] Erro:', e.message);
@@ -1371,6 +872,8 @@ async function extractAndSavePersonalInfo(userId, text) {
   if (!infos || infos.length === 0) return;
   for (const { chave, valor, categoria } of infos) {
     if (!chave || !valor) continue;
+    // ── FIX: não salva info pessoal como nome no preference ──
+    // info pessoal vai só para memory, nunca para user.name
     await savePersonalInfo(userId, chave, valor, categoria || 'outro');
     console.log(`[memória pessoal] salvo: ${chave} = "${valor}"`);
   }
