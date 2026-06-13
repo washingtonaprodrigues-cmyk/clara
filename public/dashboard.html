@@ -1148,8 +1148,21 @@ async function salvarRemarcar(){
   }catch(e){hideThinking();showToast('Erro ⚠️');}
   btn.textContent='Salvar';btn.disabled=false;
 }
-// ── Excluir lembrete ──
-function doneRemVencido(el){const id=el.dataset.id;doneRem(id);}
+// ── Concluir / Excluir lembrete ──
+async function doneRemCheck(id,checkEl,rowEl){
+  if(checkEl)checkEl.classList.add('done');
+  const title=rowEl?.querySelector('.rem-row-title');
+  if(title)title.classList.add('done');
+  showThinking('Confirmando...','marcando como feito');
+  try{
+    await fetch('/forms/lembrete-concluir/'+id,{method:'POST'});
+    await loadAll();
+    hideThinking();
+    renderRem();
+    showToast('Confirmado ✅');
+  }catch{hideThinking();showToast('Erro ⚠️');}
+}
+function doneRemVencido(el){const id=el.dataset.id;doneRemCheck(id,null,null);}
 function delRemVencido(el){const id=el.closest('.vencido-row').dataset.id;delRem(id);}
 async function delRem(id){
   if(!confirm('Excluir este lembrete?'))return;
