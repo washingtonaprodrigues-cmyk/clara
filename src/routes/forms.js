@@ -326,6 +326,25 @@ router.get('/preferencia/:phone', async (req, res) => {
   }
 });
 
+// ====================== MEMÓRIA DO RELACIONAMENTO (debug) ======================
+router.get('/relacionamento/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const user = await memory.getOrCreateUser(phone);
+    const rel = await prisma.memory.findFirst({
+      where: { userId: user.id, type: 'relationship_summary' },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json({
+      content: rel?.content || null,
+      createdAt: rel?.createdAt || null,
+      updatedAt: rel?.updatedAt || null
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== PREFERÊNCIA: POST ======================
 router.post('/preferencia/:phone', async (req, res) => {
   try {
