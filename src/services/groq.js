@@ -385,14 +385,14 @@ const PALAVRAS_EMOCIONAIS = /sinto|sentindo|triste|feliz|cansad|estress|preocupa
 function escolherModelo(message, tom, contexto) {
   const msg = message.trim();
 
-  // Sarcástico sempre precisa do 70b — sarcasmo exige timing e nuance
-  if (tom === 'sarcastico') return MODEL_FORTE;
+  // Simpática e Sem Filtro têm memória relacional reforçada — precisam do 70b
+  // para manter apelidos, piadas internas e nuance emocional consistentes
+  if (tom === 'sarcastico' || tom === 'carinhoso') return MODEL_FORTE;
 
-  // Mensagens emocionais/pessoais merecem o 70b, independente do tamanho
+  // Mensagens emocionais/pessoais merecem o 70b, independente do tom
   if (PALAVRAS_EMOCIONAIS.test(msg)) return MODEL_FORTE;
 
-  // Tudo o mais (consultas factuais, agenda, saldo, listas, saudações,
-  // confirmações) pode ir pro 8b — é apresentação de dados, não interpretação
+  // Direta e Divertida são tons funcionais/leves — 8b cobre bem
   return MODEL_LEVE;
 }
 
@@ -461,7 +461,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       return 'O bate-papo ainda está pausado — mas pode me mandar lembretes, listas e tarefas! 😊';
     }
 
-    const modeloEscolhido = MODEL_FORTE; // conversa livre sempre no 70b — é onde a personalidade vive
+    const modeloEscolhido = escolherModelo(message, tom, contexto); // Simpática/Sem Filtro=70b sempre; Direta/Divertida=8b quando possível
 
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('timeout')), 15000)
@@ -479,7 +479,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       return groq.chat.completions.create({
         model: modelo,
         messages: msgs,
-        temperature: tom === 'sarcastico' ? 0.9 : 0.7,
+        temperature: modelo === MODEL_LEVE ? 0.6 : (tom === 'sarcastico' ? 0.9 : 0.7),
         max_tokens: isCurta ? 80 : 800,
       });
     }
