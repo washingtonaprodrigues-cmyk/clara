@@ -67,7 +67,41 @@ function limparMetadadosSafety(texto) {
     return '';
   }
 
+  if (temErroGrave(limpo)) {
+    return '';
+  }
+
   return limpo;
+}
+
+// Detecta erros GRAVES de geração que tornam a resposta inutilizável —
+// deliberadamente conservador: só pega problemas óbvios, para não
+// descartar respostas só "feias" ou com pequenos erros de português
+// (esses são tolerados; ver discussão sobre custo/benefício).
+function temErroGrave(texto) {
+  if (!texto) return false;
+
+  // 1) Repetição de caractere (5+ vezes seguidas) — ex: "aaaaaaaa",
+  // "...........", "????????" — sinal de geração quebrada/loop.
+  // Exclui k/r/s/h (risadas "kkkk", "rsrs", "hhhh" são normais em PT-BR).
+  if (/([^krsh.\s])\1{4,}/i.test(texto)) return true;
+
+  // 2) Resposta cortada no meio de uma palavra — termina com hífen
+  // (ex: "amanhã vou pre-" = "preparar" cortado no meio).
+  if (/-$/.test(texto.trim())) return true;
+
+  // 3) Mistura grosseira de idioma: frase inteira em inglês (várias
+  // palavras-função em inglês em sequência), não palavras isoladas que
+  // podem ser nomes/termos técnicos.
+  const blocoInglesGrosseiro = /\b(the|and|with|for|this|that|you|your|have|will|would|should|because|however|therefore)\b(\s+\w+){0,3}\s+\b(the|and|with|for|this|that|you|your|have|will|would|should|because|however|therefore)\b/i;
+  if (blocoInglesGrosseiro.test(texto)) return true;
+
+  // 4) Padrão de 2-3 caracteres repetido 6+ vezes (ex: "blablabla...",
+  // loop de geração), exceto variações de risada (k/r/s/h/a).
+  const matchPadrao = texto.match(/(.{2,3}?)\1{5,}/);
+  if (matchPadrao && !/^[krsha]+$/i.test(matchPadrao[1])) return true;
+
+  return false;
 }
 
 // Modelos gratuitos via "openrouter/free" variam em qualidade — alguns
