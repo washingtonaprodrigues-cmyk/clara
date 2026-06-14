@@ -10,18 +10,14 @@
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-// Lista de modelos gratuitos para tentar, em ordem de preferência.
-// Modelos ":free" do OpenRouter têm limite diário generoso e não cobram nada.
-// Slugs verificados: meta-llama/llama-3.1-8b-instruct:free e
-// google/gemini-2.0-flash-exp:free foram descontinuados (404) — substituídos
-// pelos slugs atuais abaixo.
+// Lista de modelos para tentar, em ordem de preferência.
+// "openrouter/free" é o Free Models Router oficial: escolhe automaticamente
+// um modelo gratuito disponível agora, evitando o problema de slugs ":free"
+// específicos ficarem desatualizados/404 com o tempo. Mantemos um modelo
+// nomeado como segunda opção apenas como rede de segurança extra.
 const OPENROUTER_MODELS = [
+  'openrouter/free',
   'meta-llama/llama-3.3-70b-instruct:free',
-  'meta-llama/llama-3.1-405b-instruct:free',
-  'google/gemini-2.0-flash-001:free',
-  'google/gemini-flash-1.5-8b:free',
-  'mistralai/mistral-7b-instruct:free',
-  'qwen/qwen-2.5-72b-instruct:free',
 ];
 
 function openrouterDisponivel() {
