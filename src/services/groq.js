@@ -11,6 +11,33 @@ function hoje() {
   return new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 }
 
+// Retorna {hojeISO, diaSemana, mapaDias} para ajudar o classify a calcular datas relativas
+function infoDatas() {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const pad = n => String(n).padStart(2, '0');
+  const hojeISO = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+  const dias = ['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
+  const diaSemanaHoje = dias[now.getDay()];
+
+  // Calcula data ISO para cada dia da semana relativo a hoje (próxima ocorrência)
+  const mapa = {};
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + i);
+    const nomeDia = dias[d.getDay()];
+    if (!mapa[nomeDia]) {
+      mapa[nomeDia] = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    }
+  }
+  // amanhã e depois de amanhã
+  const amanha = new Date(now); amanha.setDate(amanha.getDate()+1);
+  const depoisAmanha = new Date(now); depoisAmanha.setDate(depoisAmanha.getDate()+2);
+  const amanhaISO = `${amanha.getFullYear()}-${pad(amanha.getMonth()+1)}-${pad(amanha.getDate())}`;
+  const depoisAmanhaISO = `${depoisAmanha.getFullYear()}-${pad(depoisAmanha.getMonth()+1)}-${pad(depoisAmanha.getDate())}`;
+
+  return { hojeISO, diaSemanaHoje, mapa, amanhaISO, depoisAmanhaISO };
+}
+
 function isRateLimit(error) {
   const msg = (error.message || '').toLowerCase();
   const status = error.status || error.statusCode || 0;
@@ -80,8 +107,19 @@ async function ativarPausaCreativa(phone, tipo) {
   return ativarModoDireto(phone, tipo);
 }
 
-const SYSTEM_PROMPT = () => `Você é a Clara, assistente pessoal brasileira.
-Retorne APENAS JSON. Hoje é ${hoje()}.
+const SYSTEM_PROMPT = () => {
+  const { hojeISO, diaSemanaHoje, mapa, amanhaISO, depoisAmanhaISO } = infoDatas();
+  const mapaTexto = Object.entries(mapa).map(([dia, data]) => dia + '=' + data).join(', ');
+  return `Você é a Clara, assistente pessoal brasileira.
+Retorne APENAS JSON. Hoje é ${hoje()} (${diaSemanaHoje}), data ISO: ${hojeISO}.
+
+DATAS CALCULADAS — use estes valores EXATOS quando o usuário mencionar dias relativos:
+- "hoje" = ${hojeISO}
+- "amanhã" = ${amanhaISO}
+- "depois de amanhã" = ${depoisAmanhaISO}
+- Próximas ocorrências dos dias da semana: ${mapaTexto}
+- Se o usuário disser "segunda", "terça" etc SEM dizer "que vem" ou "próxima", use a data da tabela acima (próxima ocorrência)
+- NUNCA calcule datas por conta própria — use SEMPRE os valores fornecidos acima
 
 REGRAS:
 - Valor em dinheiro → gasto
@@ -137,6 +175,7 @@ EXEMPLOS:
 "oi" → {"tipo":"saudacao"}
 "meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
 `;
+};
 
 async function classify(message, phone = null, contexto = '') {
   try {
