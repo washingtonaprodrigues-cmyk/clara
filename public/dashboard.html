@@ -506,7 +506,8 @@ select option{background:var(--s2)}
 .ph-back{width:36px;height:36px;background:none;border:none;cursor:pointer;display:none;align-items:center;justify-content:center;flex-shrink:0;color:var(--text2);margin-right:4px;border-radius:8px;padding:0}
 .ph-back:hover{background:var(--s2);color:var(--text)}
 .ph-back svg{width:18px;height:18px}
-@media(max-width:768px){.sidebar{display:none}.tb-menu{display:flex!important}.tb-expand-btn{display:none!important}.drawer{display:flex}.drawer-overlay{display:block}.ph-back{display:flex}}
+.tb-clara-avatar-mobile,.tb-info-mobile{display:none}
+@media(max-width:768px){.sidebar{display:none}.tb-menu{display:flex!important}.tb-expand-btn{display:none!important}.drawer{display:flex}.drawer-overlay{display:block}.ph-back{display:flex}.tb-info-desktop{display:none!important}.tb-clara-avatar-mobile,.tb-info-mobile{display:flex!important}.tb-info-mobile{display:block!important}}
 </style>
 </head>
 <body>
@@ -578,7 +579,9 @@ select option{background:var(--s2)}
       <div class="page active" id="page-chat">
         <div class="topbar" id="topbar">
           <button class="tb-menu" onclick="toggleDrawer()"><span></span><span></span><span></span></button>
-          <div class="tb-info" style="flex:1"><div class="tb-name">Chat</div><div class="tb-status no-dot" style="color:var(--text3)">Converse naturalmente com a Clara.</div></div>
+          <div class="tb-info tb-info-desktop" style="flex:1"><div class="tb-name">Chat</div><div class="tb-status no-dot" style="color:var(--text3)">Converse naturalmente com a Clara.</div></div>
+          <div class="tb-clara-avatar tb-clara-avatar-mobile" id="tb-clara-avatar-mobile"><img src="/avatar" onload="this.classList.add('loaded')" onerror="this.style.display='none';this.parentElement.style.animation='none';this.parentElement.insertAdjacentHTML('beforeend','<span style=\'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:16px;z-index:2\'>✨</span>')" alt="Clara"/></div>
+          <div class="tb-info tb-info-mobile" style="flex:1"><div class="tb-name">Clara</div><div class="tb-status">Online agora</div></div>
           <button class="tb-nova" onclick="newChat()">+ Novo Chat</button>
           <div class="tb-icon-btn" id="private-btn" onclick="togglePrivate()" style="cursor:pointer">🔓</div>
         </div>
@@ -597,7 +600,7 @@ select option{background:var(--s2)}
             <span class="chip" onclick="cs('Criar um lembrete')">Lembrete</span>
             <span class="chip" onclick="cs('Registrar um gasto')">Gasto</span>
             <span class="chip" onclick="cs('Adicionar remédio')">Remédio</span>
-            <span class="chip" onclick="cs('Guardar no cofre')">Cofre</span>
+            <span class="chip" onclick="cs('Minhas listas')">Listas</span>
             
           </div>
           <div class="input-row">
