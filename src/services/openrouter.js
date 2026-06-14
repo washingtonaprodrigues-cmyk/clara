@@ -35,10 +35,39 @@ function isQuotaError(err) {
 //   "User Safety: safe\nResponse Safety: safe"
 // Isso não faz parte da resposta real e não deve ser enviado ao usuário.
 function limparMetadadosSafety(texto) {
-  return texto
+  let limpo = texto;
+
+  // Alguns modelos "reasoning" do free router às vezes vazam o raciocínio
+  // interno dentro do campo content, em vez de só a resposta final —
+  // tanto em blocos <think>...</think>/<reasoning>...</reasoning> quanto
+  // como texto solto de cadeia-de-pensamento ("Okay, let's see...",
+  // "The user is saying...", etc) sem fechar a tag corretamente.
+  // Remove blocos de tag conhecidos primeiro:
+  limpo = limpo.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  limpo = limpo.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '');
+  // Tag aberta sem fechamento (resposta cortada no meio do raciocínio) —
+  // remove a tag e tudo depois dela.
+  limpo = limpo.replace(/<think>[\s\S]*$/gi, '');
+  limpo = limpo.replace(/<reasoning>[\s\S]*$/gi, '');
+
+  limpo = limpo
     .replace(/\n*\s*User\s*Safety:\s*\w+\s*\n*\s*Response\s*Safety:\s*\w+\s*$/i, '')
     .replace(/\n*\s*(User|Response)\s*Safety:\s*\w+\s*$/gim, '')
     .trim();
+
+  // Heurística extra: alguns modelos vazam o raciocínio em inglês SEM
+  // nenhuma tag de delimitação (texto solto começando com "Okay, let's
+  // see...", "The user is...", etc), mesmo quando o contexto/system está
+  // todo em português. Se o início do texto bate com esses padrões
+  // típicos de chain-of-thought em inglês, tratamos como inválido —
+  // não dá pra "limpar" isso de forma segura, então sinalizamos vazio
+  // para o chamador tratar como erro e tentar outro modelo.
+  const inicioChainOfThought = /^(okay|ok|alright|let'?s see|let me think|the user (is|says|wants|asked)|looking at|i need to|first,? i|so,? the user)/i;
+  if (inicioChainOfThought.test(limpo)) {
+    return '';
+  }
+
+  return limpo;
 }
 
 // Modelos gratuitos via "openrouter/free" variam em qualidade — alguns
