@@ -101,7 +101,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .topbar{display:flex;height:56px;background:var(--s1);border-bottom:1px solid var(--border);align-items:center;padding:0 16px;gap:12px;flex-shrink:0;z-index:10}
 .tb-menu{width:36px;height:36px;background:none;border:none;cursor:pointer;display:none;flex-direction:column;justify-content:center;gap:5px;padding:6px;flex-shrink:0}
 .tb-menu span{display:block;height:1.5px;background:var(--text2);border-radius:2px}
-.tb-clara-avatar{width:34px;height:34px;border-radius:50%;overflow:hidden;flex-shrink:0;box-shadow:0 0 12px var(--glow);background:linear-gradient(135deg,var(--accent),var(--accent2));position:relative}
+.tb-clara-avatar{width:34px;height:34px;border-radius:50%;overflow:hidden;flex-shrink:0;box-shadow:0 0 12px var(--glow);background:var(--s3);position:relative}
 .tb-clara-avatar::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.15) 50%,transparent 100%);background-size:200% 100%;animation:avatarShimmer 1.5s ease-in-out infinite;z-index:1}
 .tb-clara-avatar img{width:100%;height:100%;object-fit:cover;position:relative;z-index:2;opacity:0;transition:opacity .5s ease}
 .tb-clara-avatar img.loaded{opacity:1}
