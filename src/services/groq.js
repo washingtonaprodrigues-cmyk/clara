@@ -141,7 +141,8 @@ DATAS CALCULADAS — use estes valores EXATOS quando o usuário mencionar dias r
 
 REGRAS:
 - Valor em dinheiro → gasto
-- Horário/data + intenção de lembrar → tarefa
+- Horário/data + intenção de CRIAR um novo lembrete/compromisso → tarefa
+- Pergunta sobre horário/data de algo que JÁ EXISTE ("que horas eu tenho que...", "a que horas é...", "quando é...", "tenho algo às...") → consulta (NUNCA tarefa, NUNCA crie novo lembrete para perguntas)
 - Informação para guardar sem horário → anotacao
 - Pergunta sobre clima/notícia/preço/lugar/telefone → busca
 - Palavra solta que é tema/assunto (ex: "tecnologia", "futebol", "política", "economia", "clima") → busca
@@ -189,6 +190,8 @@ TIPOS E FORMATOS:
 EXEMPLOS:
 "gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
 "me lembra às 10h de fazer backup" → {"tipo":"tarefa","titulo":"fazer backup","data":null,"hora":"10:00","antecedencia":0,"recorrente":false,"frequencia":null}
+"que horas eu tenho que deixar os sulfites?" → {"tipo":"consulta","sobre":"horário de deixar os sulfites"}
+"a que horas é a reunião?" → {"tipo":"consulta","sobre":"horário da reunião"}
 "remarca pras 14h" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"14:00","nova_data":null}
 "muda a reunião pra 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
 "já peguei o 2 e o 3" → {"tipo":"lista_marcar","numeros":[2,3],"nomes":null,"lista":null}
