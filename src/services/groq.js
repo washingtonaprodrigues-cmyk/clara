@@ -138,6 +138,8 @@ DATAS CALCULADAS — use estes valores EXATOS quando o usuário mencionar dias r
 - Se o usuário disser "segunda", "terça" etc SEM dizer "que vem" ou "próxima", use a data da tabela acima (próxima ocorrência)
 - NUNCA calcule datas por conta própria — use SEMPRE os valores fornecidos acima
 - Para decidir se um horário sem data é "hoje" ou "amanhã": compare com a hora atual (${horaAtual}). Se o horário pedido já passou hoje, use amanhã; senão use hoje.
+- Se o usuário disser apenas "dia X" (ex: "dia 24", "no dia 5"), SEM mês: use o ANO e MÊS de hoje (${hojeISO.substring(0,7)}) com esse dia. Se esse dia já passou neste mês, use o mês seguinte. NUNCA use anos passados como 2024 ou 2025 — o ano atual é ${hojeISO.substring(0,4)}.
+- Se o usuário disser "dia X de [mês]" (ex: "dia 24 de julho"): use o ano atual (${hojeISO.substring(0,4)}) com esse mês/dia; se a data já passou este ano, use o ano seguinte.
 
 REGRAS:
 - Valor em dinheiro → gasto
@@ -192,6 +194,7 @@ EXEMPLOS:
 "me lembra às 10h de fazer backup" → {"tipo":"tarefa","titulo":"fazer backup","data":null,"hora":"10:00","antecedencia":0,"recorrente":false,"frequencia":null}
 "que horas eu tenho que deixar os sulfites?" → {"tipo":"consulta","sobre":"horário de deixar os sulfites"}
 "a que horas é a reunião?" → {"tipo":"consulta","sobre":"horário da reunião"}
+"no dia 24 tenho consulta com a nutricionista" → {"tipo":"tarefa","titulo":"consulta com a nutricionista","data":"${hojeISO.substring(0,7)}-24","hora":null,"antecedencia":0,"recorrente":false,"frequencia":null} (mês/ano = mês/ano atual, dia 24 — NUNCA 2024/2025)
 "remarca pras 14h" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"14:00","nova_data":null}
 "muda a reunião pra 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
 "já peguei o 2 e o 3" → {"tipo":"lista_marcar","numeros":[2,3],"nomes":null,"lista":null}
