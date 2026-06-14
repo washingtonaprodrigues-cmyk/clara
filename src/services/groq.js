@@ -69,18 +69,30 @@ const AVISOS_RETORNO_COMPLETO = [
 // _modoDirecto[phone] = true enquanto o modelo forte estiver em cooldown
 const _modoDireto = {};
 const _avisoEnviado = {};
+const _tipoModoDireto = {};
 
 function estaEmModoDirecto(phone) {
   return !!_modoDireto[phone];
 }
 
+// Calcula ms até meia-noite (horário de Brasília) — usado para TPD,
+// que só reseta no próximo dia (não vale tentar de novo em poucos minutos)
+function msAteMeiaNoiteBRT() {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const meiaNoite = new Date(now);
+  meiaNoite.setHours(24, 0, 5, 0); // 00:00:05 do dia seguinte, com margem
+  return meiaNoite.getTime() - now.getTime();
+}
+
 async function ativarModoDireto(phone, tipo) {
   const jaAtivo = _modoDireto[phone];
   _modoDireto[phone] = true;
-  const delay = tipo === 'rpm' ? 60000 : 300000;
+
+  // RPM: tenta de novo em 1 minuto. TPD: só libera no reset diário (meia-noite BRT)
+  const delay = tipo === 'rpm' ? 60000 : msAteMeiaNoiteBRT();
 
   if (!jaAtivo) {
-    console.log(`[RateLimit] ${tipo.toUpperCase()} para ${phone} — ativando modo direto`);
+    console.log(`[RateLimit] ${tipo.toUpperCase()} para ${phone} — ativando modo direto (retorna em ${Math.round(delay/60000)}min)`);
     setTimeout(async () => {
       delete _modoDireto[phone];
       delete _avisoEnviado[phone];
@@ -92,7 +104,13 @@ async function ativarModoDireto(phone, tipo) {
         console.error('[RateLimit] Erro ao avisar retorno:', e.message);
       }
     }, delay);
+  } else if (tipo === 'tpd' && _tipoModoDireto[phone] !== 'tpd') {
+    // Já estava em modo direto por RPM, mas agora bateu TPD também —
+    // estende o cooldown até meia-noite (evita tentativas inúteis)
+    console.log(`[RateLimit] TPD confirmado para ${phone} — estendendo até meia-noite`);
   }
+
+  _tipoModoDireto[phone] = tipo;
 
   // Retorna o aviso só na primeira vez que entra em modo direto
   if (!_avisoEnviado[phone]) {
