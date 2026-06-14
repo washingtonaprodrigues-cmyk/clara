@@ -417,14 +417,20 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         });
         return completion.choices[0].message.content.trim();
       } catch (eOverride) {
+        console.log(`[freeResponse/override] erro Groq: "${eOverride.message}" | status: ${eOverride.status || eOverride.statusCode || 'n/a'} | isRateLimit: ${isRateLimit(eOverride)}`);
         if (isRateLimit(eOverride)) {
           // Tenta Gemini antes de desistir da mensagem automática
           if (geminiDisponivel()) {
+            console.log('[Gemini] tentando fallback (systemOverride)...');
             try {
-              return await geminiFreeResponse(overrideMsgs, { temperature: 0.85, maxTokens: 200 });
+              const respGemini = await geminiFreeResponse(overrideMsgs, { temperature: 0.85, maxTokens: 200 });
+              console.log('[Gemini] fallback systemOverride OK');
+              return respGemini;
             } catch (eGemini) {
               console.error('[Gemini] Fallback systemOverride falhou:', eGemini.message);
             }
+          } else {
+            console.log('[Gemini] não disponível (sem GEMINI_API_KEY) — systemOverride');
           }
           // Sem alternativa — retorna null em vez de mandar a desculpa de pausa
           // como se fosse a mensagem real
@@ -503,9 +509,14 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       ]);
       return completion.choices[0].message.content.trim();
     } catch (e1) {
+      // 🔍 LOG DE DIAGNÓSTICO — mostra exatamente por que o fallback Gemini
+      // dispara ou não. Remova depois de confirmar o comportamento.
+      console.log(`[freeResponse] erro Groq: "${e1.message}" | status: ${e1.status || e1.statusCode || 'n/a'} | phone: ${phone || 'null'} | isRateLimit: ${isRateLimit(e1)} | geminiDisponivel: ${geminiDisponivel()}`);
+
       if (isRateLimit(e1) && phone) {
         // Groq esgotou — tenta Gemini como rede de segurança antes do modo direto
         if (geminiDisponivel()) {
+          console.log(`[Gemini] tentando fallback para ${phone}...`);
           try {
             const respGemini = await geminiFreeResponse(msgs, {
               temperature: tom === 'sarcastico' ? 0.9 : 0.7,
@@ -517,6 +528,8 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
             console.error('[Gemini] Fallback falhou:', eGemini.message);
             // Gemini também falhou — segue pro modo direto normalmente
           }
+        } else {
+          console.log('[Gemini] não disponível (sem GEMINI_API_KEY)');
         }
 
         const tipo = isTPD(e1) ? 'tpd' : 'rpm';
@@ -524,6 +537,24 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         // aviso só vem na primeira vez — depois retorna null (handler não responde)
         return aviso || null;
       }
+
+      // Erro do Groq mas NÃO é rate limit (ex: timeout, erro de rede, etc).
+      // Antes de cair no modo direto / mensagem genérica, tenta o Gemini também —
+      // assim qualquer falha do Groq tem o mesmo fallback.
+      if (phone && geminiDisponivel()) {
+        console.log(`[Gemini] tentando fallback (erro não-rate-limit) para ${phone}...`);
+        try {
+          const respGemini = await geminiFreeResponse(msgs, {
+            temperature: tom === 'sarcastico' ? 0.9 : 0.7,
+            maxTokens: isCurta ? 80 : 800,
+          });
+          console.log(`[Gemini] Fallback (não-rate-limit) usado para ${phone}`);
+          return respGemini;
+        } catch (eGemini) {
+          console.error('[Gemini] Fallback (não-rate-limit) falhou:', eGemini.message);
+        }
+      }
+
       throw e1;
     }
 
