@@ -439,7 +439,7 @@ async function handleMessage(phone, text, location = null) {
 
     // ── editar_lembrete e deletar_lembrete: executa sem responderLivre depois ──
     if (classified.tipo === 'editar_lembrete') {
-      await editarLembrete(user, phone, classified);
+      await editarLembrete(user, phone, classified, contextoClassify);
       return;
     }
     if (classified.tipo === 'deletar_lembrete') {
@@ -723,7 +723,7 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
   }
 }
 
-async function editarLembrete(user, phone, classified) {
+async function editarLembrete(user, phone, classified, contextoClassify = '') {
   try {
     let titulo = (classified.titulo || '').toLowerCase().trim();
 
