@@ -64,8 +64,15 @@ function reforcarMensagens(msgs) {
 // msgs já está no formato OpenAI (role: system/user/assistant) — não precisa converter.
 async function chamarOpenRouter(model, msgs, { temperature = 0.7, maxTokens = 800 } = {}) {
   const msgsReforcadas = reforcarMensagens(msgs);
+
+  // "openrouter/free" pode escolher modelos de reasoning, que gastam tokens
+  // em "pensamento" interno antes do texto visível — sem margem extra,
+  // a resposta vem vazia com finish_reason: length. Damos bem mais espaço
+  // só para esse router.
+  const maxTokensEfetivo = model === 'openrouter/free' ? Math.max(maxTokens * 2, 1500) : maxTokens;
+
   const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('timeout')), 15000)
+    setTimeout(() => reject(new Error('timeout')), 25000)
   );
 
   const fetchPromise = fetch(OPENROUTER_URL, {
@@ -80,7 +87,7 @@ async function chamarOpenRouter(model, msgs, { temperature = 0.7, maxTokens = 80
       model,
       messages: msgsReforcadas,
       temperature,
-      max_tokens: maxTokens,
+      max_tokens: maxTokensEfetivo,
     }),
   });
 
