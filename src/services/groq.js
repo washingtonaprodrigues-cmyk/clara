@@ -1,6 +1,6 @@
 const Groq = require('groq-sdk');
 const { webSearch } = require('./search');
-const { geminiDisponivel, geminiFreeResponse, isGeminiRateLimit } = require('./gemini');
+const { geminiDisponivel, geminiFreeResponse, isGeminiRateLimit } = require('./openrouter');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -388,7 +388,7 @@ Neste modo, vocês têm uma relação mais próxima e contínua — não é só 
 // apresentação de dados já prontos no contexto, sem precisar de "interpretação".
 const PALAVRAS_EMOCIONAIS = /sinto|sentindo|triste|feliz|cansad|estress|preocupad|ansios|chateada|saudade|amo|adoro|odeio|raiva|medo|sozinh|dificil|difícil|desabafar|conversar|desculpa|perdão|obrigad[oa] por|carinho|abraço/i;
 
-// Conversa livre agora é sempre 70b — com Gemini como rede de segurança,
+// Conversa livre agora é sempre 70b — com OpenRouter como rede de segurança,
 // a personalidade completa vale mais que a economia de tokens.
 // 8b continua reservado para classify/extração (trabalho estrutural, sem personalidade).
 function escolherModelo(message, tom, contexto) {
@@ -419,18 +419,18 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       } catch (eOverride) {
         console.log(`[freeResponse/override] erro Groq: "${eOverride.message}" | status: ${eOverride.status || eOverride.statusCode || 'n/a'} | isRateLimit: ${isRateLimit(eOverride)}`);
         if (isRateLimit(eOverride)) {
-          // Tenta Gemini antes de desistir da mensagem automática
+          // Tenta OpenRouter antes de desistir da mensagem automática
           if (geminiDisponivel()) {
-            console.log('[Gemini] tentando fallback (systemOverride)...');
+            console.log('[OpenRouter] tentando fallback (systemOverride)...');
             try {
-              const respGemini = await geminiFreeResponse(overrideMsgs, { temperature: 0.85, maxTokens: 200 });
-              console.log('[Gemini] fallback systemOverride OK');
-              return respGemini;
-            } catch (eGemini) {
-              console.error('[Gemini] Fallback systemOverride falhou:', eGemini.message);
+              const respOpenRouter = await geminiFreeResponse(overrideMsgs, { temperature: 0.85, maxTokens: 200 });
+              console.log('[OpenRouter] fallback systemOverride OK');
+              return respOpenRouter;
+            } catch (eOR) {
+              console.error('[OpenRouter] Fallback systemOverride falhou:', eOR.message);
             }
           } else {
-            console.log('[Gemini] não disponível (sem GEMINI_API_KEY) — systemOverride');
+            console.log('[OpenRouter] não disponível (sem OPENROUTER_API_KEY) — systemOverride');
           }
           // Sem alternativa — retorna null em vez de mandar a desculpa de pausa
           // como se fosse a mensagem real
@@ -509,27 +509,27 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       ]);
       return completion.choices[0].message.content.trim();
     } catch (e1) {
-      // 🔍 LOG DE DIAGNÓSTICO — mostra exatamente por que o fallback Gemini
+      // 🔍 LOG DE DIAGNÓSTICO — mostra exatamente por que o fallback OpenRouter
       // dispara ou não. Remova depois de confirmar o comportamento.
-      console.log(`[freeResponse] erro Groq: "${e1.message}" | status: ${e1.status || e1.statusCode || 'n/a'} | phone: ${phone || 'null'} | isRateLimit: ${isRateLimit(e1)} | geminiDisponivel: ${geminiDisponivel()}`);
+      console.log(`[freeResponse] erro Groq: "${e1.message}" | status: ${e1.status || e1.statusCode || 'n/a'} | phone: ${phone || 'null'} | isRateLimit: ${isRateLimit(e1)} | openrouterDisponivel: ${geminiDisponivel()}`);
 
       if (isRateLimit(e1) && phone) {
-        // Groq esgotou — tenta Gemini como rede de segurança antes do modo direto
+        // Groq esgotou — tenta OpenRouter como rede de segurança antes do modo direto
         if (geminiDisponivel()) {
-          console.log(`[Gemini] tentando fallback para ${phone}...`);
+          console.log(`[OpenRouter] tentando fallback para ${phone}...`);
           try {
-            const respGemini = await geminiFreeResponse(msgs, {
+            const respOpenRouter = await geminiFreeResponse(msgs, {
               temperature: tom === 'sarcastico' ? 0.9 : 0.7,
               maxTokens: isCurta ? 80 : 800,
             });
-            console.log(`[Gemini] Fallback usado para ${phone}`);
-            return respGemini;
-          } catch (eGemini) {
-            console.error('[Gemini] Fallback falhou:', eGemini.message);
-            // Gemini também falhou — segue pro modo direto normalmente
+            console.log(`[OpenRouter] Fallback usado para ${phone}`);
+            return respOpenRouter;
+          } catch (eOR) {
+            console.error('[OpenRouter] Fallback falhou:', eOR.message);
+            // OpenRouter também falhou — segue pro modo direto normalmente
           }
         } else {
-          console.log('[Gemini] não disponível (sem GEMINI_API_KEY)');
+          console.log('[OpenRouter] não disponível (sem OPENROUTER_API_KEY)');
         }
 
         const tipo = isTPD(e1) ? 'tpd' : 'rpm';
@@ -539,19 +539,19 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       }
 
       // Erro do Groq mas NÃO é rate limit (ex: timeout, erro de rede, etc).
-      // Antes de cair no modo direto / mensagem genérica, tenta o Gemini também —
+      // Antes de cair no modo direto / mensagem genérica, tenta o OpenRouter também —
       // assim qualquer falha do Groq tem o mesmo fallback.
       if (phone && geminiDisponivel()) {
-        console.log(`[Gemini] tentando fallback (erro não-rate-limit) para ${phone}...`);
+        console.log(`[OpenRouter] tentando fallback (erro não-rate-limit) para ${phone}...`);
         try {
-          const respGemini = await geminiFreeResponse(msgs, {
+          const respOpenRouter = await geminiFreeResponse(msgs, {
             temperature: tom === 'sarcastico' ? 0.9 : 0.7,
             maxTokens: isCurta ? 80 : 800,
           });
-          console.log(`[Gemini] Fallback (não-rate-limit) usado para ${phone}`);
-          return respGemini;
-        } catch (eGemini) {
-          console.error('[Gemini] Fallback (não-rate-limit) falhou:', eGemini.message);
+          console.log(`[OpenRouter] Fallback (não-rate-limit) usado para ${phone}`);
+          return respOpenRouter;
+        } catch (eOR) {
+          console.error('[OpenRouter] Fallback (não-rate-limit) falhou:', eOR.message);
         }
       }
 
