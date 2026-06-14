@@ -53,7 +53,7 @@ function isTPD(error) {
 // mudando para respostas mais simples/diretas (8b) — mas continua funcionando
 // para lembretes, tarefas e conversas básicas. Não desaparece.
 const AVISOS_MODO_DIRETO = [
-  '💜 Oii! Estou em uma versão mais leve por enquanto.\n\nMas não se preocupe! Continuo aqui para ajudar com lembretes, tarefas e perguntas rápidas. Em breve volto ao modo completo para conversas mais profundas e elaboradas. 😊',
+  '💜 Oii! O bate-papo completo está indisponível por agora.\n\nMas pode me mandar seus lembretes, listas e tarefas normalmente que vou agendando tudo! Volto logo pra gente conversar 😊',
 ];
 
 const AVISOS_RETORNO_COMPLETO = [
@@ -432,27 +432,23 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       return data.choices?.[0]?.message?.content?.trim() || 'Pode repetir? 😊';
     }
 
-    let modeloEscolhido = escolherModelo(message, tom, contexto);
     const isCurta = message.trim().length < 40;
 
-    // Já está em modo direto (cooldown ativo) — vai direto pro 8b, sem tentar o forte
-    let usarMsgsDiretos = false;
-    if (phone && estaEmModoDirecto(phone) && modeloEscolhido === MODEL_FORTE) {
-      modeloEscolhido = MODEL_LEVE;
-      usarMsgsDiretos = true;
+    // Já está em modo direto — não tenta o 70b, conversa livre fica indisponível
+    // (comandos estruturados como lembretes/listas continuam funcionando via classify)
+    if (phone && estaEmModoDirecto(phone)) {
+      // Primeira vez: já retornou o aviso completo em ativarModoDireto (mais acima).
+      // Daqui em diante, conversa livre recebe um lembrete curto e fixo (sem custo de LLM).
+      return 'O bate-papo ainda está pausado — mas pode me mandar lembretes, listas e tarefas! 😊';
     }
+
+    const modeloEscolhido = MODEL_FORTE; // conversa livre sempre no 70b — é onde a personalidade vive
 
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('timeout')), 15000)
     );
 
     const sistemaCompleto = buildPersonality(tom, name, false) + contexto;
-    // Modo direto: personalidade simplificada — direta e factual, sem tentar
-    // manter sarcasmo elaborado (que o 8b não sustenta bem)
-    const sistemaDireto = `Você é a Clara, assistente pessoal no WhatsApp. ${name ? `O nome da pessoa é ${name}.` : ''}
-Você está em modo econômico temporário: seja direta, simpática e factual.
-Respostas curtas (1-3 linhas). Use [PERFIL PESSOAL], [AGENDA] e [LISTAS ATIVAS] quando disponíveis, sem inventar nada.
-Evite tentar fazer piadas elaboradas ou sarcasmo complexo agora — seja apenas prática e gentil.` + contexto;
 
     const msgs = [
       { role: 'system', content: sistemaCompleto },
@@ -460,47 +456,26 @@ Evite tentar fazer piadas elaboradas ou sarcasmo complexo agora — seja apenas 
       { role: 'user', content: message }
     ];
 
-    const msgsDiretos = [
-      { role: 'system', content: sistemaDireto },
-      ...history.slice(-4),
-      { role: 'user', content: message }
-    ];
-
-    async function tentarComModelo(modelo, msgsParam = msgs) {
+    async function tentarComModelo(modelo) {
       return groq.chat.completions.create({
         model: modelo,
-        messages: msgsParam,
-        temperature: modelo === MODEL_LEVE ? 0.6 : (tom === 'sarcastico' ? 0.9 : 0.7),
-        max_tokens: isCurta ? 80 : (modelo === MODEL_LEVE ? 300 : 420),
+        messages: msgs,
+        temperature: tom === 'sarcastico' ? 0.9 : 0.7,
+        max_tokens: isCurta ? 80 : 420,
       });
     }
 
     let completion;
     try {
-      completion = await Promise.race([
-        tentarComModelo(modeloEscolhido, usarMsgsDiretos ? msgsDiretos : msgs),
-        timeoutPromise
-      ]);
+      completion = await Promise.race([tentarComModelo(modeloEscolhido), timeoutPromise]);
     } catch (e1) {
       if (isRateLimit(e1) && phone) {
         const tipo = isTPD(e1) ? 'tpd' : 'rpm';
         const aviso = await ativarModoDireto(phone, tipo);
-
-        if (aviso) {
-          // Primeira vez entrando em modo direto — manda o aviso de transição
-          return aviso;
-        }
-
-        // Já avisado antes — tenta responder com 8b em modo direto
-        try {
-          completion = await Promise.race([tentarComModelo(MODEL_LEVE, msgsDiretos), timeoutPromise]);
-        } catch (e2) {
-          console.error('Erro freeResponse (modo direto):', e2.message);
-          return 'Entendi! Como posso te ajudar?';
-        }
-      } else {
-        throw e1;
+        // aviso só vem na primeira vez — depois retorna null (handler não responde)
+        return aviso || null;
       }
+      throw e1;
     }
 
     return completion.choices[0].message.content.trim();
