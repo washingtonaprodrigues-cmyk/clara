@@ -117,6 +117,7 @@ REGRAS OBRIGATÓRIAS:
 Tom: ${prefs.tom || 'carinhoso'}.`;
 
         const msg = await freeResponse('Envie uma mensagem de bom dia para o usuário.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBomDia });
+        if (!msg) { console.log(`[Bom dia] Rate limit, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
         console.log(`[Bom dia] Enviado para ${user.phone}`);
       } catch (e) { console.error(`[Bom dia] Erro ${user.phone}:`, e.message); }
@@ -193,6 +194,7 @@ REGRAS OBRIGATÓRIAS:
 Tom: ${prefs.tom || 'carinhoso'}.`;
 
         const msg = await freeResponse('Envie uma mensagem de boa noite para o usuário.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBoaNoite });
+        if (!msg) { console.log(`[Boa noite] Rate limit, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
         console.log(`[Boa noite] Enviado para ${user.phone}`);
       } catch (e) { console.error(`[Boa noite] Erro ${user.phone}:`, e.message); }
@@ -303,7 +305,7 @@ REGRAS:
 Contexto recente: ${contextoMems}
 ${infoPessoal}`;
         const msg = await freeResponse('Envie uma mensagem proativa.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemProativa });
-        if (!msg || msg.trim() === 'SKIP' || msg.length < 5) continue;
+        if (!msg || msg.trim() === 'SKIP' || msg.length < 5) continue; // null = rate limit, também pula
         await sendMessage(user.phone, msg);
         await prisma.memory.create({ data: { userId: user.id, type: 'proativa_lock', content: lockKey } });
         console.log(`[Proativa ${periodo}] Enviado para ${user.phone}`);
@@ -339,6 +341,7 @@ Envie uma mensagem de sexta-feira calorosa e breve (2-3 linhas).
 NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.
 ${ctx}`;
         const msg = await freeResponse('Envie mensagem de sexta.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemSexta });
+        if (!msg) { console.log(`[Sexta] Rate limit, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
         await marcarEnviadoHoje(user.id, 'sexta_enviado');
         console.log(`[Sexta] Enviado para ${user.phone}`);
@@ -370,6 +373,7 @@ Envie uma mensagem de domingo à noite — tranquila, motivadora e breve (2-3 li
 NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.
 ${ctx}`;
         const msg = await freeResponse('Envie mensagem de domingo.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemDomingo });
+        if (!msg) { console.log(`[Domingo] Rate limit, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
         await marcarEnviadoHoje(user.id, 'domingo_enviado');
         console.log(`[Domingo] Enviado para ${user.phone}`);
@@ -401,6 +405,7 @@ Envie uma mensagem curta e genuína perguntando como ele está — sem ser dram�
 Máx 2 linhas. Tom: ${prefs.tom || 'carinhoso'}.
 ${infoPessoal}`;
         const msg = await freeResponse('Mensagem para usuário que sumiu.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemSumico });
+        if (!msg) { console.log(`[Sumiço] Rate limit, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
         await prisma.memory.create({ data: { userId: user.id, type: 'sumico_lock', content: lockKey } });
         console.log(`[Sumiço] ${user.phone} — ${diasSemConversa} dias sem conversar`);
@@ -573,9 +578,10 @@ O usuário tinha um compromisso urgente: "${r.message}".
 Já passou 15 minutos. Pergunte de forma natural e breve (1 linha) se conseguiu fazer.
 Respeite o tom — sarcástica não pergunta com fofice.`;
 
-            const msgFollowup = await freeResponse('Pergunta de follow-up.', [], {
+            let msgFollowup = await freeResponse('Pergunta de follow-up.', [], {
               _systemOverride: systemFollowup, tom: prefs?.tom || 'carinhoso'
             }).catch(() => `E aí, conseguiu fazer "${r.message}"? 😊`);
+            if (!msgFollowup) msgFollowup = `E aí, conseguiu fazer "${r.message}"? 😊`;
 
             await prisma.reminder.create({
               data: { userId: r.userId, phone: grupo.phone, message: `__followup__${msgFollowup}`, scheduledAt: quinzeDepois }
@@ -824,7 +830,7 @@ Envie UMA mensagem curta (1-2 linhas) como parceira presente:
           _systemOverride: systemParceira
         });
 
-        if (!msg || msg.length < 5) continue;
+        if (!msg || msg.length < 5) continue; // null = rate limit, também pula
 
         await sendMessage(user.phone, msg);
         console.log(`[Parceira] ${user.phone} → "${r.message}" em 30min`);
