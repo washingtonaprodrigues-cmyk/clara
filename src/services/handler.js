@@ -193,11 +193,13 @@ function formatarListaWhatsApp(listaResult) {
   return `🛒 *${listaNome}*\n\n${itens}\n\n_${done}/${listaItems.length} itens marcados_`;
 }
 
-async function responderLivre(user, phone, text, contextoExtra = '', skipContext = false) {
+async function responderLivre(user, phone, text, contextoExtra = '', skipContext = false, acaoConfirmacao = null) {
   try {
     const history = await memory.getConversationHistory(user.id, 10);
     const preferences = await memory.getUserPreference(user.id);
     preferences._phone = phone;
+
+    if (acaoConfirmacao) preferences._acaoConfirmacao = acaoConfirmacao;
 
     if (skipContext) {
       preferences._contexto = '';
@@ -447,7 +449,19 @@ async function handleMessage(phone, text, location = null) {
 
     executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
     const isSaudacao = classified.tipo === 'saudacao';
-    await responderLivre(user, phone, text, '', isSaudacao);
+
+    // Tipos estruturados que executam uma ação concreta (criar lembrete, gasto, etc) —
+    // usados para dar confirmação fixa caso o bate-papo livre esteja em modo direto
+    const CONFIRMACOES_ACAO = {
+      tarefa: '✅ Anotado! Vou te lembrar.',
+      gasto: '✅ Gasto registrado!',
+      entrada_financeira: '✅ Entrada registrada!',
+      medicamento: '✅ Medicamento cadastrado!',
+      anotacao: '✅ Anotado!',
+    };
+    const acaoConfirmacao = CONFIRMACOES_ACAO[classified.tipo] || null;
+
+    await responderLivre(user, phone, text, '', isSaudacao, acaoConfirmacao);
     extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
   } catch (error) {
     console.error('Erro handleMessage:', error.message);
