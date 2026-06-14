@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const memory = require('../services/memory');
+const { sendMessage } = require('../services/whatsapp');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
@@ -352,7 +353,24 @@ router.post('/preferencia/:phone', async (req, res) => {
     const { nome, tom, saldo } = req.body;
     const user = await memory.getOrCreateUser(phone);
     const saldoNum = (saldo !== undefined && saldo !== null && saldo !== '') ? parseFloat(saldo) : null;
+
+    // Verifica se o tom realmente mudou, para enviar confirmação só quando relevante
+    const prefsAntigas = await memory.getUserPreference(user.id).catch(() => null);
+    const tomMudou = tom && prefsAntigas?.tom !== tom;
+
     await memory.saveUserPreference(user.id, nome || null, tom || null, saldoNum);
+
+    if (tomMudou) {
+      const NOMES_TOM = {
+        carinhoso: 'Simpática 🥰',
+        direto: 'Direta 🎯',
+        divertido: 'Divertida 🎉',
+        sarcastico: 'Sem Filtro 🔥',
+      };
+      const nomeTom = NOMES_TOM[tom] || tom;
+      sendMessage(phone, `💜 Modo de personalidade atualizado para *${nomeTom}*!\n\nÉ assim que vou conversar com você a partir de agora.`).catch(() => {});
+    }
+
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
