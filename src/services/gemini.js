@@ -7,11 +7,13 @@
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // Lista de modelos para tentar, em ordem de preferência.
+// gemini-1.5-flash e gemini-1.5-flash-8b foram descontinuados (404).
 // gemini-2.0-flash retornou "limit: 0" no free tier para esta conta —
-// tentamos modelos alternativos que costumam ter free tier mais amplo.
+// tentamos as versões 2.5 (atuais) primeiro, com 2.0 como último recurso.
 const GEMINI_MODELS = [
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-8b',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-flash-latest',
   'gemini-2.0-flash',
 ];
 
