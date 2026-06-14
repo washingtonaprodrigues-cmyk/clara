@@ -202,6 +202,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     if (skipContext) {
       preferences._contexto = '';
       const resp = await freeResponse(text, history, preferences);
+      if (resp === null) return; // modo direto: já avisado, não responde
       await memory.saveConversationMessage(user.id, 'user', text);
       await memory.saveConversationMessage(user.id, 'assistant', resp);
       await sendMessage(phone, resp);
@@ -303,6 +304,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     }
 
     const resp = await freeResponse(text, history, preferences);
+    if (resp === null) return; // modo direto: já avisado, não responde
     await memory.saveConversationMessage(user.id, 'user', text);
     await memory.saveConversationMessage(user.id, 'assistant', resp);
     await sendMessage(phone, resp);
