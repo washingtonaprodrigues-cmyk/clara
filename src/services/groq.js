@@ -35,7 +35,8 @@ function infoDatas() {
   const amanhaISO = `${amanha.getFullYear()}-${pad(amanha.getMonth()+1)}-${pad(amanha.getDate())}`;
   const depoisAmanhaISO = `${depoisAmanha.getFullYear()}-${pad(depoisAmanha.getMonth()+1)}-${pad(depoisAmanha.getDate())}`;
 
-  return { hojeISO, diaSemanaHoje, mapa, amanhaISO, depoisAmanhaISO };
+  const horaAtual = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  return { hojeISO, diaSemanaHoje, mapa, amanhaISO, depoisAmanhaISO, horaAtual };
 }
 
 function isRateLimit(error) {
@@ -123,10 +124,10 @@ async function ativarPausaCreativa(phone, tipo) {
 }
 
 const SYSTEM_PROMPT = () => {
-  const { hojeISO, diaSemanaHoje, mapa, amanhaISO, depoisAmanhaISO } = infoDatas();
+  const { hojeISO, diaSemanaHoje, mapa, amanhaISO, depoisAmanhaISO, horaAtual } = infoDatas();
   const mapaTexto = Object.entries(mapa).map(([dia, data]) => dia + '=' + data).join(', ');
   return `Você é a Clara, assistente pessoal brasileira.
-Retorne APENAS JSON. Hoje é ${hoje()} (${diaSemanaHoje}), data ISO: ${hojeISO}.
+Retorne APENAS JSON. Agora é ${hoje()} (${diaSemanaHoje}), ${horaAtual} (Brasília). Data ISO de hoje: ${hojeISO}.
 
 DATAS CALCULADAS — use estes valores EXATOS quando o usuário mencionar dias relativos:
 - "hoje" = ${hojeISO}
@@ -135,6 +136,7 @@ DATAS CALCULADAS — use estes valores EXATOS quando o usuário mencionar dias r
 - Próximas ocorrências dos dias da semana: ${mapaTexto}
 - Se o usuário disser "segunda", "terça" etc SEM dizer "que vem" ou "próxima", use a data da tabela acima (próxima ocorrência)
 - NUNCA calcule datas por conta própria — use SEMPRE os valores fornecidos acima
+- Para decidir se um horário sem data é "hoje" ou "amanhã": compare com a hora atual (${horaAtual}). Se o horário pedido já passou hoje, use amanhã; senão use hoje.
 
 REGRAS:
 - Valor em dinheiro → gasto
@@ -152,8 +154,10 @@ REGRAS:
 - "remarcar", "remarca", "muda", "mudar", "alterar", "altera", "adiar", "adianta", "move", "mover", "trocar hora", "trocar o horário", "pra X horas", "pra X da tarde/manhã" quando referente a lembrete existente → SEMPRE editar_lembrete, NUNCA lista_marcar
 - lista_marcar APENAS quando: usuário cita número de item ("peguei o 2"), nome de item de lista ("risca o arroz"), ou "lista" explicitamente
 - Hora SEMPRE em formato 24h: "10 da manhã"→"10:00", "2 da tarde"→"14:00", "8 da noite"→"20:00", "meia noite"→"00:00", "meio dia"→"12:00"
-- Se o usuário disser "10h" ou "10:00" sem indicação de tarde/noite → mantenha exatamente essa hora, NÃO converta
+- Se o usuário disser "9 horas", "10h" ou "10:00" sem indicação de tarde/noite → use EXATAMENTE esse número como hora (9→"09:00", 10→"10:00"), NUNCA converta, NUNCA invente outro número
 - NUNCA some 12 horas em horários como "9h", "10h", "11h" sem o usuário dizer "da tarde" ou "da noite"
+- Exemplo crítico: "anota pra 9 horas" → hora="09:00" (NUNCA "17:00", "21:00" ou qualquer outro valor)
+- Se o usuário não especificar a data E o horário já passou hoje → use "amanhã" (data calculada acima). Se o horário ainda não passou hoje → use "hoje"
 
 TIPOS E FORMATOS:
 {"tipo":"ponto_multiplo","acoes":[{"subtipo":"entrada","hora":"08:00"}]}
