@@ -447,6 +447,24 @@ async function handleMessage(phone, text, location = null) {
       return;
     }
 
+    // ── tarefa com DATA mas SEM HORA: pergunta o horário ao usuário ──
+    // em vez de criar o lembrete silenciosamente ou responder "Anotado"
+    // sem que nada tenha sido salvo de fato.
+    if (classified.tipo === 'tarefa' && classified.data && !classified.hora && !calcularHorarioRelativo(text)) {
+      const expira = Date.now() + 10 * 60 * 1000;
+      await prisma.memory.create({
+        data: {
+          userId: user.id, type: 'confirmacao_pendente',
+          content: JSON.stringify({ tipo: 'hora_lembrete', titulo: classified.titulo, data: classified.data, expira })
+        }
+      }).catch(() => {});
+      const dataFmt = new Date(`${classified.data}T12:00:00-03:00`).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+      await sendMessage(phone, `Anotado: "${classified.titulo}" no dia ${dataFmt} 📌\n\nQue horas devo colocar esse lembrete? Se não souber, me diz que eu deixo às 09:00 provisoriamente 😊`);
+      await memory.saveMemory(user.id, 'tarefa', classified.titulo, { data: classified.data, hora: null });
+      extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
+      return;
+    }
+
     executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
     const isSaudacao = classified.tipo === 'saudacao';
 
@@ -708,18 +726,17 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
     if (!classified.data && scheduledAt < nowBRT()) { scheduledAt.setDate(scheduledAt.getDate() + 1); }
   }
   // ── Tem DATA mas SEM HORA (ex: "no dia 24 tenho consulta") ──
-  // Sem este bloco, scheduledAt fica null e o lembrete nunca é criado,
-  // mas a Clara responde "Anotado!" mesmo assim — o usuário acha que
-  // está agendado e não está. Cria com horário padrão 09:00 para o
-  // dia informado, e usa um título que indica que o horário é estimado.
+  // Sinaliza para o chamador perguntar o horário ao usuário, em vez de
+  // criar o lembrete silenciosamente com um horário arbitrário.
   if (!scheduledAt && !classified.hora && classified.data) {
     const dataObj = new Date(classified.data + 'T12:00:00-03:00');
     const anoClassify = dataObj.getFullYear();
     const anoAtual = new Date().getFullYear();
     if (anoClassify >= anoAtual && anoClassify <= anoAtual + 1) {
-      scheduledAt = new Date(`${classified.data}T09:00:00-03:00`);
+      return { perguntarHora: true, lembreteTitulo: classified.titulo, lembreteData: classified.data };
     } else {
       console.warn(`[DATA_INVALIDA] phone=${phone} titulo="${classified.titulo}" data_groq="${classified.data}" — ignorada, lembrete não criado`);
+      return null;
     }
   }
   if (scheduledAt) {
@@ -936,6 +953,51 @@ async function checkConfirmacaoPendente(user, phone, text) {
     let dados; try { dados = JSON.parse(pendente.content); } catch { return false; }
     if (Date.now() > dados.expira) { await prisma.memory.delete({ where: { id: pendente.id } }); return false; }
     const textNorm = text.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    if (dados.tipo === 'hora_lembrete') {
+      // Tenta extrair um horário do texto (ex: "10h", "14:30", "10 da manhã", "2 da tarde")
+      let horaEscolhida = null;
+      const matchHM = textNorm.match(/(\d{1,2})[:h](\d{2})/);
+      const matchH = textNorm.match(/(\d{1,2})\s*h(?:oras)?\b/);
+      const matchNum = !matchHM && !matchH ? textNorm.match(/^(\d{1,2})$/) : null;
+      if (matchHM) {
+        horaEscolhida = `${String(parseInt(matchHM[1])).padStart(2,'0')}:${matchHM[2]}`;
+      } else if (matchH || matchNum) {
+        let h = parseInt((matchH || matchNum)[1]);
+        if (/tarde/.test(textNorm) && h < 12) h += 12;
+        else if (/noite/.test(textNorm) && h < 12) h += 12;
+        horaEscolhida = `${String(h).padStart(2,'0')}:00`;
+      }
+
+      // Se não souber / não informou hora → usa 09:00 provisório
+      const naoSabe = /nao sei|não sei|qualquer|tanto faz|vc escolhe|voce escolhe|decide voce|sei nao/.test(textNorm);
+
+      if (!horaEscolhida && !naoSabe) {
+        // Não entendeu a resposta — pede de novo, mantendo o pendente
+        await sendMessage(phone, 'Não entendi o horário 😅 Pode me dizer assim: "10h" ou "14:30"? Ou diga "não sei" que eu deixo às 09:00.');
+        return true;
+      }
+
+      const horaFinal = horaEscolhida || '09:00';
+      const [h, m] = horaFinal.split(':').map(Number);
+      const scheduledAt = new Date(`${dados.data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
+
+      const novoLembrete = await prisma.reminder.create({ data: { userId: user.id, phone, message: dados.titulo, scheduledAt } });
+      await prisma.memory.delete({ where: { id: pendente.id } });
+
+      if (detectarUrgencia(dados.titulo)) {
+        await prisma.memory.create({ data: { userId: user.id, type: 'lembrete_urgente', content: novoLembrete.id } }).catch(() => {});
+      }
+
+      const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+      if (!horaEscolhida) {
+        await sendMessage(phone, `✅ Combinado! Deixei "${dados.titulo}" pra ${dataFmt} às 09:00 (provisório) — se descobrir o horário certo depois, me avisa que eu remarco 😊`);
+      } else {
+        await sendMessage(phone, `✅ Pronto! "${dados.titulo}" agendado pra ${dataFmt} às ${horaFinal} 📌`);
+      }
+      return true;
+    }
+
     if (dados.tipo === 'selecao_contato') {
       const num = parseInt(textNorm);
       if (!isNaN(num) && num >= 1 && num <= dados.opcoes.length) {
