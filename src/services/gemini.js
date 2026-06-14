@@ -1,13 +1,23 @@
 // ── Fallback Gemini ──
 // Quando o Groq (70b) esgota (rate limit), tenta o Gemini Flash antes de
-// cair pro modo direto. Gemini Flash tem free tier de 1.500 req/dia, sem
-// cartão de crédito — boa rede de segurança pro uso pessoal.
+// cair pro modo direto. Gemini Flash tem free tier sem cartão de crédito —
+// boa rede de segurança pro uso pessoal.
 //
 // Usa fetch nativo (Node 18+), sem dependências novas.
-
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = 'gemini-2.0-flash';
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
+// Lista de modelos para tentar, em ordem de preferência.
+// gemini-2.0-flash retornou "limit: 0" no free tier para esta conta —
+// tentamos modelos alternativos que costumam ter free tier mais amplo.
+const GEMINI_MODELS = [
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-8b',
+  'gemini-2.0-flash',
+];
+
+function geminiUrl(model) {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+}
 
 function geminiDisponivel() {
   return !!GEMINI_API_KEY;
@@ -18,7 +28,6 @@ function geminiDisponivel() {
 function converterMensagens(msgs) {
   let systemInstruction = null;
   const contents = [];
-
   for (const m of msgs) {
     if (m.role === 'system') {
       systemInstruction = systemInstruction
@@ -29,19 +38,18 @@ function converterMensagens(msgs) {
     const role = m.role === 'assistant' ? 'model' : 'user';
     contents.push({ role, parts: [{ text: m.content }] });
   }
-
   return { systemInstruction, contents };
 }
 
-// Gera uma resposta via Gemini, no mesmo formato esperado pelo freeResponse.
-// Retorna o texto da resposta ou lança erro (tratado pelo chamador).
-async function geminiFreeResponse(msgs, { temperature = 0.7, maxTokens = 800 } = {}) {
-  if (!geminiDisponivel()) {
-    throw new Error('GEMINI_API_KEY não configurada');
-  }
+// Identifica se o erro do Gemini é de quota/rate limit (429 com
+// RESOURCE_EXHAUSTED) — usado para decidir se vale tentar o próximo modelo.
+function isQuotaError(err) {
+  return err?.status === 429 || /quota|rate.?limit|resource_exhausted/i.test(err?.message || '');
+}
 
+// Faz uma chamada a um modelo específico do Gemini.
+async function chamarGemini(model, msgs, { temperature = 0.7, maxTokens = 800 } = {}) {
   const { systemInstruction, contents } = converterMensagens(msgs);
-
   const body = {
     contents,
     generationConfig: {
@@ -49,7 +57,6 @@ async function geminiFreeResponse(msgs, { temperature = 0.7, maxTokens = 800 } =
       maxOutputTokens: maxTokens,
     },
   };
-
   if (systemInstruction) {
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
@@ -58,7 +65,7 @@ async function geminiFreeResponse(msgs, { temperature = 0.7, maxTokens = 800 } =
     setTimeout(() => reject(new Error('timeout')), 15000)
   );
 
-  const fetchPromise = fetch(GEMINI_URL, {
+  const fetchPromise = fetch(geminiUrl(model), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -68,21 +75,45 @@ async function geminiFreeResponse(msgs, { temperature = 0.7, maxTokens = 800 } =
 
   if (!response.ok) {
     const errText = await response.text().catch(() => '');
-    const err = new Error(`Gemini API erro ${response.status}: ${errText}`);
+    const err = new Error(`Gemini API erro ${response.status} (${model}): ${errText}`);
     err.status = response.status;
     throw err;
   }
 
   const data = await response.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
   if (!text) {
-    // Pode ser bloqueio de safety filter ou resposta vazia
     const finishReason = data?.candidates?.[0]?.finishReason;
-    throw new Error(`Gemini retornou vazio (finishReason: ${finishReason || 'desconhecido'})`);
+    throw new Error(`Gemini retornou vazio (${model}, finishReason: ${finishReason || 'desconhecido'})`);
+  }
+  return text.trim();
+}
+
+// Gera uma resposta via Gemini, no mesmo formato esperado pelo freeResponse.
+// Tenta os modelos da lista GEMINI_MODELS em ordem; se um der erro de quota,
+// tenta o próximo. Retorna o texto da resposta ou lança o último erro.
+async function geminiFreeResponse(msgs, opts = {}) {
+  if (!geminiDisponivel()) {
+    throw new Error('GEMINI_API_KEY não configurada');
   }
 
-  return text.trim();
+  let ultimoErro;
+  for (const model of GEMINI_MODELS) {
+    try {
+      const resposta = await chamarGemini(model, msgs, opts);
+      console.log(`[Gemini] modelo usado com sucesso: ${model}`);
+      return resposta;
+    } catch (err) {
+      ultimoErro = err;
+      console.error(`[Gemini] modelo ${model} falhou: ${err.message}`);
+      // Se for erro de quota/rate limit, tenta o próximo modelo da lista.
+      // Para outros erros (ex: timeout, erro de rede), também tenta o
+      // próximo — mas o log já deixa claro qual foi o motivo.
+      continue;
+    }
+  }
+
+  throw ultimoErro || new Error('Todos os modelos Gemini falharam');
 }
 
 // Identifica se o erro do Gemini é rate limit (429) — para também sinalizar
@@ -95,5 +126,5 @@ module.exports = {
   geminiDisponivel,
   geminiFreeResponse,
   isGeminiRateLimit,
-  GEMINI_MODEL,
+  GEMINI_MODELS,
 };
