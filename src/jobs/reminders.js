@@ -715,6 +715,37 @@ cron.schedule('* * * * *', async () => {
   } catch (e) { console.error('[Msg Agendada] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
+// FINALIZA LEMBRETES COM HORÁRIO PENDENTE (timeout) — a cada minuto
+// Quando a Clara pergunta "que horas devo colocar?" (tipo: hora_lembrete em
+// confirmacao_pendente) e o usuário não responde até expirar, cria o
+// lembrete com horário provisório 09:00 e avisa que pode ser alterado.
+cron.schedule('* * * * *', async () => {
+  try {
+    const pendentes = await prisma.memory.findMany({
+      where: { type: 'confirmacao_pendente' }
+    });
+    for (const p of pendentes) {
+      try {
+        let dados;
+        try { dados = JSON.parse(p.content); } catch { continue; }
+        if (dados.tipo !== 'hora_lembrete') continue;
+        if (Date.now() <= dados.expira) continue; // ainda não expirou
+
+        const user = await prisma.user.findUnique({ where: { id: p.userId } }).catch(() => null);
+        if (!user?.phone) { await prisma.memory.delete({ where: { id: p.id } }).catch(() => {}); continue; }
+
+        const scheduledAt = new Date(`${dados.data}T09:00:00-03:00`);
+        await prisma.reminder.create({ data: { userId: user.id, phone: user.phone, message: dados.titulo, scheduledAt } });
+        await prisma.memory.delete({ where: { id: p.id } }).catch(() => {});
+
+        const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+        await sendMessage(user.phone, `⏰ Não me respondeu o horário, então deixei "${dados.titulo}" pra ${dataFmt} às 09:00 (provisório). Pode me dizer o horário certo a qualquer momento que eu remarco 😊`);
+        console.log(`[HoraLembrete] Finalizado com 09:00 provisório: "${dados.titulo}" → ${user.phone}`);
+      } catch (e) { console.error(`[HoraLembrete] Erro pendente ${p.id}:`, e.message); }
+    }
+  } catch (e) { console.error('[HoraLembrete] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
 // LIMPEZA DE LOCKS ANTIGOS (03:00)
 cron.schedule('0 3 * * *', async () => {
   try {
