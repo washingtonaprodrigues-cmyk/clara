@@ -1,6 +1,5 @@
 const Groq = require('groq-sdk');
 const { webSearch } = require('./search');
-const { geminiDisponivel, geminiFreeResponse, isGeminiRateLimit } = require('./openrouter');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -394,9 +393,6 @@ Neste modo, vocês têm uma relação mais próxima e contínua — não é só 
 // apresentação de dados já prontos no contexto, sem precisar de "interpretação".
 const PALAVRAS_EMOCIONAIS = /sinto|sentindo|triste|feliz|cansad|estress|preocupad|ansios|chateada|saudade|amo|adoro|odeio|raiva|medo|sozinh|dificil|difícil|desabafar|conversar|desculpa|perdão|obrigad[oa] por|carinho|abraço/i;
 
-// Conversa livre agora é sempre 70b — com OpenRouter como rede de segurança,
-// a personalidade completa vale mais que a economia de tokens.
-// 8b continua reservado para classify/extração (trabalho estrutural, sem personalidade).
 function escolherModelo(message, tom, contexto) {
   return MODEL_FORTE;
 }
@@ -410,37 +406,22 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     const contexto = preferences?._contexto || '';
 
     if (preferences?._systemOverride) {
-      const overrideMsgs = [
-        { role: 'system', content: preferences._systemOverride },
-        { role: 'user', content: message }
-      ];
       try {
         const completion = await groq.chat.completions.create({
           model: MODEL_LEVE,
-          messages: overrideMsgs,
+          messages: [
+            { role: 'system', content: preferences._systemOverride },
+            { role: 'user', content: message }
+          ],
           temperature: 0.85,
           max_tokens: 200,
         });
         return completion.choices[0].message.content.trim();
       } catch (eOverride) {
-        console.log(`[freeResponse/override] erro Groq: "${eOverride.message}" | status: ${eOverride.status || eOverride.statusCode || 'n/a'} | isRateLimit: ${isRateLimit(eOverride)}`);
-        if (isRateLimit(eOverride)) {
-          // Tenta OpenRouter antes de desistir da mensagem automática
-          if (geminiDisponivel()) {
-            console.log('[OpenRouter] tentando fallback (systemOverride)...');
-            try {
-              const respOpenRouter = await geminiFreeResponse(overrideMsgs, { temperature: 0.85, maxTokens: 200 });
-              console.log('[OpenRouter] fallback systemOverride OK');
-              return respOpenRouter;
-            } catch (eOR) {
-              console.error('[OpenRouter] Fallback systemOverride falhou:', eOR.message);
-            }
-          } else {
-            console.log('[OpenRouter] não disponível (sem OPENROUTER_API_KEY) — systemOverride');
-          }
+        if (isRateLimit(eOverride) && phone) {
           // Sem alternativa — retorna null em vez de mandar a desculpa de pausa
           // como se fosse a mensagem real
-          console.log('[systemOverride] Rate limit — mensagem automática não enviada');
+          await ativarPausaCreativa(phone, isTPD(eOverride) ? 'tpd' : 'rpm');
           return null;
         }
         throw eOverride;
@@ -515,52 +496,12 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       ]);
       return completion.choices[0].message.content.trim();
     } catch (e1) {
-      // 🔍 LOG DE DIAGNÓSTICO — mostra exatamente por que o fallback OpenRouter
-      // dispara ou não. Remova depois de confirmar o comportamento.
-      console.log(`[freeResponse] erro Groq: "${e1.message}" | status: ${e1.status || e1.statusCode || 'n/a'} | phone: ${phone || 'null'} | isRateLimit: ${isRateLimit(e1)} | openrouterDisponivel: ${geminiDisponivel()}`);
-
       if (isRateLimit(e1) && phone) {
-        // Groq esgotou — tenta OpenRouter como rede de segurança antes do modo direto
-        if (geminiDisponivel()) {
-          console.log(`[OpenRouter] tentando fallback para ${phone}...`);
-          try {
-            const respOpenRouter = await geminiFreeResponse(msgs, {
-              temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-              maxTokens: isCurta ? 80 : 800,
-            });
-            console.log(`[OpenRouter] Fallback usado para ${phone}`);
-            return respOpenRouter;
-          } catch (eOR) {
-            console.error('[OpenRouter] Fallback falhou:', eOR.message);
-            // OpenRouter também falhou — segue pro modo direto normalmente
-          }
-        } else {
-          console.log('[OpenRouter] não disponível (sem OPENROUTER_API_KEY)');
-        }
-
         const tipo = isTPD(e1) ? 'tpd' : 'rpm';
         const aviso = await ativarModoDireto(phone, tipo);
         // aviso só vem na primeira vez — depois retorna null (handler não responde)
         return aviso || null;
       }
-
-      // Erro do Groq mas NÃO é rate limit (ex: timeout, erro de rede, etc).
-      // Antes de cair no modo direto / mensagem genérica, tenta o OpenRouter também —
-      // assim qualquer falha do Groq tem o mesmo fallback.
-      if (phone && geminiDisponivel()) {
-        console.log(`[OpenRouter] tentando fallback (erro não-rate-limit) para ${phone}...`);
-        try {
-          const respOpenRouter = await geminiFreeResponse(msgs, {
-            temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-            maxTokens: isCurta ? 80 : 800,
-          });
-          console.log(`[OpenRouter] Fallback (não-rate-limit) usado para ${phone}`);
-          return respOpenRouter;
-        } catch (eOR) {
-          console.error('[OpenRouter] Fallback (não-rate-limit) falhou:', eOR.message);
-        }
-      }
-
       throw e1;
     }
 
