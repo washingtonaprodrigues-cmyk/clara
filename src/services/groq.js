@@ -1,5 +1,6 @@
 const Groq = require('groq-sdk');
 const { webSearch } = require('./search');
+const { geminiDisponivel, geminiFreeResponse, isGeminiRateLimit } = require('./gemini');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -387,18 +388,11 @@ Neste modo, vocês têm uma relação mais próxima e contínua — não é só 
 // apresentação de dados já prontos no contexto, sem precisar de "interpretação".
 const PALAVRAS_EMOCIONAIS = /sinto|sentindo|triste|feliz|cansad|estress|preocupad|ansios|chateada|saudade|amo|adoro|odeio|raiva|medo|sozinh|dificil|difícil|desabafar|conversar|desculpa|perdão|obrigad[oa] por|carinho|abraço/i;
 
+// Conversa livre agora é sempre 70b — com Gemini como rede de segurança,
+// a personalidade completa vale mais que a economia de tokens.
+// 8b continua reservado para classify/extração (trabalho estrutural, sem personalidade).
 function escolherModelo(message, tom, contexto) {
-  const msg = message.trim();
-
-  // Simpática e Sem Filtro têm memória relacional reforçada — precisam do 70b
-  // para manter apelidos, piadas internas e nuance emocional consistentes
-  if (tom === 'sarcastico' || tom === 'carinhoso') return MODEL_FORTE;
-
-  // Mensagens emocionais/pessoais merecem o 70b, independente do tom
-  if (PALAVRAS_EMOCIONAIS.test(msg)) return MODEL_FORTE;
-
-  // Direta e Divertida são tons funcionais/leves — 8b cobre bem
-  return MODEL_LEVE;
+  return MODEL_FORTE;
 }
 
 async function freeResponse(message, history = [], preferences = {}, privateMode = false) {
@@ -410,21 +404,30 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     const contexto = preferences?._contexto || '';
 
     if (preferences?._systemOverride) {
+      const overrideMsgs = [
+        { role: 'system', content: preferences._systemOverride },
+        { role: 'user', content: message }
+      ];
       try {
         const completion = await groq.chat.completions.create({
           model: MODEL_LEVE,
-          messages: [
-            { role: 'system', content: preferences._systemOverride },
-            { role: 'user', content: message }
-          ],
+          messages: overrideMsgs,
           temperature: 0.85,
           max_tokens: 200,
         });
         return completion.choices[0].message.content.trim();
       } catch (eOverride) {
-        // Mensagens automáticas (bom dia, boa noite, etc) — se der rate limit,
-        // retorna null em vez de mandar a desculpa de pausa como se fosse a mensagem real
         if (isRateLimit(eOverride)) {
+          // Tenta Gemini antes de desistir da mensagem automática
+          if (geminiDisponivel()) {
+            try {
+              return await geminiFreeResponse(overrideMsgs, { temperature: 0.85, maxTokens: 200 });
+            } catch (eGemini) {
+              console.error('[Gemini] Fallback systemOverride falhou:', eGemini.message);
+            }
+          }
+          // Sem alternativa — retorna null em vez de mandar a desculpa de pausa
+          // como se fosse a mensagem real
           console.log('[systemOverride] Rate limit — mensagem automática não enviada');
           return null;
         }
@@ -475,8 +478,6 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       return 'O bate-papo ainda está pausado — mas pode me mandar lembretes, listas e tarefas! 😊';
     }
 
-    const modeloEscolhido = escolherModelo(message, tom, contexto); // Simpática/Sem Filtro=70b sempre; Direta/Divertida=8b quando possível
-
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('timeout')), 15000)
     );
@@ -489,20 +490,35 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       { role: 'user', content: message }
     ];
 
-    async function tentarComModelo(modelo) {
-      return groq.chat.completions.create({
-        model: modelo,
-        messages: msgs,
-        temperature: modelo === MODEL_LEVE ? 0.6 : (tom === 'sarcastico' ? 0.9 : 0.7),
-        max_tokens: isCurta ? 80 : 800,
-      });
-    }
-
     let completion;
     try {
-      completion = await Promise.race([tentarComModelo(modeloEscolhido), timeoutPromise]);
+      completion = await Promise.race([
+        groq.chat.completions.create({
+          model: MODEL_FORTE,
+          messages: msgs,
+          temperature: tom === 'sarcastico' ? 0.9 : 0.7,
+          max_tokens: isCurta ? 80 : 800,
+        }),
+        timeoutPromise
+      ]);
+      return completion.choices[0].message.content.trim();
     } catch (e1) {
       if (isRateLimit(e1) && phone) {
+        // Groq esgotou — tenta Gemini como rede de segurança antes do modo direto
+        if (geminiDisponivel()) {
+          try {
+            const respGemini = await geminiFreeResponse(msgs, {
+              temperature: tom === 'sarcastico' ? 0.9 : 0.7,
+              maxTokens: isCurta ? 80 : 800,
+            });
+            console.log(`[Gemini] Fallback usado para ${phone}`);
+            return respGemini;
+          } catch (eGemini) {
+            console.error('[Gemini] Fallback falhou:', eGemini.message);
+            // Gemini também falhou — segue pro modo direto normalmente
+          }
+        }
+
         const tipo = isTPD(e1) ? 'tpd' : 'rpm';
         const aviso = await ativarModoDireto(phone, tipo);
         // aviso só vem na primeira vez — depois retorna null (handler não responde)
@@ -510,8 +526,6 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       }
       throw e1;
     }
-
-    return completion.choices[0].message.content.trim();
 
   } catch (e) {
     if (isRateLimit(e) && phone) {
