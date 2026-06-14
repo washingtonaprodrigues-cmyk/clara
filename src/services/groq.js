@@ -472,7 +472,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         model: modelo,
         messages: msgs,
         temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-        max_tokens: isCurta ? 80 : 420,
+        max_tokens: isCurta ? 80 : 600,
       });
     }
 
