@@ -68,10 +68,15 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .sidebar.collapsed .sidebar-user-info-col{opacity:0;width:0;overflow:hidden}
 .sidebar-user-name{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sidebar-user-phone{font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
-.sidebar-collapse-btn{width:24px;height:24px;background:none;border:none;cursor:pointer;color:var(--text3);flex-shrink:0;border-radius:6px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.sidebar-header{display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid var(--border);min-height:58px}
+.sidebar-header-info{flex:1;min-width:0;transition:opacity .2s}
+.sidebar.collapsed .sidebar-header-info{opacity:0;width:0;overflow:hidden}
+.sidebar.collapsed .sidebar-header{justify-content:center;padding:12px 8px}
+.sidebar.collapsed .tb-clara-avatar{display:none}
+.sidebar-collapse-btn{width:32px;height:32px;background:none;border:none;cursor:pointer;color:var(--text3);flex-shrink:0;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:all .15s}
 .sidebar-collapse-btn:hover{background:var(--s3);color:var(--text)}
-.sidebar-collapse-btn svg{width:14px;height:14px}
-.sidebar.collapsed .sidebar-collapse-btn{display:none}
+.sidebar-collapse-btn svg{width:18px;height:18px}
+.sidebar.collapsed .sidebar-collapse-btn{margin:0 auto}
 .sidebar-nav{flex:1;padding:8px 10px;overflow-y:auto;overflow-x:hidden;padding-top:8px}
 .s-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:var(--r-sm);cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;transition:all .15s;white-space:nowrap;min-height:44px;position:relative}
 .s-item:hover{background:var(--s2);color:var(--text)}
@@ -104,6 +109,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .tb-name{font-size:15px;font-weight:600;color:var(--text)}
 .tb-status{font-size:11px;color:var(--green);display:flex;align-items:center;gap:4px}
 .tb-status::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);flex-shrink:0}
+.tb-status.no-dot::before{display:none}
 .tb-nova{padding:7px 14px;background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.25);border-radius:20px;color:#C4B5FD;font-family:'Inter',sans-serif;font-size:12px;font-weight:500;cursor:pointer;transition:all .2s;white-space:nowrap}
 .tb-nova:hover{background:rgba(139,92,246,.22);border-color:rgba(139,92,246,.45);color:#fff}
 .tb-icon-btn{width:36px;height:36px;background:var(--s2);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;flex-shrink:0}
@@ -495,8 +501,6 @@ select option{background:var(--s2)}
 .ph-back{width:36px;height:36px;background:none;border:none;cursor:pointer;display:none;align-items:center;justify-content:center;flex-shrink:0;color:var(--text2);margin-right:4px;border-radius:8px;padding:0}
 .ph-back:hover{background:var(--s2);color:var(--text)}
 .ph-back svg{width:18px;height:18px}
-.tb-expand-btn{width:36px;height:36px;background:none;border:none;cursor:pointer;color:var(--text2);border-radius:8px;display:none;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}
-.tb-expand-btn:hover{background:var(--s2);color:var(--text)}
 @media(max-width:768px){.sidebar{display:none}.tb-menu{display:flex!important}.tb-expand-btn{display:none!important}.drawer{display:flex}.drawer-overlay{display:block}.ph-back{display:flex}}
 </style>
 </head>
@@ -540,7 +544,13 @@ select option{background:var(--s2)}
 </div>
 <div class="app-layout" id="main-app" style="display:none">
   <aside class="sidebar" id="sidebar">
-
+    <div class="sidebar-header">
+      <div class="tb-clara-avatar" id="sb-clara-avatar"><img src="/avatar" onload="this.classList.add('loaded')" onerror="this.style.display='none';this.parentElement.style.animation='none';this.parentElement.insertAdjacentHTML('beforeend','<span style=\'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:16px;z-index:2\'>✨</span>')" alt="Clara"/></div>
+      <div class="tb-info sidebar-header-info"><div class="tb-name">Clara</div><div class="tb-status">Online agora</div></div>
+      <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" onclick="toggleSidebar()" title="Recolher menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
     <nav class="sidebar-nav">
       <div class="s-item active" onclick="navTo('chat')" data-nav="chat"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="s-item-label">Mensagens</span></div>
       <div class="s-item" onclick="navTo('lembretes')" data-nav="lembretes"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><span class="s-item-label">Lembretes</span><span class="s-badge" id="d-badge-rem" style="display:none">0</span></div>
@@ -552,15 +562,10 @@ select option{background:var(--s2)}
       <div class="s-item" onclick="navTo('preferencias')" data-nav="preferencias"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="s-item-label">Configurações</span></div>
     </nav>
     <div class="sidebar-foot">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <button class="s-foot-btn danger" onclick="doLogout()" style="flex:1">
-          <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          <span class="s-foot-label">Sair</span>
-        </button>
-        <button class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Recolher menu" style="flex-shrink:0;margin-left:4px">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
-        </button>
-      </div>
+      <button class="s-foot-btn danger" onclick="doLogout()">
+        <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span class="s-foot-label">Sair</span>
+      </button>
     </div>
   </aside>
   <div class="main-content">
@@ -568,11 +573,7 @@ select option{background:var(--s2)}
       <div class="page active" id="page-chat">
         <div class="topbar" id="topbar">
           <button class="tb-menu" onclick="toggleDrawer()"><span></span><span></span><span></span></button>
-          <button class="tb-expand-btn" id="tb-expand-btn" onclick="toggleSidebar()" style="display:none" title="Expandir menu">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-          </button>
-          <div class="tb-clara-avatar"><img src="/avatar" onload="this.classList.add('loaded')" onerror="this.parentElement.textContent='✨'" alt="Clara"/></div>
-          <div class="tb-info"><div class="tb-name">Clara</div><div class="tb-status">Online agora</div></div>
+          <div class="tb-info" style="flex:1"><div class="tb-name">Chat</div><div class="tb-status no-dot" style="color:var(--text3)">Converse naturalmente com a Clara.</div></div>
           <button class="tb-nova" onclick="newChat()">+ Novo Chat</button>
           <div class="tb-icon-btn" id="private-btn" onclick="togglePrivate()" style="cursor:pointer">🔓</div>
         </div>
@@ -899,9 +900,6 @@ function setNotifAtivo(ativo){}
 function toggleSidebar(){
   sidebarCollapsed=!sidebarCollapsed;
   document.getElementById('sidebar').classList.toggle('collapsed',sidebarCollapsed);
-  // Mostra/esconde botão hamburguer na topbar quando sidebar está colapsada
-  const tbMenu=document.getElementById('tb-expand-btn');
-  if(tbMenu)tbMenu.style.display=sidebarCollapsed?'flex':'none';
 }
 function showAuthScreen(){document.getElementById('loading-screen').classList.add('hidden');document.getElementById('auth-screen').classList.remove('hidden');document.getElementById('phone-screen').classList.add('hidden');document.getElementById('main-app').style.display='none';if(pollInterval){clearInterval(pollInterval);pollInterval=null;}}
 function showPhoneScreen(user){document.getElementById('loading-screen').classList.add('hidden');document.getElementById('auth-screen').classList.add('hidden');document.getElementById('phone-screen').classList.remove('hidden');document.getElementById('main-app').style.display='none';const av=user.photoURL?`<img src="${user.photoURL}" style="width:32px;height:32px;border-radius:50%;object-fit:cover"/>`:`<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#8B5CF6,#A855F7);display:flex;align-items:center;justify-content:center;font-size:14px">✨</div>`;document.getElementById('phone-screen-user').innerHTML=`${av}<div><div style="font-size:13px;font-weight:500;color:var(--text)">${user.displayName||user.email}</div><div style="font-size:11px;color:var(--text3)">${user.email}</div></div>`;}
