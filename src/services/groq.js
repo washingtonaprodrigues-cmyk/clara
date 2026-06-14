@@ -451,7 +451,11 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       return data.choices?.[0]?.message?.content?.trim() || 'Pode repetir? 😊';
     }
 
-    const isCurta = message.trim().length < 40;
+    // isCurta: só para saudações/despedidas simples (ex: "oi", "bom dia", "tchau"),
+    // não apenas mensagens curtas — "me dá um conselho" é curta mas pede resposta elaborada
+    const msgTrim = message.trim();
+    const isSaudacaoSimples = /^(oi+|ol[áa]|e[ai]+|bom\s?dia|boa\s?tarde|boa\s?noite|tchau|at[ée]|valeu|obrigad[oa]|👍|😊|😄|❤️?|💜)[\s!?.]*$/i.test(msgTrim);
+    const isCurta = isSaudacaoSimples && msgTrim.length < 25;
 
     // Já está em modo direto — não tenta o 70b, conversa livre fica indisponível
     // (comandos estruturados como lembretes/listas continuam funcionando via classify)
