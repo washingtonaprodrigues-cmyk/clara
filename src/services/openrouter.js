@@ -106,7 +106,13 @@ async function chamarOpenRouter(model, msgs, { temperature = 0.7, maxTokens = 80
     const finishReason = data?.choices?.[0]?.finish_reason;
     throw new Error(`OpenRouter retornou vazio (${model}, finish_reason: ${finishReason || 'desconhecido'})`);
   }
-  return limparMetadadosSafety(text.trim());
+  const limpo = limparMetadadosSafety(text.trim());
+  if (!limpo) {
+    // Texto não-vazio originalmente, mas ficou vazio após remover metadados
+    // de safety (ex: resposta era só "User Safety: safe\nResponse Safety: safe").
+    throw new Error(`OpenRouter retornou apenas metadados sem conteúdo real (${model})`);
+  }
+  return limpo;
 }
 
 // Identifica se o erro é um 429 "temporário" do provedor upstream (ex:
