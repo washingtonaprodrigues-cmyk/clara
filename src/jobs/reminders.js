@@ -83,14 +83,13 @@ cron.schedule('5 7 * * *', async () => {
         const { prefs } = await getUserContext(user);
 
         let ctx = `Hoje é ${diaTexto}.\n`;
+        const totalLembretes = lembretes.length;
         if (lembretes.length > 0) {
-          ctx += `\nLembretes de hoje:\n`;
+          ctx += `\nLembretes de hoje (${totalLembretes} no total):\n`;
           lembretes.forEach(r => {
             const h = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
             ctx += `• ${h} — ${r.message}\n`;
           });
-        } else {
-          ctx += `\nNenhum compromisso agendado para hoje.\n`;
         }
         if (eventos.length > 0) {
           ctx += `\nEventos próximos:\n`;
@@ -98,23 +97,41 @@ cron.schedule('5 7 * * *', async () => {
         }
         if (infoPessoal) ctx += infoPessoal;
 
-        const systemBomDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Crie uma mensagem de bom dia ÚNICA e HUMANA — como se fosse a primeira vez que fala com a pessoa naquele dia específico.
+        let systemBomDia;
+        if (totalLembretes > 0) {
+          // Tem tarefas — bom dia OBJETIVO E INFORMATIVO (resumo do dia)
+          const primeira = lembretes[0];
+          const horaPrimeira = new Date(primeira.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+          systemBomDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
+Crie uma mensagem de bom dia OBJETIVA e INFORMATIVA — um resumo rápido do dia, não poético.
 
 CONTEXTO DO DIA:
 ${ctx}
 
 REGRAS OBRIGATÓRIAS:
-- Máximo 3-4 linhas
-- Use o dia da semana de forma natural
-- Se tiver compromissos: mencione apenas o primeiro horário
-- Se não tiver compromissos: diga algo positivo sobre o dia — NUNCA mencione que não há compromissos ou que a pessoa não fez nada
+- 2-3 linhas, direto ao ponto
+- Diga "Bom dia" + quantas tarefas/compromissos tem hoje (${totalLembretes}) + qual é a primeira (${primeira.message} às ${horaPrimeira})
+- Encerre com algo curto tipo "estarei aqui pra te lembrar de tudo" — adaptado ao seu tom
+- Varie a abertura — não repita sempre a mesma frase
+- Use no máximo 1 emoji
+- NÃO seja sentimental ou poética. Seja prática.
+Tom: ${prefs.tom || 'carinhoso'}.`;
+        } else {
+          // Sem tarefas — bom dia simples e caloroso, sem forçar conteúdo
+          systemBomDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
+Crie uma mensagem de bom dia SIMPLES e HUMANA — como se fosse a primeira vez que fala com a pessoa naquele dia.
+
+CONTEXTO DO DIA:
+${ctx}
+
+REGRAS OBRIGATÓRIAS:
+- Máximo 2-3 linhas
+- Sem compromissos hoje — diga algo positivo e leve sobre o dia, sem mencionar a ausência de tarefas
 - Varie sempre a abertura — NUNCA repita "Bom dia, [nome]! ☀️"
 - Use no máximo 1 emoji
-- Encerre com algo caloroso e breve
-- NÃO liste compromissos. NÃO pergunte. NÃO agende nada.
-- NUNCA diga que a pessoa não concluiu compromissos ou que a semana foi improdutiva
+- NÃO pergunte. NÃO agende nada.
 Tom: ${prefs.tom || 'carinhoso'}.`;
+        }
 
         const msg = await freeResponse('Envie uma mensagem de bom dia para o usuário.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBomDia });
         if (!msg) { console.log(`[Bom dia] Rate limit, pulado para ${user.phone}`); continue; }
@@ -170,7 +187,7 @@ cron.schedule('30 21 * * *', async () => {
         let ctx = `Hoje foi ${['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'][now.getDay()]}.\n`;
         if (totalHoje > 0) ctx += `O usuário tinha ${totalHoje} compromisso(s) hoje e concluiu ${concluidasHoje}.\n`;
         if (lembretesAmanha.length > 0) {
-          ctx += `\nAmanhã tem:\n`;
+          ctx += `\nAmanhã tem ${lembretesAmanha.length} compromisso(s):\n`;
           lembretesAmanha.forEach(r => {
             const h = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
             ctx += `• ${h} — ${r.message}\n`;
@@ -178,20 +195,40 @@ cron.schedule('30 21 * * *', async () => {
         }
         if (infoPessoal) ctx += infoPessoal;
 
-        const systemBoaNoite = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Crie uma mensagem de boa noite ÚNICA — como quem se despede de verdade ao final daquele dia específico.
+        let systemBoaNoite;
+        if (totalHoje > 0 || lembretesAmanha.length > 0) {
+          // Teve atividade — boa noite OBJETIVA com resumo do dia/amanhã
+          systemBoaNoite = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
+Crie uma mensagem de boa noite OBJETIVA — um resumo rápido do dia, não poética.
 
 CONTEXTO DO DIA:
 ${ctx}
 
 REGRAS OBRIGATÓRIAS:
-- Máximo 3 linhas, sem emojis
+- 2-3 linhas, direto ao ponto
+- Se concluiu tarefas hoje (${concluidasHoje}/${totalHoje}), parabenize brevemente por isso
+- Se tem compromissos amanhã (${lembretesAmanha.length}), mencione a quantidade de forma breve
+- Encerre com algo curto tipo "durma bem, estarei aqui pra te ajudar amanhã" — adaptado ao seu tom
+- Varie a abertura — não repita sempre a mesma frase
+- Máximo 1 emoji
+- NÃO seja sentimental ou poética. Seja prática.
+Tom: ${prefs.tom || 'carinhoso'}.`;
+        } else {
+          // Dia tranquilo sem atividade — boa noite simples e calorosa
+          systemBoaNoite = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
+Crie uma mensagem de boa noite SIMPLES — como quem se despede de verdade ao final do dia.
+
+CONTEXTO DO DIA:
+${ctx}
+
+REGRAS OBRIGATÓRIAS:
+- Máximo 2-3 linhas, sem emojis
 - Considere o dia da semana
 - Varie sempre a abertura
-- Mencione amanhã de forma leve sem listar compromissos
 - Encerre com algo caloroso e diferente a cada dia
-- NÃO liste compromissos. NÃO use emojis. NÃO pergunte. NÃO agende nada.
+- NÃO mencione falta de compromissos. NÃO pergunte. NÃO agende nada.
 Tom: ${prefs.tom || 'carinhoso'}.`;
+        }
 
         const msg = await freeResponse('Envie uma mensagem de boa noite para o usuário.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBoaNoite });
         if (!msg) { console.log(`[Boa noite] Rate limit, pulado para ${user.phone}`); continue; }
