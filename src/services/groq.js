@@ -460,6 +460,11 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     // Já está em modo direto — não tenta o 70b, conversa livre fica indisponível
     // (comandos estruturados como lembretes/listas continuam funcionando via classify)
     if (phone && estaEmModoDirecto(phone)) {
+      // Se uma ação estruturada foi executada (lembrete, gasto, etc), confirma isso
+      // em vez do lembrete genérico de pausa — o usuário precisa saber que funcionou
+      if (preferences?._acaoConfirmacao) {
+        return preferences._acaoConfirmacao;
+      }
       // Primeira vez: já retornou o aviso completo em ativarModoDireto (mais acima).
       // Daqui em diante, conversa livre recebe um lembrete curto e fixo (sem custo de LLM).
       return 'O bate-papo ainda está pausado — mas pode me mandar lembretes, listas e tarefas! 😊';
