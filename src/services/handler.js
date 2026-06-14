@@ -707,6 +707,21 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
     scheduledAt = new Date(`${dataUsada}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
     if (!classified.data && scheduledAt < nowBRT()) { scheduledAt.setDate(scheduledAt.getDate() + 1); }
   }
+  // ── Tem DATA mas SEM HORA (ex: "no dia 24 tenho consulta") ──
+  // Sem este bloco, scheduledAt fica null e o lembrete nunca é criado,
+  // mas a Clara responde "Anotado!" mesmo assim — o usuário acha que
+  // está agendado e não está. Cria com horário padrão 09:00 para o
+  // dia informado, e usa um título que indica que o horário é estimado.
+  if (!scheduledAt && !classified.hora && classified.data) {
+    const dataObj = new Date(classified.data + 'T12:00:00-03:00');
+    const anoClassify = dataObj.getFullYear();
+    const anoAtual = new Date().getFullYear();
+    if (anoClassify >= anoAtual && anoClassify <= anoAtual + 1) {
+      scheduledAt = new Date(`${classified.data}T09:00:00-03:00`);
+    } else {
+      console.warn(`[DATA_INVALIDA] phone=${phone} titulo="${classified.titulo}" data_groq="${classified.data}" — ignorada, lembrete não criado`);
+    }
+  }
   if (scheduledAt) {
     const novoLembrete = await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
     if (detectarUrgencia(classified.titulo)) {
