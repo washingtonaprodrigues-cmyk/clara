@@ -69,10 +69,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .sidebar-user-name{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sidebar-user-phone{font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
 .sidebar-header{display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid var(--border);min-height:58px}
-.sidebar-header-info{flex:1;min-width:0;transition:opacity .2s}
-.sidebar.collapsed .sidebar-header-info{opacity:0;width:0;overflow:hidden}
+.sidebar-header-info{flex:1;min-width:0;transition:opacity .15s}
+.sidebar.collapsed .sidebar-header-info{opacity:0;width:0;overflow:hidden;transition:opacity .1s,width 0s .1s}
 .sidebar.collapsed .sidebar-header{justify-content:center;padding:12px 8px}
-.sidebar.collapsed .tb-clara-avatar{display:none}
+.sidebar-header .tb-clara-avatar{transition:opacity .15s,width .2s,margin .2s}
+.sidebar.collapsed .sidebar-header .tb-clara-avatar{opacity:0;width:0;margin:0;transition:opacity .1s,width 0s .1s,margin 0s .1s}
 .sidebar-collapse-btn{width:32px;height:32px;background:none;border:none;cursor:pointer;color:var(--text3);flex-shrink:0;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:all .15s}
 .sidebar-collapse-btn:hover{background:var(--s3);color:var(--text)}
 .sidebar-collapse-btn svg{width:18px;height:18px}
@@ -104,6 +105,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .tb-clara-avatar::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.15) 50%,transparent 100%);background-size:200% 100%;animation:avatarShimmer 1.5s ease-in-out infinite;z-index:1}
 .tb-clara-avatar img{width:100%;height:100%;object-fit:cover;position:relative;z-index:2;opacity:0;transition:opacity .5s ease}
 .tb-clara-avatar img.loaded{opacity:1}
+.avatar-shimmer{position:relative;overflow:hidden}
+.avatar-shimmer::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.15) 50%,transparent 100%);background-size:200% 100%;animation:avatarShimmer 1.5s ease-in-out infinite;z-index:1}
+.avatar-shimmer img{position:relative;z-index:2;opacity:0;transition:opacity .5s ease}
+.avatar-shimmer img.loaded{opacity:1}
 @keyframes avatarShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .tb-info{min-width:0;flex:1}
 .tb-name{font-size:15px;font-weight:600;color:var(--text)}
@@ -723,7 +728,7 @@ select option{background:var(--s2)}
               <!-- Nome -->
               <div style="padding:20px;border-right:1px solid var(--border)">
                 <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
-                  <div id="cfg-user-avatar" style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
+                  <div id="cfg-user-avatar" class="avatar-shimmer" style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.8)" stroke-width="1.5" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                   </div>
                   <div>
@@ -907,16 +912,15 @@ function showMainApp(user,savedPhone){
   document.getElementById('loading-screen').classList.add('hidden');document.getElementById('auth-screen').classList.add('hidden');document.getElementById('phone-screen').classList.add('hidden');document.getElementById('main-app').style.display='flex';
   phone=savedPhone;
   const name=user.displayName||user.email?.split('@')[0]||'Usuário';
-  document.getElementById('sidebar-name').textContent=name;
-  document.getElementById('sidebar-phone').textContent='+55 '+phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
-  document.getElementById('drawer-name').textContent=name;
-  document.getElementById('drawer-phone').textContent='+55 '+phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
+  const drawerNameEl=document.getElementById('drawer-name');
+  if(drawerNameEl)drawerNameEl.textContent=name;
+  const drawerPhoneEl=document.getElementById('drawer-phone');
+  if(drawerPhoneEl)drawerPhoneEl.textContent='+55 '+phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
   if(user.photoURL){
-    const sbAv=document.getElementById('sidebar-avatar');
-    if(sbAv){sbAv.innerHTML=`<img src="${user.photoURL}" style="width:100%;height:100%;object-fit:cover"/>`;sbAv.style.background='none';}
-    document.getElementById('drawer-avatar').innerHTML=`<img src="${user.photoURL}" style="width:100%;height:100%;object-fit:cover"/>`;
+    const drawerAv=document.getElementById('drawer-avatar');
+    if(drawerAv)drawerAv.innerHTML=`<img src="${user.photoURL}" style="width:100%;height:100%;object-fit:cover"/>`;
     const cfgAv=document.getElementById('cfg-user-avatar');
-    if(cfgAv){cfgAv.innerHTML=`<img src="${user.photoURL}" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/>`;cfgAv.style.background='none';}
+    if(cfgAv){cfgAv.innerHTML=`<img src="${user.photoURL}" onload="this.classList.add('loaded')" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/>`;}
   }
   document.getElementById('welcome-greeting').textContent=getGreeting();
   document.getElementById('welcome-name').textContent=name.split(' ')[0];
