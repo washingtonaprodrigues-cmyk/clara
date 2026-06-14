@@ -22,49 +22,62 @@ function isTPD(error) {
   return msg.includes('tokens per day') || msg.includes('tpd') || msg.includes('daily');
 }
 
-const DESCULPAS_RPM = [
-  'Um segundo, deixa eu respirar! 😅',
-  'Ei, muita coisa de uma vez! Já já tô aqui 🏃',
-  'Calma, tô chegando! Um instantinho 😄',
-  'Opa, travei aqui! Já volto ✨',
-  'Espera um pouquinho, tô organizando as ideias 😊',
+// ── Modo Direto: quando o modelo "completo" esgota, a Clara avisa que está
+// mudando para respostas mais simples/diretas (8b) — mas continua funcionando
+// para lembretes, tarefas e conversas básicas. Não desaparece.
+const AVISOS_MODO_DIRETO = [
+  'Mudando pro modo direto por um tempinho! Ainda te ajudo com lembretes e papo simples — já volto com tudo pra conversa mais elaborada 💜',
+  'Tô passando pro modo mais econômico agora, mas continuo aqui pra lembretes e o básico! Em breve volto inteira de novo ✨',
+  'Vou ficar mais direta por uns minutos pra recarregar — mas lembretes, listas e tarefas seguem normais! Já volto com a conversa completa 😊',
+  'Modo direto ativado! Continuo cuidando de lembretes e tarefas, só a conversa mais "elaborada" volta em breve 🌟',
 ];
 
-const DESCULPAS_TPD = [
-  'Preciso dar uma pausa rápida, mas volto em breve! 💜',
-  'Saí um segundo, não some — já tô de volta 😊',
-  'Dá um tempinho, tô resolvendo uma coisa! Logo volto 🌟',
-  'Pausa relâmpago! Em breve tô aqui de novo ✨',
-  'Precisei sair um momento, mas não fui embora não 😄',
+const AVISOS_RETORNO_COMPLETO = [
+  'Voltei com tudo! Pode falar 💜',
+  'Tô de volta no modo completo! Me conta o que você queria 😊',
+  'De volta inteira! Pode continuar ✨',
+  'Recarregada! O que você precisava? 😄',
 ];
 
-const _pausaAtiva = {};
+// _modoDirecto[phone] = true enquanto o modelo forte estiver em cooldown
+const _modoDireto = {};
+const _avisoEnviado = {};
 
-async function ativarPausaCreativa(phone, tipo) {
-  const desculpas = tipo === 'rpm' ? DESCULPAS_RPM : DESCULPAS_TPD;
-  const msg = desculpas[Math.floor(Math.random() * desculpas.length)];
-  console.log(`[RateLimit] ${tipo.toUpperCase()} para ${phone}`);
+function estaEmModoDirecto(phone) {
+  return !!_modoDireto[phone];
+}
+
+async function ativarModoDireto(phone, tipo) {
+  const jaAtivo = _modoDireto[phone];
+  _modoDireto[phone] = true;
   const delay = tipo === 'rpm' ? 60000 : 300000;
-  if (!_pausaAtiva[phone]) {
-    _pausaAtiva[phone] = true;
+
+  if (!jaAtivo) {
+    console.log(`[RateLimit] ${tipo.toUpperCase()} para ${phone} — ativando modo direto`);
     setTimeout(async () => {
-      delete _pausaAtiva[phone];
+      delete _modoDireto[phone];
+      delete _avisoEnviado[phone];
       try {
         const { sendMessage } = require('./whatsapp');
-        const retornos = [
-          'Oi, voltei! 😊 O que você precisava?',
-          'Tô aqui de novo! Me conta o que você queria 💜',
-          'Voltei! Pode falar 😄',
-          'Pronta! O que eu perdi? ✨',
-          'De volta! Pode continuar 😊',
-        ];
-        await sendMessage(phone, retornos[Math.floor(Math.random() * retornos.length)]);
+        const retorno = AVISOS_RETORNO_COMPLETO[Math.floor(Math.random() * AVISOS_RETORNO_COMPLETO.length)];
+        await sendMessage(phone, retorno);
       } catch(e) {
         console.error('[RateLimit] Erro ao avisar retorno:', e.message);
       }
     }, delay);
   }
-  return msg;
+
+  // Retorna o aviso só na primeira vez que entra em modo direto
+  if (!_avisoEnviado[phone]) {
+    _avisoEnviado[phone] = true;
+    return AVISOS_MODO_DIRETO[Math.floor(Math.random() * AVISOS_MODO_DIRETO.length)];
+  }
+  return null; // sinaliza para tentar responder normalmente com o 8b
+}
+
+// Mantém compatibilidade com nome antigo usado em outros arquivos
+async function ativarPausaCreativa(phone, tipo) {
+  return ativarModoDireto(phone, tipo);
 }
 
 const SYSTEM_PROMPT = () => `Você é a Clara, assistente pessoal brasileira.
@@ -365,39 +378,75 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       return data.choices?.[0]?.message?.content?.trim() || 'Pode repetir? 😊';
     }
 
-    const modeloEscolhido = escolherModelo(message, tom, contexto);
+    let modeloEscolhido = escolherModelo(message, tom, contexto);
     const isCurta = message.trim().length < 40;
+
+    // Já está em modo direto (cooldown ativo) — vai direto pro 8b, sem tentar o forte
+    let usarMsgsDiretos = false;
+    if (phone && estaEmModoDirecto(phone) && modeloEscolhido === MODEL_FORTE) {
+      modeloEscolhido = MODEL_LEVE;
+      usarMsgsDiretos = true;
+    }
 
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('timeout')), 15000)
     );
 
+    const sistemaCompleto = buildPersonality(tom, name, false) + contexto;
+    // Modo direto: personalidade simplificada — direta e factual, sem tentar
+    // manter sarcasmo elaborado (que o 8b não sustenta bem)
+    const sistemaDireto = `Você é a Clara, assistente pessoal no WhatsApp. ${name ? `O nome da pessoa é ${name}.` : ''}
+Você está em modo econômico temporário: seja direta, simpática e factual.
+Respostas curtas (1-3 linhas). Use [PERFIL PESSOAL], [AGENDA] e [LISTAS ATIVAS] quando disponíveis, sem inventar nada.
+Evite tentar fazer piadas elaboradas ou sarcasmo complexo agora — seja apenas prática e gentil.` + contexto;
+
     const msgs = [
-      { role: 'system', content: buildPersonality(tom, name, false) + contexto },
+      { role: 'system', content: sistemaCompleto },
       ...history.slice(-6),
       { role: 'user', content: message }
     ];
 
-    // Tenta com modelo escolhido, faz fallback para leve se der rate limit
-    async function tentarComModelo(modelo) {
+    const msgsDiretos = [
+      { role: 'system', content: sistemaDireto },
+      ...history.slice(-4),
+      { role: 'user', content: message }
+    ];
+
+    async function tentarComModelo(modelo, msgsParam = msgs) {
       return groq.chat.completions.create({
         model: modelo,
-        messages: msgs,
-        temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-        max_tokens: isCurta ? 80 : 420,
+        messages: msgsParam,
+        temperature: modelo === MODEL_LEVE ? 0.6 : (tom === 'sarcastico' ? 0.9 : 0.7),
+        max_tokens: isCurta ? 80 : (modelo === MODEL_LEVE ? 300 : 420),
       });
     }
 
     let completion;
     try {
-      completion = await Promise.race([tentarComModelo(modeloEscolhido), timeoutPromise]);
+      completion = await Promise.race([
+        tentarComModelo(modeloEscolhido, usarMsgsDiretos ? msgsDiretos : msgs),
+        timeoutPromise
+      ]);
     } catch (e1) {
-      // Se der rate limit, ativa pausa — melhor pausar do que perder a personalidade
       if (isRateLimit(e1) && phone) {
         const tipo = isTPD(e1) ? 'tpd' : 'rpm';
-        return await ativarPausaCreativa(phone, tipo);
+        const aviso = await ativarModoDireto(phone, tipo);
+
+        if (aviso) {
+          // Primeira vez entrando em modo direto — manda o aviso de transição
+          return aviso;
+        }
+
+        // Já avisado antes — tenta responder com 8b em modo direto
+        try {
+          completion = await Promise.race([tentarComModelo(MODEL_LEVE, msgsDiretos), timeoutPromise]);
+        } catch (e2) {
+          console.error('Erro freeResponse (modo direto):', e2.message);
+          return 'Entendi! Como posso te ajudar?';
+        }
+      } else {
+        throw e1;
       }
-      throw e1;
     }
 
     return completion.choices[0].message.content.trim();
