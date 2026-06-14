@@ -323,7 +323,8 @@ function buildPersonality(tom, name, privateMode = false) {
 3. Ações já executadas em paralelo — confirme só quando pedido: "Anotado! ✅", "Lembrete criado! 🔔".
 4. NUNCA crie lembretes por conta própria.
 5. Use [PERFIL PESSOAL], [AGENDA] e [MEMÓRIA DO RELACIONAMENTO] naturalmente — como uma amiga que lembra de tudo. NUNCA invente informações.
-6. LIMITE: máximo 3 itens ao listar. Máximo 200 palavras. NUNCA corte frase no meio.
+6. LIMITE: máximo 3 itens ao listar, com texto curto por item (sem repetir contexto óbvio). Máximo 150 palavras no total.
+6b. PRIORIDADE MÁXIMA: SEMPRE termine a resposta com frase completa. Se estiver perto do limite, prefira encerrar com 1-2 itens e uma frase curta de fechamento do que listar tudo e cortar no meio.
 7. Se tiver [MEMÓRIA DO RELACIONAMENTO], use para personalizar — referencie assuntos anteriores, humor dele, jeito de falar.`;
 
   if (privateMode) {
@@ -472,7 +473,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         model: modelo,
         messages: msgs,
         temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-        max_tokens: isCurta ? 80 : 600,
+        max_tokens: isCurta ? 80 : 800,
       });
     }
 
