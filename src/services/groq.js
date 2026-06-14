@@ -291,14 +291,23 @@ NUNCA diga "te amo também", "boa reunião" ou frase carinhosa genérica. Quando
 }
 
 // ── Decide se usa modelo leve ou forte ──
+// Estratégia: 70b é reservado para onde a personalidade/nuance importa de verdade.
+// 8b cobre consultas factuais (agenda, saldo, listas) e saudações — são apenas
+// apresentação de dados já prontos no contexto, sem precisar de "interpretação".
+const PALAVRAS_EMOCIONAIS = /sinto|sentindo|triste|feliz|cansad|estress|preocupad|ansios|chateada|saudade|amo|adoro|odeio|raiva|medo|sozinh|dificil|difícil|desabafar|conversar|desculpa|perdão|obrigad[oa] por|carinho|abraço/i;
+
 function escolherModelo(message, tom, contexto) {
   const msg = message.trim();
-  const isCurta = msg.length < 40;
-  const isSocial = /^(beijos?|boa noite|bom dia|boa tarde|oi|olá|até|tchau|😘|❤|valeu|obrigad|flw|abraços?|saudades)/i.test(msg);
-  const temContextoGrande = contexto && contexto.length > 400;
-  // Usa modelo leve para saudações curtas e mensagens simples sem contexto grande
-  if (isCurta && isSocial && tom !== 'sarcastico' && !temContextoGrande) return MODEL_LEVE;
-  return MODEL_FORTE;
+
+  // Sarcástico sempre precisa do 70b — sarcasmo exige timing e nuance
+  if (tom === 'sarcastico') return MODEL_FORTE;
+
+  // Mensagens emocionais/pessoais merecem o 70b, independente do tamanho
+  if (PALAVRAS_EMOCIONAIS.test(msg)) return MODEL_FORTE;
+
+  // Tudo o mais (consultas factuais, agenda, saldo, listas, saudações,
+  // confirmações) pode ir pro 8b — é apresentação de dados, não interpretação
+  return MODEL_LEVE;
 }
 
 async function freeResponse(message, history = [], preferences = {}, privateMode = false) {
@@ -310,16 +319,26 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     const contexto = preferences?._contexto || '';
 
     if (preferences?._systemOverride) {
-      const completion = await groq.chat.completions.create({
-        model: MODEL_FORTE,
-        messages: [
-          { role: 'system', content: preferences._systemOverride },
-          { role: 'user', content: message }
-        ],
-        temperature: 0.85,
-        max_tokens: 250,
-      });
-      return completion.choices[0].message.content.trim();
+      try {
+        const completion = await groq.chat.completions.create({
+          model: MODEL_LEVE,
+          messages: [
+            { role: 'system', content: preferences._systemOverride },
+            { role: 'user', content: message }
+          ],
+          temperature: 0.85,
+          max_tokens: 200,
+        });
+        return completion.choices[0].message.content.trim();
+      } catch (eOverride) {
+        // Mensagens automáticas (bom dia, boa noite, etc) — se der rate limit,
+        // retorna null em vez de mandar a desculpa de pausa como se fosse a mensagem real
+        if (isRateLimit(eOverride)) {
+          console.log('[systemOverride] Rate limit — mensagem automática não enviada');
+          return null;
+        }
+        throw eOverride;
+      }
     }
 
     if (privateMode) {
