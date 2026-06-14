@@ -12,10 +12,16 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 // Lista de modelos gratuitos para tentar, em ordem de preferência.
 // Modelos ":free" do OpenRouter têm limite diário generoso e não cobram nada.
+// Slugs verificados: meta-llama/llama-3.1-8b-instruct:free e
+// google/gemini-2.0-flash-exp:free foram descontinuados (404) — substituídos
+// pelos slugs atuais abaixo.
 const OPENROUTER_MODELS = [
   'meta-llama/llama-3.3-70b-instruct:free',
-  'meta-llama/llama-3.1-8b-instruct:free',
-  'google/gemini-2.0-flash-exp:free',
+  'meta-llama/llama-3.1-405b-instruct:free',
+  'google/gemini-2.0-flash-001:free',
+  'google/gemini-flash-1.5-8b:free',
+  'mistralai/mistral-7b-instruct:free',
+  'qwen/qwen-2.5-72b-instruct:free',
 ];
 
 function openrouterDisponivel() {
@@ -69,10 +75,18 @@ async function chamarOpenRouter(model, msgs, { temperature = 0.7, maxTokens = 80
   return text.trim();
 }
 
+// Identifica se o erro é um 429 "temporário" do provedor upstream (ex:
+// Venice sobrecarregado), diferente de quota diária esgotada — vale a
+// pena tentar de novo rapidamente em vez de já trocar de modelo.
+function isTemporaryUpstream429(err) {
+  return err?.status === 429 && /temporarily|retry.?after|upstream/i.test(err?.message || '');
+}
+
 // Gera uma resposta via OpenRouter, no mesmo formato esperado pelo freeResponse.
 // Tenta os modelos da lista OPENROUTER_MODELS em ordem; se um falhar (quota,
-// 404, timeout, etc), tenta o próximo. Retorna o texto da resposta ou lança
-// o último erro se todos falharem.
+// 404, timeout, etc), tenta o próximo. Para 429 temporário do provedor,
+// faz uma única retentativa rápida antes de passar pro próximo modelo.
+// Retorna o texto da resposta ou lança o último erro se todos falharem.
 async function openrouterFreeResponse(msgs, opts = {}) {
   if (!openrouterDisponivel()) {
     throw new Error('OPENROUTER_API_KEY não configurada');
@@ -87,6 +101,21 @@ async function openrouterFreeResponse(msgs, opts = {}) {
     } catch (err) {
       ultimoErro = err;
       console.error(`[OpenRouter] modelo ${model} falhou: ${err.message}`);
+
+      // 429 temporário do provedor (ex: "temporarily rate-limited upstream")
+      // costuma resolver em poucos segundos — uma retentativa rápida vale a pena.
+      if (isTemporaryUpstream429(err)) {
+        await new Promise(r => setTimeout(r, 2000));
+        try {
+          const resposta = await chamarOpenRouter(model, msgs, opts);
+          console.log(`[OpenRouter] modelo usado com sucesso (retry): ${model}`);
+          return resposta;
+        } catch (err2) {
+          ultimoErro = err2;
+          console.error(`[OpenRouter] modelo ${model} falhou na retentativa: ${err2.message}`);
+        }
+      }
+
       continue;
     }
   }
