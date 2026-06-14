@@ -53,10 +53,7 @@ function isTPD(error) {
 // mudando para respostas mais simples/diretas (8b) — mas continua funcionando
 // para lembretes, tarefas e conversas básicas. Não desaparece.
 const AVISOS_MODO_DIRETO = [
-  'Mudando pro modo direto por um tempinho! Ainda te ajudo com lembretes e papo simples — já volto com tudo pra conversa mais elaborada 💜',
-  'Tô passando pro modo mais econômico agora, mas continuo aqui pra lembretes e o básico! Em breve volto inteira de novo ✨',
-  'Vou ficar mais direta por uns minutos pra recarregar — mas lembretes, listas e tarefas seguem normais! Já volto com a conversa completa 😊',
-  'Modo direto ativado! Continuo cuidando de lembretes e tarefas, só a conversa mais "elaborada" volta em breve 🌟',
+  '💜 Oii! Estou em uma versão mais leve por enquanto.\n\nMas não se preocupe! Continuo aqui para ajudar com lembretes, tarefas e perguntas rápidas. Em breve volto ao modo completo para conversas mais profundas e elaboradas. 😊',
 ];
 
 const AVISOS_RETORNO_COMPLETO = [
