@@ -30,9 +30,40 @@ function isQuotaError(err) {
   return err?.status === 429 || /quota|rate.?limit|resource_exhausted/i.test(err?.message || '');
 }
 
+// Alguns modelos gratuitos (via certos provedores) anexam metadados de
+// classificação de segurança no final da resposta, tipo:
+//   "User Safety: safe\nResponse Safety: safe"
+// Isso não faz parte da resposta real e não deve ser enviado ao usuário.
+function limparMetadadosSafety(texto) {
+  return texto
+    .replace(/\n*\s*User\s*Safety:\s*\w+\s*\n*\s*Response\s*Safety:\s*\w+\s*$/i, '')
+    .replace(/\n*\s*(User|Response)\s*Safety:\s*\w+\s*$/gim, '')
+    .trim();
+}
+
+// Modelos gratuitos via "openrouter/free" variam em qualidade — alguns
+// (mais fracos) tendem a "inventar" itens de listas/agendas em vez de usar
+// os dados reais fornecidos no contexto. Esse reforço é injetado no início
+// do system prompt apenas no fallback, para reduzir esse tipo de alucinação.
+const REFORCO_ANTI_ALUCINACAO = 'INSTRUÇÃO CRÍTICA: ao mencionar lembretes, listas, agenda ou qualquer dado fornecido no contexto, use APENAS as informações exatas fornecidas — não invente, não reordene, não crie itens adicionais. Se não houver dados suficientes, diga isso claramente em vez de inventar.\n\n';
+
+// Injeta o reforço anti-alucinação no início da primeira mensagem "system".
+// Se não houver mensagem system, cria uma só com o reforço.
+function reforcarMensagens(msgs) {
+  const copia = msgs.map(m => ({ ...m }));
+  const idx = copia.findIndex(m => m.role === 'system');
+  if (idx >= 0) {
+    copia[idx].content = REFORCO_ANTI_ALUCINACAO + copia[idx].content;
+  } else {
+    copia.unshift({ role: 'system', content: REFORCO_ANTI_ALUCINACAO });
+  }
+  return copia;
+}
+
 // Faz uma chamada a um modelo específico do OpenRouter.
 // msgs já está no formato OpenAI (role: system/user/assistant) — não precisa converter.
 async function chamarOpenRouter(model, msgs, { temperature = 0.7, maxTokens = 800 } = {}) {
+  const msgsReforcadas = reforcarMensagens(msgs);
   const timeoutPromise = new Promise((_, reject) =>
     setTimeout(() => reject(new Error('timeout')), 15000)
   );
@@ -47,7 +78,7 @@ async function chamarOpenRouter(model, msgs, { temperature = 0.7, maxTokens = 80
     },
     body: JSON.stringify({
       model,
-      messages: msgs,
+      messages: msgsReforcadas,
       temperature,
       max_tokens: maxTokens,
     }),
@@ -68,7 +99,7 @@ async function chamarOpenRouter(model, msgs, { temperature = 0.7, maxTokens = 80
     const finishReason = data?.choices?.[0]?.finish_reason;
     throw new Error(`OpenRouter retornou vazio (${model}, finish_reason: ${finishReason || 'desconhecido'})`);
   }
-  return text.trim();
+  return limparMetadadosSafety(text.trim());
 }
 
 // Identifica se o erro é um 429 "temporário" do provedor upstream (ex:
