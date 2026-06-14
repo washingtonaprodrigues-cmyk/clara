@@ -31,27 +31,41 @@ async function marcarEnviadoHoje(userId, tipo) {
   await prisma.memory.create({ data: { userId, type: tipo, content: dateBRT() } });
 }
 
+// Lock atomico por usuario/tipo/dia.
+// Retorna true se esta chamada "ganhou" o lock (deve processar/enviar),
+// e false se ja havia um lock para hoje (outra execucao ja esta/esteve
+// processando - pular). Marcar o lock ANTES de gerar a mensagem evita
+// duplicidade quando o cron dispara em paralelo (duas replicas, restart
+// no mesmo minuto, etc).
+async function tentarLockDiario(userId, tipo) {
+  const hoje = dateBRT();
+  const existente = await prisma.memory.findUnique({
+    where: { userId_type: { userId, type: tipo } }
+  }).catch(() => null);
+
+  if (existente && existente.content === hoje) return false;
+
+  await prisma.memory.upsert({
+    where: { userId_type: { userId, type: tipo } },
+    update: { content: hoje },
+    create: { userId, type: tipo, content: hoje }
+  });
+  return true;
+}
+
 async function getUserContext(user) {
   const prefs = await memory.getUserPreference(user.id);
   const perfilTexto = await memory.buildPersonalContext(user.id);
   return { prefs, perfilTexto };
 }
 
-// ─────────────────────────────────────────────
 // BOM DIA INTELIGENTE (07:05)
-// ─────────────────────────────────────────────
-const _locksBomDia = new Set();
-const _locksBoaNoite = new Set();
-
 cron.schedule('5 7 * * *', async () => {
   try {
     const now = nowBRT();
-    const hoje = dateBRT(now);
-    if (_locksBomDia.has(hoje)) { console.log('[Bom dia] já processando hoje'); return; }
-    _locksBomDia.add(hoje);
-
     const amanha = new Date(now); amanha.setDate(amanha.getDate() + 1);
     const amanhaStr = dateBRT(amanha);
+    const hoje = dateBRT(now);
     const diasSemana = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
     const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
     const diaTexto = `${diasSemana[now.getDay()]}, ${now.getDate()} de ${meses[now.getMonth()]}`;
@@ -60,11 +74,10 @@ cron.schedule('5 7 * * *', async () => {
 
     for (const user of users) {
       try {
-        // Lock único por usuário — sem lock global separado
-        const lockKey = `bom_dia_user_${hoje}_${user.id}`;
-        const jaEnviou = await prisma.memory.findFirst({ where: { userId: user.id, type: 'bom_dia_lock', content: lockKey } });
-        if (jaEnviou) { console.log(`[Bom dia] já enviado hoje para ${user.phone}`); continue; }
-        await prisma.memory.create({ data: { userId: user.id, type: 'bom_dia_lock', content: lockKey } }).catch(() => {});
+        if (!(await tentarLockDiario(user.id, 'bom_dia_lock'))) {
+          console.log(`[Bom dia] ja enviado/processando hoje para ${user.phone}`);
+          continue;
+        }
 
         const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
         const fimHoje = new Date(`${hoje}T23:59:59-03:00`);
@@ -99,11 +112,10 @@ cron.schedule('5 7 * * *', async () => {
 
         let systemBomDia;
         if (totalLembretes > 0) {
-          // Tem tarefas — bom dia OBJETIVO E INFORMATIVO (resumo do dia)
           const primeira = lembretes[0];
           const horaPrimeira = new Date(primeira.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
           systemBomDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Crie uma mensagem de bom dia OBJETIVA e INFORMATIVA — um resumo rápido do dia, não poético.
+Crie uma mensagem de bom dia OBJETIVA e INFORMATIVA — um resumo rápido do dia, não poética.
 
 CONTEXTO DO DIA:
 ${ctx}
@@ -117,7 +129,6 @@ REGRAS OBRIGATÓRIAS:
 - NÃO seja sentimental ou poética. Seja prática.
 Tom: ${prefs.tom || 'carinhoso'}.`;
         } else {
-          // Sem tarefas — bom dia simples e caloroso, sem forçar conteúdo
           systemBomDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
 Crie uma mensagem de bom dia SIMPLES e HUMANA — como se fosse a primeira vez que fala com a pessoa naquele dia.
 
@@ -142,27 +153,21 @@ Tom: ${prefs.tom || 'carinhoso'}.`;
   } catch (e) { console.error('[Bom dia] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// ─────────────────────────────────────────────
 // BOA NOITE INTELIGENTE (21:30)
-// ─────────────────────────────────────────────
 cron.schedule('30 21 * * *', async () => {
   try {
     const now = nowBRT();
     const hoje = dateBRT(now);
-    if (_locksBoaNoite.has(hoje)) { console.log('[Boa noite] já processando hoje'); return; }
-    _locksBoaNoite.add(hoje);
-
     const amanha = new Date(now); amanha.setDate(amanha.getDate() + 1);
     const amanhaStr = dateBRT(amanha);
     const users = await prisma.user.findMany({ where: { blocked: false } });
 
     for (const user of users) {
       try {
-        // Lock único por usuário
-        const lockNoiteKey = `boa_noite_user_${hoje}_${user.id}`;
-        const jaEnviouNoite = await prisma.memory.findFirst({ where: { userId: user.id, type: 'boa_noite_lock', content: lockNoiteKey } });
-        if (jaEnviouNoite) { console.log(`[Boa noite] já enviado hoje para ${user.phone}`); continue; }
-        await prisma.memory.create({ data: { userId: user.id, type: 'boa_noite_lock', content: lockNoiteKey } }).catch(() => {});
+        if (!(await tentarLockDiario(user.id, 'boa_noite_lock'))) {
+          console.log(`[Boa noite] ja enviado/processando hoje para ${user.phone}`);
+          continue;
+        }
 
         const inicioAmanha = new Date(`${amanhaStr}T00:00:00-03:00`);
         const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
@@ -197,7 +202,6 @@ cron.schedule('30 21 * * *', async () => {
 
         let systemBoaNoite;
         if (totalHoje > 0 || lembretesAmanha.length > 0) {
-          // Teve atividade — boa noite OBJETIVA com resumo do dia/amanhã
           systemBoaNoite = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
 Crie uma mensagem de boa noite OBJETIVA — um resumo rápido do dia, não poética.
 
@@ -214,7 +218,6 @@ REGRAS OBRIGATÓRIAS:
 - NÃO seja sentimental ou poética. Seja prática.
 Tom: ${prefs.tom || 'carinhoso'}.`;
         } else {
-          // Dia tranquilo sem atividade — boa noite simples e calorosa
           systemBoaNoite = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
 Crie uma mensagem de boa noite SIMPLES — como quem se despede de verdade ao final do dia.
 
@@ -239,9 +242,7 @@ Tom: ${prefs.tom || 'carinhoso'}.`;
   } catch (e) { console.error('[Boa noite] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// ─────────────────────────────────────────────
 // ALERTAS DE DATAS IMPORTANTES (08:00)
-// ─────────────────────────────────────────────
 cron.schedule('0 8 * * *', async () => {
   try {
     const now = nowBRT();
@@ -293,9 +294,7 @@ cron.schedule('0 8 * * *', async () => {
   } catch (e) { console.error('[Datas] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// ─────────────────────────────────────────────
 // MENSAGENS PROATIVAS INTELIGENTES (10:00 e 15:00)
-// ─────────────────────────────────────────────
 cron.schedule('0 10 * * 1-5', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
 cron.schedule('0 15 * * 1-5', async () => proativaInteligente('tarde'), { timezone: 'America/Sao_Paulo' });
 
@@ -342,7 +341,7 @@ REGRAS:
 Contexto recente: ${contextoMems}
 ${infoPessoal}`;
         const msg = await freeResponse('Envie uma mensagem proativa.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemProativa });
-        if (!msg || msg.trim() === 'SKIP' || msg.length < 5) continue; // null = rate limit, também pula
+        if (!msg || msg.trim() === 'SKIP' || msg.length < 5) continue;
         await sendMessage(user.phone, msg);
         await prisma.memory.create({ data: { userId: user.id, type: 'proativa_lock', content: lockKey } });
         console.log(`[Proativa ${periodo}] Enviado para ${user.phone}`);
@@ -351,9 +350,7 @@ ${infoPessoal}`;
   } catch (e) { console.error(`[Proativa ${periodo}] Erro geral:`, e.message); }
 }
 
-// ─────────────────────────────────────────────
 // TRADIÇÕES SEMANAIS — SEXTA (17:00)
-// ─────────────────────────────────────────────
 cron.schedule('0 17 * * 5', async () => {
   try {
     const users = await prisma.user.findMany({ where: { blocked: false } });
@@ -371,7 +368,7 @@ cron.schedule('0 17 * * 5', async () => {
         const infoPessoal = await memory.buildPersonalContext(user.id);
         const ctxSexta = tarefasSemana.length > 0
           ? `Essa semana o usuário concluiu ${tarefasSemana.length} compromisso(s)${totalGasto > 0 ? ` e registrou R$ ${totalGasto.toFixed(2)} em gastos` : ''}.`
-          : ``;  // não mencionar produtividade se zerada
+          : ``;
         const ctx = `É sexta-feira à tarde.\n${ctxSexta}\n${infoPessoal}`;
         const systemSexta = `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''}
 Envie uma mensagem de sexta-feira calorosa e breve (2-3 linhas).
@@ -387,9 +384,7 @@ ${ctx}`;
   } catch (e) { console.error('[Sexta] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// ─────────────────────────────────────────────
 // TRADIÇÕES SEMANAIS — DOMINGO (19:00)
-// ─────────────────────────────────────────────
 cron.schedule('0 19 * * 0', async () => {
   try {
     const users = await prisma.user.findMany({ where: { blocked: false } });
@@ -398,7 +393,11 @@ cron.schedule('0 19 * * 0', async () => {
     const fimSemanaQ = new Date(now); fimSemanaQ.setDate(now.getDate() + 7);
     for (const user of users) {
       try {
-        if (await jaEnviouHoje(user.id, 'domingo_enviado')) continue;
+        if (!(await tentarLockDiario(user.id, 'domingo_enviado'))) {
+          console.log(`[Domingo] ja enviado/processando hoje para ${user.phone}`);
+          continue;
+        }
+
         const [lembretesSemana, { prefs }, infoPessoal] = await Promise.all([
           prisma.reminder.findMany({ where: { userId: user.id, confirmed: false, sent: false, scheduledAt: { gte: semanaQ, lte: fimSemanaQ } }, orderBy: { scheduledAt: 'asc' }, take: 5 }),
           getUserContext(user),
@@ -412,16 +411,13 @@ ${ctx}`;
         const msg = await freeResponse('Envie mensagem de domingo.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemDomingo });
         if (!msg) { console.log(`[Domingo] Rate limit, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
-        await marcarEnviadoHoje(user.id, 'domingo_enviado');
         console.log(`[Domingo] Enviado para ${user.phone}`);
       } catch (e) { console.error(`[Domingo] Erro ${user.phone}:`, e.message); }
     }
   } catch (e) { console.error('[Domingo] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// ─────────────────────────────────────────────
 // SUMIÇO — detecta quem sumiu por 5+ dias (09:00)
-// ─────────────────────────────────────────────
 cron.schedule('0 9 * * *', async () => {
   try {
     const users = await prisma.user.findMany({ where: { blocked: false } });
@@ -451,9 +447,7 @@ ${infoPessoal}`;
   } catch (e) { console.error('[Sumiço] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// ─────────────────────────────────────────────
 // RESUMO DO MEIO-DIA (12:00)
-// ─────────────────────────────────────────────
 cron.schedule('0 12 * * *', async () => {
   try {
     const now = nowBRT();
@@ -479,9 +473,7 @@ cron.schedule('0 12 * * *', async () => {
   } catch(e) { console.error('[Meio-dia] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// ─────────────────────────────────────────────
 // FECHAMENTO DO DIA (18:30)
-// ─────────────────────────────────────────────
 cron.schedule('30 18 * * *', async () => {
   try {
     const now = nowBRT();
@@ -535,9 +527,7 @@ cron.schedule('30 18 * * *', async () => {
   } catch (e) { console.error('[Fechamento] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// ─────────────────────────────────────────────
 // LEMBRETES (a cada minuto)
-// ─────────────────────────────────────────────
 cron.schedule('* * * * *', async () => {
   try {
     const now = new Date();
@@ -664,9 +654,7 @@ Respeite o tom — sarcástica não pergunta com fofice.`;
   } catch (e) { console.error('[Reminder] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// ─────────────────────────────────────────────
-// MEDICAMENTOS (a cada minuto) ── Fix: lock com verificação de tempo
-// ─────────────────────────────────────────────
+// MEDICAMENTOS (a cada minuto)
 cron.schedule('* * * * *', async () => {
   try {
     const nowLocal = nowBRT();
@@ -682,16 +670,13 @@ cron.schedule('* * * * *', async () => {
 
         const lockKey = `med_${med.id}_${minutoChave}`;
 
-        // ── Fix: verifica se lock existe E se foi criado nos últimos 2 minutos ──
-        // Isso evita que locks de execuções anteriores bloqueiem notificações futuras
         const lockExistente = await prisma.memory.findFirst({
           where: { type: 'med_lock', content: lockKey },
           orderBy: { createdAt: 'desc' }
         });
         if (lockExistente) {
           const ageMs = Date.now() - new Date(lockExistente.createdAt).getTime();
-          if (ageMs < 120000) continue; // lock válido por 2 minutos
-          // Lock expirado (>2min) — apaga e reenvia
+          if (ageMs < 120000) continue;
           await prisma.memory.delete({ where: { id: lockExistente.id } }).catch(() => {});
           console.log(`[Med] Lock expirado removido: ${lockKey}`);
         }
@@ -706,9 +691,7 @@ cron.schedule('* * * * *', async () => {
   } catch (e) { console.error('[Med] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// ─────────────────────────────────────────────
 // MENSAGENS AGENDADAS PARA CONTATOS (a cada minuto)
-// ─────────────────────────────────────────────
 cron.schedule('* * * * *', async () => {
   try {
     const now = nowBRT();
@@ -732,9 +715,7 @@ cron.schedule('* * * * *', async () => {
   } catch (e) { console.error('[Msg Agendada] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// ─────────────────────────────────────────────
-// LIMPEZA DE LOCKS ANTIGOS (03:00 e a cada hora)
-// ─────────────────────────────────────────────
+// LIMPEZA DE LOCKS ANTIGOS (03:00)
 cron.schedule('0 3 * * *', async () => {
   try {
     const ontem = new Date(nowBRT()); ontem.setDate(ontem.getDate() - 2);
@@ -748,7 +729,7 @@ cron.schedule('0 3 * * *', async () => {
   } catch (e) { console.error('[Cleanup] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// Limpeza de med_lock a cada hora (evita acúmulo que bloqueia notificações)
+// Limpeza de med_lock a cada hora
 cron.schedule('0 * * * *', async () => {
   try {
     const doisMinutosAtras = new Date(Date.now() - 2 * 60 * 1000);
@@ -759,9 +740,7 @@ cron.schedule('0 * * * *', async () => {
   } catch (e) { console.error('[Cleanup Med Locks] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// ─────────────────────────────────────────────
 // LIMPEZA DE LEMBRETES NÃO CONFIRMADOS > 48h (04:00)
-// ─────────────────────────────────────────────
 cron.schedule('0 4 * * *', async () => {
   try {
     const limite = new Date(nowBRT().getTime() - 48 * 60 * 60 * 1000);
@@ -774,9 +753,7 @@ cron.schedule('0 4 * * *', async () => {
   } catch (e) { console.error('[Cleanup Lembretes] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// ─────────────────────────────────────────────
 // ALERTA ESTOQUE BAIXO DE REMÉDIO (08:30)
-// ─────────────────────────────────────────────
 cron.schedule('30 8 * * *', async () => {
   try {
     const LIMITE_DOSES = 5;
@@ -804,9 +781,7 @@ cron.schedule('30 8 * * *', async () => {
   } catch (e) { console.error('[Estoque] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// ─────────────────────────────────────────────
 // PARCEIRA — avisa 30min antes de cada lembrete
-// ─────────────────────────────────────────────
 cron.schedule('* * * * *', async () => {
   try {
     const now = nowBRT();
@@ -867,7 +842,7 @@ Envie UMA mensagem curta (1-2 linhas) como parceira presente:
           _systemOverride: systemParceira
         });
 
-        if (!msg || msg.length < 5) continue; // null = rate limit, também pula
+        if (!msg || msg.length < 5) continue;
 
         await sendMessage(user.phone, msg);
         console.log(`[Parceira] ${user.phone} → "${r.message}" em 30min`);
