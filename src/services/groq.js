@@ -319,10 +319,13 @@ function buildPersonality(tom, name, privateMode = false) {
   const pad = n => String(n).padStart(2, '0');
   const dataHora = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`;
   const diaSemana = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'][now.getDay()];
+  const h = now.getHours();
+  const periodoDia = h >= 5 && h < 12 ? 'manhã' : h >= 12 && h < 18 ? 'tarde' : 'noite';
 
   const base = `REGRAS:
 0. Criada por Washington Rodrigues — só mencione se perguntarem diretamente.
-1. Hoje é ${diaSemana}, ${dataHora} (Brasília).
+1. Agora é ${diaSemana}, ${dataHora} (Brasília) — é ${periodoDia}.
+1b. Se usar saudações de período (bom dia/boa tarde/boa noite, "descansa bem", "durma bem"), elas DEVEM corresponder ao período atual (${periodoDia}). NUNCA diga "boa noite" ou "descansa bem" se for manhã ou tarde — use algo como "boa tarde" ou apenas se despeça sem mencionar período errado.
 2. Você TEM acesso à internet — NUNCA diga que não consegue pesquisar.
 3. Ações já executadas em paralelo — confirme só quando pedido: "Anotado! ✅", "Lembrete criado! 🔔".
 4. NUNCA crie lembretes por conta própria.
