@@ -105,6 +105,37 @@ function normalizar(text) {
   return (text || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+// Extrai um código curto de lembrete do texto do usuário (ex: "#1", "feito 2",
+// "concluí o 1", "número 3"). Retorna o número (1-indexed) ou null se não
+// encontrar. Usado para desambiguar quando múltiplos lembretes foram
+// disparados juntos e o usuário confirma um específico por número.
+function extrairCodigoLembrete(texto) {
+  const t = normalizar(texto);
+  // "#1", "# 1"
+  let m = t.match(/#\s*(\d{1,2})\b/);
+  if (m) return parseInt(m[1]);
+  // "numero 1", "número 2", "item 3"
+  m = t.match(/(?:numero|número|item)\s*(\d{1,2})\b/);
+  if (m) return parseInt(m[1]);
+  // texto é só um número isolado (ex: "1", "2")
+  m = t.match(/^(\d{1,2})$/);
+  if (m) return parseInt(m[1]);
+  // "feito o 1", "feito 2", "concluí o 1", "fiz o 2", "marca o 1"
+  m = t.match(/(?:feito|conclui|concluido|concluí|fiz|marca|marquei|pronto)\s*(?:o|a)?\s*(\d{1,2})\b/);
+  if (m) return parseInt(m[1]);
+  return null;
+}
+
+// Busca os lembretes "recém-disparados" aguardando confirmação (sent=true,
+// confirmed=false), ordenados por scheduledAt asc — mesma ordem usada pelo
+// scheduler ao numerá-los (#1, #2...) na mensagem de disparo múltiplo.
+async function getLembretesPendentesConfirmacao(userId) {
+  return prisma.reminder.findMany({
+    where: { userId, sent: true, confirmed: false },
+    orderBy: { scheduledAt: 'asc' }
+  });
+}
+
 async function enviarMenu(phone) {
   return sendButtons(phone, MENU, MENU_BUTTONS);
 }
@@ -352,6 +383,30 @@ async function handleMessage(phone, text, location = null) {
     const foiConfirmacao = await checkConfirmacaoPendente(user, phone, text);
     if (foiConfirmacao) return;
 
+    // ── Confirmação de lembrete por código curto (#1, #2, "feito o 1"...) ──
+    // Intercepta ANTES do classify (LLM): se o usuário citou um código e há
+    // lembretes recém-disparados aguardando confirmação, marca direto o
+    // correspondente como concluído — evita depender do LLM classificar
+    // corretamente uma resposta curta e ambígua, e evita o problema de
+    // "arrastei a conversa e ela confirmou o último" quando há vários.
+    {
+      const codigoRapido = extrairCodigoLembrete(text);
+      if (codigoRapido) {
+        const pendentes = await getLembretesPendentesConfirmacao(user.id);
+        if (pendentes.length > 0) {
+          const escolhido = pendentes[codigoRapido - 1];
+          if (escolhido) {
+            await prisma.reminder.update({ where: { id: escolhido.id }, data: { confirmed: true } });
+            await sendMessage(phone, `✅ Marquei como feito: "${escolhido.message}" 📌`);
+            return;
+          } else {
+            await sendMessage(phone, `Não achei o lembrete #${codigoRapido} 😕 Você tem ${pendentes.length} pendente${pendentes.length > 1 ? 's' : ''} (#1 a #${pendentes.length}).`);
+            return;
+          }
+        }
+      }
+    }
+
     if (['menu','inicio','voltar','comeco','ajuda','opcoes'].includes(textLower)) {
       await memory.saveMemory(user.id, 'modo_atual', '');
       return await enviarMenu(phone);
@@ -458,7 +513,7 @@ async function handleMessage(phone, text, location = null) {
 
     // ── editar_lembrete e deletar_lembrete: executa sem responderLivre depois ──
     if (classified.tipo === 'editar_lembrete') {
-      await editarLembrete(user, phone, classified, contextoClassify);
+      await editarLembrete(user, phone, classified, contextoClassify, text);
       return;
     }
     if (classified.tipo === 'deletar_lembrete') {
@@ -720,12 +775,26 @@ async function executeAction(user, phone, classified, originalText) {
       }
       break;
     case 'concluir_lembrete': {
-      if (classified.titulo) {
-        const lembretes = await prisma.reminder.findMany({ where: { userId: user.id, confirmed: false, sent: false }, orderBy: { scheduledAt: 'asc' } });
+      const pendentes = await getLembretesPendentesConfirmacao(user.id);
+      if (!pendentes.length) break;
+
+      // Se o usuário citou um código curto (#1, #2, "feito o 2"...), usa
+      // o índice diretamente — evita ambiguidade quando vários lembretes
+      // foram disparados juntos.
+      const codigo = extrairCodigoLembrete(originalText || '');
+      let match = null;
+      if (codigo && pendentes[codigo - 1]) {
+        match = pendentes[codigo - 1];
+      } else if (classified.titulo) {
         const titulo = classified.titulo.toLowerCase();
-        const match = lembretes.find(r => r.message.toLowerCase().includes(titulo) || titulo.includes(r.message.toLowerCase().substring(0, 10))) || lembretes[0];
-        if (match) await prisma.reminder.update({ where: { id: match.id }, data: { confirmed: true, sent: true } });
+        match = pendentes.find(r => r.message.toLowerCase().includes(titulo) || titulo.includes(r.message.toLowerCase().substring(0, 10)));
       }
+      // Sem título e sem código: se só há 1 pendente, assume ele.
+      if (!match && !classified.titulo && !codigo && pendentes.length === 1) {
+        match = pendentes[0];
+      }
+
+      if (match) await prisma.reminder.update({ where: { id: match.id }, data: { confirmed: true } });
       break;
     }
     case 'saldo':
@@ -803,7 +872,7 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
   }
 }
 
-async function editarLembrete(user, phone, classified, contextoClassify = '') {
+async function editarLembrete(user, phone, classified, contextoClassify = '', originalText = '') {
   try {
     let titulo = (classified.titulo || '').toLowerCase().trim();
 
@@ -815,7 +884,18 @@ async function editarLembrete(user, phone, classified, contextoClassify = '') {
 
     let encontrado = null;
 
-    if (!titulo) {
+    // ── Código curto (#1, #2, "o 1"...) ──
+    // Quando múltiplos lembretes foram disparados juntos (numerados pelo
+    // scheduler como #1, #2...), o usuário pode citar o número para
+    // desambiguar — tem prioridade sobre o fallback "último disparado",
+    // que era a causa de confirmar o lembrete errado ao arrastar a conversa.
+    const codigo = extrairCodigoLembrete(originalText || '');
+    if (codigo) {
+      const pendentes = await getLembretesPendentesConfirmacao(user.id);
+      if (pendentes[codigo - 1]) encontrado = pendentes[codigo - 1];
+    }
+
+    if (!encontrado && !titulo) {
       // Sem título: pega o último disparado (o que acabou de notificar)
       // Ordena por scheduledAt desc para pegar o mais recente disparado
       const enviados = todosLembretes.filter(r => r.sent)
@@ -826,7 +906,7 @@ async function editarLembrete(user, phone, classified, contextoClassify = '') {
       if (!encontrado) {
         encontrado = todosLembretes[0] || null;
       }
-    } else {
+    } else if (!encontrado) {
       // Com título: busca por correspondência
       encontrado = todosLembretes.find(r => r.message.toLowerCase().includes(titulo));
 
