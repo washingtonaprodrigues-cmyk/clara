@@ -11,7 +11,7 @@ const headers = {
 // rede/processamento. 30s dá folga suficiente mesmo em picos.
 const AXIOS_TIMEOUT = 30000;
 
-async function sendMessage(phone, message, delay = 2000, _retry = false) {
+async function sendMessage(phone, message, delay = 800, _retry = false) {
   try {
     console.log(`📤 Enviando para ${phone}: ${String(message).slice(0, 60)}`);
     const response = await axios.post(
