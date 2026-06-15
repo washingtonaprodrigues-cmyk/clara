@@ -1,4 +1,4 @@
-const { classify, extractPersonalInfo, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary } = require('./groq');
+const { classify, extractPersonalInfo, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao } = require('./groq');
 const { sendMessage, sendButtons, sendReminderWithButtons } = require('./whatsapp');
 const memory = require('./memory');
 const { PrismaClient } = require('@prisma/client');
@@ -329,6 +329,19 @@ async function handleMessage(phone, text, location = null) {
     if (!text) return;
 
     const textLower = normalizar(text);
+
+    // ── Comando interno: ativa/desativa modo comparação (Gemini manual) ──
+    const comandoComparacao = detectarComandoComparacao(text);
+    if (comandoComparacao === 'on') {
+      ativarModoComparacao(phone);
+      return await sendMessage(phone, '🔄 Modo comparação ativado — vou responder usando o Gemini agora. Diga "volta pro Groq" quando quiser voltar ao normal.');
+    }
+    if (comandoComparacao === 'off') {
+      const estava = emModoComparacao(phone);
+      desativarModoComparacao(phone);
+      if (estava) return await sendMessage(phone, '✅ Voltei pro Groq — fluxo normal (com os fallbacks de sempre).');
+      // já não estava em modo comparação — segue o fluxo normal sem responder isso
+    }
 
     const foiConfirmacao = await checkConfirmacaoPendente(user, phone, text);
     if (foiConfirmacao) return;
