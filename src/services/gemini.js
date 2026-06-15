@@ -1,3 +1,4 @@
+// touch redeploy
 // ── Fallback Gemini ──
 // Quando o Groq (70b) esgota (rate limit), tenta o Gemini Flash antes de
 // cair pro modo direto. Gemini Flash tem free tier sem cartão de crédito —
