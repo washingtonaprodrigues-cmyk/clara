@@ -72,6 +72,25 @@ function parseVCard(vcard) {
   return { nome, telefone };
 }
 
+// ── Extrai o texto da mensagem citada (reply / "arrastar para responder")
+// de qualquer um dos formatos conhecidos que a UazAPI pode usar.
+// Se nenhum bater, retorna '' — nesse caso o log abaixo (DEBUG_QUOTE)
+// mostra o payload completo para descobrirmos o campo certo.
+function extrairQuotedText(message) {
+  return message?.quotedMsg?.body
+    || message?.quotedMsg?.text
+    || message?.quotedMsg?.content
+    || message?.quoted?.body
+    || message?.quoted?.text
+    || message?.quoted?.content
+    || message?.contextInfo?.quotedMessage?.conversation
+    || message?.contextInfo?.quotedMessage?.extendedTextMessage?.text
+    || message?.content?.contextInfo?.quotedMessage?.conversation
+    || message?.content?.contextInfo?.quotedMessage?.extendedTextMessage?.text
+    || message?.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation
+    || '';
+}
+
 async function handleSimpleResponse(phone, text) {
   const user = await memory.getOrCreateUser(phone);
   const textLower = text.trim();
@@ -130,14 +149,21 @@ router.post('/', async (req, res) => {
     }
 
     const text = body.message?.text || body.message?.content?.text || '';
-    const quotedText = body.message?.quotedMsg?.body
-      || body.message?.quotedMsg?.text
-      || body.message?.contextInfo?.quotedMessage?.conversation
-      || body.message?.content?.contextInfo?.quotedMessage?.conversation
-      || '';
+    const quotedText = extrairQuotedText(body.message);
     const textComContexto = quotedText && text ? `[Mensagem citada: "${quotedText.slice(0, 200)}"]\n${text}` : text;
 
     console.log(`📨 WEBHOOK: ${phone} — "${text.slice(0, 80)}"${quotedText ? ` [citou: "${quotedText.slice(0, 40)}"]` : ''}`);
+
+    // ── LOG TEMPORÁRIO ──
+    // Se houver texto mas NENHUM dos formatos conhecidos de "quote" bateu,
+    // loga o payload completo da mensagem para descobrirmos o campo certo
+    // usado pela UazAPI ao "arrastar para responder". REMOVER após análise.
+    if (text && !quotedText) {
+      try {
+        console.log('[DEBUG_QUOTE] message keys:', Object.keys(body.message || {}).join(', '));
+        console.log('[DEBUG_QUOTE] payload completo:', JSON.stringify(body.message).slice(0, 2000));
+      } catch (e) {}
+    }
 
     if (text) {
       // ── Verificar pausa criativa (rate limit) ──
