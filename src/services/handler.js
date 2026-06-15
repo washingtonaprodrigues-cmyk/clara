@@ -79,14 +79,20 @@ function formatarDataHoraBR(date) {
 
 function calcularHorarioRelativo(texto) {
   const t = (texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  // IMPORTANTE: usar Date.now() (epoch UTC real) + delta em ms, e NUNCA
+  // nowBRT() + setMinutes/setHours. nowBRT() retorna um Date cujo valor
+  // interno (epoch) está deslocado pelo offset entre o timezone do
+  // servidor e America/Sao_Paulo — somar minutos/horas em cima dele
+  // preserva (e propaga) esse deslocamento, gerando horários errados
+  // (ex: "daqui 30 minutos" às 14:09 virando 11:39).
   const minMatch = t.match(/daqui\s+(\d+)\s*(min|minuto|minutos)/);
-  if (minMatch) { const d = nowBRT(); d.setMinutes(d.getMinutes() + parseInt(minMatch[1])); return d; }
+  if (minMatch) return new Date(Date.now() + parseInt(minMatch[1]) * 60 * 1000);
   const hrMatch = t.match(/daqui\s+(\d+)\s*(h|hora|horas)/);
-  if (hrMatch) { const d = nowBRT(); d.setHours(d.getHours() + parseInt(hrMatch[1])); return d; }
+  if (hrMatch) return new Date(Date.now() + parseInt(hrMatch[1]) * 60 * 60 * 1000);
   const emMinMatch = t.match(/em\s+(\d+)\s*(min|minuto|minutos)/);
-  if (emMinMatch) { const d = nowBRT(); d.setMinutes(d.getMinutes() + parseInt(emMinMatch[1])); return d; }
+  if (emMinMatch) return new Date(Date.now() + parseInt(emMinMatch[1]) * 60 * 1000);
   const emHrMatch = t.match(/em\s+(\d+)\s*(h|hora|horas)/);
-  if (emHrMatch) { const d = nowBRT(); d.setHours(d.getHours() + parseInt(emHrMatch[1])); return d; }
+  if (emHrMatch) return new Date(Date.now() + parseInt(emHrMatch[1]) * 60 * 60 * 1000);
   return null;
 }
 
