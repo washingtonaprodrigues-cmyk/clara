@@ -154,17 +154,6 @@ router.post('/', async (req, res) => {
 
     console.log(`📨 WEBHOOK: ${phone} — "${text.slice(0, 80)}"${quotedText ? ` [citou: "${quotedText.slice(0, 40)}"]` : ''}`);
 
-    // ── LOG TEMPORÁRIO ──
-    // Se houver texto mas NENHUM dos formatos conhecidos de "quote" bateu,
-    // loga o payload completo da mensagem para descobrirmos o campo certo
-    // usado pela UazAPI ao "arrastar para responder". REMOVER após análise.
-    if (text && !quotedText) {
-      try {
-        console.log('[DEBUG_QUOTE] message keys:', Object.keys(body.message || {}).join(', '));
-        console.log('[DEBUG_QUOTE] payload completo:', JSON.stringify(body.message).slice(0, 2000));
-      } catch (e) {}
-    }
-
     if (text) {
       // ── Verificar pausa criativa (rate limit) ──
       const pausaStatus = await rateLimit.verificarPausa(phone);
