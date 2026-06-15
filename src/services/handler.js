@@ -470,8 +470,37 @@ async function handleMessage(phone, text, location = null) {
 
     // Tipos estruturados que executam uma ação concreta (criar lembrete, gasto, etc) —
     // usados para dar confirmação fixa caso o bate-papo livre esteja em modo direto
+    let confirmacaoTarefa = '✅ Anotado! Vou te lembrar.';
+    if (classified.tipo === 'tarefa' && classified.hora) {
+      // Calcula o mesmo scheduledAt que salvarTarefaSilenciosa vai gravar,
+      // para dar uma confirmação com data/hora reais — igual ao formato
+      // "Pronto! '...' agendado pra DD/MM às HH:MM 📌" usado em outros fluxos
+      // (ex: checkConfirmacaoPendente, tipo hora_lembrete).
+      try {
+        let scheduledAt = calcularHorarioRelativo(text);
+        if (!scheduledAt) {
+          const hoje = dateBRT();
+          let dataUsada = hoje;
+          if (classified.data) {
+            const dataObj = new Date(classified.data + 'T12:00:00-03:00');
+            const anoClassify = dataObj.getFullYear();
+            const anoAtual = new Date().getFullYear();
+            if (anoClassify >= anoAtual && anoClassify <= anoAtual + 1) dataUsada = classified.data;
+          }
+          const [h, m] = classified.hora.split(':').map(Number);
+          scheduledAt = new Date(`${dataUsada}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
+          if (!classified.data && scheduledAt < nowBRT()) { scheduledAt.setDate(scheduledAt.getDate() + 1); }
+        }
+        const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+        const horaFmt = scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+        confirmacaoTarefa = `✅ Pronto! "${classified.titulo}" agendado pra ${dataFmt} às ${horaFmt} 📌`;
+      } catch (e) {
+        // mantém fallback genérico em caso de erro de parsing
+      }
+    }
+
     const CONFIRMACOES_ACAO = {
-      tarefa: '✅ Anotado! Vou te lembrar.',
+      tarefa: confirmacaoTarefa,
       gasto: '✅ Gasto registrado!',
       entrada_financeira: '✅ Entrada registrada!',
       medicamento: '✅ Medicamento cadastrado!',
