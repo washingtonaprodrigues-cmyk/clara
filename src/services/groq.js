@@ -460,6 +460,32 @@ function escolherModelo(message, tom, contexto) {
   return MODEL_FORTE;
 }
 
+// Tenta responder com a personalidade COMPLETA (carinhoso/sarcástico/etc,
+// igual ao Groq normal) usando o Gemini — usado como primeira opção quando
+// o Groq 70b está em rate limit, já que o objetivo é avaliar o Gemini como
+// possível substituto do Groq (não apenas um fallback "seco").
+// Retorna o texto da resposta, ou null se o Gemini falhar/indisponível.
+async function tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone) {
+  if (!geminiDisponivel()) return null;
+  try {
+    const sistemaCompleto = buildPersonality(tom, name, false) + contexto;
+    const msgs = [
+      { role: 'system', content: sistemaCompleto },
+      ...history.slice(-6),
+      { role: 'user', content: message }
+    ];
+    const resposta = await geminiFreeResponse(msgs, {
+      temperature: tom === 'sarcastico' ? 0.9 : 0.7,
+      maxTokens: 800,
+    });
+    console.log(`[GeminiSubstituto] Gemini respondeu para ${phone || '?'}`);
+    return resposta;
+  } catch (eGem) {
+    console.error('[GeminiSubstituto] Gemini falhou:', eGem.message);
+    return null;
+  }
+}
+
 // Tenta responder no estilo "Direta" (factual, sem personalidade) usando
 // a cascata Gemini → OpenRouter. Usado tanto quando o Groq 70b está em
 // rate limit (modo direto) quanto no modo comparação manual.
@@ -590,8 +616,14 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       if (preferences?._acaoConfirmacao) {
         return preferences._acaoConfirmacao;
       }
-      // Já em modo direto (Groq 70b ainda em cooldown) — responde no estilo
-      // "Direta" via cascata Gemini → OpenRouter, com dados reais do contexto.
+      // Já em modo direto (Groq 70b ainda em cooldown). Tenta primeiro o
+      // Gemini com a personalidade COMPLETA (objetivo: avaliar o Gemini
+      // como possível substituto do Groq, não só um fallback seco).
+      const respostaGemini = await tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone);
+      if (respostaGemini) return respostaGemini;
+
+      // Gemini indisponível/falhou — cai pro modo "Direta" seco via
+      // cascata Gemini (de novo, com prompt direto) → OpenRouter.
       const respostaModoDireto = await tentarFallbackCascata(contexto, name, message, 'ModoDireto');
       if (respostaModoDireto) return respostaModoDireto;
       // Fallback final: mensagem fixa, sem custo de LLM.
@@ -627,7 +659,15 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         const tipo = isTPD(e1) ? 'tpd' : 'rpm';
         const aviso = await ativarModoDireto(phone, tipo);
 
-        // ── Modo trabalho via cascata Gemini → OpenRouter ──
+        // ── Gemini como substituto do Groq (personalidade completa) ──
+        // Objetivo: avaliar o Gemini como possível substituto do Groq, não
+        // apenas como rede de segurança seca. Tenta manter a experiência
+        // igual (mesma personalidade/tom) usando o Gemini no lugar do 70b.
+        // Sem prefixo de aviso — a ideia é a transição ser transparente.
+        const respostaGemini = await tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone);
+        if (respostaGemini) return respostaGemini;
+
+        // ── Gemini indisponível/falhou → modo "Direta" via Gemini→OpenRouter ──
         // Em vez de ficar em silêncio (ou só confirmações fixas) até o Groq
         // voltar, tenta responder de forma factual/seca com os dados do
         // contexto (AGENDA, LISTAS, etc), sem personalidade/emojis — assim
