@@ -468,7 +468,12 @@ function escolherModelo(message, tom, contexto) {
 async function tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone) {
   if (!geminiDisponivel()) return null;
   try {
-    const sistemaCompleto = buildPersonality(tom, name, false) + contexto;
+    // Reforço de brevidade no INÍCIO do prompt — o Gemini tende a ser mais
+    // "verboso" antes de chegar ao ponto do que o Groq 70b com a mesma
+    // instrução só no final (regra 6/6b de buildPersonality), o que causava
+    // respostas cortadas no meio de uma palavra ao bater o limite de tokens.
+    const reforcoBrevidade = `IMPORTANTE: seja breve. Vá direto ao ponto, sem rodeios antes de responder o que foi pedido. Máximo 120 palavras no total, e SEMPRE termine com frase completa — nunca corte no meio.\n\n`;
+    const sistemaCompleto = reforcoBrevidade + buildPersonality(tom, name, false) + contexto;
     const msgs = [
       { role: 'system', content: sistemaCompleto },
       ...history.slice(-6),
@@ -476,7 +481,7 @@ async function tentarGeminiComPersonalidade(message, history, tom, name, context
     ];
     const resposta = await geminiFreeResponse(msgs, {
       temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-      maxTokens: 800,
+      maxTokens: 1200,
     });
     console.log(`[GeminiSubstituto] Gemini respondeu para ${phone || '?'}`);
     return resposta;
@@ -556,24 +561,10 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     // em vez do Groq — útil para comparar qualidade. "Volta pro Groq"
     // (detectado no handler) limpa essa flag e retorna ao fluxo normal.
     if (phone && emModoComparacao(phone) && !privateMode) {
-      const sistemaComparacao = buildPersonality(tom, name, false) + contexto;
-      const msgsComparacao = [
-        { role: 'system', content: sistemaComparacao },
-        ...history.slice(-6),
-        { role: 'user', content: message }
-      ];
+      const resposta = await tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone);
+      if (resposta) return resposta;
       if (geminiDisponivel()) {
-        try {
-          const resposta = await geminiFreeResponse(msgsComparacao, {
-            temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-            maxTokens: 800,
-          });
-          console.log(`[ModoComparacao] Gemini respondeu para ${phone}`);
-          return resposta;
-        } catch (eGem) {
-          console.error('[ModoComparacao] Gemini falhou:', eGem.message);
-          return 'O Gemini não respondeu agora 😕 Pode tentar de novo, ou diga "volta pro Groq" para sair do modo comparação.';
-        }
+        return 'O Gemini não respondeu agora 😕 Pode tentar de novo, ou diga "volta pro Groq" para sair do modo comparação.';
       }
       return 'Gemini não está configurado (faltou a chave) — diga "volta pro Groq" para sair do modo comparação.';
     }
