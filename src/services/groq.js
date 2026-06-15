@@ -55,7 +55,7 @@ function isTPD(error) {
 // mudando para respostas mais simples/diretas (8b) — mas continua funcionando
 // para lembretes, tarefas e conversas básicas. Não desaparece.
 const AVISOS_MODO_DIRETO = [
-  '💜 Oii! O bate-papo completo está indisponível por agora.\n\nMas pode me mandar seus lembretes, listas e tarefas normalmente que vou agendando tudo! Volto logo pra gente conversar 😊',
+  'Entrando no modo direto por um tempo — vou ficar mais objetiva, sem emojis. Mas continuo aqui pra agenda, listas, lembretes e tudo o mais.',
 ];
 
 const AVISOS_RETORNO_COMPLETO = [
@@ -388,25 +388,25 @@ Neste modo, vocês têm uma relação mais próxima e contínua — não é só 
   return personalidades[tom] || personalidades.carinhoso;
 }
 
-// ── "Modo trabalho": usado no fallback OpenRouter quando o Groq 70b esgota.
-// Diferente do buildPersonality (que tenta replicar a Clara completa, com
-// personalidade/apelidos/emojis — e que com modelos gratuitos aleatórios
-// produzia respostas estranhas), este prompt é deliberadamente seco e
-// factual: responde com base nos dados do contexto (AGENDA, LISTAS,
-// MEDICAMENTOS, FINANCEIRO), sem tentar imitar tom/carinho/apelidos.
-// Objetivo: manter o usuário produtivo (consultar agenda, listas, etc.)
-// até o Groq voltar, sem quebrar a sensação de personalidade da Clara.
-function buildPromptModoTrabalho(contexto) {
-  return `Você é um assistente de produtividade. Responda de forma direta, curta e factual, usando APENAS os dados fornecidos abaixo no contexto (AGENDA, LISTAS, MEDICAMENTOS, FINANCEIRO, etc).
+// ── "Modo Direto": usado no fallback OpenRouter quando o Groq 70b esgota.
+// O produto já tem um modo de personalidade "Direta" (objetiva e prática,
+// sem emojis/fofuras) — usamos esse mesmo estilo aqui, então o fallback
+// continua sendo a Clara (não um produto/persona separada), apenas no
+// estilo direto. Responde com base nos dados do contexto (AGENDA, LISTAS,
+// MEDICAMENTOS, FINANCEIRO). Objetivo: manter o usuário produtivo até o
+// Groq voltar, sem quebrar a identidade da Clara.
+function buildPromptModoDireto(contexto, name) {
+  const nomeTxt = name ? `O nome da pessoa é ${name}.` : '';
+  return `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
 
-REGRAS OBRIGATÓRIAS:
-- NÃO use emojis.
-- NÃO use apelidos, carinho, gírias ou frases de afeto.
-- NÃO invente itens, horários ou dados que não estejam no contexto. Se não houver dado suficiente, diga isso claramente em poucas palavras.
-- NÃO tente ser "engraçado" ou "fofo". Tom neutro e profissional, mas educado.
-- Respostas curtas: 1-3 frases. Liste no máximo os itens relevantes, sem repetir contexto óbvio.
-- Se o usuário pedir uma ação (criar lembrete, gasto etc), NÃO confirme execução — apenas responda à pergunta/comentário com base nos dados.
-- Português do Brasil, direto.
+Seu estilo agora é o modo "Direta": objetiva e prática. Exemplo de como você fala nesse estilo: "Washington, você tem 3 coisas hoje: reunião 14h, backup 15h, lembrete 16h. Confirma?"
+
+REGRAS:
+- Direta, objetiva, sem rodeios. 1-3 linhas. Vai ao ponto. Sem elogios desnecessários, sem emojis, sem apelidos carinhosos.
+- Use os dados fornecidos abaixo no contexto (AGENDA, LISTAS, MEDICAMENTOS, FINANCEIRO, etc) para responder com precisão.
+- NÃO invente itens, horários ou dados que não estejam no contexto. Se não houver dado suficiente, diga isso em poucas palavras.
+- Se o usuário pedir uma ação (criar lembrete, gasto etc), NÃO confirme execução — apenas responda com base nos dados.
+- Se perguntarem quem você é ou se está aí, confirme presença de forma direta — você é a Clara.
 ${contexto}`;
 }
 
@@ -480,7 +480,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     const isSaudacaoSimples = /^(oi+|ol[áa]|e[ai]+|bom\s?dia|boa\s?tarde|boa\s?noite|tchau|at[ée]|valeu|obrigad[oa]|👍|😊|😄|❤️?|💜)[\s!?.]*$/i.test(msgTrim);
     const isCurta = isSaudacaoSimples && msgTrim.length < 25;
 
-    // Já está em modo direto — não tenta o 70b, conversa livre fica indisponível
+    // Já está em modo direto — não tenta o 70b
     // (comandos estruturados como lembretes/listas continuam funcionando via classify)
     if (phone && estaEmModoDirecto(phone)) {
       // Se uma ação estruturada foi executada (lembrete, gasto, etc), confirma isso
@@ -488,27 +488,26 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       if (preferences?._acaoConfirmacao) {
         return preferences._acaoConfirmacao;
       }
-      // Já em modo direto (Groq 70b ainda em cooldown) — tenta modo trabalho
-      // via OpenRouter para responder com dados reais do contexto, em vez
-      // da mensagem fixa genérica.
+      // Já em modo direto (Groq 70b ainda em cooldown) — responde no estilo
+      // "Direta" via OpenRouter, com dados reais do contexto.
       if (geminiDisponivel()) {
         try {
-          const msgsTrabalho = [
-            { role: 'system', content: buildPromptModoTrabalho(contexto) },
+          const msgsModoDireto = [
+            { role: 'system', content: buildPromptModoDireto(contexto, name) },
             { role: 'user', content: message }
           ];
-          const respostaTrabalho = await geminiFreeResponse(msgsTrabalho, {
+          const respostaModoDireto = await geminiFreeResponse(msgsModoDireto, {
             temperature: 0.3,
             maxTokens: 300,
           });
-          console.log(`[ModoTrabalho] OpenRouter respondeu (já em modo direto) para ${phone}`);
-          return respostaTrabalho;
+          console.log(`[ModoDireto] OpenRouter respondeu (já em modo direto) para ${phone}`);
+          return respostaModoDireto;
         } catch (eOR) {
-          console.error('[ModoTrabalho] OpenRouter falhou (já em modo direto):', eOR.message);
+          console.error('[ModoDireto] OpenRouter falhou (já em modo direto):', eOR.message);
         }
       }
       // Fallback final: mensagem fixa, sem custo de LLM.
-      return 'O bate-papo ainda está pausado — mas pode me mandar lembretes, listas e tarefas! 😊';
+      return 'Ainda no modo direto — pode me mandar lembretes, listas e tarefas que eu cuido.';
     }
 
     const timeoutPromise = new Promise((_, reject) =>
@@ -548,19 +547,19 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         if (geminiDisponivel()) {
           try {
             const msgsTrabalho = [
-              { role: 'system', content: buildPromptModoTrabalho(contexto) },
+              { role: 'system', content: buildPromptModoDireto(contexto, name) },
               { role: 'user', content: message }
             ];
             const respostaTrabalho = await geminiFreeResponse(msgsTrabalho, {
               temperature: 0.3,
               maxTokens: 300,
             });
-            console.log(`[ModoTrabalho] OpenRouter respondeu para ${phone}`);
+            console.log(`[ModoDireto] OpenRouter respondeu para ${phone}`);
             // Na primeira vez que entra em modo direto, prefixa com o aviso
             // de que o bate-papo completo está pausado.
             return aviso ? `${aviso}\n\n${respostaTrabalho}` : respostaTrabalho;
           } catch (eOR) {
-            console.error('[ModoTrabalho] OpenRouter falhou:', eOR.message);
+            console.error('[ModoDireto] OpenRouter falhou:', eOR.message);
           }
         }
 
