@@ -1,6 +1,7 @@
 const Groq = require('groq-sdk');
 const { webSearch } = require('./search');
-const { geminiDisponivel, geminiFreeResponse, isGeminiRateLimit } = require('./openrouter');
+const { geminiDisponivel, geminiFreeResponse, isGeminiRateLimit } = require('./gemini');
+const { openrouterDisponivel, openrouterFreeResponse, isOpenrouterRateLimit } = require('./openrouter');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -69,6 +70,36 @@ const AVISOS_RETORNO_COMPLETO = [
 const _modoDireto = {};
 const _avisoEnviado = {};
 const _tipoModoDireto = {};
+
+// _modoComparacao[phone] = true quando o usuário pede explicitamente para
+// testar/comparar o Gemini, mesmo sem o Groq estar em rate limit.
+// Comando interno: ativa via texto (ex: "ativa o gemini", "usa o gemini",
+// "modo gemini") e desativa com "volta pro groq" / "desativa o gemini" —
+// ao desativar, volta ao fluxo normal (Groq + cascata de fallback).
+const _modoComparacao = {};
+
+function ativarModoComparacao(phone) {
+  _modoComparacao[phone] = true;
+}
+
+function desativarModoComparacao(phone) {
+  delete _modoComparacao[phone];
+}
+
+function emModoComparacao(phone) {
+  return !!_modoComparacao[phone];
+}
+
+// Detecta comandos internos de ativar/desativar o modo comparação a partir
+// do texto do usuário. Retorna 'on', 'off' ou null (não é um comando).
+function detectarComandoComparacao(text) {
+  const t = (text || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const ligar = /^(ativa|ativar|liga|ligar|usa|usar|entra n[ao]|muda pr[ao]|troca pr[ao])\s+(o\s+)?gemini\b|^modo gemini\b/;
+  const desligar = /^(desativa|desativar|desliga|desligar|volta|voltar|sai d[ao]|saindo d[ao])\s+(o\s+|pr[ao]\s+)?(gemini|groq)\b|^modo groq\b|^para de usar (o\s+)?gemini\b/;
+  if (desligar.test(t)) return 'off';
+  if (ligar.test(t)) return 'on';
+  return null;
+}
 
 function estaEmModoDirecto(phone) {
   return !!_modoDireto[phone];
@@ -429,6 +460,39 @@ function escolherModelo(message, tom, contexto) {
   return MODEL_FORTE;
 }
 
+// Tenta responder no estilo "Direta" (factual, sem personalidade) usando
+// a cascata Gemini → OpenRouter. Usado tanto quando o Groq 70b está em
+// rate limit (modo direto) quanto no modo comparação manual.
+// Retorna o texto da resposta, ou null se ambos falharem.
+async function tentarFallbackCascata(contexto, name, message, logPrefix = 'ModoDireto') {
+  const msgsFallback = [
+    { role: 'system', content: buildPromptModoDireto(contexto, name) },
+    { role: 'user', content: message }
+  ];
+
+  if (geminiDisponivel()) {
+    try {
+      const resposta = await geminiFreeResponse(msgsFallback, { temperature: 0.3, maxTokens: 300 });
+      console.log(`[${logPrefix}] Gemini respondeu`);
+      return resposta;
+    } catch (eGem) {
+      console.error(`[${logPrefix}] Gemini falhou:`, eGem.message);
+    }
+  }
+
+  if (openrouterDisponivel()) {
+    try {
+      const resposta = await openrouterFreeResponse(msgsFallback, { temperature: 0.3, maxTokens: 300 });
+      console.log(`[${logPrefix}] OpenRouter respondeu`);
+      return resposta;
+    } catch (eOR) {
+      console.error(`[${logPrefix}] OpenRouter falhou:`, eOR.message);
+    }
+  }
+
+  return null;
+}
+
 async function freeResponse(message, history = [], preferences = {}, privateMode = false) {
   const phone = preferences?._phone || null;
 
@@ -458,6 +522,34 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         }
         throw eOverride;
       }
+    }
+
+    // ── Modo comparação manual ──
+    // Usuário ativou via comando interno ("ativa o gemini"). Responde com
+    // a personalidade normal (não o estilo "Direta"), mas usando o Gemini
+    // em vez do Groq — útil para comparar qualidade. "Volta pro Groq"
+    // (detectado no handler) limpa essa flag e retorna ao fluxo normal.
+    if (phone && emModoComparacao(phone) && !privateMode) {
+      const sistemaComparacao = buildPersonality(tom, name, false) + contexto;
+      const msgsComparacao = [
+        { role: 'system', content: sistemaComparacao },
+        ...history.slice(-6),
+        { role: 'user', content: message }
+      ];
+      if (geminiDisponivel()) {
+        try {
+          const resposta = await geminiFreeResponse(msgsComparacao, {
+            temperature: tom === 'sarcastico' ? 0.9 : 0.7,
+            maxTokens: 800,
+          });
+          console.log(`[ModoComparacao] Gemini respondeu para ${phone}`);
+          return resposta;
+        } catch (eGem) {
+          console.error('[ModoComparacao] Gemini falhou:', eGem.message);
+          return 'O Gemini não respondeu agora 😕 Pode tentar de novo, ou diga "volta pro Groq" para sair do modo comparação.';
+        }
+      }
+      return 'Gemini não está configurado (faltou a chave) — diga "volta pro Groq" para sair do modo comparação.';
     }
 
     if (privateMode) {
@@ -499,23 +591,9 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         return preferences._acaoConfirmacao;
       }
       // Já em modo direto (Groq 70b ainda em cooldown) — responde no estilo
-      // "Direta" via OpenRouter, com dados reais do contexto.
-      if (geminiDisponivel()) {
-        try {
-          const msgsModoDireto = [
-            { role: 'system', content: buildPromptModoDireto(contexto, name) },
-            { role: 'user', content: message }
-          ];
-          const respostaModoDireto = await geminiFreeResponse(msgsModoDireto, {
-            temperature: 0.3,
-            maxTokens: 300,
-          });
-          console.log(`[ModoDireto] OpenRouter respondeu (já em modo direto) para ${phone}`);
-          return respostaModoDireto;
-        } catch (eOR) {
-          console.error('[ModoDireto] OpenRouter falhou (já em modo direto):', eOR.message);
-        }
-      }
+      // "Direta" via cascata Gemini → OpenRouter, com dados reais do contexto.
+      const respostaModoDireto = await tentarFallbackCascata(contexto, name, message, 'ModoDireto');
+      if (respostaModoDireto) return respostaModoDireto;
       // Fallback final: mensagem fixa, sem custo de LLM.
       return 'Ainda no modo direto — pode me mandar lembretes, listas e tarefas que eu cuido.';
     }
@@ -549,31 +627,19 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         const tipo = isTPD(e1) ? 'tpd' : 'rpm';
         const aviso = await ativarModoDireto(phone, tipo);
 
-        // ── Modo trabalho via OpenRouter ──
+        // ── Modo trabalho via cascata Gemini → OpenRouter ──
         // Em vez de ficar em silêncio (ou só confirmações fixas) até o Groq
         // voltar, tenta responder de forma factual/seca com os dados do
         // contexto (AGENDA, LISTAS, etc), sem personalidade/emojis — assim
         // o usuário continua produtivo enquanto o papo livre está pausado.
-        if (geminiDisponivel()) {
-          try {
-            const msgsTrabalho = [
-              { role: 'system', content: buildPromptModoDireto(contexto, name) },
-              { role: 'user', content: message }
-            ];
-            const respostaTrabalho = await geminiFreeResponse(msgsTrabalho, {
-              temperature: 0.3,
-              maxTokens: 300,
-            });
-            console.log(`[ModoDireto] OpenRouter respondeu para ${phone}`);
-            // Na primeira vez que entra em modo direto, prefixa com o aviso
-            // de que o bate-papo completo está pausado.
-            return aviso ? `${aviso}\n\n${respostaTrabalho}` : respostaTrabalho;
-          } catch (eOR) {
-            console.error('[ModoDireto] OpenRouter falhou:', eOR.message);
-          }
+        const respostaTrabalho = await tentarFallbackCascata(contexto, name, message, 'ModoDireto');
+        if (respostaTrabalho) {
+          // Na primeira vez que entra em modo direto, prefixa com o aviso
+          // de que o bate-papo completo está pausado.
+          return aviso ? `${aviso}\n\n${respostaTrabalho}` : respostaTrabalho;
         }
 
-        // OpenRouter indisponível ou falhou — modo direto tradicional
+        // Cascata indisponível ou falhou — modo direto tradicional
         // (aviso só vem na primeira vez — depois retorna null, handler não responde)
         return aviso || null;
       }
@@ -642,4 +708,8 @@ module.exports = {
   freeResponse,
   generateMemorySummary,
   generateRelationshipSummary,
+  ativarModoComparacao,
+  desativarModoComparacao,
+  emModoComparacao,
+  detectarComandoComparacao,
 };
