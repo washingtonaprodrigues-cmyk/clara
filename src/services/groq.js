@@ -460,6 +460,34 @@ function escolherModelo(message, tom, contexto) {
   return MODEL_FORTE;
 }
 
+// Detecta se uma resposta terminou "cortada" no meio (sem pontuação final,
+// terminando em vírgula, preposição, ou meio de palavra/lista) e, se sim,
+// apara até o último ponto final/exclamação/interrogação/quebra de linha
+// completo anterior. Evita mandar pro usuário texto truncado como
+// "E às 11:50," ou "Pra amanh".
+function apararRespostaCortada(texto) {
+  if (!texto) return texto;
+  const t = texto.trimEnd();
+
+  // Termina com pontuação final ou emoji — provavelmente está completo.
+  if (/[.!?…💜😊✅🎉👍😉😅😄]$/.test(t)) return t;
+
+  // Procura o último ponto/exclamação/interrogação seguido de espaço/quebra
+  // (fim de frase completa) e corta ali.
+  const matches = [...t.matchAll(/[.!?](?:\s|\n)/g)];
+  if (matches.length > 0) {
+    const last = matches[matches.length - 1];
+    const cortado = t.slice(0, last.index + 1).trimEnd();
+    // Só usa o corte se ainda restar uma resposta minimamente substancial
+    // (evita devolver só "Ah," se o corte for muito agressivo).
+    if (cortado.length >= 10) return cortado;
+  }
+
+  // Sem nenhuma frase completa identificável — retorna como está
+  // (melhor algo truncado do que nada).
+  return t;
+}
+
 // Tenta responder com a personalidade COMPLETA (carinhoso/sarcástico/etc,
 // igual ao Groq normal) usando o Gemini — usado como primeira opção quando
 // o Groq 70b está em rate limit, já que o objetivo é avaliar o Gemini como
@@ -481,10 +509,10 @@ async function tentarGeminiComPersonalidade(message, history, tom, name, context
     ];
     const resposta = await geminiFreeResponse(msgs, {
       temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-      maxTokens: 1200,
+      maxTokens: 2000,
     });
     console.log(`[GeminiSubstituto] Gemini respondeu para ${phone || '?'}`);
-    return resposta;
+    return apararRespostaCortada(resposta);
   } catch (eGem) {
     console.error('[GeminiSubstituto] Gemini falhou:', eGem.message);
     return null;
