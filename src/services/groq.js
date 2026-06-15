@@ -55,7 +55,7 @@ function isTPD(error) {
 // mudando para respostas mais simples/diretas (8b) — mas continua funcionando
 // para lembretes, tarefas e conversas básicas. Não desaparece.
 const AVISOS_MODO_DIRETO = [
-  'Entrando no modo direto por um tempo — vou ficar mais objetiva, sem emojis. Mas continuo aqui pra agenda, listas, lembretes e tudo o mais.',
+  'Entrando no modo direto por um tempo — vou ficar mais objetiva, sem emojis.',
 ];
 
 const AVISOS_RETORNO_COMPLETO = [
@@ -83,6 +83,14 @@ function msAteMeiaNoiteBRT() {
   return meiaNoite.getTime() - now.getTime();
 }
 
+// Retorna a data de hoje em BRT no formato YYYY-MM-DD — usada para limitar
+// o aviso de "modo direto" a 1x por dia por usuário.
+function hojeISOSimples() {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const pad = n => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+}
+
 async function ativarModoDireto(phone, tipo) {
   const jaAtivo = _modoDireto[phone];
   _modoDireto[phone] = true;
@@ -94,7 +102,6 @@ async function ativarModoDireto(phone, tipo) {
     console.log(`[RateLimit] ${tipo.toUpperCase()} para ${phone} — ativando modo direto (retorna em ${Math.round(delay/60000)}min)`);
     setTimeout(async () => {
       delete _modoDireto[phone];
-      delete _avisoEnviado[phone];
       try {
         const { sendMessage } = require('./whatsapp');
         const retorno = AVISOS_RETORNO_COMPLETO[Math.floor(Math.random() * AVISOS_RETORNO_COMPLETO.length)];
@@ -111,12 +118,14 @@ async function ativarModoDireto(phone, tipo) {
 
   _tipoModoDireto[phone] = tipo;
 
-  // Retorna o aviso só na primeira vez que entra em modo direto
-  if (!_avisoEnviado[phone]) {
-    _avisoEnviado[phone] = true;
+  // Retorna o aviso só na primeira vez do DIA que entra em modo direto —
+  // se reativar de novo no mesmo dia (ex: TPD esgota outra vez), não repete.
+  const hoje = hojeISOSimples();
+  if (_avisoEnviado[phone] !== hoje) {
+    _avisoEnviado[phone] = hoje;
     return AVISOS_MODO_DIRETO[Math.floor(Math.random() * AVISOS_MODO_DIRETO.length)];
   }
-  return null; // sinaliza para tentar responder normalmente com o 8b
+  return null; // sinaliza para tentar responder normalmente
 }
 
 // Mantém compatibilidade com nome antigo usado em outros arquivos
