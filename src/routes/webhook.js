@@ -123,7 +123,12 @@ async function handleSimpleResponse(phone, text) {
     const lembrete = await getLembretePendente(user.id, phone);
     if (lembrete) {
       await prisma.reminder.update({ where: { id: lembrete.id }, data: { confirmed: true } });
-      const msgs = ['Arrasou! ✅ Marcado como concluído 💜','Boa! ✅ Tá feito então 😊','Perfeito! ✅ Anotei que você concluiu 💜','Isso! ✅ Concluído com sucesso 🎉'];
+      const msgs = [
+        `Arrasou! ✅ "${lembrete.message}" marcado como concluído 💜`,
+        `Boa! ✅ "${lembrete.message}" tá feito então 😊`,
+        `Perfeito! ✅ Anotei que você concluiu "${lembrete.message}" 💜`,
+        `Isso! ✅ "${lembrete.message}" concluído com sucesso 🎉`,
+      ];
       await sendMessage(phone, msgs[Math.floor(Math.random() * msgs.length)]);
       return true;
     }
