@@ -645,7 +645,11 @@ async function handleMessage(phone, text, location = null) {
     extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
   } catch (error) {
     console.error('Erro handleMessage:', error.message);
-    await sendMessage(phone, 'Ops, tive um probleminha. Pode repetir?');
+    try {
+      await sendMessage(phone, 'Ops, tive um probleminha. Pode repetir?');
+    } catch (e2) {
+      console.error('Erro ao enviar mensagem de erro:', e2.message);
+    }
   }
 }
 
