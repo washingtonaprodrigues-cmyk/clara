@@ -629,9 +629,21 @@ cron.schedule('30 18 * * *', async () => {
         const prefs = await prisma.preference.findFirst({ where: { userId: user.id } }).catch(() => null);
         const infoPessoal = await memory.buildPersonalContext(user.id).catch(() => '');
 
+        // Identifica quais pendentes são urgentes (médico, reunião, etc) —
+        // esses merecem menção mais específica ("como foi a consulta?"),
+        // não só "fez essa tarefa?" como os demais.
+        const idsUrgentes = new Set();
+        if (pendentes.length > 0) {
+          const marcacoes = await prisma.memory.findMany({
+            where: { type: 'lembrete_urgente', content: { in: pendentes.map(r => r.id) } }
+          }).catch(() => []);
+          marcacoes.forEach(m => idsUrgentes.add(m.content));
+        }
+
         const listaPendentes = pendentes.map(r => {
           const h = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-          return `• ${h} — ${r.message}`;
+          const marca = idsUrgentes.has(r.id) ? ' [IMPORTANTE — pergunte como foi/resultado, não só se fez]' : '';
+          return `• ${h} — ${r.message}${marca}`;
         }).join('\n');
 
         const systemFechamento = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
@@ -644,9 +656,11 @@ ${listaPendentes || '(nenhum pendente)'}
 ${infoPessoal}
 
 Envie uma mensagem natural (2-4 linhas) de fechamento do dia no seu tom:
-- Se tiver pendentes, mencione de forma leve — sem cobrar, perguntando se fez e oferecendo remarcar
+- Se tiver pendentes marcados como [IMPORTANTE], pergunte especificamente sobre o resultado deles (ex: "como foi a consulta com o médico?"), não apenas se fez
+- Outros pendentes (sem marcação), mencione de forma leve — sem cobrar, perguntando se fez e oferecendo remarcar
 - Se concluiu tudo, celebre no seu estilo
 - Varie SEMPRE — não repita a mesma abertura
+- NÃO liste formalmente nem repita a marcação [IMPORTANTE] no texto — é só uma instrução interna
 - NÃO liste formalmente. Seja humana e natural.
 - NUNCA termine com "boa noite", "boa tarde" ou qualquer saudação de período`;
 
@@ -730,14 +744,7 @@ cron.schedule('* * * * *', async () => {
           const quinzeDepois = new Date(r.scheduledAt.getTime() + 15 * 60 * 1000);
           const jaTemDepois = await prisma.memory.findFirst({ where: { type: 'urgente_followup_lock', content: r.id } });
           if (!jaTemDepois) {
-            const tomDesc = {
-              carinhoso: 'calorosa e próxima',
-              direto: 'direta e objetiva',
-              divertido: 'animada e bem-humorada',
-              sarcastico: 'sarcástica e sem filtro, pode zoar mas com carinho'
-            }[prefs?.tom || 'carinhoso'] || 'calorosa';
-
-            const systemFollowup = `Você é a Clara, parceira pessoal. Tom: ${tomDesc}.
+            const systemFollowup = `Você é a Clara, parceira pessoal. Tom: ${tomDesc(prefs?.tom)}.
 O usuário tinha um compromisso urgente: "${r.message}".
 Já passou 15 minutos. Pergunte de forma natural e breve (1 linha) se conseguiu fazer.
 Respeite o tom — sarcástica não pergunta com fofice.`;
@@ -751,6 +758,30 @@ Respeite o tom — sarcástica não pergunta com fofice.`;
               data: { userId: r.userId, phone: grupo.phone, message: `__followup__${msgFollowup}`, scheduledAt: quinzeDepois }
             });
             await prisma.memory.create({ data: { userId: r.userId, type: 'urgente_followup_lock', content: r.id } });
+          }
+
+          // ── Follow-up "como foi?" — 2h depois ──
+          // O follow-up de 15min ("conseguiu fazer?") é prematuro para
+          // compromissos como médico/reunião que ainda podem estar
+          // acontecendo. 2h depois, pergunta de forma mais específica e
+          // fechada como foi o resultado, fechando o ciclo do compromisso.
+          const duasHorasDepois = new Date(r.scheduledAt.getTime() + 2 * 60 * 60 * 1000);
+          const jaTemResultado = await prisma.memory.findFirst({ where: { type: 'urgente_resultado_lock', content: r.id } });
+          if (!jaTemResultado) {
+            const systemResultado = `Você é a Clara, parceira pessoal. Tom: ${tomDesc(prefs?.tom)}.
+O usuário tinha um compromisso importante há 2 horas: "${r.message}".
+Pergunte de forma natural e breve (1 linha) como foi / se deu tudo certo — não pergunte só "conseguiu fazer", pergunte sobre o RESULTADO (ex: "como foi a consulta?", "deu tudo certo na reunião?").
+Respeite o tom — sarcástica não pergunta com fofice.`;
+
+            let msgResultado = await freeResponse('Pergunta sobre resultado do compromisso.', [], {
+              _systemOverride: systemResultado, tom: prefs?.tom || 'carinhoso'
+            }).catch(() => `Oi! Como foi "${r.message}"? Deu tudo certo? 😊`);
+            if (!msgResultado) msgResultado = `Oi! Como foi "${r.message}"? Deu tudo certo? 😊`;
+
+            await prisma.reminder.create({
+              data: { userId: r.userId, phone: grupo.phone, message: `__followup__${msgResultado}`, scheduledAt: duasHorasDepois }
+            });
+            await prisma.memory.create({ data: { userId: r.userId, type: 'urgente_resultado_lock', content: r.id } });
           }
         } catch(e) { console.error(`[Urgência] Erro ${r.id}:`, e.message); }
       }
@@ -889,7 +920,7 @@ cron.schedule('0 3 * * *', async () => {
     const ontem = new Date(nowBRT()); ontem.setDate(ontem.getDate() - 2);
     await prisma.memory.deleteMany({
       where: {
-        type: { in: ['med_lock', 'alerta_data_lock', 'proativa_lock', 'sumico_lock', 'bom_dia_lock', 'boa_noite_lock', 'meio_dia_lock', 'meu_dia_criado'] },
+        type: { in: ['med_lock', 'alerta_data_lock', 'proativa_lock', 'sumico_lock', 'bom_dia_lock', 'boa_noite_lock', 'meio_dia_lock', 'meu_dia_criado', 'urgente_resultado_lock'] },
         createdAt: { lt: ontem }
       }
     });
