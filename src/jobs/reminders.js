@@ -153,13 +153,10 @@ cron.schedule('5 7 * * *', async () => {
         if (infoPessoal) ctx += infoPessoal;
 
         let systemBomDia;
-        const tdBomDia = tomDesc(prefs.tom);
         if (totalLembretes > 0) {
           const primeira = lembretes[0];
           const horaPrimeira = new Date(primeira.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
           systemBomDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Tom obrigatório: ${tdBomDia}
-
 Crie uma mensagem de bom dia OBJETIVA e INFORMATIVA — um resumo rápido do dia, não poética.
 
 CONTEXTO DO DIA:
@@ -167,16 +164,14 @@ ${ctx}
 
 REGRAS OBRIGATÓRIAS:
 - 2-3 linhas, direto ao ponto
-- Diga quantas tarefas/compromissos tem hoje (${totalLembretes}) + qual é a primeira (${primeira.message} às ${horaPrimeira})
-- Encerre com algo curto tipo "estarei aqui pra te lembrar de tudo" — no seu tom
-- Varie SEMPRE a abertura — não repita sempre a mesma frase
-- Máximo 1 emoji
+- Diga "Bom dia" + quantas tarefas/compromissos tem hoje (${totalLembretes}) + qual é a primeira (${primeira.message} às ${horaPrimeira})
+- Encerre com algo curto tipo "estarei aqui pra te lembrar de tudo" — adaptado ao seu tom
+- Varie a abertura — não repita sempre a mesma frase
+- Use no máximo 1 emoji
 - NÃO seja sentimental ou poética. Seja prática.
-- NUNCA termine com "bom dia", "boa tarde" ou "boa noite" no final da mensagem`;
+Tom: ${prefs.tom || 'carinhoso'}.`;
         } else {
           systemBomDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Tom obrigatório: ${tdBomDia}
-
 Crie uma mensagem de bom dia SIMPLES e HUMANA — como se fosse a primeira vez que fala com a pessoa naquele dia.
 
 CONTEXTO DO DIA:
@@ -184,11 +179,11 @@ ${ctx}
 
 REGRAS OBRIGATÓRIAS:
 - Máximo 2-3 linhas
-- Sem compromissos hoje — diga algo positivo e leve sobre o dia, no seu tom
-- Varie SEMPRE a abertura — NUNCA repita "Bom dia, [nome]! ☀️"
-- Máximo 1 emoji
+- Sem compromissos hoje — diga algo positivo e leve sobre o dia, sem mencionar a ausência de tarefas
+- Varie sempre a abertura — NUNCA repita "Bom dia, [nome]! ☀️"
+- Use no máximo 1 emoji
 - NÃO pergunte. NÃO agende nada.
-- NUNCA termine com "bom dia", "boa tarde" ou "boa noite" no final da mensagem`;
+Tom: ${prefs.tom || 'carinhoso'}.`;
         }
 
         const msg = await freeResponse('Envie uma mensagem de bom dia para o usuário.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBomDia });
@@ -299,40 +294,36 @@ cron.schedule('0 22 * * *', async () => {
         if (infoPessoal) ctx += infoPessoal;
 
         let systemBoaNoite;
-        const tdBoaNoite = tomDesc(prefs.tom);
         if (totalHoje > 0 || lembretesAmanha.length > 0) {
           systemBoaNoite = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Tom obrigatório: ${tdBoaNoite}
-
-Crie uma mensagem de boa noite OBJETIVA — um resumo rápido do dia, no seu tom.
+Crie uma mensagem de boa noite OBJETIVA — um resumo rápido do dia, não poética.
 
 CONTEXTO DO DIA:
 ${ctx}
 
 REGRAS OBRIGATÓRIAS:
 - 2-3 linhas, direto ao ponto
-- Se concluiu tarefas hoje (${concluidasHoje}/${totalHoje}), comente brevemente no seu estilo
+- Se concluiu tarefas hoje (${concluidasHoje}/${totalHoje}), parabenize brevemente por isso
 - Se tem compromissos amanhã (${lembretesAmanha.length}), mencione a quantidade de forma breve
-- Varie SEMPRE a abertura — não repita sempre a mesma frase
+- Encerre com algo curto tipo "durma bem, estarei aqui pra te ajudar amanhã" — adaptado ao seu tom
+- Varie a abertura — não repita sempre a mesma frase
 - Máximo 1 emoji
-- NÃO seja sentimental ou poética. Seja fiel ao seu tom.
-- NUNCA termine com "boa noite", "bom descanso" ou qualquer saudação de período colada no final`;
+- NÃO seja sentimental ou poética. Seja prática.
+Tom: ${prefs.tom || 'carinhoso'}.`;
         } else {
           systemBoaNoite = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Tom obrigatório: ${tdBoaNoite}
-
-Crie uma mensagem de boa noite SIMPLES — como quem se despede de verdade ao final do dia, no seu estilo único.
+Crie uma mensagem de boa noite SIMPLES — como quem se despede de verdade ao final do dia.
 
 CONTEXTO DO DIA:
 ${ctx}
 
 REGRAS OBRIGATÓRIAS:
-- Máximo 2-3 linhas
+- Máximo 2-3 linhas, sem emojis
 - Considere o dia da semana
-- Varie SEMPRE a abertura
-- Encerre com algo genuíno e diferente a cada dia, no seu tom
+- Varie sempre a abertura
+- Encerre com algo caloroso e diferente a cada dia
 - NÃO mencione falta de compromissos. NÃO pergunte. NÃO agende nada.
-- NUNCA termine com "boa noite", "bom descanso" ou qualquer saudação de período colada no final`;
+Tom: ${prefs.tom || 'carinhoso'}.`;
         }
 
         const msg = await freeResponse('Envie uma mensagem de boa noite para o usuário.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBoaNoite });
@@ -574,14 +565,12 @@ cron.schedule('0 12 * * *', async () => {
         }).join('\n');
 
         const systemMeioDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Tom obrigatório: ${tomDesc(prefs?.tom)}
-
 São 12h do dia. O usuário tem ${pendentes.length} tarefa(s) da manhã que ainda não foram marcadas como concluídas:
 ${listaPendentes}
 
-Envie uma mensagem curta e natural (2-3 linhas) no seu tom perguntando se conseguiu fazer alguma dessas tarefas — sem ser cobrador(a), sem listar formalmente, com leveza.
+Envie uma mensagem curta e natural (2-3 linhas) perguntando se conseguiu fazer alguma dessas tarefas — sem ser cobrador(a), sem listar formalmente, com leveza.
 Diga que pode dar baixa ou remarcar.
-NUNCA termine com "bom dia", "boa tarde" ou "boa noite".`;
+Tom: ${prefs?.tom || 'carinhoso'}.`;
 
         const msg = await freeResponse('Mensagem de meio-dia.', [], {
           _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso', _systemOverride: systemMeioDia
@@ -647,22 +636,19 @@ cron.schedule('30 18 * * *', async () => {
         }).join('\n');
 
         const systemFechamento = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Tom obrigatório: ${tomDesc(prefs?.tom)}
-
 São 18:30h. Resumo do dia do usuário:
 - Concluídos hoje: ${concluidos.length}
 - Ainda pendentes (${pendentes.length}):
 ${listaPendentes || '(nenhum pendente)'}
 ${infoPessoal}
 
-Envie uma mensagem natural (2-4 linhas) de fechamento do dia no seu tom:
+Envie uma mensagem natural (2-4 linhas) de fechamento do dia:
 - Se tiver pendentes marcados como [IMPORTANTE], pergunte especificamente sobre o resultado deles (ex: "como foi a consulta com o médico?"), não apenas se fez
 - Outros pendentes (sem marcação), mencione de forma leve — sem cobrar, perguntando se fez e oferecendo remarcar
-- Se concluiu tudo, celebre no seu estilo
-- Varie SEMPRE — não repita a mesma abertura
+- Se concluiu tudo, celebre
+- Varie a abertura — não repita a mesma frase
 - NÃO liste formalmente nem repita a marcação [IMPORTANTE] no texto — é só uma instrução interna
-- NÃO liste formalmente. Seja humana e natural.
-- NUNCA termine com "boa noite", "boa tarde" ou qualquer saudação de período`;
+Tom: ${prefs?.tom || 'carinhoso'}.`;
 
         const msg = await freeResponse('Mensagem de fechamento do dia.', [], {
           _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso', _systemOverride: systemFechamento
