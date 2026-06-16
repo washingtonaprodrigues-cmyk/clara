@@ -14,6 +14,17 @@ function getWhatsapp() {
 }
 
 async function sendMessage(phone, msg, delay) {
+  // ── Modo "só áudio" ──
+  // Quando o usuário mandou um áudio, o webhook ativa essa flag pra esse
+  // telefone antes de chamar handleMessage. Em vez de enviar o texto pro
+  // WhatsApp, guardamos ele aqui — o webhook pega esse texto, gera o TTS,
+  // e manda só o áudio (sem duplicar a mensagem em texto).
+  if (_modoSoAudio.has(phone)) {
+    _ultimaRespostaCapturada.set(phone, msg);
+    console.log(`[ModoSoAudio] Resposta capturada (não enviada como texto) para ${phone}: "${String(msg).slice(0,60)}"`);
+    return { capturado: true };
+  }
+
   const w = getWhatsapp();
   if (w && typeof w.sendMessage === 'function') {
     return w.sendMessage(phone, msg, delay);
@@ -27,6 +38,27 @@ async function sendMessage(phone, msg, delay) {
     { number: phone, text: msg, delay: delay || 800 },
     { headers: { token: TOKEN, 'Content-Type': 'application/json' }, timeout: 30000 }
   );
+}
+
+// ── Controle do modo "só áudio" ──
+// _modoSoAudio: Set de telefones que devem ter a próxima resposta capturada
+// em vez de enviada como texto (usado pelo webhook ao processar áudio).
+// _ultimaRespostaCapturada: guarda o texto capturado pra o webhook buscar.
+const _modoSoAudio = new Set();
+const _ultimaRespostaCapturada = new Map();
+
+function ativarModoSoAudio(phone) {
+  _modoSoAudio.add(phone);
+}
+
+function desativarModoSoAudio(phone) {
+  _modoSoAudio.delete(phone);
+}
+
+function pegarRespostaCapturada(phone) {
+  const texto = _ultimaRespostaCapturada.get(phone);
+  _ultimaRespostaCapturada.delete(phone);
+  return texto;
 }
 
 async function sendButtons(phone, msg, buttons) {
@@ -1317,4 +1349,4 @@ async function updateRelationshipSummary(userId, history, lastReply) {
   } catch(e) {}
 }
 
-module.exports = { handleMessage };
+module.exports = { handleMessage, ativarModoSoAudio, desativarModoSoAudio, pegarRespostaCapturada };
