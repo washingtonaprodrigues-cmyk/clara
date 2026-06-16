@@ -85,7 +85,7 @@ async function enviarAudioUazAPI(phone, audioBuffer) {
     {
       number: phone,
       type: 'ptt',                        // push-to-talk (voz gravada)
-      media: `data:audio/mpeg;base64,${base64}`,
+      file: `data:audio/mpeg;base64,${base64}`,
       delay: 500,
     },
     {
