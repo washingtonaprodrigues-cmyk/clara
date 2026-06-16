@@ -383,7 +383,25 @@ async function handleMessage(phone, text, location = null) {
     const foiConfirmacao = await checkConfirmacaoPendente(user, phone, text);
     if (foiConfirmacao) return;
 
-    // ── Confirmação de lembrete por código curto (#1, #2, "feito o 1"...) ──
+    // ── Desativar "Meu Dia" permanentemente ──
+    if (/para de criar (o\s+)?meu dia|n[aã]o (quero|preciso) (mais )?(o\s+)?meu dia|remove (o\s+)?meu dia|cancela (o\s+)?meu dia/i.test(text)) {
+      await prisma.memory.upsert({
+        where: { userId_type: { userId: user.id, type: 'meu_dia_desativado' } },
+        update: { content: new Date().toISOString() },
+        create: { userId: user.id, type: 'meu_dia_desativado', content: new Date().toISOString() }
+      }).catch(() => {});
+      return await sendMessage(phone, 'Ok! Não crio mais o "Meu Dia" automaticamente. Se quiser ativar de novo, é só me pedir 😊');
+    }
+
+    // ── Reativar "Meu Dia" ──
+    if (/ativa (o\s+)?meu dia|quero (o\s+)?meu dia (de volta|novamente)|volta (com |a criar )?(o\s+)?meu dia/i.test(text)) {
+      await prisma.memory.deleteMany({
+        where: { userId: user.id, type: 'meu_dia_desativado' }
+      }).catch(() => {});
+      return await sendMessage(phone, '✅ "Meu Dia" ativado! A partir de amanhã de manhã já crio a lista automaticamente pra você 📅');
+    }
+
+
     // Intercepta ANTES do classify (LLM): se o usuário citou um código e há
     // lembretes recém-disparados aguardando confirmação, marca direto o
     // correspondente como concluído — evita depender do LLM classificar
