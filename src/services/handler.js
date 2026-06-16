@@ -1,5 +1,8 @@
 const { classify, extractPersonalInfo, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao } = require('./groq');
-const { sendMessage, sendButtons, sendReminderWithButtons } = require('./whatsapp');
+const whatsapp = require('./whatsapp');
+const sendMessage = (...args) => whatsapp.sendMessage(...args);
+const sendButtons = (...args) => whatsapp.sendButtons(...args);
+const sendReminderWithButtons = (...args) => whatsapp.sendReminderWithButtons(...args);
 const memory = require('./memory');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
