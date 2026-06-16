@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { handleMessage } = require('../services/handler');
+const handlerModule = require('../services/handler');
+const { handleMessage } = handlerModule;
 const memory = require('../services/memory');
 const rateLimit = require('../services/rateLimit');
 const { PrismaClient } = require('@prisma/client');
@@ -311,24 +312,45 @@ async function transcribeAndProcess(phone, body) {
     }
     console.log(`[Áudio] ${phone} transcrito: "${texto.slice(0, 80)}"`);
 
-    // Processa a mensagem normalmente
-    await handleMessage(phone, texto);
-
-    // ── Resposta com áudio (TTS) — fire-and-forget ──
     const tts = getTTS();
-    if (tts && typeof tts.ttsDisponivel === 'function' && tts.ttsDisponivel()) {
-      (async () => {
+    const ttsOk = tts && typeof tts.ttsDisponivel === 'function' && tts.ttsDisponivel();
+
+    if (ttsOk) {
+      // ── Modo só áudio ──
+      // Ativa a captura: handleMessage vai gerar a resposta normalmente,
+      // mas o texto não é enviado pro WhatsApp — fica retido aqui pra
+      // gerarmos o áudio e mandar só ele (sem duplicar texto + áudio).
+      handlerModule.ativarModoSoAudio(phone);
+      try {
+        await handleMessage(phone, texto);
+      } finally {
+        handlerModule.desativarModoSoAudio(phone);
+      }
+
+      const respostaCapturada = handlerModule.pegarRespostaCapturada(phone);
+      if (respostaCapturada && respostaCapturada.length <= 500) {
         try {
-          const user = await memory.getOrCreateUser(phone);
-          const history = await memory.getConversationHistory(user.id, 2);
-          const ultimaResposta = [...history].reverse().find(m => m.role === 'assistant');
-          if (ultimaResposta?.content && ultimaResposta.content.length <= 500) {
-            await tts.enviarRespostaComAudio(phone, ultimaResposta.content);
+          const enviado = await tts.enviarRespostaComAudio(phone, respostaCapturada);
+          if (!enviado) {
+            // TTS falhou apesar de "disponível" — fallback pro texto,
+            // pra garantir que o usuário recebe ALGUMA resposta.
+            console.log('[TTS] Falhou na geração — enviando texto como fallback');
+            await sendMessage(phone, respostaCapturada);
           }
         } catch (eTTS) {
-          console.error('[TTS] Erro ao buscar/enviar áudio:', eTTS.message);
+          console.error('[TTS] Erro ao gerar áudio — enviando texto como fallback:', eTTS.message);
+          await sendMessage(phone, respostaCapturada);
         }
-      })();
+      } else if (respostaCapturada) {
+        // Resposta longa demais para áudio — manda como texto normalmente
+        await sendMessage(phone, respostaCapturada);
+      }
+      // Se respostaCapturada for undefined, a resposta já foi tratada
+      // dentro do handleMessage por outro caminho (ex: busca proativa,
+      // comandos internos) que não passa pelo sendMessage capturável.
+    } else {
+      // TTS indisponível — processa normalmente, resposta vai como texto
+      await handleMessage(phone, texto);
     }
   } catch (e) {
     console.error('[Áudio] Erro:', e.message);
