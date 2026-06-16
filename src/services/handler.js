@@ -1,10 +1,45 @@
 const { classify, extractPersonalInfo, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao } = require('./groq');
 
-// sendMessage/sendButtons são resolvidos lazy pra evitar circular dependency
-// com o groq.js que também importa whatsapp internamente (no ativarModoDireto).
-function sendMessage(...args) { return require('./whatsapp').sendMessage(...args); }
-function sendButtons(...args) { return require('./whatsapp').sendButtons(...args); }
-function sendReminderWithButtons(...args) { return require('./whatsapp').sendReminderWithButtons(...args); }
+// Importa whatsapp de forma segura com fallback direto via axios
+let _whatsappModule = null;
+function getWhatsapp() {
+  if (!_whatsappModule) {
+    try {
+      _whatsappModule = require('./whatsapp');
+    } catch(e) {
+      console.error('[Handler] Erro ao carregar whatsapp.js:', e.message);
+    }
+  }
+  return _whatsappModule;
+}
+
+async function sendMessage(phone, msg, delay) {
+  const w = getWhatsapp();
+  if (w && typeof w.sendMessage === 'function') {
+    return w.sendMessage(phone, msg, delay);
+  }
+  // Fallback direto via axios se whatsapp.js não carregar
+  const axios = require('axios');
+  const BASE_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
+  const TOKEN = process.env.UAZAPI_TOKEN;
+  console.log(`[Handler/Fallback] Enviando direto para ${phone}: ${String(msg).slice(0,60)}`);
+  return axios.post(`${BASE_URL}/send/text`,
+    { number: phone, text: msg, delay: delay || 800 },
+    { headers: { token: TOKEN, 'Content-Type': 'application/json' }, timeout: 30000 }
+  );
+}
+
+async function sendButtons(phone, msg, buttons) {
+  const w = getWhatsapp();
+  if (w && typeof w.sendButtons === 'function') return w.sendButtons(phone, msg, buttons);
+  return sendMessage(phone, msg);
+}
+
+async function sendReminderWithButtons(phone, msg, id) {
+  const w = getWhatsapp();
+  if (w && typeof w.sendReminderWithButtons === 'function') return w.sendReminderWithButtons(phone, msg, id);
+  return sendMessage(phone, msg);
+}
 const memory = require('./memory');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
