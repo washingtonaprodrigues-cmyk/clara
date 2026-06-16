@@ -241,7 +241,12 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     if (skipContext) {
       preferences._contexto = '';
       const resp = await freeResponse(text, history, preferences);
-      if (resp === null) return; // modo direto: já avisado, não responde
+      if (resp === null) return;
+      if (resp && resp.includes('__BUSCAR:')) {
+        // improvável em saudações, mas tratamos igual
+        await sendMessage(phone, 'Deixa eu pesquisar isso! 🔍');
+        return;
+      }
       await memory.saveConversationMessage(user.id, 'user', text);
       await memory.saveConversationMessage(user.id, 'assistant', resp);
       await sendMessage(phone, resp);
@@ -344,6 +349,41 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
     const resp = await freeResponse(text, history, preferences);
     if (resp === null) return; // modo direto: já avisado, não responde
+
+    // ── Busca proativa: Clara sinalizou que quer pesquisar ──
+    // Quando o modelo retorna __BUSCAR:query__, a Clara não sabe a resposta
+    // e pediu pra pesquisar. Interceptamos, fazemos a busca real, e
+    // devolvemos o resultado em uma mensagem no tom dela.
+    const buscaMatch = resp.match(/__BUSCAR:(.+?)(__|\n|$)/);
+    if (buscaMatch) {
+      const query = buscaMatch[1].trim();
+      // Avisa que vai pesquisar, no estilo da Clara
+      const tom = preferences?.tom || 'carinhoso';
+      const avisos = {
+        carinhoso: `Deixa eu pesquisar isso pra gente! 🔍`,
+        direto: `Vou buscar isso agora.`,
+        divertido: `Um segundinho, deixa eu dar uma garimpada! 🔍`,
+        sarcastico: `Tá bom, vou pesquisar porque obviamente você não vai fazer isso sozinho. 🙄`,
+      };
+      await sendMessage(phone, avisos[tom] || avisos.carinhoso);
+
+      try {
+        const resultado = await searchWeb(query, '');
+        if (resultado) {
+          await memory.saveConversationMessage(user.id, 'user', text);
+          await memory.saveConversationMessage(user.id, 'assistant', resultado);
+          await sendMessage(phone, resultado);
+          updateRelationshipSummary(user.id, history, resultado).catch(() => {});
+        } else {
+          await sendMessage(phone, 'Pesquisei mas não encontrei nada útil sobre isso agora 😕');
+        }
+      } catch (eBusca) {
+        console.error(`[BuscaProativa] Erro:`, eBusca.message);
+        await sendMessage(phone, 'Não consegui pesquisar isso agora 😕 Tenta de novo?');
+      }
+      return;
+    }
+
     await memory.saveConversationMessage(user.id, 'user', text);
     await memory.saveConversationMessage(user.id, 'assistant', resp);
     await sendMessage(phone, resp);
