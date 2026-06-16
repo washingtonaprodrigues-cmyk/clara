@@ -47,10 +47,10 @@ function tomDesc(tom) {
 
 const finais = [
   '😊 Me avisa quando concluir.',
-  '💜 Irei te lembrar!',
   '✨ Estou de olho pra você!',
   '🔔 Não deixo você esquecer.',
   '😊 Conta comigo.',
+  '💜 Boa sorte com isso!',
 ];
 
 async function jaEnviouHoje(userId, tipo) {
