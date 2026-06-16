@@ -1,5 +1,27 @@
 const cron = require('node-cron');
-const { sendMessage } = require('../services/whatsapp');
+
+// sendMessage com fallback direto via axios — evita o mesmo problema de
+// circular dependency / ordem de carregamento que ocorreu no handler.js
+// (sendMessage is not a function quando importado por destructuring direto).
+async function sendMessage(phone, msg, delay) {
+  try {
+    const w = require('../services/whatsapp');
+    if (w && typeof w.sendMessage === 'function') {
+      return w.sendMessage(phone, msg, delay);
+    }
+  } catch (e) {
+    console.error('[Reminders] Erro ao carregar whatsapp.js:', e.message);
+  }
+  const axios = require('axios');
+  const BASE_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
+  const TOKEN = process.env.UAZAPI_TOKEN;
+  console.log(`[Reminders/Fallback] Enviando direto para ${phone}: ${String(msg).slice(0,60)}`);
+  return axios.post(`${BASE_URL}/send/text`,
+    { number: phone, text: msg, delay: delay || 800 },
+    { headers: { token: TOKEN, 'Content-Type': 'application/json' }, timeout: 30000 }
+  );
+}
+
 const { freeResponse } = require('../services/groq');
 const memory = require('../services/memory');
 const { PrismaClient } = require('@prisma/client');
