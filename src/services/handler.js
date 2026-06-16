@@ -1043,10 +1043,15 @@ async function editarLembrete(user, phone, classified, contextoClassify = '', or
     }
 
     if (!encontrado && !titulo) {
-      // Sem título: pega o último disparado (o que acabou de notificar)
-      // Ordena por scheduledAt desc para pegar o mais recente disparado
-      const enviados = todosLembretes.filter(r => r.sent)
-        .sort((a,b) => new Date(b.scheduledAt) - new Date(a.scheduledAt));
+      // Sem título: pega o lembrete mais recentemente disparado — ou seja,
+      // o "sent" cujo scheduledAt está mais próximo do agora (não o mais
+      // distante no futuro, que era o bug: scheduledAt desc pegava
+      // lembretes antigos com data "maior" por engano, mesmo já passados
+      // há mais tempo no relógio real).
+      const agora = Date.now();
+      const enviados = todosLembretes
+        .filter(r => r.sent)
+        .sort((a, b) => Math.abs(new Date(a.scheduledAt) - agora) - Math.abs(new Date(b.scheduledAt) - agora));
       encontrado = enviados[0] || null;
 
       // Se não tem nenhum sent, pega o próximo a vencer
