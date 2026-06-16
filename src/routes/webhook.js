@@ -1,12 +1,25 @@
 const express = require('express');
 const router = express.Router();
 const { handleMessage } = require('../services/handler');
-const { sendMessage, sendButtons } = require('../services/whatsapp');
-const { enviarRespostaComAudio, ttsDisponivel } = require('../services/audio');
 const memory = require('../services/memory');
 const rateLimit = require('../services/rateLimit');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+
+// Imports lazy para evitar circular dependency / problema de ordem de carregamento
+function sendMessage(phone, msg, delay) {
+  const w = require('../services/whatsapp');
+  if (w && typeof w.sendMessage === 'function') return w.sendMessage(phone, msg, delay);
+  const axios = require('axios');
+  return axios.post(`${process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com'}/send/text`,
+    { number: phone, text: msg, delay: delay || 800 },
+    { headers: { token: process.env.UAZAPI_TOKEN, 'Content-Type': 'application/json' }, timeout: 30000 }
+  );
+}
+
+function getTTS() {
+  try { return require('../services/audio'); } catch(e) { return null; }
+}
 
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
@@ -302,16 +315,15 @@ async function transcribeAndProcess(phone, body) {
     await handleMessage(phone, texto);
 
     // ── Resposta com áudio (TTS) — fire-and-forget ──
-    // Após o handleMessage terminar, busca a última resposta da Clara
-    // no histórico de conversa e gera o áudio dela via ElevenLabs.
-    if (ttsDisponivel()) {
+    const tts = getTTS();
+    if (tts && typeof tts.ttsDisponivel === 'function' && tts.ttsDisponivel()) {
       (async () => {
         try {
           const user = await memory.getOrCreateUser(phone);
           const history = await memory.getConversationHistory(user.id, 2);
           const ultimaResposta = [...history].reverse().find(m => m.role === 'assistant');
           if (ultimaResposta?.content && ultimaResposta.content.length <= 500) {
-            await enviarRespostaComAudio(phone, ultimaResposta.content);
+            await tts.enviarRespostaComAudio(phone, ultimaResposta.content);
           }
         } catch (eTTS) {
           console.error('[TTS] Erro ao buscar/enviar áudio:', eTTS.message);
