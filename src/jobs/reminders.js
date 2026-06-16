@@ -46,19 +46,30 @@ async function marcarEnviadoHoje(userId, tipo) {
 // processando - pular). Marcar o lock ANTES de gerar a mensagem evita
 // duplicidade quando o cron dispara em paralelo (duas replicas, restart
 // no mesmo minuto, etc).
+//
+// NOTA: o model Memory não tem @@unique([userId, type]) no schema, então
+// não é possível usar upsert com where: { userId_type: {...} } (esse nome
+// de campo composto só existe quando há esse unique constraint). Por isso
+// usamos findFirst + create/update manual.
 async function tentarLockDiario(userId, tipo) {
   const hoje = dateBRT();
-  const existente = await prisma.memory.findUnique({
-    where: { userId_type: { userId, type: tipo } }
+  const existente = await prisma.memory.findFirst({
+    where: { userId, type: tipo },
+    orderBy: { createdAt: 'desc' }
   }).catch(() => null);
 
   if (existente && existente.content === hoje) return false;
 
-  await prisma.memory.upsert({
-    where: { userId_type: { userId, type: tipo } },
-    update: { content: hoje },
-    create: { userId, type: tipo, content: hoje }
-  });
+  if (existente) {
+    await prisma.memory.update({
+      where: { id: existente.id },
+      data: { content: hoje }
+    });
+  } else {
+    await prisma.memory.create({
+      data: { userId, type: tipo, content: hoje }
+    });
+  }
   return true;
 }
 
