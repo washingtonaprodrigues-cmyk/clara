@@ -14,6 +14,15 @@ function dateBRT(d = nowBRT()) {
 }
 function random(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
+function tomDesc(tom) {
+  return {
+    carinhoso: 'calorosa e próxima, como uma amiga que genuinamente se importa. Use emojis com moderação. Varie sempre o jeito de falar.',
+    direto: 'direta e objetiva, sem rodeios ou fofice. Vá ao ponto. Sem emojis desnecessários.',
+    divertido: 'animada, com humor e energia, usando gírias naturais. Leve e bem-humorada.',
+    sarcastico: 'sarcástica e sem filtro — usa ironia fina, deboche carinhoso, nunca elogia à toa. Fala a verdade com um sorrisinho. NUNCA seja sentimental ou emotiva. Tom ácido mas com carinho real por baixo.',
+  }[tom || 'carinhoso'] || 'calorosa e próxima, como uma amiga que genuinamente se importa.';
+}
+
 const finais = [
   '😊 Me avisa quando concluir.',
   '💜 Irei te lembrar!',
@@ -111,10 +120,13 @@ cron.schedule('5 7 * * *', async () => {
         if (infoPessoal) ctx += infoPessoal;
 
         let systemBomDia;
+        const tdBomDia = tomDesc(prefs.tom);
         if (totalLembretes > 0) {
           const primeira = lembretes[0];
           const horaPrimeira = new Date(primeira.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
           systemBomDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
+Tom obrigatório: ${tdBomDia}
+
 Crie uma mensagem de bom dia OBJETIVA e INFORMATIVA — um resumo rápido do dia, não poética.
 
 CONTEXTO DO DIA:
@@ -122,14 +134,16 @@ ${ctx}
 
 REGRAS OBRIGATÓRIAS:
 - 2-3 linhas, direto ao ponto
-- Diga "Bom dia" + quantas tarefas/compromissos tem hoje (${totalLembretes}) + qual é a primeira (${primeira.message} às ${horaPrimeira})
-- Encerre com algo curto tipo "estarei aqui pra te lembrar de tudo" — adaptado ao seu tom
-- Varie a abertura — não repita sempre a mesma frase
-- Use no máximo 1 emoji
+- Diga quantas tarefas/compromissos tem hoje (${totalLembretes}) + qual é a primeira (${primeira.message} às ${horaPrimeira})
+- Encerre com algo curto tipo "estarei aqui pra te lembrar de tudo" — no seu tom
+- Varie SEMPRE a abertura — não repita sempre a mesma frase
+- Máximo 1 emoji
 - NÃO seja sentimental ou poética. Seja prática.
-Tom: ${prefs.tom || 'carinhoso'}.`;
+- NUNCA termine com "bom dia", "boa tarde" ou "boa noite" no final da mensagem`;
         } else {
           systemBomDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
+Tom obrigatório: ${tdBomDia}
+
 Crie uma mensagem de bom dia SIMPLES e HUMANA — como se fosse a primeira vez que fala com a pessoa naquele dia.
 
 CONTEXTO DO DIA:
@@ -137,24 +151,75 @@ ${ctx}
 
 REGRAS OBRIGATÓRIAS:
 - Máximo 2-3 linhas
-- Sem compromissos hoje — diga algo positivo e leve sobre o dia, sem mencionar a ausência de tarefas
-- Varie sempre a abertura — NUNCA repita "Bom dia, [nome]! ☀️"
-- Use no máximo 1 emoji
+- Sem compromissos hoje — diga algo positivo e leve sobre o dia, no seu tom
+- Varie SEMPRE a abertura — NUNCA repita "Bom dia, [nome]! ☀️"
+- Máximo 1 emoji
 - NÃO pergunte. NÃO agende nada.
-Tom: ${prefs.tom || 'carinhoso'}.`;
+- NUNCA termine com "bom dia", "boa tarde" ou "boa noite" no final da mensagem`;
         }
 
         const msg = await freeResponse('Envie uma mensagem de bom dia para o usuário.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBomDia });
         if (!msg) { console.log(`[Bom dia] Rate limit, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
+
+        // ── Criar "Meu Dia" — lista especial sem horário ──
+        // Criada automaticamente junto com o bom dia. Respeita flag de
+        // exclusão permanente (meu_dia_desativado) caso o usuário tenha
+        // pedido pra parar de criar.
+        try {
+          const desativado = await prisma.memory.findFirst({
+            where: { userId: user.id, type: 'meu_dia_desativado' }
+          });
+          if (!desativado) {
+            const jaTemHoje = await prisma.memory.findFirst({
+              where: { userId: user.id, type: 'meu_dia_criado', content: dateBRT() }
+            });
+            if (!jaTemHoje) {
+              // Busca tarefas pendentes sem horário ou com horário passado não confirmadas
+              const tarefasPendentes = await prisma.reminder.findMany({
+                where: { userId: user.id, confirmed: false, sent: false,
+                  scheduledAt: { gte: new Date(`${dateBRT()}T00:00:00-03:00`), lte: new Date(`${dateBRT()}T23:59:59-03:00`) }
+                },
+                orderBy: { scheduledAt: 'asc' }, take: 10
+              });
+
+              // Monta lista "Meu Dia" no formato de grocery list existente
+              const itens = tarefasPendentes.map((t, i) => ({
+                id: i + 1,
+                nome: t.message,
+                done: false,
+                lembreteId: t.id
+              }));
+
+              // Adiciona item padrão se lista vazia
+              if (itens.length === 0) {
+                itens.push({ id: 1, nome: 'Adicione tarefas do seu dia aqui 📝', done: false });
+              }
+
+              await prisma.groceryList.create({
+                data: {
+                  userId: user.id,
+                  name: '📅 Meu Dia',
+                  items: JSON.stringify(itens),
+                  done: false
+                }
+              });
+              await prisma.memory.create({
+                data: { userId: user.id, type: 'meu_dia_criado', content: dateBRT() }
+              });
+              console.log(`[Meu Dia] Criado para ${user.phone}`);
+            }
+          }
+        } catch (eMeuDia) { console.error(`[Meu Dia] Erro ${user.phone}:`, eMeuDia.message); }
+
         console.log(`[Bom dia] Enviado para ${user.phone}`);
       } catch (e) { console.error(`[Bom dia] Erro ${user.phone}:`, e.message); }
     }
   } catch (e) { console.error('[Bom dia] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// BOA NOITE INTELIGENTE (21:30)
-cron.schedule('30 21 * * *', async () => {
+// BOA NOITE INTELIGENTE (22:00)
+cron.schedule('0 22 * * *', async () => {
   try {
     const now = nowBRT();
     const hoje = dateBRT(now);
@@ -201,36 +266,40 @@ cron.schedule('30 21 * * *', async () => {
         if (infoPessoal) ctx += infoPessoal;
 
         let systemBoaNoite;
+        const tdBoaNoite = tomDesc(prefs.tom);
         if (totalHoje > 0 || lembretesAmanha.length > 0) {
           systemBoaNoite = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Crie uma mensagem de boa noite OBJETIVA — um resumo rápido do dia, não poética.
+Tom obrigatório: ${tdBoaNoite}
+
+Crie uma mensagem de boa noite OBJETIVA — um resumo rápido do dia, no seu tom.
 
 CONTEXTO DO DIA:
 ${ctx}
 
 REGRAS OBRIGATÓRIAS:
 - 2-3 linhas, direto ao ponto
-- Se concluiu tarefas hoje (${concluidasHoje}/${totalHoje}), parabenize brevemente por isso
+- Se concluiu tarefas hoje (${concluidasHoje}/${totalHoje}), comente brevemente no seu estilo
 - Se tem compromissos amanhã (${lembretesAmanha.length}), mencione a quantidade de forma breve
-- Encerre com algo curto tipo "durma bem, estarei aqui pra te ajudar amanhã" — adaptado ao seu tom
-- Varie a abertura — não repita sempre a mesma frase
+- Varie SEMPRE a abertura — não repita sempre a mesma frase
 - Máximo 1 emoji
-- NÃO seja sentimental ou poética. Seja prática.
-Tom: ${prefs.tom || 'carinhoso'}.`;
+- NÃO seja sentimental ou poética. Seja fiel ao seu tom.
+- NUNCA termine com "boa noite", "bom descanso" ou qualquer saudação de período colada no final`;
         } else {
           systemBoaNoite = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Crie uma mensagem de boa noite SIMPLES — como quem se despede de verdade ao final do dia.
+Tom obrigatório: ${tdBoaNoite}
+
+Crie uma mensagem de boa noite SIMPLES — como quem se despede de verdade ao final do dia, no seu estilo único.
 
 CONTEXTO DO DIA:
 ${ctx}
 
 REGRAS OBRIGATÓRIAS:
-- Máximo 2-3 linhas, sem emojis
+- Máximo 2-3 linhas
 - Considere o dia da semana
-- Varie sempre a abertura
-- Encerre com algo caloroso e diferente a cada dia
+- Varie SEMPRE a abertura
+- Encerre com algo genuíno e diferente a cada dia, no seu tom
 - NÃO mencione falta de compromissos. NÃO pergunte. NÃO agende nada.
-Tom: ${prefs.tom || 'carinhoso'}.`;
+- NUNCA termine com "boa noite", "bom descanso" ou qualquer saudação de período colada no final`;
         }
 
         const msg = await freeResponse('Envie uma mensagem de boa noite para o usuário.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBoaNoite });
@@ -455,19 +524,39 @@ cron.schedule('0 12 * * *', async () => {
     const users = await prisma.user.findMany({ where: { blocked: false } });
     for (const user of users) {
       try {
+        const lockMeioDia = `meio_dia_${hoje}`;
+        if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'meio_dia_lock', content: lockMeioDia } })) continue;
+
         const inicioDia = new Date(`${hoje}T00:00:00-03:00`);
         const meioDia = new Date(`${hoje}T12:00:00-03:00`);
         const pendentes = await prisma.reminder.findMany({
           where: { userId: user.id, sent: true, confirmed: false, scheduledAt: { gte: inicioDia, lt: meioDia } }
         });
         if (!pendentes.length) continue;
-        const lista = pendentes.map(r => {
-          const h = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-          return '• ' + h + ' — ' + r.message;
-        }).join('\n');
+
         const prefs = await prisma.preference.findFirst({ where: { userId: user.id } }).catch(() => null);
-        const nome = prefs?.name || user.name || '';
-        await sendMessage(user.phone, `⏰ ${nome ? nome + ', a' : 'A'}inda tem ${pendentes.length} ${pendentes.length === 1 ? 'tarefa da manhã pendente' : 'tarefas da manhã pendentes'}:\n\n${lista}\n\nConseguiu fazer alguma? Me avisa que dou baixa ou remarco pra você 😊`);
+        const listaPendentes = pendentes.map(r => {
+          const h = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+          return `• ${h} — ${r.message}`;
+        }).join('\n');
+
+        const systemMeioDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
+Tom obrigatório: ${tomDesc(prefs?.tom)}
+
+São 12h do dia. O usuário tem ${pendentes.length} tarefa(s) da manhã que ainda não foram marcadas como concluídas:
+${listaPendentes}
+
+Envie uma mensagem curta e natural (2-3 linhas) no seu tom perguntando se conseguiu fazer alguma dessas tarefas — sem ser cobrador(a), sem listar formalmente, com leveza.
+Diga que pode dar baixa ou remarcar.
+NUNCA termine com "bom dia", "boa tarde" ou "boa noite".`;
+
+        const msg = await freeResponse('Mensagem de meio-dia.', [], {
+          _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso', _systemOverride: systemMeioDia
+        });
+        if (!msg) continue;
+        await sendMessage(user.phone, msg);
+        await prisma.memory.create({ data: { userId: user.id, type: 'meio_dia_lock', content: lockMeioDia } });
+        console.log(`[Meio-dia] Enviado para ${user.phone}`);
       } catch(e) { console.error('[Meio-dia]', e.message); }
     }
   } catch(e) { console.error('[Meio-dia] Erro:', e.message); }
@@ -505,21 +594,33 @@ cron.schedule('30 18 * * *', async () => {
         if (!pendentes.length && !concluidos.length) continue;
 
         const prefs = await prisma.preference.findFirst({ where: { userId: user.id } }).catch(() => null);
-        const nome = prefs?.name || user.name || '';
+        const infoPessoal = await memory.buildPersonalContext(user.id).catch(() => '');
 
-        let msg = `📋 ${nome ? nome + ', r' : 'R'}esumo do seu dia:\n\n`;
-        if (concluidos.length) msg += `✅ Concluídos hoje: ${concluidos.length}\n`;
-        if (pendentes.length) {
-          msg += `\n⚠️ Ainda pendentes (${pendentes.length}):\n`;
-          pendentes.forEach(r => {
-            const h = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-            msg += `• ${h} — ${r.message}\n`;
-          });
-          msg += `\nFez algum desses? Me avisa que dou baixa ou remarca pra amanhã 😊`;
-        } else {
-          msg += `\nTudo resolvido hoje! Que dia produtivo 🎉`;
-        }
+        const listaPendentes = pendentes.map(r => {
+          const h = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+          return `• ${h} — ${r.message}`;
+        }).join('\n');
 
+        const systemFechamento = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
+Tom obrigatório: ${tomDesc(prefs?.tom)}
+
+São 18:30h. Resumo do dia do usuário:
+- Concluídos hoje: ${concluidos.length}
+- Ainda pendentes (${pendentes.length}):
+${listaPendentes || '(nenhum pendente)'}
+${infoPessoal}
+
+Envie uma mensagem natural (2-4 linhas) de fechamento do dia no seu tom:
+- Se tiver pendentes, mencione de forma leve — sem cobrar, perguntando se fez e oferecendo remarcar
+- Se concluiu tudo, celebre no seu estilo
+- Varie SEMPRE — não repita a mesma abertura
+- NÃO liste formalmente. Seja humana e natural.
+- NUNCA termine com "boa noite", "boa tarde" ou qualquer saudação de período`;
+
+        const msg = await freeResponse('Mensagem de fechamento do dia.', [], {
+          _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso', _systemOverride: systemFechamento
+        });
+        if (!msg) { console.log(`[Fechamento] Rate limit, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
         console.log(`[Fechamento] Enviado para ${user.phone}`);
       } catch (e) { console.error(`[Fechamento] Erro ${user.phone}:`, e.message); }
@@ -755,7 +856,7 @@ cron.schedule('0 3 * * *', async () => {
     const ontem = new Date(nowBRT()); ontem.setDate(ontem.getDate() - 2);
     await prisma.memory.deleteMany({
       where: {
-        type: { in: ['med_lock', 'alerta_data_lock', 'proativa_lock', 'sumico_lock', 'bom_dia_lock', 'boa_noite_lock'] },
+        type: { in: ['med_lock', 'alerta_data_lock', 'proativa_lock', 'sumico_lock', 'bom_dia_lock', 'boa_noite_lock', 'meio_dia_lock', 'meu_dia_criado'] },
         createdAt: { lt: ontem }
       }
     });
@@ -815,7 +916,9 @@ cron.schedule('30 8 * * *', async () => {
   } catch (e) { console.error('[Estoque] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// PARCEIRA — avisa 30min antes de cada lembrete
+// PARCEIRA — avisa 30min antes, mas APENAS se detectar urgência no lembrete
+// (médico, reunião, voo, consulta, prazo, etc). Lembretes simples/rotineiros
+// não precisam de aviso antecipado — evita excesso de mensagens.
 cron.schedule('* * * * *', async () => {
   try {
     const now = nowBRT();
@@ -832,8 +935,18 @@ cron.schedule('* * * * *', async () => {
 
     if (!proximos.length) return;
 
+    // Palavras que indicam urgência/importância — só avisa 30min antes
+    // quando o lembrete tem pelo menos uma dessas.
+    const URGENCIA_RE = /medico|médico|médica|medica|consulta|dentista|cirurgia|exame|laboratorio|laboratório|farmacia|farmácia|vacina|hospital|clinica|clínica|psico|terapia|fisio|upa|reuniao|reunião|apresentacao|apresentação|entrevista|prova|concurso|voo|aeroporto|embarque|onibus|ônibus|trem|documento|cartorio|cartório|contrato|assinar|protocolar|prazo|vencimento|vence|renovar|passaporte|entrega|importante|urgente|cnh|rg/i;
+
     for (const r of proximos) {
       try {
+        // Só envia se o lembrete for urgente/importante
+        if (!URGENCIA_RE.test(r.message)) {
+          console.log(`[Parceira] Pulado (sem urgência): "${r.message}"`);
+          continue;
+        }
+
         const lockKey = `parceira_${r.id}`;
         if (await prisma.memory.findFirst({ where: { type: 'parceira_lock', content: lockKey } })) continue;
         await prisma.memory.create({ data: { userId: r.userId, type: 'parceira_lock', content: lockKey } });
@@ -849,25 +962,19 @@ cron.schedule('* * * * *', async () => {
           timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'
         });
 
-        const tomDescP = {
-          carinhoso: 'calorosa e próxima, como amiga que se importa. Use emojis com moderação.',
-          direto: 'direta e objetiva, sem fofice. Vá ao ponto.',
-          divertido: 'animada e bem-humorada, com toque de diversão.',
-          sarcastico: 'sarcástica e sem filtro. Pode zoar levemente o compromisso mas sempre oferece ajuda real. Sem sentimentalismo. Tom ácido mas carinhoso.'
-        }[prefs?.tom || 'carinhoso'] || 'calorosa e próxima';
-
         const systemParceira = `Você é a Clara, parceira pessoal do ${nome || 'usuário'} no WhatsApp.
-SEU TOM AGORA: ${tomDescP}
+Tom obrigatório: ${tomDesc(prefs?.tom)}
 
-Daqui a 30 minutos ele(a) tem: "${r.message}" às ${hora}.
+Daqui a 30 minutos ele(a) tem algo IMPORTANTE: "${r.message}" às ${hora}.
 ${infoPessoal ? `\nO que você sabe sobre ele(a):\n${infoPessoal}` : ''}
 
 Envie UMA mensagem curta (1-2 linhas) como parceira presente:
 - Mencione o compromisso de forma natural, respeitando seu tom
-- Ofereça ajuda ESPECÍFICA para aquele contexto
+- Ofereça ajuda ESPECÍFICA para aquele contexto (ex: "precisa de alguma coisa antes de ir?")
 - NÃO use "lembrete" ou "aviso" — seja natural
 - NÃO agende nada novo
-- Respeite rigorosamente o tom acima — não misture estilos`;
+- Respeite rigorosamente o tom acima — não misture estilos
+- NUNCA termine com "boa sorte", "boa tarde" ou saudação de período`;
 
         const msg = await freeResponse('Envie mensagem de parceira para o compromisso próximo.', [], {
           _contexto: '',
@@ -879,7 +986,7 @@ Envie UMA mensagem curta (1-2 linhas) como parceira presente:
         if (!msg || msg.length < 5) continue;
 
         await sendMessage(user.phone, msg);
-        console.log(`[Parceira] ${user.phone} → "${r.message}" em 30min`);
+        console.log(`[Parceira] ${user.phone} → "${r.message}" em 30min (urgente)`);
       } catch (e) { console.error(`[Parceira] Erro lembrete ${r.id}:`, e.message); }
     }
   } catch (e) { console.error('[Parceira] Erro geral:', e.message); }
