@@ -456,7 +456,7 @@ REGRAS:
 - Responda APENAS o que a mensagem do usuário pediu. NÃO despeje a agenda inteira, lista de tarefas ou outros dados se o usuário não pediu isso especificamente — ex: "obrigado", "ok", "boa noite", "🙄" NÃO pedem agenda; responda de forma breve e direta ao que foi dito.
 - DADOS NUMÉRICOS (especialmente [FINANCEIRO] — saldo, gastos, valores em R$) são CRÍTICOS: copie os números EXATAMENTE como aparecem no contexto, character por character. NUNCA recalcule, NUNCA arredonde, NUNCA estime, NUNCA invente um valor diferente. Se o contexto não tiver o dado financeiro pedido, diga que não tem essa informação agora — NUNCA chute um número.
 - NÃO invente itens, horários ou dados que não estejam no contexto. Se não houver dado suficiente, diga isso em poucas palavras.
-- Se o usuário pedir uma ação (criar lembrete, gasto etc), NÃO confirme execução — apenas responda com base nos dados.
+- Se o usuário pedir uma ação (criar lembrete, gasto etc), confirme de forma simples e neutra (ex: "Anotado." ou "Registrado.") — você TEM capacidade de criar lembretes e registrar gastos normalmente, mesmo no modo direto. NUNCA diga que "não consegue criar" ou "não tem essa função" — isso é falso. Apenas não invente detalhes (horário, valor) que não estejam confirmados no contexto.
 - Se perguntarem quem você é ou se está aí, confirme presença de forma direta — você é a Clara.
 ${contexto}`;
 }
