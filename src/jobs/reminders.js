@@ -708,16 +708,16 @@ cron.schedule('* * * * *', async () => {
           const r = grupo.reminders[0];
           msg = `🔔 Lembrete\n\n${r.message}\n⏰ ${grupo.hora}\n\n${random(finais)}`;
         } else {
-          // Múltiplos lembretes na mesma janela — numera cada um (#1, #2...)
+          // Múltiplos lembretes na mesma janela — numera cada um (1, 2...)
           // para que o usuário consiga confirmar/concluir um específico
-          // sem ambiguidade (ex: "feito o 1", "concluído #2").
-          const titulos = grupo.reminders.map((r, i) => `#${i + 1} • ${r.message}`).join('\n');
-          msg = `🔔 ${grupo.reminders.length} lembretes agora\n\n${titulos}\n\n⏰ ${grupo.hora}\n\n${random(finais)}`;
+          // sem ambiguidade (ex: "feito o 1", "concluído 2").
+          const titulos = grupo.reminders.map((r, i) => `${i + 1}. ${r.message}`).join('\n');
+          msg = `🔔 Você tem ${grupo.reminders.length} lembretes agora\n\n${titulos}\n\n⏰ ${grupo.hora}\n\n${random(finais)}`;
         }
       } catch(e) {
         msg = grupo.reminders.length === 1
           ? `🔔 Lembrete\n\n${grupo.reminders[0].message}\n⏰ ${grupo.hora}\n\n${random(finais)}`
-          : `🔔 ${grupo.reminders.length} lembretes agora\n\n${grupo.reminders.map((r, i) => `#${i + 1} • ${r.message}`).join('\n')}\n\n⏰ ${grupo.hora}\n\n${random(finais)}`;
+          : `🔔 Você tem ${grupo.reminders.length} lembretes agora\n\n${grupo.reminders.map((r, i) => `${i + 1}. ${r.message}`).join('\n')}\n\n⏰ ${grupo.hora}\n\n${random(finais)}`;
       }
 
       await sendMessage(grupo.phone, msg);
