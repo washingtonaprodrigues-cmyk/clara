@@ -77,6 +77,22 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName } = memory;
 
+// Substitui prisma.memory.upsert({ where: { userId_type: {...} } }) — esse
+// nome de campo composto só existe quando o model Memory tem
+// @@unique([userId, type]) no schema, o que NÃO é o caso aqui. Em vez de
+// depender disso, fazemos findFirst + create/update manual.
+async function upsertMemoryPorTipo(userId, type, content) {
+  const existente = await prisma.memory.findFirst({
+    where: { userId, type },
+    orderBy: { createdAt: 'desc' }
+  }).catch(() => null);
+
+  if (existente) {
+    return prisma.memory.update({ where: { id: existente.id }, data: { content } });
+  }
+  return prisma.memory.create({ data: { userId, type, content } });
+}
+
 const MENU = `✨ *Oi, eu sou a Clara.*
 
 Posso cuidar de lembretes, anotações, gastos, saúde, ponto e pesquisas rápidas.
@@ -498,11 +514,7 @@ async function handleMessage(phone, text, location = null) {
 
     // ── Desativar "Meu Dia" permanentemente ──
     if (/para de criar (o\s+)?meu dia|n[aã]o (quero|preciso) (mais )?(o\s+)?meu dia|remove (o\s+)?meu dia|cancela (o\s+)?meu dia/i.test(text)) {
-      await prisma.memory.upsert({
-        where: { userId_type: { userId: user.id, type: 'meu_dia_desativado' } },
-        update: { content: new Date().toISOString() },
-        create: { userId: user.id, type: 'meu_dia_desativado', content: new Date().toISOString() }
-      }).catch(() => {});
+      await upsertMemoryPorTipo(user.id, 'meu_dia_desativado', new Date().toISOString()).catch(() => {});
       return await sendMessage(phone, 'Ok! Não crio mais o "Meu Dia" automaticamente. Se quiser ativar de novo, é só me pedir 😊');
     }
 
@@ -1117,7 +1129,7 @@ async function handleContatoAction(user, phone, classified) {
       if (!contatos.length) { await sendMessage(phone, 'Você ainda não tem contatos salvos. Me diz o número de alguém: "o número do João é 43999998888" 😊'); return; }
       const lista = contatos.map((c, i) => `${i+1}. *${c.name}*${c.relation?` (${c.relation})`:''} — ${c.phone}`).join('\n');
       await sendMessage(phone, `📋 *Seus contatos:*\n\n${lista}\n\nPode dizer "envia mensagem pro contato 2" ou "lembra o contato 1 de tal coisa" 😊`);
-      await prisma.memory.upsert({ where: { userId_type: { userId: user.id, type: 'contatos_listados' } }, update: { content: JSON.stringify(contatos) }, create: { userId: user.id, type: 'contatos_listados', content: JSON.stringify(contatos) } }).catch(() => {});
+      await upsertMemoryPorTipo(user.id, 'contatos_listados', JSON.stringify(contatos)).catch(() => {});
       return;
     }
     if (classified.tipo === 'deletar_contato') {
@@ -1337,14 +1349,7 @@ async function updateRelationshipSummary(userId, history, lastReply) {
     const msgs = [...history.slice(-10), { role: 'assistant', content: lastReply }];
     const novoResumo = await generateRelationshipSummary(msgs, current?.content || '');
     if (novoResumo) {
-      await prisma.memory.upsert({
-        where: { userId_type: { userId, type: 'relationship_summary' } },
-        update: { content: novoResumo },
-        create: { userId, type: 'relationship_summary', content: novoResumo }
-      }).catch(async () => {
-        await prisma.memory.deleteMany({ where: { userId, type: 'relationship_summary' } });
-        await prisma.memory.create({ data: { userId, type: 'relationship_summary', content: novoResumo } });
-      });
+      await upsertMemoryPorTipo(userId, 'relationship_summary', novoResumo).catch(() => {});
     }
   } catch(e) {}
 }
