@@ -567,7 +567,7 @@ cron.schedule('0 12 * * *', async () => {
         });
         if (!pendentes.length) continue;
 
-        const prefs = await prisma.preference.findFirst({ where: { userId: user.id } }).catch(() => null);
+        const prefs = await memory.getUserPreference(user.id).catch(() => null);
         const listaPendentes = pendentes.map(r => {
           const h = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
           return `• ${h} — ${r.message}`;
@@ -626,7 +626,7 @@ cron.schedule('30 18 * * *', async () => {
 
         if (!pendentes.length && !concluidos.length) continue;
 
-        const prefs = await prisma.preference.findFirst({ where: { userId: user.id } }).catch(() => null);
+        const prefs = await memory.getUserPreference(user.id).catch(() => null);
         const infoPessoal = await memory.buildPersonalContext(user.id).catch(() => '');
 
         // Identifica quais pendentes são urgentes (médico, reunião, etc) —
@@ -698,7 +698,7 @@ cron.schedule('* * * * *', async () => {
       let msg;
       try {
         const user = await prisma.user.findFirst({ where: { phone: grupo.phone } });
-        const prefs = user ? await prisma.preference.findFirst({ where: { userId: user.id } }) : null;
+        const prefs = user ? await memory.getUserPreference(user.id).catch(() => null) : null;
         const nome = prefs?.name || user?.name || null;
 
         const isFollowup = grupo.reminders.length === 1 && grupo.reminders[0].message.startsWith('__followup__');
@@ -728,7 +728,7 @@ cron.schedule('* * * * *', async () => {
           if (!isUrgente) continue;
 
           const user = await prisma.user.findFirst({ where: { phone: grupo.phone } });
-          const prefs = user ? await prisma.preference.findFirst({ where: { userId: user.id } }) : null;
+          const prefs = user ? await memory.getUserPreference(user.id).catch(() => null) : null;
 
           const quinzeAntes = new Date(r.scheduledAt.getTime() - 15 * 60 * 1000);
           if (quinzeAntes > new Date()) {
@@ -1018,7 +1018,7 @@ cron.schedule('* * * * *', async () => {
         const user = await prisma.user.findFirst({ where: { id: r.userId } });
         if (!user?.phone) continue;
 
-        const prefs = await prisma.preference.findFirst({ where: { userId: r.userId } }).catch(() => null);
+        const prefs = await memory.getUserPreference(r.userId).catch(() => null);
         const nome = prefs?.name || user.name || null;
         const infoPessoal = await memory.buildPersonalContext(r.userId).catch(() => '');
 
