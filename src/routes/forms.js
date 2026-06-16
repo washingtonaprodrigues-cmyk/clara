@@ -1,9 +1,38 @@
 const express = require('express');
 const router = express.Router();
 const memory = require('../services/memory');
-const { sendMessage } = require('../services/whatsapp');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+
+// sendMessage/sendButtons com fallback direto via axios — mesmo padrão
+// usado em handler.js e reminders.js, evita "sendButtons is not a function"
+// quando require('../services/whatsapp') falha ao carregar.
+async function sendMessage(phone, msg, delay) {
+  try {
+    const w = require('../services/whatsapp');
+    if (w && typeof w.sendMessage === 'function') return w.sendMessage(phone, msg, delay);
+  } catch (e) {
+    console.error('[Forms] Erro ao carregar whatsapp.js:', e.message);
+  }
+  const axios = require('axios');
+  const BASE_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
+  const TOKEN = process.env.UAZAPI_TOKEN;
+  console.log(`[Forms/Fallback] Enviando direto para ${phone}: ${String(msg).slice(0,60)}`);
+  return axios.post(`${BASE_URL}/send/text`,
+    { number: phone, text: msg, delay: delay || 800 },
+    { headers: { token: TOKEN, 'Content-Type': 'application/json' }, timeout: 30000 }
+  );
+}
+
+async function sendButtons(phone, msg, buttons) {
+  try {
+    const w = require('../services/whatsapp');
+    if (w && typeof w.sendButtons === 'function') return w.sendButtons(phone, msg, buttons);
+  } catch (e) {
+    console.error('[Forms] Erro ao carregar whatsapp.js (sendButtons):', e.message);
+  }
+  return sendMessage(phone, msg);
+}
 
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
@@ -100,7 +129,6 @@ router.post('/gasto/:phone', async (req, res) => {
     const { phone } = req.params;
     const { valor, categoria, descricao, data } = req.body;
     const user = await memory.getOrCreateUser(phone);
-    // Se vier data customizada, usa ela; senão usa agora
     const createdAt = data ? new Date(data + 'T12:00:00-03:00') : undefined;
     await memory.saveExpense(user.id, { valor, categoria, descricao, createdAt });
     res.json({ ok: true });
@@ -147,8 +175,6 @@ router.post('/ponto/:phone', async (req, res) => {
     const user = await memory.getOrCreateUser(phone);
     const body = req.body;
 
-    function nowBRT() { return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })); }
-    function dateBRT() { const d = nowBRT(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
     function toTimestamp(horaStr) {
       if (!horaStr) return null;
       const [h, m] = horaStr.split(':').map(Number);
@@ -354,7 +380,6 @@ router.post('/preferencia/:phone', async (req, res) => {
     const user = await memory.getOrCreateUser(phone);
     const saldoNum = (saldo !== undefined && saldo !== null && saldo !== '') ? parseFloat(saldo) : null;
 
-    // Verifica se o tom realmente mudou, para enviar confirmação só quando relevante
     const prefsAntigas = await memory.getUserPreference(user.id).catch(() => null);
     const tomMudou = tom && prefsAntigas?.tom !== tom;
 
@@ -473,12 +498,9 @@ router.post('/lembrete/:phone', async (req, res) => {
 
     await memory.saveMemory(user.id, 'tarefa', titulo, { data, hora });
 
-    // ── FIX: res.json antes do sendButtons para não depender do WhatsApp ──
     res.json({ ok: true });
 
-    // Notifica no WhatsApp em background (não bloqueia a resposta)
     try {
-      const { sendButtons } = require('../services/whatsapp');
       const dataFormatada = scheduledAt.toLocaleString('pt-BR', {
         timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short'
       });
@@ -524,17 +546,19 @@ router.put('/lembrete-remarcar/:id', async (req, res) => {
       data: { scheduledAt, sent: false, confirmed: false }
     });
 
-    const { sendButtons } = require('../services/whatsapp');
-    const dataFormatada = scheduledAt.toLocaleString('pt-BR', {
-      timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short'
-    });
-
-    await sendButtons(lembrete.phone,
-      `✅ Lembrete remarcado!\n\n📌 ${lembrete.message}\n🕒 ${dataFormatada}\n\nVou te avisar no horário certinho.`,
-      [{ id: 'ver_lembretes', label: '📋 Ver lembretes' }, { id: 'menu', label: '🏠 Menu' }]
-    );
-
     res.json({ ok: true });
+
+    try {
+      const dataFormatada = scheduledAt.toLocaleString('pt-BR', {
+        timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short'
+      });
+      await sendButtons(lembrete.phone,
+        `✅ Lembrete remarcado!\n\n📌 ${lembrete.message}\n🕒 ${dataFormatada}\n\nVou te avisar no horário certinho.`,
+        [{ id: 'ver_lembretes', label: '📋 Ver lembretes' }, { id: 'menu', label: '🏠 Menu' }]
+      );
+    } catch (wErr) {
+      console.error('[lembrete-remarcar] Erro ao notificar WhatsApp:', wErr.message);
+    }
   } catch (e) {
     console.error('Erro remarcar lembrete:', e.message);
     res.status(500).json({ error: e.message });
@@ -684,13 +708,16 @@ router.post('/remedio/:phone', async (req, res) => {
     const termina = new Date();
     if (dias > 0) termina.setDate(termina.getDate() + dias);
 
-    const { sendButtons } = require('../services/whatsapp');
-    await sendButtons(phone,
-      `✅ Remédio anotado!\n\n💊 ${nome}\n🕒 ${horarios.join(', ')}\n📅 ${dias > 0 ? dias + ' dias · termina ' + termina.toLocaleDateString('pt-BR') : 'uso contínuo'}\n\nVou te lembrar nos horários certinhos.`,
-      [{ id: 'ver_medicamentos', label: '💊 Ver remédios' }, { id: 'menu', label: '🏠 Menu' }]
-    );
-
     res.json({ ok: true });
+
+    try {
+      await sendButtons(phone,
+        `✅ Remédio anotado!\n\n💊 ${nome}\n🕒 ${horarios.join(', ')}\n📅 ${dias > 0 ? dias + ' dias · termina ' + termina.toLocaleDateString('pt-BR') : 'uso contínuo'}\n\nVou te lembrar nos horários certinhos.`,
+        [{ id: 'ver_medicamentos', label: '💊 Ver remédios' }, { id: 'menu', label: '🏠 Menu' }]
+      );
+    } catch (wErr) {
+      console.error('[remedio] Erro ao notificar WhatsApp:', wErr.message);
+    }
   } catch (e) {
     console.error('Erro form remedio:', e.message);
     res.status(500).json({ error: e.message });
@@ -790,8 +817,6 @@ router.post('/ponto/:phone', async (req, res) => {
     const { entrada, saida_almoco, volta_almoco, saida } = req.body;
     const user = await memory.getOrCreateUser(phone);
 
-    function nowBRT() { return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })); }
-    function dateBRT() { const d = nowBRT(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
     function toTimestamp(horaStr) {
       if (!horaStr) return null;
       const [h, m] = horaStr.split(':').map(Number);
@@ -822,7 +847,6 @@ router.post('/ponto/:phone', async (req, res) => {
       orderBy: { timestamp: 'asc' }
     });
 
-    const { sendButtons } = require('../services/whatsapp');
     const { getJornada } = require('../services/memory');
 
     const pad = n => String(n).padStart(2, '0');
@@ -859,12 +883,16 @@ router.post('/ponto/:phone', async (req, res) => {
       texto += `\n\nBom descanso 💜`;
     }
 
-    await sendButtons(phone, texto, [
-      { id: 'ver_horas_hoje', label: '📋 Ver horas hoje' },
-      { id: 'menu', label: '🏠 Menu' },
-    ]);
-
     res.json({ ok: true });
+
+    try {
+      await sendButtons(phone, texto, [
+        { id: 'ver_horas_hoje', label: '📋 Ver horas hoje' },
+        { id: 'menu', label: '🏠 Menu' },
+      ]);
+    } catch (wErr) {
+      console.error('[ponto] Erro ao notificar WhatsApp:', wErr.message);
+    }
   } catch (e) {
     console.error('Erro form ponto:', e.message);
     res.status(500).json({ error: e.message });
@@ -1018,13 +1046,11 @@ router.post('/lista-arquivar/:id', async (req, res) => {
 router.put('/lista-reorder/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { items: newOrder } = req.body; // array de ids na nova ordem
+    const { items: newOrder } = req.body;
     const lista = await prisma.groceryList.findUnique({ where: { id } });
     if (!lista) return res.status(404).json({ error: 'Lista não encontrada' });
     let items = []; try { items = JSON.parse(lista.items); } catch {}
-    // Reordena mantendo os dados de cada item
     const reordered = newOrder.map(id => items.find(i => i.id === id)).filter(Boolean);
-    // Adiciona itens que não estavam no newOrder (segurança)
     items.forEach(i => { if (!reordered.find(r => r.id === i.id)) reordered.push(i); });
     await prisma.groceryList.update({ where: { id }, data: { items: JSON.stringify(reordered) } });
     res.json({ ok: true, items: reordered });
