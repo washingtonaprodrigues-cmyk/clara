@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { handleMessage } = require('../services/handler');
 const { sendMessage, sendButtons } = require('../services/whatsapp');
-const { enviarRespostaComAudio } = require('../services/audio');
+const { enviarRespostaComAudio, ttsDisponivel } = require('../services/audio');
 const memory = require('../services/memory');
 const rateLimit = require('../services/rateLimit');
 const { PrismaClient } = require('@prisma/client');
@@ -298,34 +298,25 @@ async function transcribeAndProcess(phone, body) {
     }
     console.log(`[Áudio] ${phone} transcrito: "${texto.slice(0, 80)}"`);
 
-    // ── Resposta com áudio (TTS) ──
-    // Intercepta o sendMessage original para também gerar áudio de resposta
-    // quando a mensagem veio de um áudio do usuário.
-    const { sendMessage: sendMessageOriginal } = require('../services/whatsapp');
-    let primeiraResposta = true;
-    const sendMessageComAudio = async (ph, msg, delay) => {
-      await sendMessageOriginal(ph, msg, delay);
-      // Só gera áudio pra primeira resposta (a principal) e só pra este phone
-      if (primeiraResposta && ph === phone) {
-        primeiraResposta = false;
-        // Fire-and-forget: áudio é bônus, não bloqueia nem falha o fluxo
-        enviarRespostaComAudio(phone, msg).catch(e =>
-          console.error('[TTS] Erro no fire-and-forget:', e.message)
-        );
-      }
-    };
+    // Processa a mensagem normalmente
+    await handleMessage(phone, texto);
 
-    // Substitui temporariamente o sendMessage no módulo whatsapp
-    // pra interceptar a resposta gerada pelo handleMessage
-    const whatsappModule = require('../services/whatsapp');
-    const sendOriginal = whatsappModule.sendMessage;
-    whatsappModule.sendMessage = sendMessageComAudio;
-
-    try {
-      await handleMessage(phone, texto);
-    } finally {
-      // Restaura o sendMessage original independente de erro
-      whatsappModule.sendMessage = sendOriginal;
+    // ── Resposta com áudio (TTS) — fire-and-forget ──
+    // Após o handleMessage terminar, busca a última resposta da Clara
+    // no histórico de conversa e gera o áudio dela via ElevenLabs.
+    if (ttsDisponivel()) {
+      (async () => {
+        try {
+          const user = await memory.getOrCreateUser(phone);
+          const history = await memory.getConversationHistory(user.id, 2);
+          const ultimaResposta = [...history].reverse().find(m => m.role === 'assistant');
+          if (ultimaResposta?.content && ultimaResposta.content.length <= 500) {
+            await enviarRespostaComAudio(phone, ultimaResposta.content);
+          }
+        } catch (eTTS) {
+          console.error('[TTS] Erro ao buscar/enviar áudio:', eTTS.message);
+        }
+      })();
     }
   } catch (e) {
     console.error('[Áudio] Erro:', e.message);
