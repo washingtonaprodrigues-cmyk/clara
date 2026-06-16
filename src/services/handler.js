@@ -1,8 +1,10 @@
 const { classify, extractPersonalInfo, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao } = require('./groq');
-const whatsapp = require('./whatsapp');
-const sendMessage = (...args) => whatsapp.sendMessage(...args);
-const sendButtons = (...args) => whatsapp.sendButtons(...args);
-const sendReminderWithButtons = (...args) => whatsapp.sendReminderWithButtons(...args);
+
+// sendMessage/sendButtons são resolvidos lazy pra evitar circular dependency
+// com o groq.js que também importa whatsapp internamente (no ativarModoDireto).
+function sendMessage(...args) { return require('./whatsapp').sendMessage(...args); }
+function sendButtons(...args) { return require('./whatsapp').sendButtons(...args); }
+function sendReminderWithButtons(...args) { return require('./whatsapp').sendReminderWithButtons(...args); }
 const memory = require('./memory');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
