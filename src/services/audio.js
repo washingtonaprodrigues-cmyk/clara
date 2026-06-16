@@ -119,6 +119,21 @@ async function enviarRespostaComAudio(phone, texto) {
     return true;
   } catch (e) {
     console.error(`[TTS] Erro ao gerar/enviar áudio para ${phone}:`, e.message);
+    // ── Log detalhado para diagnóstico ──
+    // axios coloca o corpo da resposta de erro em e.response.data — como
+    // a chamada usa responseType 'arraybuffer', o corpo de erro também
+    // vem como buffer e precisa ser decodificado para string antes de logar.
+    if (e.response) {
+      console.error(`[TTS] Status HTTP: ${e.response.status}`);
+      try {
+        const corpoErro = Buffer.isBuffer(e.response.data)
+          ? e.response.data.toString('utf-8')
+          : JSON.stringify(e.response.data);
+        console.error(`[TTS] Corpo do erro: ${corpoErro}`);
+      } catch (eLog) {
+        console.error(`[TTS] Não foi possível decodificar corpo do erro:`, eLog.message);
+      }
+    }
     // Falha silenciosa — o texto já foi enviado, o áudio é bônus
     return false;
   }
