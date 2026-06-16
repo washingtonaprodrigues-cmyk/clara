@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { handleMessage } = require('../services/handler');
 const { sendMessage, sendButtons } = require('../services/whatsapp');
+const { enviarRespostaComAudio } = require('../services/audio');
 const memory = require('../services/memory');
 const rateLimit = require('../services/rateLimit');
 const { PrismaClient } = require('@prisma/client');
@@ -259,7 +260,7 @@ async function transcribeAndProcess(phone, body) {
       await sendMessage(phone, 'Não consegui processar o áudio 😕 Pode digitar?');
       return;
     }
-    console.log('[Áudio] Baixando messageId:', messageId);
+    console.log(`[Áudio] Baixando messageId:`, messageId);
     const UAZAPI_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
     const UAZAPI_TOKEN = process.env.UAZAPI_TOKEN;
     const dlRes = await fetch(`${UAZAPI_URL}/message/download`, {
@@ -296,7 +297,36 @@ async function transcribeAndProcess(phone, body) {
       return;
     }
     console.log(`[Áudio] ${phone} transcrito: "${texto.slice(0, 80)}"`);
-    await handleMessage(phone, texto);
+
+    // ── Resposta com áudio (TTS) ──
+    // Intercepta o sendMessage original para também gerar áudio de resposta
+    // quando a mensagem veio de um áudio do usuário.
+    const { sendMessage: sendMessageOriginal } = require('../services/whatsapp');
+    let primeiraResposta = true;
+    const sendMessageComAudio = async (ph, msg, delay) => {
+      await sendMessageOriginal(ph, msg, delay);
+      // Só gera áudio pra primeira resposta (a principal) e só pra este phone
+      if (primeiraResposta && ph === phone) {
+        primeiraResposta = false;
+        // Fire-and-forget: áudio é bônus, não bloqueia nem falha o fluxo
+        enviarRespostaComAudio(phone, msg).catch(e =>
+          console.error('[TTS] Erro no fire-and-forget:', e.message)
+        );
+      }
+    };
+
+    // Substitui temporariamente o sendMessage no módulo whatsapp
+    // pra interceptar a resposta gerada pelo handleMessage
+    const whatsappModule = require('../services/whatsapp');
+    const sendOriginal = whatsappModule.sendMessage;
+    whatsappModule.sendMessage = sendMessageComAudio;
+
+    try {
+      await handleMessage(phone, texto);
+    } finally {
+      // Restaura o sendMessage original independente de erro
+      whatsappModule.sendMessage = sendOriginal;
+    }
   } catch (e) {
     console.error('[Áudio] Erro:', e.message);
     await sendMessage(phone, 'Tive um problema com o áudio 😕 Pode digitar?');
