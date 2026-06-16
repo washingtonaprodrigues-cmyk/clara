@@ -13,7 +13,7 @@
 const axios = require('axios');
 
 const ELEVENLABS_API_KEY  = process.env.ELEVENLABS_API_KEY;
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'RGymW84CSmfVugnA5tvA';
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM'; // Rachel — default voice, funciona no free tier
 const BASE_URL            = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
 const UAZAPI_TOKEN        = process.env.UAZAPI_TOKEN;
 
