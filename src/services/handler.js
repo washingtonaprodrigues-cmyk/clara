@@ -350,11 +350,12 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     const resp = await freeResponse(text, history, preferences);
     if (resp === null) return; // modo direto: já avisado, não responde
 
+    // Garante que resp é string — o Gemini pode retornar objeto em casos de erro
+    const respStr = typeof resp === 'string' ? resp : String(resp || '');
+    if (!respStr) return;
+
     // ── Busca proativa: Clara sinalizou que quer pesquisar ──
-    // Quando o modelo retorna __BUSCAR:query__, a Clara não sabe a resposta
-    // e pediu pra pesquisar. Interceptamos, fazemos a busca real, e
-    // devolvemos o resultado em uma mensagem no tom dela.
-    const buscaMatch = resp.match(/__BUSCAR:(.+?)(__|\n|$)/);
+    const buscaMatch = respStr.match(/__BUSCAR:(.+?)(__|\n|$)/);
     if (buscaMatch) {
       const query = buscaMatch[1].trim();
       // Avisa que vai pesquisar, no estilo da Clara
@@ -385,9 +386,9 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     }
 
     await memory.saveConversationMessage(user.id, 'user', text);
-    await memory.saveConversationMessage(user.id, 'assistant', resp);
-    await sendMessage(phone, resp);
-    updateRelationshipSummary(user.id, history, resp).catch(() => {});
+    await memory.saveConversationMessage(user.id, 'assistant', respStr);
+    await sendMessage(phone, respStr);
+    updateRelationshipSummary(user.id, history, respStr).catch(() => {});
   } catch (e) {
     console.error(`[${phone}] Erro responderLivre:`, e.message);
     await sendMessage(phone, 'Ops, tive um probleminha. Pode repetir?');
