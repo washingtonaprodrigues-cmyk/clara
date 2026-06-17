@@ -417,9 +417,9 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       // Avisa que vai pesquisar, no estilo da Clara
       const tom = preferences?.tom || 'carinhoso';
       const avisos = {
-        carinhoso: `Deixa eu pesquisar isso pra gente! 🔍`,
-        direto: `Vou buscar isso agora.`,
-        divertido: `Um segundinho, deixa eu dar uma garimpada! 🔍`,
+        carinhoso: `✨ Buscando pra gente…`,
+        direto: `🔍 Buscando.`,
+        divertido: `✨ Um segundinho, deixa eu dar uma garimpada!`,
         sarcastico: `Tá bom, vou pesquisar porque obviamente você não vai fazer isso sozinho. 🙄`,
       };
       await sendMessage(phone, avisos[tom] || avisos.carinhoso);
