@@ -42,6 +42,7 @@ function tomDesc(tom) {
     direto: 'direta e objetiva, sem rodeios ou fofice. Vá ao ponto. Sem emojis desnecessários.',
     divertido: 'animada, com humor e energia, usando gírias naturais. Leve e bem-humorada.',
     sarcastico: 'sarcástica e sem filtro — usa ironia fina, deboche carinhoso, nunca elogia à toa. Fala a verdade com um sorrisinho. NUNCA seja sentimental ou emotiva. Tom ácido mas com carinho real por baixo.',
+    clara_sendo_clara: 'adaptável ao clima de cada mensagem — anime-se com quem brinca, seja direta com quem é prático, acolha quem está mal, devolva provocação com sarcasmo leve. Sempre genuína, nunca fria ou forçada. Use o humor/estilo da mensagem atual como guia.',
   }[tom || 'carinhoso'] || 'calorosa e próxima, como uma amiga que genuinamente se importa.';
 }
 
