@@ -311,6 +311,29 @@ router.post('/remedio-tomado/:id', async (req, res) => {
   }
 });
 
+// ====================== REMÉDIO: AJUSTAR ESTOQUE (doses restantes) ======================
+// Permite corrigir manualmente o número de doses restantes — útil quando
+// o usuário tomou mais de uma dose no dia, errou a contagem, ou repôs o
+// estoque (comprou uma caixa nova).
+router.put('/remedio-estoque/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { remaining } = req.body;
+    const remainingNum = parseInt(remaining);
+    if (isNaN(remainingNum) || remainingNum < 0) {
+      return res.status(400).json({ error: 'Quantidade inválida' });
+    }
+    const med = await prisma.medication.update({
+      where: { id },
+      data: { remaining: remainingNum }
+    });
+    res.json({ ok: true, remaining: med.remaining });
+  } catch (e) {
+    console.error('Erro ajustar estoque remedio:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== LIMPAR CONVERSA ======================
 router.post('/conversa-limpar/:phone', async (req, res) => {
   try {
@@ -1057,6 +1080,53 @@ router.put('/lista-reorder/:id', async (req, res) => {
     res.json({ ok: true, items: reordered });
   } catch (e) {
     console.error('Erro reorder lista:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== ADMIN: LISTAR USUÁRIOS (debug/limpeza) ======================
+// Rota temporária para identificar usuários duplicados/incorretos no banco.
+// Mostra todos os usuários com contagem de dados relacionados, para decidir
+// com segurança quais merecem ser removidos. REMOVER após a limpeza.
+router.get('/admin/usuarios', async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: 'asc' },
+      include: {
+        _count: {
+          select: { reminders: true, medications: true, expenses: true, groceryLists: true }
+        }
+      }
+    });
+    const resumo = users.map(u => ({
+      id: u.id,
+      phone: u.phone,
+      name: u.name,
+      blocked: u.blocked,
+      createdAt: u.createdAt,
+      lembretes: u._count.reminders,
+      medicamentos: u._count.medications,
+      gastos: u._count.expenses,
+      listas: u._count.groceryLists,
+    }));
+    res.json(resumo);
+  } catch (e) {
+    console.error('Erro admin/usuarios:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ====================== ADMIN: BLOQUEAR USUÁRIO (não deletar dados) ======================
+// Marca um usuário como blocked=true em vez de deletar — assim os crons
+// (bom dia, boa noite, etc) param de notificar esse número, mas os dados
+// continuam no banco caso seja preciso recuperar algo depois.
+router.post('/admin/bloquear/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.user.update({ where: { id }, data: { blocked: true } });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro admin/bloquear:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
