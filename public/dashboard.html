@@ -651,12 +651,12 @@ select option{background:var(--s2)}
           </div>
           <div class="fin-btns-row">
             <button class="fin-action-btn entrada" onclick="openModal('m-entrada')">
-              <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
-              Entrada
+              <svg viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+              Recebi
             </button>
             <button class="fin-action-btn saida" onclick="openModal('m-gasto')">
-              <svg viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-              Saída
+              <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+              Gastei
             </button>
           </div>
         </div>
@@ -693,7 +693,7 @@ select option{background:var(--s2)}
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
               <div class="cfg-mood-grid cfg-mood-grid-3" style="border-right:1px solid var(--border)">
                 <div class="cfg-mood-item active" onclick="selectMood('clara_sendo_clara')" data-mood="clara_sendo_clara">
-                  <div class="cfg-mood-emoji">🙎🏻‍♀️</div>
+                  <div class="cfg-mood-emoji">👩🏻</div>
                   <div class="cfg-mood-info"><div class="cfg-mood-name">Clara Sendo Clara</div><div class="cfg-mood-desc">Se adapta a você</div></div>
                   <div class="cfg-mood-radio"></div>
                 </div>
@@ -1281,7 +1281,47 @@ async function delGasto(id,wrapEl){
 }
 
 async function renderCofre(){const el=document.getElementById('cofre-body');el.innerHTML='<div class="spin"></div>';try{const r=await fetch(`/forms/cofre/${phone}`);const items=await r.json();displayCofre(items);}catch{el.innerHTML='<div class="empty"><span class="empty-icon">🔐</span>Nenhum segredo salvo</div>';}}
-function displayCofre(items){const el=document.getElementById('cofre-body');if(!items.length){el.innerHTML='<div class="empty"><span class="empty-icon">🔐</span>Nenhum segredo salvo ainda</div>';return;}const icons={senha:'🔑',cartao:'💳',nota:'📝',outro:'📦'};el.innerHTML=items.map(item=>{let d={};try{d=JSON.parse(item.content);}catch{}let fields='';if(d.tipo==='senha'){if(d.email)fields+=`<div class="cofre-field"><span style="min-width:50px">Email:</span><span class="cofre-val">${d.email}</span></div>`;if(d.senha)fields+=`<div class="cofre-field"><span style="min-width:50px">Senha:</span><span class="cofre-hidden" id="pw-${item.id}">••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.senha)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}else if(d.tipo==='cartao'){if(d.num)fields+=`<div class="cofre-field"><span style="min-width:50px">Número:</span><span class="cofre-hidden" id="pw-${item.id}">•••• •••• •••• ••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.num)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}else{const txt=d.nota||d.outro||'';if(txt)fields+=`<div class="cofre-field"><span class="cofre-hidden" id="pw-${item.id}">••••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(txt)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;}return`<div class="cofre-card"><div class="cofre-card-body"><div class="cofre-top"><div class="cofre-name"><span class="cofre-lock" id="lock-${item.id}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path class="lock-shackle" d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span> ${d.nome||'Sem nome'}</div></div>${fields}<div class="cofre-date">Salvo em ${fmtD(item.createdAt)}</div></div><button class="med2-del" onclick="delCofre('${item.id}')" title="Excluir" style="flex-shrink:0;align-self:center"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button></div>`;}).join('');}
+function displayCofre(items){
+  const el=document.getElementById('cofre-body');
+  if(!items.length){el.innerHTML='<div class="empty"><span class="empty-icon">🔐</span>Nenhum segredo salvo ainda</div>';return;}
+  const icons={senha:'🔑',cartao:'💳',nota:'📝',outro:'📦'};
+  el.innerHTML=items.map(item=>{
+    let d={};try{d=JSON.parse(item.content);}catch{}
+    let fields='';
+    if(d.tipo==='senha'){
+      if(d.email)fields+=`<div class="cofre-field"><span style="min-width:50px">Email:</span><span class="cofre-val">${d.email}</span></div>`;
+      if(d.senha)fields+=`<div class="cofre-field"><span style="min-width:50px">Senha:</span><span class="cofre-hidden" id="pw-${item.id}">••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.senha)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;
+    }else if(d.tipo==='cartao'){
+      if(d.num)fields+=`<div class="cofre-field"><span style="min-width:50px">Número:</span><span class="cofre-hidden" id="pw-${item.id}">•••• •••• •••• ••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.num)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;
+    }else{
+      const txt=d.nota||d.outro||'';
+      // Detecta se o conteúdo parece uma LISTA de credenciais (um ou mais
+      // pares "email senha/código") e formata cada par em linha separada,
+      // em vez de um bloco de texto corrido.
+      const regexPar=/(\S+@\S+\.\S+)\s+(\S+)/g;
+      const pares=[];
+      let m;
+      while((m=regexPar.exec(txt))!==null) pares.push({ usuario:m[1], senha:m[2] });
+      const pareceLista=pares.length>=2;
+
+      if(pareceLista){
+        fields+=`<div class="cofre-field" style="flex-direction:column;align-items:stretch;gap:4px">`;
+        pares.forEach((par,i)=>{
+          const idLinha=`${item.id}-${i}`;
+          fields+=`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border)">`+
+            `<span class="cofre-val" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${par.usuario}</span>`+
+            `<span class="cofre-hidden" id="pw-${idLinha}" style="flex-shrink:0">••••••••</span>`+
+            `<button class="cofre-eye" onclick="togglePw('${idLinha}','${btoa(unescape(encodeURIComponent(par.senha)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>`+
+          `</div>`;
+        });
+        fields+=`</div>`;
+      }else if(txt){
+        fields+=`<div class="cofre-field"><span class="cofre-hidden" id="pw-${item.id}">••••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(txt)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;
+      }
+    }
+    return `<div class="cofre-card"><div class="cofre-card-body"><div class="cofre-top"><div class="cofre-name"><span class="cofre-lock" id="lock-${item.id}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path class="lock-shackle" d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span> ${d.nome||'Sem nome'}</div></div>${fields}<div class="cofre-date">Salvo em ${fmtD(item.createdAt)}</div></div><button class="med2-del" onclick="delCofre('${item.id}')" title="Excluir" style="flex-shrink:0;align-self:center"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button></div>`;
+  }).join('');
+}
 function togglePw(id,b64){
   const el=document.getElementById('pw-'+id);
   const lock=document.getElementById('lock-'+id);
