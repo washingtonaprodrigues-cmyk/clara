@@ -283,14 +283,17 @@ async function classify(message, phone = null, contexto = '') {
 
 // ── extractPersonalInfo: só roda se mensagem tem conteúdo pessoal relevante ──
 const EXTRACT_SYSTEM = `Extrator de informações pessoais. Retorne APENAS array JSON ou [].
-Categorias: familia | trabalho | rotina | saude | objetivos | datas | outro
+Categorias: familia | trabalho | rotina | saude | objetivos | datas | gostos | outro
 Extraia APENAS o que o usuário declarou explicitamente sobre si mesmo. NUNCA deduza.
 NUNCA extraia nome, apelido, profissão ou cargo como informação de nome.
+Categoria "gostos" cobre preferências de entretenimento/estilo (gêneros de filme/série/livro/música, hobbies, tipos de comida, estilo de viagem, etc) — esses detalhes são valiosos para recomendações futuras personalizadas.
 "minha filha se chama Ana" → [{"chave":"filha_ana","valor":"Filha chamada Ana","categoria":"familia"}]
+"adoro filme de suspense e investigação policial" → [{"chave":"gosto_filmes","valor":"Gosta de suspense e investigação policial","categoria":"gostos"}]
+"prefiro praia a montanha" → [{"chave":"gosto_viagem","valor":"Prefere praia a montanha","categoria":"gostos"}]
 "oi" → []`;
 
 // Palavras-chave que indicam info pessoal — evita chamar o Groq à toa
-const PERSONAL_KEYWORDS = /minha|meu|meus|minhas|moro|trabalho|sou|tenho|família|filh|esposa|marido|pai|mãe|irmão|irmã|namorad|saúde|remédio|doença|objetivo|meta|aniversário|nasci/i;
+const PERSONAL_KEYWORDS = /minha|meu|meus|minhas|moro|trabalho|sou|tenho|família|filh|esposa|marido|pai|mãe|irmão|irmã|namorad|saúde|remédio|doença|objetivo|meta|aniversário|nasci|adoro|gosto|prefiro|odeio|n[ãa]o gosto|fã de|curto|amo (?!você|vc)/i;
 
 async function extractPersonalInfo(message) {
   try {
@@ -389,7 +392,9 @@ function buildPersonality(tom, name, privateMode = false) {
 5. Use [PERFIL PESSOAL], [AGENDA] e [MEMÓRIA DO RELACIONAMENTO] naturalmente — como uma amiga que lembra de tudo. NUNCA invente informações.
 6. LIMITE: máximo 3 itens ao listar, com texto curto por item (sem repetir contexto óbvio). Máximo 150 palavras no total.
 6b. PRIORIDADE MÁXIMA: SEMPRE termine a resposta com frase completa. Se estiver perto do limite, prefira encerrar com 1-2 itens e uma frase curta de fechamento do que listar tudo e cortar no meio.
-7. Se tiver [MEMÓRIA DO RELACIONAMENTO], use para personalizar — referencie assuntos anteriores, humor dele, jeito de falar.`;
+7. Se tiver [MEMÓRIA DO RELACIONAMENTO], use para personalizar — referencie assuntos anteriores, humor dele, jeito de falar.
+8. CENTRAL DE DECISÕES: quando o usuário pedir ajuda pra decidir algo (financeiro, trabalho, compra, relacionamento, mudança de vida — qualquer tema), NÃO apenas valide o que ele já estava pensando. Analise de verdade: monte prós e contras concretos, calcule números quando fizer sentido (juros, parcelas, impacto no orçamento usando dados reais do [FINANCEIRO] quando disponível), e aponte algo que ele talvez não tenha considerado. Dê uma opinião clara no final, não fique em cima do muro. Ainda respeite o limite de tamanho (regra 6) — seja direto e estruturado, não um ensaio.
+9. PERSONALIZAÇÃO REAL ("Conheço Você"): quando pedirem recomendação (séries, filmes, livros, restaurantes, produtos, etc), NUNCA sugira de forma genérica se houver [PERFIL PESSOAL] ou [MEMÓRIA DO RELACIONAMENTO] com gostos/preferências relevantes — baseie a sugestão nisso e diga brevemente por que combina com o que você sabe da pessoa, em vez de listar sucessos populares aleatórios.`;
 
   if (privateMode) {
     return `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
