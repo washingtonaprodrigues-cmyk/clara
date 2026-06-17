@@ -650,7 +650,18 @@ async function handleMessage(phone, text, location = null) {
       return;
     }
 
-    executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
+    // ajustar_remedio precisa rodar de forma síncrona (não fire-and-forget)
+    // para sabermos o número real de doses resultante antes de confirmar —
+    // evita a Clara "inventar" ou ficar vaga sobre a quantidade.
+    let confirmacaoAjusteRemedio = null;
+    if (classified.tipo === 'ajustar_remedio') {
+      confirmacaoAjusteRemedio = await executeAjustarRemedio(user, classified).catch(e => {
+        console.error('Erro ajustar_remedio:', e.message);
+        return null;
+      });
+    } else {
+      executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
+    }
     const isSaudacao = classified.tipo === 'saudacao';
 
     // Tipos estruturados que executam uma ação concreta (criar lembrete, gasto, etc) —
@@ -690,6 +701,7 @@ async function handleMessage(phone, text, location = null) {
       entrada_financeira: '✅ Entrada registrada!',
       medicamento: '✅ Medicamento cadastrado!',
       anotacao: '✅ Anotado!',
+      ajustar_remedio: confirmacaoAjusteRemedio || '😕 Não encontrei esse remédio. Me diz o nome certinho?',
     };
     const acaoConfirmacao = CONFIRMACOES_ACAO[classified.tipo] || null;
 
@@ -833,6 +845,44 @@ async function listarMedicamentos(user, phone) {
   let texto = `💊 *Seus medicamentos ativos*\n\n`;
   meds.forEach((m) => { const horarios = JSON.parse(m.times || '[]').join(', '); texto += `💊 *${m.name}*\n⏰ ${horarios} — ${m.frequency}x por dia\n💊 Restam: ${m.remaining}\n\n`; });
   await sendButtons(phone, texto, [{ id: 'novo_remedio', label: '➕ Novo remédio' }, { id: 'menu', label: '🏠 Menu' }]);
+}
+
+// Ajusta o estoque (doses restantes) de um medicamento — usado para
+// correções manuais via texto (ex: "ajusta pra 31 doses", "tomei 2 hoje").
+// Roda de forma síncrona (não fire-and-forget) para podermos confirmar
+// com o número real resultante, em vez de uma mensagem genérica/vaga.
+// Retorna a mensagem de confirmação, ou null se não encontrou o remédio.
+async function executeAjustarRemedio(user, classified) {
+  const medicamentos = await prisma.medication.findMany({ where: { userId: user.id, active: true } });
+  if (!medicamentos.length) return null;
+
+  let med = null;
+  if (classified.nome) {
+    const termo = classified.nome.toLowerCase();
+    med = medicamentos.find(m => m.name.toLowerCase().includes(termo) || termo.includes(m.name.toLowerCase().split(' ')[0]));
+  }
+  // Sem nome citado: se só há 1 remédio ativo, usa ele. Se houver vários,
+  // usa o mais recentemente atualizado/criado — evita perguntar o nome
+  // sempre quando há um contexto óbvio (ex: resposta ao "hora do remédio").
+  if (!med) {
+    med = medicamentos.length === 1
+      ? medicamentos[0]
+      : medicamentos.sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt))[0];
+  }
+  if (!med) return null;
+
+  let novoRemaining = med.remaining;
+  if (classified.operacao === 'decrementar') {
+    novoRemaining = Math.max(0, med.remaining - (classified.doses || 1));
+  } else {
+    // 'definir' ou ausente — define o valor exato informado
+    novoRemaining = Math.max(0, classified.doses ?? med.remaining);
+  }
+
+  await prisma.medication.update({ where: { id: med.id }, data: { remaining: novoRemaining } });
+  console.log(`[ajustar_remedio] ${med.name}: ${med.remaining} → ${novoRemaining} doses`);
+
+  return `✅ Ajustado! "${med.name}" agora tem ${novoRemaining} dose${novoRemaining === 1 ? '' : 's'} em estoque.`;
 }
 
 async function executeAction(user, phone, classified, originalText) {
