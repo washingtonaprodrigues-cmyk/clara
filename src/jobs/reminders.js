@@ -392,10 +392,53 @@ cron.schedule('0 8 * * *', async () => {
           const dataEv = new Date(ev.date);
           const diffDias = Math.round((dataEv - now) / (1000 * 60 * 60 * 24));
           let msg = null;
-          if (diffDias === 0) msg = `🎉 Hoje é ${ev.title}${ev.personName ? ` da ${ev.personName}` : ''}! 🎂`;
-          else if (diffDias === 1) msg = `⏰ Amanhã é ${ev.title}${ev.personName ? ` da ${ev.personName}` : ''}! Não esquece 😊`;
-          else if (diffDias === 3) msg = `📅 Em 3 dias: ${ev.title}${ev.personName ? ` da ${ev.personName}` : ''} 💜`;
-          else if (diffDias === 7) msg = `📅 Em uma semana: ${ev.title}${ev.personName ? ` da ${ev.personName}` : ''} 😊`;
+
+          // Para aniversário (hoje ou amanhã) de uma pessoa nomeada, busca
+          // memórias pessoais sobre ela (ex: "filha gosta de Patrulha
+          // Canina") e usa IA pra mencionar isso naturalmente — é o tipo
+          // de detalhe que faz parecer que a Clara realmente conhece a
+          // pessoa, não só uma data guardada num banco.
+          if ((diffDias === 0 || diffDias === 1) && ev.personName) {
+            try {
+              const infoPessoalCompleta = await memory.buildPersonalContext(user.id).catch(() => '');
+              const termoBusca = ev.personName.toLowerCase();
+              // Filtra só as linhas do contexto pessoal que mencionam a
+              // pessoa do aniversário (buildPersonalContext já retorna um
+              // texto formatado com várias infos — pegamos só o relevante).
+              const linhasRelacionadas = (infoPessoalCompleta || '')
+                .split('\n')
+                .filter(linha => linha.toLowerCase().includes(termoBusca));
+
+              if (linhasRelacionadas.length > 0) {
+                const prefs = await memory.getUserPreference(user.id).catch(() => null);
+                const contextoPessoa = linhasRelacionadas.join('; ');
+                const quando = diffDias === 0 ? 'hoje' : 'amanhã';
+                const systemAniversario = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
+Tom: ${prefs?.tom || 'carinhoso'}.
+
+É ${quando} o aniversário de ${ev.personName}.
+O que você sabe sobre ${ev.personName}: ${contextoPessoa}
+
+Envie uma mensagem curta (1-2 linhas) avisando do aniversário e mencionando naturalmente esse detalhe pessoal (ex: sugestão de presente baseada no que ela gosta). NÃO liste como tópicos — fale naturalmente.`;
+
+                msg = await freeResponse(`Aviso de aniversário de ${ev.personName}.`, [], {
+                  _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso', _systemOverride: systemAniversario
+                }).catch(() => null);
+              }
+            } catch (eMem) {
+              console.error(`[Datas] Erro ao buscar memórias de ${ev.personName}:`, eMem.message);
+            }
+          }
+
+          // Fallback para os templates fixos (sem memória pessoal disponível,
+          // ou diffDias diferente de 0/1)
+          if (!msg) {
+            if (diffDias === 0) msg = `🎉 Hoje é ${ev.title}${ev.personName ? ` da ${ev.personName}` : ''}! 🎂`;
+            else if (diffDias === 1) msg = `⏰ Amanhã é ${ev.title}${ev.personName ? ` da ${ev.personName}` : ''}! Não esquece 😊`;
+            else if (diffDias === 3) msg = `📅 Em 3 dias: ${ev.title}${ev.personName ? ` da ${ev.personName}` : ''} 💜`;
+            else if (diffDias === 7) msg = `📅 Em uma semana: ${ev.title}${ev.personName ? ` da ${ev.personName}` : ''} 😊`;
+          }
+
           if (msg) {
             await sendMessage(user.phone, msg);
             await prisma.event.update({ where: { id: ev.id }, data: { notified: true } });
@@ -461,6 +504,129 @@ ${infoPessoal}`;
     }
   } catch (e) { console.error(`[Proativa ${periodo}] Erro geral:`, e.message); }
 }
+
+// ── RADAR DA CLARA (detecção de padrões) — domingo 09:30 ──
+// Analisa estatisticamente os gastos/contas dos últimos meses pra notar
+// padrões sem precisar de configuração: dia em que uma categoria de gasto
+// costuma se repetir (ex: "internet sempre por volta do dia 20") e gastos
+// fora do padrão em relação à média histórica da mesma categoria.
+// Roda 1x por semana — observação ocasional, não um painel constante.
+cron.schedule('30 9 * * 0', async () => {
+  try {
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    const now = nowBRT();
+
+    for (const user of users) {
+      try {
+        const lockKey = `radar_${dateBRT(now)}`;
+        if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'radar_lock', content: lockKey } })) continue;
+
+        // Janela de análise: últimos 3 meses
+        const tresMesesAtras = new Date(now); tresMesesAtras.setMonth(tresMesesAtras.getMonth() - 3);
+        const gastos = await prisma.expense.findMany({
+          where: { userId: user.id, createdAt: { gte: tresMesesAtras } },
+          orderBy: { createdAt: 'asc' }
+        });
+
+        if (gastos.length < 6) continue; // pouco histórico, não vale a pena analisar ainda
+
+        const insights = [];
+
+        // ── Padrão de dia do mês por categoria (ex: internet sempre dia ~20) ──
+        const porCategoria = {};
+        gastos.forEach(g => {
+          const cat = g.category || 'outro';
+          if (!porCategoria[cat]) porCategoria[cat] = [];
+          porCategoria[cat].push(g);
+        });
+
+        for (const [cat, lista] of Object.entries(porCategoria)) {
+          if (lista.length < 3) continue; // precisa de pelo menos 3 ocorrências
+          const dias = lista.map(g => new Date(g.createdAt).getDate());
+          const media = dias.reduce((a, d) => a + d, 0) / dias.length;
+          const desvios = dias.map(d => Math.abs(d - media));
+          const desvioMedio = desvios.reduce((a, d) => a + d, 0) / desvios.length;
+
+          // Desvio médio baixo = dia consistente entre as ocorrências
+          if (desvioMedio <= 3) {
+            const jaAvisado = await prisma.memory.findFirst({
+              where: { userId: user.id, type: 'padrao_dia_avisado', content: cat }
+            });
+            if (!jaAvisado) {
+              insights.push({ tipo: 'padrao_dia', categoria: cat, diaAproximado: Math.round(media) });
+            }
+          }
+        }
+
+        // ── Gasto fora do padrão no mês atual vs média histórica ──
+        const inicioMesAtual = new Date(now.getFullYear(), now.getMonth(), 1);
+        const gastosMesAtual = gastos.filter(g => new Date(g.createdAt) >= inicioMesAtual);
+        const gastosAnteriores = gastos.filter(g => new Date(g.createdAt) < inicioMesAtual);
+
+        for (const [cat, listaAtual] of Object.entries(
+          gastosMesAtual.reduce((acc, g) => { const c = g.category || 'outro'; (acc[c] = acc[c] || []).push(g); return acc; }, {})
+        )) {
+          const totalAtual = listaAtual.reduce((a, g) => a + g.value, 0);
+          const anterioresMesmaCat = gastosAnteriores.filter(g => (g.category || 'outro') === cat);
+          if (anterioresMesmaCat.length < 2) continue; // precisa de histórico pra comparar
+
+          // Calcula média mensal histórica (agrupando por mês)
+          const porMes = {};
+          anterioresMesmaCat.forEach(g => {
+            const d = new Date(g.createdAt);
+            const chave = `${d.getFullYear()}-${d.getMonth()}`;
+            porMes[chave] = (porMes[chave] || 0) + g.value;
+          });
+          const mediasHistoricas = Object.values(porMes);
+          if (mediasHistoricas.length < 1) continue;
+          const mediaHistorica = mediasHistoricas.reduce((a, v) => a + v, 0) / mediasHistoricas.length;
+
+          if (mediaHistorica > 0 && totalAtual > mediaHistorica * 1.4) {
+            const percentual = Math.round((totalAtual / mediaHistorica - 1) * 100);
+            insights.push({ tipo: 'gasto_fora_padrao', categoria: cat, percentual, valorAtual: totalAtual, valorMedio: mediaHistorica });
+          }
+        }
+
+        if (insights.length === 0) continue;
+
+        const prefs = await memory.getUserPreference(user.id).catch(() => null);
+        const insightsTexto = insights.map(i => {
+          if (i.tipo === 'padrao_dia') return `- A categoria "${i.categoria}" costuma ter gastos por volta do dia ${i.diaAproximado} do mês.`;
+          if (i.tipo === 'gasto_fora_padrao') return `- Gasto com "${i.categoria}" este mês: R$ ${i.valorAtual.toFixed(2)}, ${i.percentual}% acima da média histórica (R$ ${i.valorMedio.toFixed(2)}).`;
+          return '';
+        }).join('\n');
+
+        const systemRadar = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
+Tom: ${prefs?.tom || 'carinhoso'}.
+
+Você notou os seguintes padrões nos dados financeiros do usuário:
+${insightsTexto}
+
+Envie UMA mensagem natural (2-3 linhas) comentando esses padrões como uma observação genuína — não como relatório.
+- Se for "padrao_dia": apenas comente que notou o padrão, sem fazer pergunta complexa.
+- Se for "gasto_fora_padrao": pergunte de forma leve se foi uma exceção, sem cobrar ou julgar.
+- Escolha o insight mais relevante (não liste todos formalmente).
+NÃO use tópicos ou marcadores. NÃO termine com saudação de período.`;
+
+        const msg = await freeResponse('Mensagem de radar/padrões.', [], {
+          _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso', _systemOverride: systemRadar
+        });
+        if (!msg) continue;
+
+        await sendMessage(user.phone, msg);
+        await prisma.memory.create({ data: { userId: user.id, type: 'radar_lock', content: lockKey } });
+
+        // Marca categorias de padrão_dia como já avisadas (evita repetir
+        // o mesmo insight toda semana)
+        for (const i of insights.filter(x => x.tipo === 'padrao_dia')) {
+          await prisma.memory.create({ data: { userId: user.id, type: 'padrao_dia_avisado', content: i.categoria } }).catch(() => {});
+        }
+
+        console.log(`[Radar] Enviado para ${user.phone} (${insights.length} insight(s))`);
+      } catch (e) { console.error(`[Radar] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error('[Radar] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
 
 // TRADIÇÕES SEMANAIS — SEXTA (17:00)
 cron.schedule('0 17 * * 5', async () => {
@@ -925,7 +1091,7 @@ cron.schedule('0 3 * * *', async () => {
     const ontem = new Date(nowBRT()); ontem.setDate(ontem.getDate() - 2);
     await prisma.memory.deleteMany({
       where: {
-        type: { in: ['med_lock', 'alerta_data_lock', 'proativa_lock', 'sumico_lock', 'bom_dia_lock', 'boa_noite_lock', 'meio_dia_lock', 'meu_dia_criado', 'urgente_resultado_lock'] },
+        type: { in: ['med_lock', 'alerta_data_lock', 'proativa_lock', 'sumico_lock', 'bom_dia_lock', 'boa_noite_lock', 'meio_dia_lock', 'meu_dia_criado', 'urgente_resultado_lock', 'radar_lock'] },
         createdAt: { lt: ontem }
       }
     });
