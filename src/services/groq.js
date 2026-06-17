@@ -182,6 +182,7 @@ DATAS CALCULADAS — use estes valores EXATOS quando o usuário mencionar dias r
 - Se o usuário disser "dia X de [mês]" (ex: "dia 24 de julho"): use o ano atual (${hojeISO.substring(0,4)}) com esse mês/dia; se a data já passou este ano, use o ano seguinte.
 
 REGRAS:
+- Se a mensagem do usuário contiver "[Mensagem citada: ...]" no início, isso significa que ele arrastou/respondeu a uma notificação específica (lembrete, remédio, etc) — use o CONTEÚDO dessa citação para identificar a QUAL item (nome do remédio, título do lembrete) ele está se referindo, mesmo que a mensagem em si não cite esse nome explicitamente. Ex: se a citação menciona "Remédio da tiroide" e o texto diz apenas "ajusta pra 20 doses", o "nome" do ajustar_remedio deve ser "tiroide" (extraído da citação, não null)
 - Valor em dinheiro → gasto
 - Horário/data + intenção de CRIAR um novo lembrete/compromisso → tarefa
 - Pergunta sobre horário/data de algo que JÁ EXISTE ("que horas eu tenho que...", "a que horas é...", "quando é...", "tenho algo às...") → consulta (NUNCA tarefa, NUNCA crie novo lembrete para perguntas)
@@ -198,6 +199,9 @@ REGRAS:
 - Frases vagas sobre ação concluída SEM mencionar explicitamente o lembrete ("já fiz", "ok feito", "pronto") → concluir_lembrete APENAS se houver lembrete claro no contexto; senão → outro
 - "já peguei X", "já fiz X", "já fui" onde X é objeto físico e NÃO é título de lembrete → anotacao ou outro, NUNCA concluir_lembrete nem lista_marcar automaticamente
 - "ajusta", "altera", "corrige", "muda", "coloca", "deixa" + número + "doses"/"estoque"/"comprimidos"/"caixa" (com ou sem citar o nome do remédio) → SEMPRE ajustar_remedio, NUNCA editar_lembrete. Isso vale mesmo se a frase não citar o nome do remédio explicitamente (ex: contexto é uma resposta/reply a uma notificação de medicamento)
+- "remarca", "muda o horário", "troca o horário", "ajusta o horário" + referente a REMÉDIO/MEDICAMENTO (não lembrete comum) → SEMPRE ajustar_remedio com horario_novo, NUNCA editar_lembrete (medicamentos não são lembretes — têm array de horários fixos, não um único scheduledAt)
+- Se o usuário citar 2 horários ("de 7:30 pra 7:00", "trocar 22h por 21h") → horario_antigo = primeiro, horario_novo = segundo
+- Se o usuário citar só 1 horário novo sem dizer qual está trocando, e o remédio só tem 1 horário cadastrado → horario_antigo null (o sistema substitui o único horário existente)
 - "tomei X hoje" ou "tomei mais de um" referente a remédio → ajustar_remedio com operacao "decrementar" e doses = quantidade extra tomada
 - IMPORTANTE: a palavra "doses" em qualquer frase é um forte indicador de ajustar_remedio, NUNCA editar_lembrete (lembretes não têm "doses")
 - "remarcar", "remarca", "muda", "mudar", "alterar", "altera", "adiar", "adianta", "move", "mover", "trocar hora", "trocar o horário", "pra X horas", "pra X da tarde/manhã" quando referente a lembrete existente (SEM mencionar doses/estoque/remédio) → SEMPRE editar_lembrete, NUNCA lista_marcar
@@ -226,7 +230,7 @@ TIPOS E FORMATOS:
 {"tipo":"deletar_lembrete","titulo":"parte do título"}
 {"tipo":"gasto","valor":0.0,"categoria":"mercado/restaurante/saude/transporte/lazer/outro","descricao":"desc"}
 {"tipo":"medicamento","nome":"nome","quantidade":0,"frequencia":1,"horarios":["08:00"]}
-{"tipo":"ajustar_remedio","nome":"nome do remédio","doses":31,"operacao":"definir"}
+{"tipo":"ajustar_remedio","nome":"nome do remédio","doses":31,"operacao":"definir","horario_antigo":null,"horario_novo":null,"novos_horarios":null}
 {"tipo":"saudacao"}
 {"tipo":"preferencia","nome":"nome ou null","tom":"carinhoso/direto/divertido/sarcastico ou null"}
 {"tipo":"saldo","valor":1400.0}
@@ -255,6 +259,8 @@ EXEMPLOS:
 "ajusta pra mim pra 31 doses" (sobre remédio) → {"tipo":"ajustar_remedio","nome":null,"doses":31,"operacao":"definir"} (nome null se não foi citado — o sistema usa o remédio do contexto recente)
 "Ajusta pra mim pra 31 doses por favor" → {"tipo":"ajustar_remedio","nome":null,"doses":31,"operacao":"definir"}
 "ajusta o estoque da tiroide pra 20" → {"tipo":"ajustar_remedio","nome":"tiroide","doses":20,"operacao":"definir"}
+"remarca o remédio da tiróide pra todo dia 7 horas" → {"tipo":"ajustar_remedio","nome":"tiroide","horario_antigo":null,"horario_novo":"07:00"}
+"muda o horário da tiroide de 7:30 pra 7:00" → {"tipo":"ajustar_remedio","nome":"tiroide","horario_antigo":"07:30","horario_novo":"07:00"}
 "tomei 2 hoje" (sobre remédio, mais do que o normal) → {"tipo":"ajustar_remedio","nome":null,"doses":1,"operacao":"decrementar"} (1 dose extra além da automática)
 "oi" → {"tipo":"saudacao"}
 "meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
