@@ -192,6 +192,7 @@ REGRAS:
 - NUNCA classifique como busca: reações ao que já foi dito ("nossa", "que louco", "incrível", "sério?", "não acredito"), continuações de conversa, comentários sobre o resultado de uma pesquisa anterior, frases curtas sem verbo de pedido que seguem uma resposta da Clara
 - Se a mensagem for um comentário/reação a algo que a Clara acabou de dizer → outro, NUNCA busca
 - Se a mensagem expressa intenção pessoal ou estado emocional ("acho que", "quero", "vou", "preciso", "tô com", "me sinto") → outro, NÃO busca
+- "Vale a pena?", "devo trocar?", "o que acha?" sobre algo da VIDA do usuário com números/comparação dados por ELE (preços, tempo, opções que ele mesmo descreveu) → SEMPRE outro, NUNCA busca. Isso é uma decisão pessoal para a Clara analisar com os dados que o próprio usuário já deu, não uma pesquisa na web. Só é busca se ele pedir explicitamente para pesquisar/buscar informação que NÃO foi fornecida por ele (ex: "qual a nota dessa academia no Google", "pesquisa academias perto de mim")
 - Conversa casual sobre o que o usuário vai fazer → outro, NÃO busca
 - Pergunta factual/geral que a Clara não pode responder com os dados do usuário (notícias, preços, fatos do mundo) → busca com {"query": "texto da pergunta"}
 - Usuário informa saldo/salário/orçamento → saldo
@@ -259,6 +260,7 @@ EXEMPLOS:
 "remarca pras 14h" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"14:00","nova_data":null}
 "muda a reunião pra 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
 "já peguei o 2 e o 3" → {"tipo":"lista_marcar","numeros":[2,3],"nomes":null,"lista":null}
+"Penso em trocar minha academia, a atual custa R$ 90 e fica a 15 min de casa, a nova custa R$ 130 mas é ao lado do trabalho. Vale a pena?" → {"tipo":"outro"} (decisão pessoal com dados que ele mesmo deu, NÃO é busca)
 "salva no cofre como Senhas GHL Gerentes: wenceslaubraz@casaecasa.com.br #Wenceslau2025, siqueiracampos@casaecasa.com.br #Siqueira2023" → {"tipo":"salvar_cofre","nome":"Senhas GHL Gerentes","conteudo":"wenceslaubraz@casaecasa.com.br #Wenceslau2025, siqueiracampos@casaecasa.com.br #Siqueira2023"}
 "salva o número da Maria, é minha vizinha" → {"tipo":"salvar_contato","nome":"Maria","phone":null,"relation":"vizinha","notes":null}
 "ajusta pra mim pra 31 doses" (sobre remédio) → {"tipo":"ajustar_remedio","nome":null,"doses":31,"operacao":"definir"} (nome null se não foi citado — o sistema usa o remédio do contexto recente)
