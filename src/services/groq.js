@@ -197,7 +197,10 @@ REGRAS:
 - Consultar algo já guardado nos dados do usuário (lembretes, anotações, gastos) → consulta
 - Frases vagas sobre ação concluída SEM mencionar explicitamente o lembrete ("já fiz", "ok feito", "pronto") → concluir_lembrete APENAS se houver lembrete claro no contexto; senão → outro
 - "já peguei X", "já fiz X", "já fui" onde X é objeto físico e NÃO é título de lembrete → anotacao ou outro, NUNCA concluir_lembrete nem lista_marcar automaticamente
-- "remarcar", "remarca", "muda", "mudar", "alterar", "altera", "adiar", "adianta", "move", "mover", "trocar hora", "trocar o horário", "pra X horas", "pra X da tarde/manhã" quando referente a lembrete existente → SEMPRE editar_lembrete, NUNCA lista_marcar
+- "ajusta", "altera", "corrige", "muda", "coloca", "deixa" + número + "doses"/"estoque"/"comprimidos"/"caixa" (com ou sem citar o nome do remédio) → SEMPRE ajustar_remedio, NUNCA editar_lembrete. Isso vale mesmo se a frase não citar o nome do remédio explicitamente (ex: contexto é uma resposta/reply a uma notificação de medicamento)
+- "tomei X hoje" ou "tomei mais de um" referente a remédio → ajustar_remedio com operacao "decrementar" e doses = quantidade extra tomada
+- IMPORTANTE: a palavra "doses" em qualquer frase é um forte indicador de ajustar_remedio, NUNCA editar_lembrete (lembretes não têm "doses")
+- "remarcar", "remarca", "muda", "mudar", "alterar", "altera", "adiar", "adianta", "move", "mover", "trocar hora", "trocar o horário", "pra X horas", "pra X da tarde/manhã" quando referente a lembrete existente (SEM mencionar doses/estoque/remédio) → SEMPRE editar_lembrete, NUNCA lista_marcar
 - lista_marcar APENAS quando: usuário cita número de item ("peguei o 2"), nome de item de lista ("risca o arroz"), ou "lista" explicitamente
 - Hora SEMPRE em formato 24h: "10 da manhã"→"10:00", "2 da tarde"→"14:00", "8 da noite"→"20:00", "meia noite"→"00:00", "meio dia"→"12:00"
 - Se o usuário disser "9 horas", "10h" ou "10:00" sem indicação de tarde/noite → use EXATAMENTE esse número como hora (9→"09:00", 10→"10:00"), NUNCA converta, NUNCA invente outro número
@@ -223,6 +226,7 @@ TIPOS E FORMATOS:
 {"tipo":"deletar_lembrete","titulo":"parte do título"}
 {"tipo":"gasto","valor":0.0,"categoria":"mercado/restaurante/saude/transporte/lazer/outro","descricao":"desc"}
 {"tipo":"medicamento","nome":"nome","quantidade":0,"frequencia":1,"horarios":["08:00"]}
+{"tipo":"ajustar_remedio","nome":"nome do remédio","doses":31,"operacao":"definir"}
 {"tipo":"saudacao"}
 {"tipo":"preferencia","nome":"nome ou null","tom":"carinhoso/direto/divertido/sarcastico ou null"}
 {"tipo":"saldo","valor":1400.0}
@@ -248,6 +252,10 @@ EXEMPLOS:
 "remarca pras 14h" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"14:00","nova_data":null}
 "muda a reunião pra 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
 "já peguei o 2 e o 3" → {"tipo":"lista_marcar","numeros":[2,3],"nomes":null,"lista":null}
+"ajusta pra mim pra 31 doses" (sobre remédio) → {"tipo":"ajustar_remedio","nome":null,"doses":31,"operacao":"definir"} (nome null se não foi citado — o sistema usa o remédio do contexto recente)
+"Ajusta pra mim pra 31 doses por favor" → {"tipo":"ajustar_remedio","nome":null,"doses":31,"operacao":"definir"}
+"ajusta o estoque da tiroide pra 20" → {"tipo":"ajustar_remedio","nome":"tiroide","doses":20,"operacao":"definir"}
+"tomei 2 hoje" (sobre remédio, mais do que o normal) → {"tipo":"ajustar_remedio","nome":null,"doses":1,"operacao":"decrementar"} (1 dose extra além da automática)
 "oi" → {"tipo":"saudacao"}
 "meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
 `;
