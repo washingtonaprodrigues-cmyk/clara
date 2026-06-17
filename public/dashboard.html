@@ -1131,11 +1131,12 @@ function renderSaude(){
       '<div class="med2-info-label"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Próxima dose</div>'+
       '<div class="med2-info-val" style="color:'+MED_TEXT[ci]+'">'+nextTime+'</div>'+
       '<div class="med2-info-sub" style="color:'+(nextDay==='Hoje'?'var(--green)':'var(--text3)')+'">'+nextDay+'</div>';
-    const box2=document.createElement('div');box2.className='med2-info-box';
+    const box2=document.createElement('div');box2.className='med2-info-box';box2.style.cursor='pointer';box2.title='Clique para ajustar o estoque';
     box2.innerHTML=
       '<div class="med2-info-label"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Restam</div>'+
       '<div class="med2-info-val" style="color:'+(m.remaining<=5?'var(--red)':'var(--text)')+'">'+m.remaining+'</div>'+
-      '<div class="med2-info-sub" style="color:var(--text3)">doses</div>';
+      '<div class="med2-info-sub" style="color:var(--text3)">doses · toque p/ ajustar</div>';
+    box2.addEventListener('click',()=>ajustarEstoqueRemedio(m.id,m.remaining));
     info.appendChild(box1);info.appendChild(box2);
 
     const btn=document.createElement('button');
@@ -1168,6 +1169,17 @@ function renderSaude(){
   el.appendChild(tip);
 }
 async function takeMed(id,btn){btn.textContent='✓ Tomado';btn.disabled=true;btn.className='med-action-btn concluido-btn';try{await fetch(`/forms/remedio-tomado/${id}`,{method:'POST'});showToast('Dose registrada! 💊');setTimeout(()=>loadAll().then(()=>renderSaude()),800);}catch{showToast('Erro ⚠️');}}
+async function ajustarEstoqueRemedio(id,atual){
+  const novo=prompt('Quantas doses restam em estoque?',atual);
+  if(novo===null)return;
+  const num=parseInt(novo);
+  if(isNaN(num)||num<0){showToast('Quantidade inválida ⚠️');return;}
+  try{
+    const r=await fetch(`/forms/remedio-estoque/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({remaining:num})});
+    if(r.ok){showToast('Estoque ajustado! ✅');await loadAll();renderSaude();}
+    else showToast('Erro ao ajustar ⚠️');
+  }catch{showToast('Erro ⚠️');}
+}
 // Navegação por mês no financeiro
 let finMes=new Date().getMonth(), finAno=new Date().getFullYear();
 const MESES_PT=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
