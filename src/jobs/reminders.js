@@ -80,6 +80,21 @@ async function marcarEnviadoHoje(userId, tipo) {
 // mais comum de "duas mensagens idênticas/parecidas no mesmo minuto".
 const _locksEmMemoria = new Map(); // `${userId}_${tipo}_${dia}` -> true
 
+// Verifica se houve troca de mensagens recente (usuário ou Clara) nos
+// últimos N minutos. Usado para evitar que mensagens espontâneas (Meu
+// Dia, proativa, tradições semanais) interrompam uma conversa em
+// andamento de forma deslocada — ex: ela mandar "você tem 3 coisas hoje"
+// no meio de uma brincadeira. Lembretes explícitos (compromissos
+// marcados pelo usuário) NÃO usam essa checagem — esses devem sempre
+// disparar no horário certo, independente de conversa em curso.
+async function houveConversaRecente(userId, minutos = 5) {
+  const limite = new Date(Date.now() - minutos * 60 * 1000);
+  const recente = await prisma.memory.findFirst({
+    where: { userId, type: 'conversa', createdAt: { gte: limite } }
+  }).catch(() => null);
+  return !!recente;
+}
+
 async function tentarLockDiario(userId, tipo) {
   const hoje = dateBRT();
   const chaveMemoria = `${userId}_${tipo}_${hoje}`;
@@ -463,6 +478,10 @@ async function proativaInteligente(periodo) {
       try {
         const lockKey = `proativa_${periodo}_${dateBRT()}`;
         if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'proativa_lock', content: lockKey } })) continue;
+        // Pula esse ciclo se há conversa ativa nos últimos minutos — evita
+        // interromper de forma deslocada (ex: mandar agenda no meio de
+        // uma brincadeira). Não reagenda, apenas não envia hoje.
+        if (await houveConversaRecente(user.id, 5)) continue;
         const ultimaConversa = await prisma.memory.findFirst({ where: { userId: user.id, type: 'conversa' }, orderBy: { createdAt: 'desc' } });
         if (!ultimaConversa) continue;
         const diasSemConversa = (now - new Date(ultimaConversa.createdAt)) / (1000 * 60 * 60 * 24);
