@@ -751,13 +751,13 @@ cron.schedule('* * * * *', async () => {
           if (!jaTemDepois) {
             const systemFollowup = `Você é a Clara, parceira pessoal. Tom: ${tomDesc(prefs?.tom)}.
 O usuário tinha um compromisso urgente: "${r.message}".
-Já passou 15 minutos. Pergunte de forma natural e breve (1 linha) se conseguiu fazer.
+Já passou 15 minutos. Pergunte de forma natural e breve (1 linha) se já conseguiu fazer — termine a pergunta pedindo "(sim/não)" pra ele responder direto.
 Respeite o tom — sarcástica não pergunta com fofice.`;
 
             let msgFollowup = await freeResponse('Pergunta de follow-up.', [], {
               _systemOverride: systemFollowup, tom: prefs?.tom || 'carinhoso'
-            }).catch(() => `E aí, conseguiu fazer "${r.message}"? 😊`);
-            if (!msgFollowup) msgFollowup = `E aí, conseguiu fazer "${r.message}"? 😊`;
+            }).catch(() => `Já conseguiu fazer "${r.message}"? (sim/não)`);
+            if (!msgFollowup) msgFollowup = `Já conseguiu fazer "${r.message}"? (sim/não)`;
 
             await prisma.reminder.create({
               data: { userId: r.userId, phone: grupo.phone, message: `__followup__${msgFollowup}`, scheduledAt: quinzeDepois }
