@@ -334,6 +334,32 @@ router.put('/remedio-estoque/:id', async (req, res) => {
   }
 });
 
+// ====================== REMÉDIO: AJUSTAR HORÁRIOS ======================
+// Permite redefinir a lista completa de horários das doses — útil quando
+// a rotina muda (ex: passou a tomar mais cedo) ou foi cadastrado errado.
+router.put('/remedio-horarios/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { horarios } = req.body;
+    if (!Array.isArray(horarios) || !horarios.length) {
+      return res.status(400).json({ error: 'Lista de horários inválida' });
+    }
+    const formatoValido = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (!horarios.every(h => formatoValido.test(h))) {
+      return res.status(400).json({ error: 'Formato de horário inválido (use HH:MM)' });
+    }
+    const horariosOrdenados = [...horarios].sort();
+    const med = await prisma.medication.update({
+      where: { id },
+      data: { times: JSON.stringify(horariosOrdenados), frequency: horariosOrdenados.length }
+    });
+    res.json({ ok: true, times: med.times });
+  } catch (e) {
+    console.error('Erro ajustar horarios remedio:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== LIMPAR CONVERSA ======================
 router.post('/conversa-limpar/:phone', async (req, res) => {
   try {
