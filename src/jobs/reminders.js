@@ -47,11 +47,10 @@ function tomDesc(tom) {
 }
 
 const finais = [
-  '😊 Me avisa quando concluir.',
-  '✨ Estou de olho pra você!',
-  '🔔 Não deixo você esquecer.',
-  '😊 Conta comigo.',
-  '💜 Boa sorte com isso!',
+  '😊 Já concluiu? (sim/não)',
+  '✨ Já deu conta? (sim/não)',
+  '🔔 Conseguiu fazer? (sim/não)',
+  '😊 Já fez isso? (sim/não)',
 ];
 
 async function jaEnviouHoje(userId, tipo) {
@@ -920,13 +919,13 @@ cron.schedule('* * * * *', async () => {
           if (!jaTemDepois) {
             const systemFollowup = `Você é a Clara, parceira pessoal. Tom: ${tomDesc(prefs?.tom)}.
 O usuário tinha um compromisso urgente: "${r.message}".
-Já passou 15 minutos. Pergunte de forma natural e breve (1 linha) se já conseguiu fazer — termine a pergunta pedindo "(sim/não)" pra ele responder direto.
-Respeite o tom — sarcástica não pergunta com fofice.`;
+Já passou 15 minutos. Pergunte de forma natural, breve (1 linha) e DELICADA se já conseguiu fazer — algo como "me avisa quando concluir, por favor" — sem forçar resposta sim/não, é só uma cobrança gentil de segunda vez.
+Respeite o tom — sarcástica não pergunta com fofice, mas ainda assim sem ser ríspida.`;
 
             let msgFollowup = await freeResponse('Pergunta de follow-up.', [], {
               _systemOverride: systemFollowup, tom: prefs?.tom || 'carinhoso'
-            }).catch(() => `Já conseguiu fazer "${r.message}"? (sim/não)`);
-            if (!msgFollowup) msgFollowup = `Já conseguiu fazer "${r.message}"? (sim/não)`;
+            }).catch(() => `Me avisa quando concluir "${r.message}", por favor 😊`);
+            if (!msgFollowup) msgFollowup = `Me avisa quando concluir "${r.message}", por favor 😊`;
 
             await prisma.reminder.create({
               data: { userId: r.userId, phone: grupo.phone, message: `__followup__${msgFollowup}`, scheduledAt: quinzeDepois }
