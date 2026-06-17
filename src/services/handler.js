@@ -93,7 +93,7 @@ const BOAS_VINDAS_MODO = {
 };
 
 const LISTA_TIPOS = ['lista_compras', 'lista_buscar', 'lista_marcar', 'lista_adicionar'];
-const CONTATO_TIPOS = ['salvar_contato', 'deletar_contato', 'enviar_mensagem', 'enviar_mensagem_agendada'];
+const CONTATO_TIPOS = ['salvar_contato', 'deletar_contato', 'enviar_mensagem', 'enviar_mensagem_agendada', 'salvar_cofre'];
 
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
@@ -847,10 +847,11 @@ async function listarMedicamentos(user, phone) {
   await sendButtons(phone, texto, [{ id: 'novo_remedio', label: '➕ Novo remédio' }, { id: 'menu', label: '🏠 Menu' }]);
 }
 
-// Ajusta o estoque (doses restantes) de um medicamento — usado para
-// correções manuais via texto (ex: "ajusta pra 31 doses", "tomei 2 hoje").
+// Ajusta o estoque (doses restantes) e/ou os horários de um medicamento —
+// usado para correções manuais via texto (ex: "ajusta pra 31 doses",
+// "remarca a tiroide pra 7h", "muda de 7:30 pra 7:00").
 // Roda de forma síncrona (não fire-and-forget) para podermos confirmar
-// com o número real resultante, em vez de uma mensagem genérica/vaga.
+// com os valores reais resultantes, em vez de uma mensagem genérica/vaga.
 // Retorna a mensagem de confirmação, ou null se não encontrou o remédio.
 async function executeAjustarRemedio(user, classified) {
   const medicamentos = await prisma.medication.findMany({ where: { userId: user.id, active: true } });
@@ -871,18 +872,57 @@ async function executeAjustarRemedio(user, classified) {
   }
   if (!med) return null;
 
-  let novoRemaining = med.remaining;
-  if (classified.operacao === 'decrementar') {
-    novoRemaining = Math.max(0, med.remaining - (classified.doses || 1));
-  } else {
-    // 'definir' ou ausente — define o valor exato informado
-    novoRemaining = Math.max(0, classified.doses ?? med.remaining);
+  const dataUpdate = {};
+  const partesConfirmacao = [];
+
+  // ── Ajuste de doses/estoque ──
+  if (classified.doses !== undefined && classified.doses !== null) {
+    let novoRemaining = med.remaining;
+    if (classified.operacao === 'decrementar') {
+      novoRemaining = Math.max(0, med.remaining - (classified.doses || 1));
+    } else {
+      novoRemaining = Math.max(0, classified.doses);
+    }
+    dataUpdate.remaining = novoRemaining;
+    partesConfirmacao.push(`${novoRemaining} dose${novoRemaining === 1 ? '' : 's'} em estoque`);
   }
 
-  await prisma.medication.update({ where: { id: med.id }, data: { remaining: novoRemaining } });
-  console.log(`[ajustar_remedio] ${med.name}: ${med.remaining} → ${novoRemaining} doses`);
+  // ── Ajuste de horário(s) ──
+  if (classified.novos_horarios && Array.isArray(classified.novos_horarios) && classified.novos_horarios.length) {
+    // Redefine a lista completa de horários
+    dataUpdate.times = JSON.stringify(classified.novos_horarios);
+    dataUpdate.frequency = classified.novos_horarios.length;
+    partesConfirmacao.push(`horários: ${classified.novos_horarios.join(', ')}`);
+  } else if (classified.horario_novo) {
+    // Troca um horário específico (ou o único, se não houver antigo citado)
+    let horarios = [];
+    try { horarios = JSON.parse(med.times || '[]'); } catch {}
 
-  return `✅ Ajustado! "${med.name}" agora tem ${novoRemaining} dose${novoRemaining === 1 ? '' : 's'} em estoque.`;
+    if (classified.horario_antigo) {
+      const idx = horarios.indexOf(classified.horario_antigo);
+      if (idx >= 0) horarios[idx] = classified.horario_novo;
+      else horarios.push(classified.horario_novo); // horário antigo não encontrado, adiciona o novo
+    } else if (horarios.length === 1) {
+      horarios = [classified.horario_novo];
+    } else if (horarios.length > 1) {
+      // Múltiplos horários sem especificar qual trocar — substitui o mais próximo do horário antigo citado, ou o primeiro
+      horarios[0] = classified.horario_novo;
+    } else {
+      horarios = [classified.horario_novo];
+    }
+
+    horarios.sort();
+    dataUpdate.times = JSON.stringify(horarios);
+    dataUpdate.frequency = horarios.length;
+    partesConfirmacao.push(`horário${horarios.length > 1 ? 's' : ''}: ${horarios.join(', ')}`);
+  }
+
+  if (Object.keys(dataUpdate).length === 0) return null;
+
+  await prisma.medication.update({ where: { id: med.id }, data: dataUpdate });
+  console.log(`[ajustar_remedio] ${med.name}: ${partesConfirmacao.join(' | ')}`);
+
+  return `✅ Ajustado! "${med.name}" agora tem ${partesConfirmacao.join(' e ')}.`;
 }
 
 async function executeAction(user, phone, classified, originalText) {
@@ -1171,6 +1211,15 @@ async function handleContatoAction(user, phone, classified) {
       if (encontrados.length === 0) { await sendMessage(phone, `Não encontrei nenhum contato com "${nome}" 😕`); return; }
       for (const c of encontrados) await prisma.contact.delete({ where: { id: c.id } });
       await sendMessage(phone, `✅ Contato${encontrados.length>1?'s':''} removido${encontrados.length>1?'s':''}: *${encontrados.map(c=>c.name).join(', ')}* 🗑️`);
+      return;
+    }
+    if (classified.tipo === 'salvar_cofre') {
+      if (!classified.conteudo) { await sendMessage(phone, 'O que você quer guardar no cofre? 😊'); return; }
+      // Mesmo formato usado pelo dashboard (forms.js POST /cofre/:phone):
+      // content é um JSON com tipo+nome+dados, pra exibir certinho na tela Cofre.
+      const dadosCofre = { tipo: 'nota', nome: classified.nome || 'Sem nome', nota: classified.conteudo };
+      await prisma.memory.create({ data: { userId: user.id, type: 'cofre', content: JSON.stringify(dadosCofre) } });
+      await sendMessage(phone, `🔐 Salvo no cofre! "${classified.nome || 'Item'}" protegido 💜`);
       return;
     }
     if (classified.tipo === 'salvar_contato') {
