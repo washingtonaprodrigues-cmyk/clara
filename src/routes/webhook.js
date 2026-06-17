@@ -34,9 +34,9 @@ const LEMBRETE_FEITO = [
   /^(sim|s|feito|fiz|pronto|conclu[ií]do?|já fiz|ja fiz|feito!|pronto!|perfeito|ótimo|otimo)$/i,
 ];
 
-async function getLembretePendente(userId, phone) {
+async function getLembretePendente(userId, phone, quotedText) {
   const quinze = new Date(nowBRT().getTime() - 15 * 60 * 1000);
-  return prisma.reminder.findFirst({
+  const candidatos = await prisma.reminder.findMany({
     where: {
       OR: [
         { userId, sent: true, confirmed: false, scheduledAt: { gte: quinze } },
@@ -45,6 +45,19 @@ async function getLembretePendente(userId, phone) {
     },
     orderBy: { scheduledAt: 'desc' }
   });
+  if (!candidatos.length) return null;
+
+  // Se o usuário citou (reply) uma mensagem específica, prioriza o
+  // lembrete cujo título aparece nesse texto citado — isso resolve o caso
+  // de 2+ lembretes pendentes ao mesmo tempo, onde a heurística de "mais
+  // recente" pode escolher o errado mesmo com a citação explícita.
+  if (quotedText) {
+    const quotedLower = quotedText.toLowerCase();
+    const porCitacao = candidatos.find(r => quotedLower.includes(r.message.toLowerCase()));
+    if (porCitacao) return porCitacao;
+  }
+
+  return candidatos[0];
 }
 
 async function getRemedioRecente(userId) {
@@ -101,7 +114,7 @@ function extrairQuotedText(message) {
     || '';
 }
 
-async function handleSimpleResponse(phone, text) {
+async function handleSimpleResponse(phone, text, quotedText) {
   const user = await memory.getOrCreateUser(phone);
   const textLower = text.trim();
 
@@ -115,7 +128,7 @@ async function handleSimpleResponse(phone, text) {
   }
 
   if (LEMBRETE_FEITO.some(r => r.test(textLower))) {
-    const lembrete = await getLembretePendente(user.id, phone);
+    const lembrete = await getLembretePendente(user.id, phone, quotedText);
     if (lembrete) {
       await prisma.reminder.update({ where: { id: lembrete.id }, data: { confirmed: true } });
       const msgs = [
@@ -130,13 +143,13 @@ async function handleSimpleResponse(phone, text) {
   }
 
   if (CONFIRMACOES.some(r => r.test(textLower))) {
-    const lembrete = await getLembretePendente(user.id, phone);
+    const lembrete = await getLembretePendente(user.id, phone, quotedText);
     if (lembrete) { await sendMessage(phone, `👍 Ok! Te lembro de: *${lembrete.message}*`); return true; }
     return false;
   }
 
   if (NEGACOES.some(r => r.test(textLower))) {
-    const lembrete = await getLembretePendente(user.id, phone);
+    const lembrete = await getLembretePendente(user.id, phone, quotedText);
     if (lembrete) {
       // Em vez de remarcar automaticamente +30min, pergunta pra que
       // horário o usuário quer remarcar — fica registrado como pendência
@@ -199,7 +212,7 @@ router.post('/', async (req, res) => {
         // Continua processando a mensagem normalmente
       }
 
-      const handled = await handleSimpleResponse(phone, text);
+      const handled = await handleSimpleResponse(phone, text, quotedText);
       if (!handled) {
         handleMessage(phone, textComContexto).catch(console.error);
       }
