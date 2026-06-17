@@ -183,12 +183,14 @@ CONTEXTO DO DIA:
 ${ctx}
 
 REGRAS OBRIGATÓRIAS:
-- 2-3 linhas, direto ao ponto
-- Diga "Bom dia" + quantas tarefas/compromissos tem hoje (${totalLembretes}) + qual é a primeira (${primeira.message} às ${horaPrimeira})
+- Diga "Bom dia" + quantas tarefas/compromissos tem hoje (${totalLembretes})
+- Se houver 3 ou mais tarefas, liste-as em formato de lista (uma por linha, com "•" no início e o horário entre parênteses) — NÃO comprima tudo numa única frase corrida
+- Se houver até 2 tarefas, pode mencionar em frase corrida normalmente
 - Encerre com algo curto tipo "estarei aqui pra te lembrar de tudo" — adaptado ao seu tom
 - Varie a abertura — não repita sempre a mesma frase
 - Use no máximo 1 emoji
 - NÃO seja sentimental ou poética. Seja prática.
+- NUNCA coloque a mensagem inteira entre aspas
 Tom: ${prefs.tom || 'carinhoso'}.`;
         } else {
           systemBomDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
