@@ -210,7 +210,9 @@ REGRAS:
 - Se o usuário disser "9 horas", "10h" ou "10:00" sem indicação de tarde/noite → use EXATAMENTE esse número como hora (9→"09:00", 10→"10:00"), NUNCA converta, NUNCA invente outro número
 - NUNCA some 12 horas em horários como "9h", "10h", "11h" sem o usuário dizer "da tarde" ou "da noite"
 - Exemplo crítico: "anota pra 9 horas" → hora="09:00" (NUNCA "17:00", "21:00" ou qualquer outro valor)
-- Se o usuário não especificar a data E o horário já passou hoje → use "amanhã" (data calculada acima). Se o horário ainda não passou hoje → use "hoje"
+- "salva no cofre", "guarda no cofre", "anota no cofre", "senha", "login", "credencial", "salva essas senhas/credenciais" → SEMPRE salvar_cofre, NUNCA salvar_contato. Cofre é para senhas/dados sensíveis (login+senha, cartão, notas secretas), mesmo que o texto contenha emails/usuários — diferente de contato (pessoa com número de telefone para enviar mensagem)
+- salvar_contato é SOMENTE quando o usuário quer guardar o número de telefone de uma PESSOA para poder conversar/mandar mensagem a ela depois — NUNCA use para senhas, credenciais ou listas de login+senha
+- Para salvar_cofre, o campo "conteudo" deve ser o texto completo informado (emails, senhas, códigos) tal como foi escrito, sem reformular
 
 EXEMPLOS DE ANTI-BUSCA (NÃO classifique como busca):
 "nossa que interessante" → {"tipo":"outro"} (reação, não pedido de busca)
@@ -238,6 +240,7 @@ TIPOS E FORMATOS:
 {"tipo":"lista_marcar","numeros":[2,3],"nomes":["nome do item"],"lista":"nome da lista ou null"}
 {"tipo":"lista_adicionar","item":"nome"}
 {"tipo":"salvar_contato","nome":"nome","phone":"número","relation":"relação ou null","notes":null}
+{"tipo":"salvar_cofre","nome":"nome do item","conteudo":"conteúdo completo a guardar"}
 {"tipo":"deletar_contato","nome":"nome"}
 {"tipo":"deletar_remedio","nome":"nome"}
 {"tipo":"enviar_mensagem","destinatario":"nome ou null","mensagem":"texto","phone":"número ou null","contato_numero":null}
@@ -256,6 +259,8 @@ EXEMPLOS:
 "remarca pras 14h" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"14:00","nova_data":null}
 "muda a reunião pra 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
 "já peguei o 2 e o 3" → {"tipo":"lista_marcar","numeros":[2,3],"nomes":null,"lista":null}
+"salva no cofre como Senhas GHL Gerentes: wenceslaubraz@casaecasa.com.br #Wenceslau2025, siqueiracampos@casaecasa.com.br #Siqueira2023" → {"tipo":"salvar_cofre","nome":"Senhas GHL Gerentes","conteudo":"wenceslaubraz@casaecasa.com.br #Wenceslau2025, siqueiracampos@casaecasa.com.br #Siqueira2023"}
+"salva o número da Maria, é minha vizinha" → {"tipo":"salvar_contato","nome":"Maria","phone":null,"relation":"vizinha","notes":null}
 "ajusta pra mim pra 31 doses" (sobre remédio) → {"tipo":"ajustar_remedio","nome":null,"doses":31,"operacao":"definir"} (nome null se não foi citado — o sistema usa o remédio do contexto recente)
 "Ajusta pra mim pra 31 doses por favor" → {"tipo":"ajustar_remedio","nome":null,"doses":31,"operacao":"definir"}
 "ajusta o estoque da tiroide pra 20" → {"tipo":"ajustar_remedio","nome":"tiroide","doses":20,"operacao":"definir"}
