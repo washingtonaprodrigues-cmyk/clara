@@ -387,6 +387,7 @@ router.post('/preferencia/:phone', async (req, res) => {
 
     if (tomMudou) {
       const NOMES_TOM = {
+        clara_sendo_clara: 'Clara Sendo Clara 🙎🏻‍♀️',
         carinhoso: 'Simpática 🥰',
         direto: 'Direta 🎯',
         divertido: 'Divertida 🎉',
