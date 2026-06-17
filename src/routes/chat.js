@@ -17,13 +17,13 @@ function dateBRT() {
 function calcularHorarioRelativo(texto) {
   const t = (texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const minMatch = t.match(/daqui\s+(\d+)\s*(min|minuto|minutos)/);
-  if (minMatch) { const d = nowBRT(); d.setMinutes(d.getMinutes() + parseInt(minMatch[1])); return d; }
+  if (minMatch) return new Date(Date.now() + parseInt(minMatch[1]) * 60 * 1000);
   const hrMatch = t.match(/daqui\s+(\d+)\s*(h|hora|horas)/);
-  if (hrMatch) { const d = nowBRT(); d.setHours(d.getHours() + parseInt(hrMatch[1])); return d; }
+  if (hrMatch) return new Date(Date.now() + parseInt(hrMatch[1]) * 60 * 60 * 1000);
   const emMinMatch = t.match(/em\s+(\d+)\s*(min|minuto|minutos)/);
-  if (emMinMatch) { const d = nowBRT(); d.setMinutes(d.getMinutes() + parseInt(emMinMatch[1])); return d; }
+  if (emMinMatch) return new Date(Date.now() + parseInt(emMinMatch[1]) * 60 * 1000);
   const emHrMatch = t.match(/em\s+(\d+)\s*(h|hora|horas)/);
-  if (emHrMatch) { const d = nowBRT(); d.setHours(d.getHours() + parseInt(emHrMatch[1])); return d; }
+  if (emHrMatch) return new Date(Date.now() + parseInt(emHrMatch[1]) * 60 * 60 * 1000);
   return null;
 }
 
@@ -267,7 +267,6 @@ router.post('/:phone', async (req, res) => {
         const locationContext = cidade?.content || '';
         const resultadoBusca = await searchWeb(classified.query, locationContext);
         if (resultadoBusca) {
-          // Retorna direto o resultado sem passar pelo freeResponse
           await memory.saveConversationMessage(user.id, 'user', message, privateMode);
           await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca, privateMode);
           return res.json({ reply: resultadoBusca, actionType: 'busca', actionData: null });
@@ -301,7 +300,29 @@ router.post('/:phone', async (req, res) => {
     }
 
     const preferencesComContexto = { ...preferences, _contexto: contexto, _phone: phone };
-    const response = await freeResponse(message, history, preferencesComContexto, privateMode);
+    let response = await freeResponse(message, history, preferencesComContexto, privateMode);
+
+    // ── Busca proativa: caso o classify não tenha detectado "busca" mas o
+    // modelo sinalize __BUSCAR:query__ (não sabe a resposta e quer pesquisar)
+    // — mesmo mecanismo usado no fluxo do WhatsApp (handler.js). Garante
+    // que o dashboard também faça a pesquisa real em vez de narrar
+    // "vou buscar isso agora" e responder sem buscar de fato.
+    const respStr = typeof response === 'string' ? response : String(response || '');
+    const buscaMatch = respStr.match(/__BUSCAR:(.+?)(__|\n|$)/);
+    if (buscaMatch) {
+      const query = buscaMatch[1].trim();
+      try {
+        console.log(`[chat] Busca proativa: "${query}"`);
+        const cidade = await prisma.memory.findFirst({ where: { userId: user.id, type: 'cidade' } }).catch(() => null);
+        const resultadoBusca = await searchWeb(query, cidade?.content || '');
+        response = resultadoBusca || 'Pesquisei mas não encontrei nada útil sobre isso agora 😕';
+      } catch (eBusca) {
+        console.error('[chat] Erro busca proativa:', eBusca.message);
+        response = 'Não consegui pesquisar isso agora 😕';
+      }
+    } else {
+      response = respStr;
+    }
 
     await memory.saveConversationMessage(user.id, 'user', message, privateMode);
     await memory.saveConversationMessage(user.id, 'assistant', response, privateMode);
