@@ -1296,6 +1296,54 @@ async function checkConfirmacaoPendente(user, phone, text) {
       return true;
     }
 
+    if (dados.tipo === 'remarcar_negacao') {
+      // Usuário respondeu "não" à pergunta "já concluiu?" do disparo do
+      // lembrete, e a Clara perguntou pra que horas remarcar. Extrai o
+      // horário da resposta (mesmo parser usado em hora_lembrete).
+      let horaEscolhida = null;
+      const matchHM = textNorm.match(/(\d{1,2})[:h](\d{2})/);
+      const matchH = textNorm.match(/(\d{1,2})\s*h(?:oras)?\b/);
+      const matchNum = !matchHM && !matchH ? textNorm.match(/^(\d{1,2})$/) : null;
+      if (matchHM) {
+        horaEscolhida = `${String(parseInt(matchHM[1])).padStart(2,'0')}:${matchHM[2]}`;
+      } else if (matchH || matchNum) {
+        let h = parseInt((matchH || matchNum)[1]);
+        if (/tarde/.test(textNorm) && h < 12) h += 12;
+        else if (/noite/.test(textNorm) && h < 12) h += 12;
+        horaEscolhida = `${String(h).padStart(2,'0')}:00`;
+      }
+
+      // Também aceita "daqui X minutos/horas" como resposta
+      const relativo = calcularHorarioRelativo(text);
+
+      const naoSabe = /nao sei|não sei|qualquer|tanto faz|vc escolhe|voce escolhe|decide voce|sei nao|mais tarde/.test(textNorm);
+
+      if (!horaEscolhida && !relativo && !naoSabe) {
+        await sendMessage(phone, 'Não entendi o horário 😅 Pode me dizer assim: "14h", "daqui 30 minutos", ou "não sei" que eu deixo em 30 minutos.');
+        return true;
+      }
+
+      let novoScheduledAt;
+      if (relativo) {
+        novoScheduledAt = relativo;
+      } else if (horaEscolhida) {
+        const [h, m] = horaEscolhida.split(':').map(Number);
+        novoScheduledAt = new Date(`${dateBRT()}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
+        if (novoScheduledAt < nowBRT()) novoScheduledAt.setDate(novoScheduledAt.getDate() + 1);
+      } else {
+        // não sabe — fallback de 30 minutos
+        novoScheduledAt = new Date(Date.now() + 30 * 60 * 1000);
+      }
+
+      await prisma.reminder.update({ where: { id: dados.lembreteId }, data: { scheduledAt: novoScheduledAt, sent: false, confirmed: false } });
+      await prisma.memory.delete({ where: { id: pendente.id } });
+
+      const horaFmt = novoScheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+      const dataFmt = novoScheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+      await sendMessage(phone, `✅ Remarcado! "${dados.lembreteTitulo}" pra ${dataFmt} às ${horaFmt} 📌`);
+      return true;
+    }
+
     if (dados.tipo === 'selecao_contato') {
       const num = parseInt(textNorm);
       if (!isNaN(num) && num >= 1 && num <= dados.opcoes.length) {
