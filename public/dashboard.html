@@ -691,8 +691,13 @@ select option{background:var(--s2)}
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
-              <div class="cfg-mood-grid cfg-mood-grid-3" style="border-right:1px solid var(--border)">
-                <div class="cfg-mood-item active" onclick="selectMood('carinhoso')" data-mood="carinhoso">
+              <div class="cfg-mood-grid" style="border-right:1px solid var(--border)">
+                <div class="cfg-mood-item active" onclick="selectMood('clara_sendo_clara')" data-mood="clara_sendo_clara" style="grid-column:1 / -1;border-right:none">
+                  <div class="cfg-mood-emoji">✨</div>
+                  <div class="cfg-mood-info"><div class="cfg-mood-name">Clara Sendo Clara</div><div class="cfg-mood-desc">Ela se adapta a você — muda o tom conforme seu humor e jeito</div></div>
+                  <div class="cfg-mood-radio"></div>
+                </div>
+                <div class="cfg-mood-item" onclick="selectMood('carinhoso')" data-mood="carinhoso">
                   <div class="cfg-mood-emoji">🥰</div>
                   <div class="cfg-mood-info"><div class="cfg-mood-name">Simpática</div><div class="cfg-mood-desc">Carinhosa, leve e bem-humorada</div></div>
                   <div class="cfg-mood-radio"></div>
@@ -700,6 +705,11 @@ select option{background:var(--s2)}
                 <div class="cfg-mood-item" onclick="selectMood('direto')" data-mood="direto">
                   <div class="cfg-mood-emoji">🎯</div>
                   <div class="cfg-mood-info"><div class="cfg-mood-name">Direta</div><div class="cfg-mood-desc">Objetiva e prática</div></div>
+                  <div class="cfg-mood-radio"></div>
+                </div>
+                <div class="cfg-mood-item" onclick="selectMood('divertido')" data-mood="divertido">
+                  <div class="cfg-mood-emoji">🎉</div>
+                  <div class="cfg-mood-info"><div class="cfg-mood-name">Divertida</div><div class="cfg-mood-desc">Animada, gírias e bom humor</div></div>
                   <div class="cfg-mood-radio"></div>
                 </div>
                 <div class="cfg-mood-item" onclick="selectMood('sarcastico')" data-mood="sarcastico" style="border-bottom:none">
@@ -983,11 +993,13 @@ function selectMood(tom){
   });
   // Update preview
   const previews={
+    'clara_sendo_clara':'Oie! 😄 Vi que tá animado hoje! Bora ver sua agenda? Você tem 3 coisas pra hoje, mas relaxa que eu cuido de te lembrar! ✨',
     'carinhoso':'Eiii Washington! 🎉 Bom dia! Você tem 3 compromissos hoje, bora arrasar! 💜',
     'direto':'Washington, você tem 3 coisas hoje: reunião 14h, backup 15h, lembrete 16h.<br><br>Confirma?',
+    'divertido':'Eaí, gato! 🎉 Hoje tá cheio: 3 paradas pra resolver. Bora nessa que dá tempo pra tudo! 😄',
     'sarcastico':'Oi. Você tem 3 lembretes hoje. Não esquece, tá?<br><br>Dessa vez sem desculpa. 🔥'
   };
-  const names={'carinhoso':'Simpática','direto':'Direta','sarcastico':'Sem Filtro'};
+  const names={'clara_sendo_clara':'Clara Sendo Clara','carinhoso':'Simpática','direto':'Direta','divertido':'Divertida','sarcastico':'Sem Filtro'};
   const prev=document.getElementById('cfg-preview-text');
   const sub=document.getElementById('cfg-preview-sub');
   const link=document.getElementById('cfg-preview-link');
