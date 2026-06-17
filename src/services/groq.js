@@ -339,7 +339,13 @@ async function extractPersonalInfo(message) {
     const result = JSON.parse(text);
     return Array.isArray(result) ? result : [];
   } catch (e) {
-    console.error('[extractPersonalInfo] erro:', e.message);
+    // Erros de parse de JSON são esperados ocasionalmente (o modelo pode
+    // responder com texto livre em vez do JSON pedido) e já são tratados
+    // retornando array vazio — não vale logar isso, só polui o log.
+    // Outros erros (rede, API) ainda são logados para investigação.
+    if (!(e instanceof SyntaxError)) {
+      console.error('[extractPersonalInfo] erro:', e.message);
+    }
     return [];
   }
 }
