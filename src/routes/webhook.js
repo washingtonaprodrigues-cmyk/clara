@@ -22,7 +22,7 @@ function nowBRT() {
 }
 
 const CONFIRMACOES = [
-  /^(ok|okay|sim|s|feito|fiz|pronto|conclu[ií]do?|certo|beleza|combinado|entendido|anotado|perfeito|ótimo|otimo)$/i,
+  /^(ok|okay|certo|beleza|combinado|entendido|anotado)$/i,
 ];
 const NEGACOES = [
   /^(n[aã]o|nao|nope|agora n[aã]o|depois|n)$/i,
@@ -31,7 +31,7 @@ const TOMEI_REMEDIO = [
   /tomei|já tomei|ja tomei|tomado|dose tomada/i,
 ];
 const LEMBRETE_FEITO = [
-  /^(feito|fiz|pronto|conclu[ií]do?|já fiz|ja fiz|feito!|pronto!)$/i,
+  /^(sim|s|feito|fiz|pronto|conclu[ií]do?|já fiz|ja fiz|feito!|pronto!|perfeito|ótimo|otimo)$/i,
 ];
 
 async function getLembretePendente(userId, phone) {
@@ -138,9 +138,17 @@ async function handleSimpleResponse(phone, text) {
   if (NEGACOES.some(r => r.test(textLower))) {
     const lembrete = await getLembretePendente(user.id, phone);
     if (lembrete) {
-      const novoHorario = new Date(nowBRT().getTime() + 30 * 60 * 1000);
-      await prisma.reminder.update({ where: { id: lembrete.id }, data: { scheduledAt: novoHorario, sent: false } });
-      await sendMessage(phone, `⏰ Tudo bem! Vou te lembrar novamente em 30 minutos 😊`);
+      // Em vez de remarcar automaticamente +30min, pergunta pra que
+      // horário o usuário quer remarcar — fica registrado como pendência
+      // pra próxima mensagem (checkConfirmacaoPendente trata isso).
+      const expira = Date.now() + 10 * 60 * 1000;
+      await prisma.memory.create({
+        data: {
+          userId: user.id, type: 'confirmacao_pendente',
+          content: JSON.stringify({ tipo: 'remarcar_negacao', lembreteId: lembrete.id, lembreteTitulo: lembrete.message, expira })
+        }
+      }).catch(() => {});
+      await sendMessage(phone, `Tudo bem! Pra que horas quer que eu remarque "${lembrete.message}"? 😊`);
       return true;
     }
     return false;
