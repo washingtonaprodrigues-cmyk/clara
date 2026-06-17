@@ -73,8 +73,27 @@ async function marcarEnviadoHoje(userId, tipo) {
 // não é possível usar upsert com where: { userId_type: {...} } (esse nome
 // de campo composto só existe quando há esse unique constraint). Por isso
 // usamos findFirst + create/update manual.
+// Lock em memória do processo — primeira linha de defesa contra disparo
+// duplicado dentro do MESMO processo Node (ex: cron disparando 2x por
+// algum reschedule, ou duas chamadas concorrentes no mesmo tick).
+// Não protege contra múltiplas réplicas do Railway, mas resolve o caso
+// mais comum de "duas mensagens idênticas/parecidas no mesmo minuto".
+const _locksEmMemoria = new Map(); // `${userId}_${tipo}_${dia}` -> true
+
 async function tentarLockDiario(userId, tipo) {
   const hoje = dateBRT();
+  const chaveMemoria = `${userId}_${tipo}_${hoje}`;
+
+  if (_locksEmMemoria.has(chaveMemoria)) return false;
+  _locksEmMemoria.set(chaveMemoria, true);
+
+  // Limpa entradas de dias antigos para não crescer indefinidamente
+  if (_locksEmMemoria.size > 5000) {
+    for (const k of _locksEmMemoria.keys()) {
+      if (!k.endsWith(`_${hoje}`)) _locksEmMemoria.delete(k);
+    }
+  }
+
   const existente = await prisma.memory.findFirst({
     where: { userId, type: tipo },
     orderBy: { createdAt: 'desc' }
@@ -101,8 +120,8 @@ async function getUserContext(user) {
   return { prefs, perfilTexto };
 }
 
-// BOM DIA INTELIGENTE (07:05)
-cron.schedule('5 7 * * *', async () => {
+// BOM DIA INTELIGENTE (07:00)
+cron.schedule('0 7 * * *', async () => {
   try {
     const now = nowBRT();
     const amanha = new Date(now); amanha.setDate(amanha.getDate() + 1);
@@ -246,8 +265,8 @@ Tom: ${prefs.tom || 'carinhoso'}.`;
   } catch (e) { console.error('[Bom dia] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
-// BOA NOITE INTELIGENTE (22:00)
-cron.schedule('0 22 * * *', async () => {
+// BOA NOITE INTELIGENTE (21:30)
+cron.schedule('30 21 * * *', async () => {
   try {
     const now = nowBRT();
     const hoje = dateBRT(now);
