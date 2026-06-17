@@ -480,6 +480,21 @@ async function handleMessage(phone, text, location = null) {
     const foiConfirmacao = await checkConfirmacaoPendente(user, phone, text);
     if (foiConfirmacao) return;
 
+    // ── Resposta "ele"/"ela" à pergunta de gênero ──
+    // Detecção leve e determinística (sem custo de IA): só verifica o
+    // histórico se a mensagem for exatamente "ele" ou "ela" isolada, e
+    // confirma que a última mensagem da Clara realmente perguntou sobre
+    // isso, antes de salvar — evita falso positivo em "ele" sem contexto.
+    if (/^(ele|ela)[.!]?$/i.test(text.trim())) {
+      const ultimasMsgs = await memory.getConversationHistory(user.id, 2).catch(() => []);
+      const ultimaDaClara = [...ultimasMsgs].reverse().find(m => m.role === 'assistant');
+      if (ultimaDaClara && /direcionar.*voc[eê]|ele ou ela|prefere.*ele.*ela/i.test(ultimaDaClara.content || '')) {
+        const genero = text.trim().toLowerCase().replace(/[.!]/g, '');
+        await memory.savePersonalInfo(user.id, 'genero', genero, 'outro').catch(() => {});
+        return await sendMessage(phone, genero === 'ela' ? 'Combinado! 💜' : 'Combinado! 👍');
+      }
+    }
+
     // ── Desativar "Meu Dia" permanentemente ──
     if (/para de criar (o\s+)?meu dia|n[aã]o (quero|preciso) (mais )?(o\s+)?meu dia|remove (o\s+)?meu dia|cancela (o\s+)?meu dia/i.test(text)) {
       await upsertMemoryPorTipo(user.id, 'meu_dia_desativado', new Date().toISOString()).catch(() => {});
