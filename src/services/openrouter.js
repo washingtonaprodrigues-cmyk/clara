@@ -20,6 +20,32 @@ const OPENROUTER_MODELS = [
   'meta-llama/llama-3.3-70b-instruct:free',
 ];
 
+// ── Cache de falha recente (em memória) ──
+// Esse é o ÚLTIMO fallback da cascata (Groq → Gemini → OpenRouter) — o
+// objetivo aqui é responder rápido, não testar os mesmos modelos com
+// timeout alto repetidamente quando já sabemos que falharam há pouco.
+// Diferente do Gemini (que tem quota diária previsível), o OpenRouter
+// pode falhar por motivos mais variados (modelo upstream instável,
+// sobrecarga temporária) — por isso o cache aqui é mais curto (2 minutos),
+// não até meia-noite: dá tempo do problema se resolver sem ficar
+// pulando o modelo por horas.
+const _modelosComFalhaRecente = new Map(); // model -> timestamp de quando volta a tentar
+const DURACAO_CACHE_FALHA_MS = 2 * 60 * 1000; // 2 minutos
+
+function marcarFalhaRecente(model) {
+  _modelosComFalhaRecente.set(model, Date.now() + DURACAO_CACHE_FALHA_MS);
+}
+
+function teveFalhaRecente(model) {
+  const expiraEm = _modelosComFalhaRecente.get(model);
+  if (!expiraEm) return false;
+  if (Date.now() >= expiraEm) {
+    _modelosComFalhaRecente.delete(model);
+    return false;
+  }
+  return true;
+}
+
 function openrouterDisponivel() {
   return !!OPENROUTER_API_KEY;
 }
@@ -125,6 +151,9 @@ function reforcarMensagens(msgs) {
 
 // Faz uma chamada a um modelo específico do OpenRouter.
 // msgs já está no formato OpenAI (role: system/user/assistant) — não precisa converter.
+// Timeout reduzido de 25s para 10s: esse é o ÚLTIMO fallback da cascata —
+// o usuário já esperou pelo Groq e pelo Gemini falharem antes de chegar
+// aqui, então cada segundo extra de timeout pesa muito na experiência.
 async function chamarOpenRouter(model, msgs, { temperature = 0.7, maxTokens = 800 } = {}) {
   const msgsReforcadas = reforcarMensagens(msgs);
 
@@ -135,7 +164,7 @@ async function chamarOpenRouter(model, msgs, { temperature = 0.7, maxTokens = 80
   const maxTokensEfetivo = model === 'openrouter/free' ? Math.max(maxTokens * 2, 1500) : maxTokens;
 
   const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('timeout')), 25000)
+    setTimeout(() => reject(new Error('timeout')), 10000)
   );
 
   const fetchPromise = fetch(OPENROUTER_URL, {
@@ -186,9 +215,12 @@ function isTemporaryUpstream429(err) {
 }
 
 // Gera uma resposta via OpenRouter, no mesmo formato esperado pelo freeResponse.
-// Tenta os modelos da lista OPENROUTER_MODELS em ordem; se um falhar (quota,
-// 404, timeout, etc), tenta o próximo. Para 429 temporário do provedor,
-// faz uma única retentativa rápida antes de passar pro próximo modelo.
+// Tenta os modelos da lista OPENROUTER_MODELS em ordem, pulando os que
+// falharam recentemente (cache de 2 minutos). Se um falhar agora (quota,
+// 404, timeout, etc), marca como "falha recente" e tenta o próximo.
+// Não faz mais retentativa automática em 429 temporário (a retentativa de
+// 2s somava tempo de espera real; melhor já cair pro próximo modelo ou
+// pro modo direto rapidamente — esse é o último fallback da cascata).
 // Retorna o texto da resposta ou lança o último erro se todos falharem.
 async function openrouterFreeResponse(msgs, opts = {}) {
   if (!openrouterDisponivel()) {
@@ -196,7 +228,14 @@ async function openrouterFreeResponse(msgs, opts = {}) {
   }
 
   let ultimoErro;
+  let tentouAlgum = false;
+
   for (const model of OPENROUTER_MODELS) {
+    if (teveFalhaRecente(model)) {
+      console.log(`[OpenRouter] modelo ${model} pulado (falhou recentemente, cache de 2min)`);
+      continue;
+    }
+    tentouAlgum = true;
     try {
       const resposta = await chamarOpenRouter(model, msgs, opts);
       console.log(`[OpenRouter] modelo usado com sucesso: ${model}`);
@@ -204,25 +243,14 @@ async function openrouterFreeResponse(msgs, opts = {}) {
     } catch (err) {
       ultimoErro = err;
       console.error(`[OpenRouter] modelo ${model} falhou: ${err.message}`);
-
-      // 429 temporário do provedor (ex: "temporarily rate-limited upstream")
-      // costuma resolver em poucos segundos — uma retentativa rápida vale a pena.
-      if (isTemporaryUpstream429(err)) {
-        await new Promise(r => setTimeout(r, 2000));
-        try {
-          const resposta = await chamarOpenRouter(model, msgs, opts);
-          console.log(`[OpenRouter] modelo usado com sucesso (retry): ${model}`);
-          return resposta;
-        } catch (err2) {
-          ultimoErro = err2;
-          console.error(`[OpenRouter] modelo ${model} falhou na retentativa: ${err2.message}`);
-        }
-      }
-
+      marcarFalhaRecente(model);
       continue;
     }
   }
 
+  if (!tentouAlgum) {
+    throw new Error('Todos os modelos OpenRouter falharam recentemente (em cache de retry)');
+  }
   throw ultimoErro || new Error('Todos os modelos OpenRouter falharam');
 }
 
