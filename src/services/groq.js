@@ -724,9 +724,18 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       // cascata Gemini (de novo, com prompt direto) → OpenRouter.
       const respostaModoDireto = await tentarFallbackCascata(contexto, name, message, 'ModoDireto', tom);
       if (respostaModoDireto) { marcarProvider('openrouter'); return respostaModoDireto; }
-      // Fallback final: mensagem fixa, sem custo de LLM.
+      // Fallback final: mensagem fixa, sem custo de LLM. Varia entre
+      // algumas opções (em vez de repetir sempre a mesma frase) — esse
+      // caminho só é alcançado quando TODA a cascata falhou de verdade
+      // (Gemini esgotado + OpenRouter indisponível), então deve ser raro,
+      // mas se acontecer em sequência não soa tão repetitivo.
       marcarProvider('fallback_fixo');
-      return 'Ainda no modo direto — pode me mandar lembretes, listas e tarefas que eu cuido.';
+      const FALLBACK_FIXO_MSGS = [
+        'Ainda no modo direto — pode me mandar lembretes, listas e tarefas que eu cuido.',
+        'Continuo no modo direto por aqui — lembretes, listas e tarefas funcionam normalmente.',
+        'Modo direto ainda ativo — me manda o que precisar (lembrete, lista, tarefa) que eu registro.',
+      ];
+      return FALLBACK_FIXO_MSGS[Math.floor(Math.random() * FALLBACK_FIXO_MSGS.length)];
     }
 
     const timeoutPromise = new Promise((_, reject) =>
