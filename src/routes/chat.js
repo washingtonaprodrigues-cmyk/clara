@@ -5,6 +5,7 @@ const { searchWeb } = require('../services/groq');
 const memory = require('../services/memory');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const { tentarConsultaDireta } = require('../services/consultaDireta');
 const { buildPersonalContext, savePersonalInfo } = memory;
 
 function nowBRT() {
@@ -195,6 +196,21 @@ router.post('/:phone', async (req, res) => {
     if (!message) return res.status(400).json({ error: 'Mensagem vazia' });
 
     const user = await memory.getOrCreateUser(phone);
+
+    // ── Consulta direta (sem LLM) ──
+    // Mesma lógica do handler.js (WhatsApp) — módulo compartilhado
+    // consultaDireta.js garante formatação idêntica nos dois canais,
+    // eliminando divergências de fuso horário/formatação entre fallbacks
+    // diferentes da cascata de IA.
+    if (!privateMode) {
+      const respostaDireta = await tentarConsultaDireta(message, { prisma, memory, userId: user.id });
+      if (respostaDireta) {
+        await memory.saveConversationMessage(user.id, 'user', message, privateMode).catch(() => {});
+        await memory.saveConversationMessage(user.id, 'assistant', respostaDireta, privateMode).catch(() => {});
+        return res.json({ reply: respostaDireta, actionType: 'consulta_direta', actionData: null, provider: 'direto' });
+      }
+    }
+
     const limit = privateMode ? 100 : 10;
     const history = await memory.getConversationHistory(user.id, limit);
     const preferences = await memory.getUserPreference(user.id);
