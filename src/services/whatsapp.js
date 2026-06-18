@@ -1,97 +1,99 @@
-// ── Integração WhatsApp via UazAPI ──
-// Migrado da Z-API para UazAPI. Este arquivo concentra as funções base de
-// envio (texto, botões) e, agora, também presença ("digitando...") e
-// confirmação de leitura — usadas para dar a sensação de que a Clara
-// "viu" a mensagem e está "respondendo", reduzindo a percepção de espera
-// quando a resposta depende de fallback (Gemini/OpenRouter).
-//
-// Variáveis de ambiente necessárias:
-//   UAZAPI_URL   — URL base da instância UazAPI
-//   UAZAPI_TOKEN — token de autenticação da instância
-
 const axios = require('axios');
-
 const BASE_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
-const UAZAPI_TOKEN = process.env.UAZAPI_TOKEN;
+const TOKEN    = process.env.UAZAPI_TOKEN;
 
-function headers() {
-  return { token: UAZAPI_TOKEN, 'Content-Type': 'application/json' };
-}
+const headers = {
+  'token': TOKEN,
+  'Content-Type': 'application/json',
+};
 
-// ── Envio de texto ──
-async function sendMessage(phone, message, delay) {
+async function sendMessage(phone, message) {
   try {
+    console.log(`📤 Enviando para ${phone}: ${String(message).slice(0, 60)}`);
     const response = await axios.post(
       `${BASE_URL}/send/text`,
-      { number: phone, text: message, delay: delay || 800 },
-      { headers: headers(), timeout: 30000 }
+      { number: phone, text: message },
+      { timeout: 15000, headers }
     );
+    console.log(`✅ Enviado OK para ${phone}:`, response.data?.status || 'sem status');
     return response.data;
   } catch (error) {
-    console.error('[WhatsApp] Erro sendMessage:', error.message);
+    console.error(`❌ Erro sendMessage para ${phone}:`, error.response?.data || error.message);
     throw error;
   }
 }
 
-// ── Envio de mensagem com botões ──
-// buttons: array de { id, label }
 async function sendButtons(phone, message, buttons) {
-  try {
-    const response = await axios.post(
-      `${BASE_URL}/send/button`,
-      {
-        number: phone,
-        text: message,
-        choices: (buttons || []).map(b => b.label || b.id),
-      },
-      { headers: headers(), timeout: 30000 }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('[WhatsApp] Erro sendButtons:', error.message);
-    // Fallback: se botões falharem (ex: número não suporta), manda como texto simples
-    try {
-      const listaOpcoes = (buttons || []).map(b => `• ${b.label || b.id}`).join('\n');
-      return await sendMessage(phone, `${message}\n\n${listaOpcoes}`);
-    } catch (e2) {
-      console.error('[WhatsApp] Erro no fallback de sendButtons:', e2.message);
-      throw e2;
-    }
-  }
+  return sendMessage(phone, message);
+}
+
+async function sendMainMenu(phone) {
+  const texto = `✨ *Clara online* 💜\n\nOi! Como posso ajudar no seu dia hoje? 😊\n\n⏰ Lembrete · 📝 Anotação · 💰 Gasto\n💊 Saúde · 📍 Ponto · 🔍 Pesquisa · 💬 Conversar`;
+  return sendMessage(phone, texto);
+}
+
+async function sendReminderHumano(phone, message) {
+  const frases = [
+    `Ei, não esquece: ${message} 😊`,
+    `Oi! Só passando pra lembrar: ${message}`,
+    `Lembrete rápido: ${message} 👋`,
+    `Não esquece não: ${message} 😉`,
+    `Psiu! ${message} — era isso 😊`,
+  ];
+  const texto = frases[Math.floor(Math.random() * frases.length)];
+  return sendMessage(phone, texto);
+}
+
+async function sendReminderInsistencia(phone, message) {
+  const frases = [
+    `Ainda sobre "${message}" — já conseguiu? 😊`,
+    `Oi! Ainda não esqueceu de ${message}, né?`,
+    `Só conferindo: ${message} — tudo certo? 😉`,
+  ];
+  const texto = frases[Math.floor(Math.random() * frases.length)];
+  return sendMessage(phone, texto);
+}
+
+async function sendReminderWithButtons(phone, message, reminderId) {
+  return sendReminderHumano(phone, message);
+}
+
+async function sendLocationRequest(phone) {
+  return sendMessage(phone, '📍 Me manda sua localização para buscas locais.');
 }
 
 // ── Presença: "digitando..." ──
-// Mostra o indicador de "digitando" no WhatsApp do usuário, dando a
-// sensação de que a Clara está processando/respondendo, em vez de
-// silêncio total durante o tempo de espera (especialmente útil quando a
-// resposta passa por fallback Gemini/OpenRouter, que pode levar alguns
-// segundos extras).
+// Mostra o indicador de "digitando" no WhatsApp do usuário antes de
+// responder — dá a sensação de que a Clara "viu" a mensagem e está
+// processando, em vez de silêncio total durante a espera (especialmente
+// útil quando a resposta passa por fallback Gemini/OpenRouter, que pode
+// levar alguns segundos extras).
 //
-// IMPORTANTE: o endpoint exato de presença da UazAPI não foi confirmado
-// na documentação durante o desenvolvimento — esta função foi escrita de
-// forma defensiva (best-effort). Se o endpoint/payload estiver incorreto
-// para a sua instância, a chamada falha silenciosamente (não quebra o
-// fluxo principal de envio de mensagem) e só registra um aviso no log.
-// Se não funcionar à primeira, verifique o log por
-// "[WhatsApp] Presença não disponível" e ajuste o endpoint/payload
-// conforme a documentação oficial da sua instância UazAPI.
+// IMPORTANTE: o endpoint/payload exato de presença não foi confirmado na
+// documentação da UazAPI durante o desenvolvimento — escrito de forma
+// best-effort. Se o endpoint estiver incorreto para esta instância, a
+// chamada falha silenciosamente (não quebra o envio normal de mensagem),
+// só loga um aviso. Se aparecer no log "[WhatsApp] Presença não
+// disponível", ajuste o endpoint/payload abaixo conforme a documentação
+// oficial da instância (provavelmente em algo como /chat/presence ou
+// /send/presence — varia entre provedores que usam Baileys por baixo).
 async function enviarPresenca(phone, status = 'composing') {
   try {
     await axios.post(
       `${BASE_URL}/chat/presence`,
       { number: phone, presence: status }, // status: "composing" | "paused" | "available"
-      { headers: headers(), timeout: 10000 }
+      { headers, timeout: 10000 }
     );
     return true;
   } catch (error) {
-    console.warn('[WhatsApp] Presença não disponível (endpoint pode divergir nesta instância):', error.message);
+    console.warn('[WhatsApp] Presença não disponível (endpoint pode divergir nesta instância):', error.response?.data || error.message);
     return false;
   }
 }
 
-// Atalho: mostra "digitando..." por um tempo (ms), depois para automaticamente.
-// Uso típico: chamar antes de processar uma resposta que pode demorar
-// (ex: fallback de IA), sem precisar lembrar de "parar" manualmente depois.
+// Atalho: mostra "digitando..." e para automaticamente depois de
+// duracaoMs. Uso típico: chamar antes de processar uma resposta que pode
+// demorar (ex: fallback de IA), sem precisar lembrar de "parar" depois.
 async function mostrarDigitando(phone, duracaoMs = 8000) {
   const iniciou = await enviarPresenca(phone, 'composing');
   if (!iniciou) return;
@@ -101,20 +103,20 @@ async function mostrarDigitando(phone, duracaoMs = 8000) {
 }
 
 // ── Marcar mensagem(ns) como lida ──
-// messageIds: string ou array de strings (IDs das mensagens recebidas,
-// disponíveis no payload do webhook). Mesma observação de "best-effort"
-// da função de presença acima — endpoint não confirmado na documentação.
+// messageIds: string ou array de strings (IDs disponíveis no payload do
+// webhook ao receber a mensagem). Mesma observação de "best-effort" da
+// função de presença acima.
 async function marcarComoLida(phone, messageIds) {
   try {
     const ids = Array.isArray(messageIds) ? messageIds : [messageIds];
     await axios.post(
       `${BASE_URL}/chat/read`,
       { number: phone, id: ids },
-      { headers: headers(), timeout: 10000 }
+      { headers, timeout: 10000 }
     );
     return true;
   } catch (error) {
-    console.warn('[WhatsApp] Marcar como lida não disponível (endpoint pode divergir nesta instância):', error.message);
+    console.warn('[WhatsApp] Marcar como lida não disponível (endpoint pode divergir nesta instância):', error.response?.data || error.message);
     return false;
   }
 }
@@ -122,6 +124,11 @@ async function marcarComoLida(phone, messageIds) {
 module.exports = {
   sendMessage,
   sendButtons,
+  sendMainMenu,
+  sendReminderWithButtons,
+  sendReminderHumano,
+  sendReminderInsistencia,
+  sendLocationRequest,
   enviarPresenca,
   mostrarDigitando,
   marcarComoLida,
