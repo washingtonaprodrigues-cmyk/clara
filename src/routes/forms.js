@@ -1157,4 +1157,111 @@ router.post('/admin/bloquear/:id', async (req, res) => {
   }
 });
 
+// ====================== ADMIN: PÁGINA DE LIMPEZA (HTML) ======================
+// Serve a página de bloqueio de usuários duplicados direto do mesmo
+// domínio do backend — evita qualquer bloqueio de CORS que ocorreria se
+// a página fosse aberta localmente (file://) fazendo fetch para outro
+// domínio. Busca os usuários ao vivo via /admin/usuarios em vez de lista
+// fixa, então sempre reflete o estado real do banco.
+router.get('/admin/limpeza', (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Limpeza de Usuários — Clara</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0b0d12; color: #eee; min-height: 100vh; padding: 20px; }
+  h1 { font-size: 18px; margin-bottom: 6px; }
+  .sub { font-size: 13px; color: #888; margin-bottom: 24px; }
+  .card { background: #161922; border: 1px solid #2a2d3a; border-radius: 14px; padding: 16px; margin-bottom: 12px; }
+  .card.real { border-color: #22c55e; background: #0f1a13; }
+  .card.blocked { opacity: 0.5; }
+  .phone { font-size: 16px; font-weight: 700; }
+  .meta { font-size: 12px; color: #999; margin-top: 4px; line-height: 1.5; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 8px; margin-top: 8px; }
+  .badge.real { background: rgba(34,197,94,.15); color: #22c55e; }
+  .badge.lixo { background: rgba(239,68,68,.15); color: #f87171; }
+  .badge.blocked { background: rgba(107,114,128,.2); color: #9ca3af; }
+  button { width: 100%; padding: 12px; margin-top: 10px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  button.bloquear { background: #dc2626; color: white; }
+  button.bloquear:disabled { background: #3a3a3a; color: #888; cursor: default; }
+  .status { font-size: 12px; margin-top: 8px; min-height: 16px; }
+  .status.ok { color: #22c55e; }
+  .status.erro { color: #f87171; }
+  .loading { text-align: center; padding: 40px; color: #888; }
+</style>
+</head>
+<body>
+<h1>🧹 Limpeza de usuários duplicados</h1>
+<div class="sub">Bloqueia os usuários que não são você — eles continuam no banco, só param de receber mensagens automáticas (bom dia, boa noite, etc).</div>
+
+<div id="lista"><div class="loading">Carregando usuários...</div></div>
+
+<script>
+async function carregar() {
+  const el = document.getElementById('lista');
+  try {
+    const res = await fetch('/forms/admin/usuarios');
+    const usuarios = await res.json();
+    // Heurística simples: o usuário com mais dados totais é provavelmente
+    // o real — os outros aparecem marcados como possível duplicado.
+    const totais = usuarios.map(u => u.lembretes + u.medicamentos + u.gastos + u.listas);
+    const maxTotal = Math.max(...totais);
+
+    el.innerHTML = usuarios.map((u, i) => {
+      const isReal = totais[i] === maxTotal && maxTotal > 0;
+      const isBlocked = u.blocked;
+      return \`
+        <div class="card \${isReal ? 'real' : ''} \${isBlocked ? 'blocked' : ''}" id="card-\${u.id}">
+          <div class="phone">\${u.phone}</div>
+          <div class="meta">\${u.name || '(sem nome)'} · \${u.lembretes} lembretes · \${u.medicamentos} medicamentos · \${u.gastos} gastos · \${u.listas} listas</div>
+          \${isBlocked
+            ? '<span class="badge blocked">🚫 já bloqueado</span>'
+            : isReal
+              ? '<span class="badge real">✅ provável usuário real — confira antes de bloquear</span>'
+              : '<span class="badge lixo">⚠️ possível duplicado/lixo</span>'
+          }
+          \${!isBlocked ? \`<button class="bloquear" id="btn-\${u.id}" onclick="bloquear('\${u.id}')">Bloquear esse número</button>\` : ''}
+          <div class="status" id="status-\${u.id}"></div>
+        </div>
+      \`;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = '<div class="status erro">Erro ao carregar usuários: ' + e.message + '</div>';
+  }
+}
+
+async function bloquear(id) {
+  const btn = document.getElementById('btn-' + id);
+  const status = document.getElementById('status-' + id);
+  btn.disabled = true;
+  btn.textContent = 'Bloqueando...';
+  status.textContent = '';
+  status.className = 'status';
+  try {
+    const res = await fetch('/forms/admin/bloquear/' + id, { method: 'POST' });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      btn.textContent = '✅ Bloqueado';
+      status.textContent = 'Esse número não vai mais receber mensagens automáticas.';
+      status.className = 'status ok';
+    } else {
+      throw new Error(data.error || 'Erro desconhecido');
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Tentar de novo';
+    status.textContent = 'Erro: ' + e.message;
+    status.className = 'status erro';
+  }
+}
+
+carregar();
+</script>
+</body>
+</html>`);
+});
+
 module.exports = router;
