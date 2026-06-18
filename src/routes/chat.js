@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { freeResponse, classify, extractPersonalInfo } = require('../services/groq');
+const { freeResponse, classify, extractPersonalInfo, getUltimoProvider } = require('../services/groq');
 const { searchWeb } = require('../services/groq');
 const memory = require('../services/memory');
 const { PrismaClient } = require('@prisma/client');
@@ -341,7 +341,7 @@ router.post('/:phone', async (req, res) => {
       }
     }
 
-    res.json({ reply: response, actionType: classified?.tipo || 'outro', actionData });
+    res.json({ reply: response, actionType: classified?.tipo || 'outro', actionData, provider: getUltimoProvider() });
   } catch (e) {
     console.error('Erro chat:', e.message);
     res.status(500).json({ error: 'Erro interno' });
