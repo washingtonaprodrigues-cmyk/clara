@@ -216,26 +216,29 @@ function isTemporaryUpstream429(err) {
 
 // Gera uma resposta via OpenRouter, no mesmo formato esperado pelo freeResponse.
 // Tenta os modelos da lista OPENROUTER_MODELS em ordem, pulando os que
-// falharam recentemente (cache de 2 minutos). Se um falhar agora (quota,
-// 404, timeout, etc), marca como "falha recente" e tenta o próximo.
-// Não faz mais retentativa automática em 429 temporário (a retentativa de
-// 2s somava tempo de espera real; melhor já cair pro próximo modelo ou
-// pro modo direto rapidamente — esse é o último fallback da cascata).
-// Retorna o texto da resposta ou lança o último erro se todos falharem.
+// falharam recentemente (cache de 2 minutos) — MAS apenas enquanto houver
+// pelo menos um modelo "fresco" para tentar. Se todos estiverem em cache
+// de falha (cenário real visto em produção: usuário manda várias mensagens
+// dentro da janela de 2min e fica sem resposta nenhuma), ignora o cache e
+// tenta o primeiro modelo de qualquer forma — melhor arriscar um timeout
+// de 10s do que garantir silêncio total até o cache expirar. Esse é o
+// ÚLTIMO fallback da cascata; nunca deveria desistir sem nem tentar.
+// Se um modelo falhar agora (quota, 404, timeout, etc), marca como "falha
+// recente" e tenta o próximo. Retorna o texto da resposta ou lança o
+// último erro se todos falharem de verdade (não só por cache).
 async function openrouterFreeResponse(msgs, opts = {}) {
   if (!openrouterDisponivel()) {
     throw new Error('OPENROUTER_API_KEY não configurada');
   }
 
+  const algumModeloFresco = OPENROUTER_MODELS.some(m => !teveFalhaRecente(m));
   let ultimoErro;
-  let tentouAlgum = false;
 
   for (const model of OPENROUTER_MODELS) {
-    if (teveFalhaRecente(model)) {
+    if (algumModeloFresco && teveFalhaRecente(model)) {
       console.log(`[OpenRouter] modelo ${model} pulado (falhou recentemente, cache de 2min)`);
       continue;
     }
-    tentouAlgum = true;
     try {
       const resposta = await chamarOpenRouter(model, msgs, opts);
       console.log(`[OpenRouter] modelo usado com sucesso: ${model}`);
@@ -248,9 +251,6 @@ async function openrouterFreeResponse(msgs, opts = {}) {
     }
   }
 
-  if (!tentouAlgum) {
-    throw new Error('Todos os modelos OpenRouter falharam recentemente (em cache de retry)');
-  }
   throw ultimoErro || new Error('Todos os modelos OpenRouter falharam');
 }
 
