@@ -1394,22 +1394,38 @@ async function renderAdminUsuarios(){
     const totais=usuarios.map(u=>u.lembretes+u.medicamentos+u.gastos+u.listas);
     const maxTotal=Math.max(...totais);
     el.innerHTML=usuarios.map((u,i)=>{
-      const isProvavelReal=totais[i]===maxTotal&&maxTotal>0;
+      // O usuário com mais dados é tratado como "o seu" e protegido por
+      // padrão — ações destrutivas exigem destravar primeiro, evitando
+      // exclusão/bloqueio acidental da própria conta principal.
+      const isProtegido=totais[i]===maxTotal&&maxTotal>0;
       const isBlocked=u.blocked;
-      return `<div id="admin-card-${u.id}" style="background:var(--s3);border-radius:10px;padding:12px;margin-bottom:8px;${isBlocked?'opacity:.5':''}">
-        <div style="font-size:13px;font-weight:600;color:var(--text)">${u.phone}${isProvavelReal?' <span style="color:#22C55E;font-size:11px">· provável real</span>':''}</div>
+      const corBorda=isProtegido?'border:1px solid rgba(34,197,94,.3);':'';
+      return `<div id="admin-card-${u.id}" style="background:var(--s3);border-radius:10px;padding:12px;margin-bottom:8px;${corBorda}${isBlocked?'opacity:.5':''}">
+        <div style="display:flex;align-items:center;gap:6px">
+          ${isProtegido?'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>':''}
+          <div style="font-size:13px;font-weight:600;color:var(--text)">${u.phone}</div>
+        </div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px">${u.name||'(sem nome)'} · ${u.lembretes} lembretes · ${u.medicamentos} medicamentos · ${u.gastos} gastos · ${u.listas} listas</div>
-        ${isBlocked?'<div style="font-size:11px;color:var(--text3);margin-top:6px">🚫 Bloqueado</div>':`
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button onclick="adminBloquear('${u.id}')" id="admin-bloq-${u.id}" style="flex:1;padding:7px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.25);color:#FCD34D;border-radius:8px;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Bloquear</button>
-          <button onclick="adminExcluir('${u.id}','${u.phone}')" id="admin-del-${u.id}" style="flex:1;padding:7px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#FCA5A5;border-radius:8px;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Excluir</button>
-        </div>`}
+        ${isBlocked?'<div style="font-size:11px;color:var(--text3);margin-top:6px">🚫 Bloqueado</div>':
+          isProtegido?`<div style="font-size:11px;color:var(--text3);margin-top:8px">Protegido — provavelmente sua conta principal. <a href="#" onclick="event.preventDefault();adminDestravar('${u.id}')" style="color:#C4B5FD">Destravar ações</a></div>
+          <div id="admin-actions-${u.id}" style="display:none;gap:8px;margin-top:8px">
+            <button onclick="adminBloquear('${u.id}')" id="admin-bloq-${u.id}" style="flex:1;padding:7px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.25);color:#FCD34D;border-radius:8px;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Bloquear</button>
+            <button onclick="adminExcluir('${u.id}','${u.phone}')" id="admin-del-${u.id}" style="flex:1;padding:7px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#FCA5A5;border-radius:8px;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Excluir</button>
+          </div>`
+          :`<div style="display:flex;gap:8px;margin-top:8px">
+            <button onclick="adminBloquear('${u.id}')" id="admin-bloq-${u.id}" style="flex:1;padding:7px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.25);color:#FCD34D;border-radius:8px;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Bloquear</button>
+            <button onclick="adminExcluir('${u.id}','${u.phone}')" id="admin-del-${u.id}" style="flex:1;padding:7px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#FCA5A5;border-radius:8px;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Excluir</button>
+          </div>`}
         <div id="admin-status-${u.id}" style="font-size:11px;margin-top:6px"></div>
       </div>`;
     }).join('');
   }catch(e){
     el.innerHTML='<div style="font-size:12px;color:var(--red)">Erro ao carregar usuários</div>';
   }
+}
+function adminDestravar(id){
+  const div=document.getElementById('admin-actions-'+id);
+  if(div)div.style.display='flex';
 }
 async function adminBloquear(id){
   const btn=document.getElementById('admin-bloq-'+id);
