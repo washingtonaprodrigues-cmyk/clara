@@ -1157,6 +1157,39 @@ router.post('/admin/bloquear/:id', async (req, res) => {
   }
 });
 
+// ====================== ADMIN: EXCLUIR USUÁRIO (definitivo) ======================
+// Remove o usuário e TODOS os dados relacionados do banco — irreversível.
+// Apaga primeiro os registros que referenciam o usuário (Reminder,
+// Medication, Expense, GroceryList, Memory, Contact, etc) antes do User,
+// pois o schema não tem onDelete: Cascade configurado.
+router.delete('/admin/usuario/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.$transaction([
+      prisma.reminder.deleteMany({ where: { userId: id } }),
+      prisma.medication.deleteMany({ where: { userId: id } }),
+      prisma.expense.deleteMany({ where: { userId: id } }),
+      prisma.purchase.deleteMany({ where: { userId: id } }),
+      prisma.task.deleteMany({ where: { userId: id } }),
+      prisma.bill.deleteMany({ where: { userId: id } }),
+      prisma.event.deleteMany({ where: { userId: id } }),
+      prisma.groceryList.deleteMany({ where: { userId: id } }),
+      prisma.sleepLog.deleteMany({ where: { userId: id } }),
+      prisma.workout.deleteMany({ where: { userId: id } }),
+      prisma.workLog.deleteMany({ where: { userId: id } }),
+      prisma.secret.deleteMany({ where: { userId: id } }),
+      prisma.contact.deleteMany({ where: { userId: id } }),
+      prisma.scheduledMessage.deleteMany({ where: { userId: id } }),
+      prisma.memory.deleteMany({ where: { userId: id } }),
+      prisma.user.delete({ where: { id } }),
+    ]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro admin/excluir usuario:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== ADMIN: PÁGINA DE LIMPEZA (HTML) ======================
 // Serve a página de bloqueio de usuários duplicados direto do mesmo
 // domínio do backend — evita qualquer bloqueio de CORS que ocorreria se
