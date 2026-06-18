@@ -980,6 +980,13 @@ async function sendChat(){
     const msgContent=loading.querySelector('.msg-content');
     msgBubble.textContent=data.reply||'Pode repetir? 😊';
     loading.classList.remove('loading');
+    if(data.provider){
+      const nomesProvider={groq:'Groq',gemini:'Gemini',openrouter:'OpenRouter',fallback_fixo:'Modo offline'};
+      const selo=document.createElement('div');
+      selo.style.cssText='font-size:10px;color:var(--text3);margin-top:3px;padding:0 4px';
+      selo.textContent=nomesProvider[data.provider]||data.provider;
+      msgContent.appendChild(selo);
+    }
     if(data.actionData?.listaId){
       const existingCard=document.getElementById('msg-lista-'+data.actionData.listaId);
       if(existingCard){const titulo=existingCard.querySelector('.msg-lista-titulo')?.textContent||data.actionData.listaNome;renderListaCardChat(existingCard,data.actionData.listaId,titulo,data.actionData.listaItems);}
