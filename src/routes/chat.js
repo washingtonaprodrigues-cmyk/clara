@@ -224,9 +224,15 @@ router.post('/:phone', async (req, res) => {
 
         if (lembretes.length > 0) {
           const fmtLemb = (r) => {
-            const d = new Date(r.scheduledAt);
-            const dStr = toDateStr(d) === hoje ? 'Hoje' : 'Amanhã';
-            return `• ${dStr} às ${pad(d.getHours())}:${pad(d.getMinutes())} — ${r.message}`;
+            // BUG CORRIGIDO: usava d.getHours()/d.getMinutes() direto, que
+            // retornam a hora no fuso do SERVIDOR (Railway roda em UTC),
+            // não em America/Sao_Paulo — causava diferença de 3h entre a
+            // agenda mostrada no Dashboard (este arquivo) e no WhatsApp
+            // (handler.js, que já convertia certo). Mesmo padrão de
+            // conversão usado para "now" acima (toLocaleString com timeZone).
+            const dLocal = new Date(new Date(r.scheduledAt).toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+            const dStr = toDateStr(dLocal) === hoje ? 'Hoje' : 'Amanhã';
+            return `• ${dStr} às ${pad(dLocal.getHours())}:${pad(dLocal.getMinutes())} — ${r.message}`;
           };
           contexto += `\n\n[AGENDA]\n${lembretes.map(fmtLemb).join('\n')}`;
         } else {
