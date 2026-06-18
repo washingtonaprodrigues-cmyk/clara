@@ -1,6 +1,6 @@
 const Groq = require('groq-sdk');
 const { webSearch } = require('./search');
-const { geminiDisponivel, geminiFreeResponse, isGeminiRateLimit } = require('./gemini');
+const { geminiDisponivel, geminiFreeResponse, isGeminiRateLimit, todosModelosEsgotados } = require('./gemini');
 const { openrouterDisponivel, openrouterFreeResponse, isOpenrouterRateLimit } = require('./openrouter');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -577,6 +577,14 @@ function apararRespostaCortada(texto) {
 // Retorna o texto da resposta, ou null se o Gemini falhar/indisponível.
 async function tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone) {
   if (!geminiDisponivel()) return null;
+  // Se todos os modelos já estão sabidamente esgotados (cache até meia-
+  // noite UTC), retorna null direto, sem montar o prompt nem chamar
+  // geminiFreeResponse — pula a etapa inteira, indo direto pro próximo
+  // fallback (OpenRouter) o mais rápido possível.
+  if (todosModelosEsgotados()) {
+    console.log('[GeminiSubstituto] Todos os modelos esgotados — pulando etapa inteira');
+    return null;
+  }
   try {
     // Reforço de brevidade no INÍCIO do prompt — o Gemini tende a ser mais
     // "verboso" antes de chegar ao ponto do que o Groq 70b com a mesma
@@ -611,7 +619,10 @@ async function tentarFallbackCascata(contexto, name, message, logPrefix = 'ModoD
     { role: 'user', content: message }
   ];
 
-  if (geminiDisponivel()) {
+  // Pula a etapa do Gemini inteira se todos os modelos já estão esgotados
+  // (cache até meia-noite UTC) — vai direto pro OpenRouter, reduzindo a
+  // latência total da cascata quando o Gemini está fora de cota por hoje.
+  if (geminiDisponivel() && !todosModelosEsgotados()) {
     try {
       const resposta = await geminiFreeResponse(msgsFallback, { temperature: 0.3, maxTokens: 300 });
       console.log(`[${logPrefix}] Gemini respondeu`);
@@ -619,6 +630,8 @@ async function tentarFallbackCascata(contexto, name, message, logPrefix = 'ModoD
     } catch (eGem) {
       console.error(`[${logPrefix}] Gemini falhou:`, eGem.message);
     }
+  } else if (geminiDisponivel()) {
+    console.log(`[${logPrefix}] Gemini pulado (todos os modelos esgotados)`);
   }
 
   if (openrouterDisponivel()) {
