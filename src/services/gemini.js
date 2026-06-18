@@ -168,9 +168,21 @@ function isGeminiRateLimit(err) {
   return err?.status === 429 || /quota|rate.?limit/i.test(err?.message || '');
 }
 
+// Verifica se TODOS os modelos da lista já estão marcados como esgotados
+// (cache até meia-noite UTC). Permite ao chamador (groq.js) pular a etapa
+// do Gemini inteira quando não há nenhum modelo "fresco" para tentar —
+// evita o pequeno overhead de entrar na função e iterar a lista toda
+// (mesmo que cada item individual já seja rápido por estar em cache),
+// reduzindo ainda mais a latência da cascata Groq → Gemini → OpenRouter
+// quando o Gemini está sabidamente fora de cota por todo o dia.
+function todosModelosEsgotados() {
+  return GEMINI_MODELS.every(m => estaEsgotado(m));
+}
+
 module.exports = {
   geminiDisponivel,
   geminiFreeResponse,
   isGeminiRateLimit,
+  todosModelosEsgotados,
   GEMINI_MODELS,
 };
