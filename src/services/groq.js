@@ -501,20 +501,24 @@ RELACIONAMENTO: isso é o coração desse modo — é sobre ela perceber e se ad
 // estilo direto. Responde com base nos dados do contexto (AGENDA, LISTAS,
 // MEDICAMENTOS, FINANCEIRO). Objetivo: manter o usuário produtivo até o
 // Groq voltar, sem quebrar a identidade da Clara.
-function buildPromptModoDireto(contexto, name) {
-  const nomeTxt = name ? `O nome da pessoa é ${name}.` : '';
-  return `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
+function buildPromptModoDireto(contexto, name, tom) {
+  // Antes, esse prompt sempre usava o estilo "Direta" fixo, ignorando o
+  // tom configurado (ex: "Clara Sendo Clara") — usado nos fallbacks finais
+  // da cascata (Gemini sem personalidade / OpenRouter). Agora reaproveita
+  // buildPersonality como base, então a personalidade real é mantida
+  // mesmo nesse ponto da cascata, com regras extras de economia/precisão
+  // por cima (resposta mais curta, dados numéricos exatos).
+  const personalidadeBase = buildPersonality(tom, name, false);
+  return `${personalidadeBase}
 
-Seu estilo agora é o modo "Direta": objetiva e prática. Exemplo de como você fala nesse estilo: "Washington, você tem 3 coisas hoje: reunião 14h, backup 15h, lembrete 16h. Confirma?"
-
-REGRAS:
-- Direta, objetiva, sem rodeios. 1-3 linhas. Vai ao ponto. Sem elogios desnecessários, sem emojis, sem apelidos carinhosos.
+REGRAS ADICIONAIS PARA ESTE MODO (fallback rápido — seja econômica):
+- Responda em 1-3 linhas no máximo, mesmo respeitando seu tom normal.
 - Responda APENAS o que a mensagem do usuário pediu. NÃO despeje a agenda inteira, lista de tarefas ou outros dados se o usuário não pediu isso especificamente — ex: "obrigado", "ok", "boa noite", "🙄" NÃO pedem agenda; responda de forma breve e direta ao que foi dito.
 - DADOS NUMÉRICOS (especialmente [FINANCEIRO] — saldo, gastos, valores em R$) são CRÍTICOS: copie os números EXATAMENTE como aparecem no contexto, character por character. NUNCA recalcule, NUNCA arredonde, NUNCA estime, NUNCA invente um valor diferente. Se o contexto não tiver o dado financeiro pedido, diga que não tem essa informação agora — NUNCA chute um número.
 - NÃO invente itens, horários ou dados que não estejam no contexto. Se não houver dado suficiente, diga isso em poucas palavras.
-- Se o usuário pedir uma ação (criar lembrete, gasto etc), confirme de forma simples e neutra (ex: "Anotado." ou "Registrado.") — você TEM capacidade de criar lembretes e registrar gastos normalmente, mesmo no modo direto. NUNCA diga que "não consegue criar" ou "não tem essa função" — isso é falso. Apenas não invente detalhes (horário, valor) que não estejam confirmados no contexto.
-- Se perguntarem quem você é ou se está aí, confirme presença de forma direta — você é a Clara.
-- DECISÃO/COMPARAÇÃO (ex: "vale a pena?", "qual escolher?", "o que acha entre X e Y?"): NUNCA responda com "depende", "priorize a opção que melhor alinha", "avalie o que funciona melhor pra você" ou qualquer variação vaga assim. Dê uma recomendação direta e específica (qual das opções você escolheria) com 1 motivo concreto — mesmo no estilo direto, isso é uma frase só, não uma resposta vazia.
+- Se o usuário pedir uma ação (criar lembrete, gasto etc), confirme de forma simples (ex: "Anotado." ou "Registrado.") — você TEM capacidade de criar lembretes e registrar gastos normalmente. NUNCA diga que "não consegue criar" ou "não tem essa função" — isso é falso. Apenas não invente detalhes (horário, valor) que não estejam confirmados no contexto.
+- Se perguntarem quem você é ou se está aí, confirme presença de forma breve — você é a Clara.
+- DECISÃO/COMPARAÇÃO (ex: "vale a pena?", "qual escolher?", "o que acha entre X e Y?"): NUNCA responda com "depende", "priorize a opção que melhor alinha", "avalie o que funciona melhor pra você" ou qualquer variação vaga assim. Dê uma recomendação direta e específica (qual das opções você escolheria) com 1 motivo concreto — mesmo sendo breve, isso é uma frase só, não uma resposta vazia.
 ${contexto}`;
 }
 
@@ -590,9 +594,9 @@ async function tentarGeminiComPersonalidade(message, history, tom, name, context
 // a cascata Gemini → OpenRouter. Usado tanto quando o Groq 70b está em
 // rate limit (modo direto) quanto no modo comparação manual.
 // Retorna o texto da resposta, ou null se ambos falharem.
-async function tentarFallbackCascata(contexto, name, message, logPrefix = 'ModoDireto') {
+async function tentarFallbackCascata(contexto, name, message, logPrefix = 'ModoDireto', tom) {
   const msgsFallback = [
-    { role: 'system', content: buildPromptModoDireto(contexto, name) },
+    { role: 'system', content: buildPromptModoDireto(contexto, name, tom) },
     { role: 'user', content: message }
   ];
 
@@ -710,7 +714,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
 
       // Gemini indisponível/falhou — cai pro modo "Direta" seco via
       // cascata Gemini (de novo, com prompt direto) → OpenRouter.
-      const respostaModoDireto = await tentarFallbackCascata(contexto, name, message, 'ModoDireto');
+      const respostaModoDireto = await tentarFallbackCascata(contexto, name, message, 'ModoDireto', tom);
       if (respostaModoDireto) return respostaModoDireto;
       // Fallback final: mensagem fixa, sem custo de LLM.
       return 'Ainda no modo direto — pode me mandar lembretes, listas e tarefas que eu cuido.';
@@ -753,12 +757,12 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         const respostaGemini = await tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone);
         if (respostaGemini) return respostaGemini;
 
-        // ── Gemini indisponível/falhou → modo "Direta" via Gemini→OpenRouter ──
+        // ── Gemini indisponível/falhou → mesma personalidade via Gemini→OpenRouter (modo econômico) ──
         // Em vez de ficar em silêncio (ou só confirmações fixas) até o Groq
-        // voltar, tenta responder de forma factual/seca com os dados do
-        // contexto (AGENDA, LISTAS, etc), sem personalidade/emojis — assim
-        // o usuário continua produtivo enquanto o papo livre está pausado.
-        const respostaTrabalho = await tentarFallbackCascata(contexto, name, message, 'ModoDireto');
+        // voltar, tenta responder com os dados do contexto (AGENDA, LISTAS,
+        // etc) respeitando o tom configurado, só que de forma mais breve —
+        // assim o usuário continua produtivo enquanto o papo livre está pausado.
+        const respostaTrabalho = await tentarFallbackCascata(contexto, name, message, 'ModoDireto', tom);
         if (respostaTrabalho) {
           // Na primeira vez que entra em modo direto, prefixa com o aviso
           // de que o bate-papo completo está pausado.
