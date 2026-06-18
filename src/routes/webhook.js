@@ -17,6 +17,19 @@ function sendMessage(phone, msg, delay) {
   );
 }
 
+// Mostra "digitando..." enquanto a resposta está sendo processada — só
+// efeito visual, nunca deve atrasar nem quebrar o fluxo principal.
+function mostrarDigitando(phone) {
+  try {
+    const w = require('../services/whatsapp');
+    if (w && typeof w.mostrarDigitando === 'function') {
+      w.mostrarDigitando(phone).catch(() => {});
+    }
+  } catch (e) {
+    // Silencioso — efeito visual opcional, nunca deve interromper o fluxo
+  }
+}
+
 function nowBRT() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 }
@@ -214,6 +227,7 @@ router.post('/', async (req, res) => {
 
       const handled = await handleSimpleResponse(phone, text, quotedText);
       if (!handled) {
+        mostrarDigitando(phone); // efeito visual, não bloqueia
         handleMessage(phone, textComContexto).catch(console.error);
       }
       return res.json({ ok: true });
@@ -334,6 +348,7 @@ async function transcribeAndProcess(phone, body) {
     console.log(`[Áudio] ${phone} transcrito: "${texto.slice(0, 80)}"`);
 
     // Processa normalmente — resposta sempre em texto (sem TTS/áudio).
+    mostrarDigitando(phone); // efeito visual, não bloqueia
     await handleMessage(phone, texto);
   } catch (e) {
     console.error('[Áudio] Erro:', e.message);
