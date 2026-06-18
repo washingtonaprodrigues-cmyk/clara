@@ -1,3 +1,4 @@
+// v2 - consulta direta sem LLM
 const { classify, extractPersonalInfo, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao } = require('./groq');
 
 // Importa whatsapp de forma segura com fallback direto via axios
@@ -41,6 +42,7 @@ async function sendReminderWithButtons(phone, msg, id) {
   return sendMessage(phone, msg);
 }
 const memory = require('./memory');
+const { tentarConsultaDireta } = require('./consultaDireta');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName } = memory;
@@ -479,6 +481,20 @@ async function handleMessage(phone, text, location = null) {
 
     const foiConfirmacao = await checkConfirmacaoPendente(user, phone, text);
     if (foiConfirmacao) return;
+
+    // ── Consulta direta (sem LLM) ──
+    // Para perguntas de leitura pura sobre dados já existentes no banco
+    // (agenda de hoje/amanhã, lembretes pendentes, saldo), responde
+    // direto sem passar por classify/freeResponse — instantâneo e sempre
+    // consistente entre WhatsApp e Dashboard (mesmo módulo compartilhado
+    // consultaDireta.js). Corrige também o bug em que fallbacks diferentes
+    // da cascata formatavam horários de forma inconsistente (fuso horário).
+    const respostaDireta = await tentarConsultaDireta(text, { prisma, memory, userId: user.id });
+    if (respostaDireta) {
+      await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
+      await memory.saveConversationMessage(user.id, 'assistant', respostaDireta).catch(() => {});
+      return await sendMessage(phone, respostaDireta);
+    }
 
     // ── Resposta "ele"/"ela" à pergunta de gênero ──
     // Detecção leve e determinística (sem custo de IA): só verifica o
