@@ -6,6 +6,27 @@ const rateLimit = require('../services/rateLimit');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+// ── Cache de deduplicação de messageId ──
+// Guarda os IDs de mensagens já processadas recentemente (10 minutos é
+// mais que suficiente para cobrir qualquer reenvio realista por timeout
+// de rede). Usa um Map (id -> timestamp de expiração) com limpeza
+// periódica simples, para não crescer indefinidamente em memória.
+const _messageIdsProcessados = new Map();
+const DEDUP_JANELA_MS = 10 * 60 * 1000; // 10 minutos
+
+function marcarMessageIdProcessado(id) {
+  _messageIdsProcessados.set(id, Date.now() + DEDUP_JANELA_MS);
+}
+
+// Limpeza periódica: remove IDs expirados a cada 5 minutos, evitando que
+// o Map cresça sem limite em uma instância de longa duração.
+setInterval(() => {
+  const agora = Date.now();
+  for (const [id, expiraEm] of _messageIdsProcessados) {
+    if (agora >= expiraEm) _messageIdsProcessados.delete(id);
+  }
+}, 5 * 60 * 1000);
+
 // Imports lazy para evitar circular dependency / problema de ordem de carregamento
 function sendMessage(phone, msg, delay) {
   const w = require('../services/whatsapp');
@@ -177,6 +198,24 @@ router.post('/', async (req, res) => {
     if (body.message?.fromMe === true) return res.json({ ok: true });
     if (body.message?.wasSentByApi === true) return res.json({ ok: true });
     if (body.message?.isGroup === true) return res.json({ ok: true });
+
+    // ── Deduplicação por messageId ──
+    // A UazAPI (como a maioria das integrações de WhatsApp) pode reenviar
+    // o mesmo webhook em caso de timeout/retry de rede, especialmente se
+    // o servidor demorar a responder. Sem essa proteção, a mesma mensagem
+    // do usuário pode ser processada 2-3x, criando lembretes/ações
+    // duplicadas (bug real observado: "me lembra às 9 de comprar remédio"
+    // virou 3 lembretes idênticos no banco). Cache em memória com limite
+    // de tamanho — não precisa de persistência, só cobrir a janela de
+    // poucos segundos/minutos em que um reenvio realista aconteceria.
+    const messageId = body.message?.id || body.message?.messageid || body.message?.messageId || body.message?.key?.id;
+    if (messageId) {
+      if (_messageIdsProcessados.has(messageId)) {
+        console.log(`[Webhook] messageId duplicado ignorado: ${messageId}`);
+        return res.json({ ok: true });
+      }
+      marcarMessageIdProcessado(messageId);
+    }
 
     const phone = (body.message?.sender_pn || '').replace('@s.whatsapp.net', '').replace(/\D/g, '');
     if (!phone) {
