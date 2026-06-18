@@ -1,131 +1,128 @@
-// ── TTS (Text-to-Speech) via ElevenLabs ──
-// Converte a resposta da Clara em áudio e envia como mensagem de voz
-// (PTT — push-to-talk) no WhatsApp via UazAPI.
-//
-// Fluxo: texto → ElevenLabs API → buffer mp3 → base64 → UazAPI /send/media
+// ── Integração WhatsApp via UazAPI ──
+// Migrado da Z-API para UazAPI. Este arquivo concentra as funções base de
+// envio (texto, botões) e, agora, também presença ("digitando...") e
+// confirmação de leitura — usadas para dar a sensação de que a Clara
+// "viu" a mensagem e está "respondendo", reduzindo a percepção de espera
+// quando a resposta depende de fallback (Gemini/OpenRouter).
 //
 // Variáveis de ambiente necessárias:
-//   ELEVENLABS_API_KEY  — chave da API do ElevenLabs
-//   ELEVENLABS_VOICE_ID — ID da voz escolhida (padrão: Roberta)
-//   UAZAPI_URL          — URL da instância UazAPI
-//   UAZAPI_TOKEN        — token de autenticação UazAPI
+//   UAZAPI_URL   — URL base da instância UazAPI
+//   UAZAPI_TOKEN — token de autenticação da instância
 
 const axios = require('axios');
 
-const ELEVENLABS_API_KEY  = process.env.ELEVENLABS_API_KEY;
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'RGymW84CSmfVugnA5tvA';
-const BASE_URL            = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
-const UAZAPI_TOKEN        = process.env.UAZAPI_TOKEN;
+const BASE_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
+const UAZAPI_TOKEN = process.env.UAZAPI_TOKEN;
 
-const ELEVENLABS_URL = `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`;
-
-// Limite de caracteres por áudio — ElevenLabs processa bem até ~500 chars.
-// Respostas maiores são enviadas só como texto (sem áudio) pra não cortar.
-const MAX_CHARS_AUDIO = 500;
-
-// Verifica se o TTS está disponível (chave configurada).
-function ttsDisponivel() {
-  return !!ELEVENLABS_API_KEY;
+function headers() {
+  return { token: UAZAPI_TOKEN, 'Content-Type': 'application/json' };
 }
 
-// Remove formatação Markdown que soa estranha em áudio:
-// negrito (*texto*), itálico (_texto_), código (`texto`), bullets, etc.
-function limparParaAudio(texto) {
-  return texto
-    .replace(/\*\*(.*?)\*\*/g, '$1')   // **negrito**
-    .replace(/\*(.*?)\*/g, '$1')        // *negrito* ou *itálico*
-    .replace(/_(.*?)_/g, '$1')          // _itálico_
-    .replace(/`(.*?)`/g, '$1')          // `código`
-    .replace(/^[•\-\*]\s+/gm, '')       // bullets no início de linha
-    .replace(/#{1,6}\s+/g, '')          // headers markdown
-    .replace(/\n{3,}/g, '\n\n')         // múltiplas quebras
-    .trim();
-}
-
-// Gera áudio via ElevenLabs e retorna o Buffer com o mp3.
-// Lança erro se a API falhar.
-async function gerarAudio(texto) {
-  if (!ELEVENLABS_API_KEY) throw new Error('ELEVENLABS_API_KEY não configurada');
-
-  const textoLimpo = limparParaAudio(texto);
-
-  const response = await axios.post(
-    ELEVENLABS_URL,
-    {
-      text: textoLimpo,
-      model_id: 'eleven_multilingual_v2',
-      voice_settings: {
-        stability: 0.45,
-        similarity_boost: 0.80,
-        style: 0.35,
-        use_speaker_boost: true,
-      },
-    },
-    {
-      headers: {
-        'xi-api-key': ELEVENLABS_API_KEY,
-        'Content-Type': 'application/json',
-        'Accept': 'audio/mpeg',
-      },
-      responseType: 'arraybuffer',
-      timeout: 30000,
-    }
-  );
-
-  return Buffer.from(response.data);
-}
-
-// Envia um buffer de áudio como mensagem de voz (PTT) via UazAPI.
-// type "ptt" = push-to-talk (aparece como áudio gravado no WhatsApp).
-async function enviarAudioUazAPI(phone, audioBuffer) {
-  const base64 = audioBuffer.toString('base64');
-
-  const response = await axios.post(
-    `${BASE_URL}/send/media`,
-    {
-      number: phone,
-      type: 'ptt',                        // push-to-talk (voz gravada)
-      media: `data:audio/mpeg;base64,${base64}`,
-      delay: 500,
-    },
-    {
-      headers: { token: UAZAPI_TOKEN, 'Content-Type': 'application/json' },
-      timeout: 30000,
-    }
-  );
-
-  return response.data;
-}
-
-// Função principal: gera TTS e envia como áudio de voz.
-// Retorna true se enviou, false se pulou (texto longo, TTS indisponível, erro).
-async function enviarRespostaComAudio(phone, texto) {
-  if (!ttsDisponivel()) {
-    console.log('[TTS] ElevenLabs não configurado — pulando áudio');
-    return false;
-  }
-
-  // Respostas muito longas: só texto, sem áudio (evita cortar no meio)
-  if (texto.length > MAX_CHARS_AUDIO) {
-    console.log(`[TTS] Texto longo (${texto.length} chars) — só texto, sem áudio`);
-    return false;
-  }
-
+// ── Envio de texto ──
+async function sendMessage(phone, message, delay) {
   try {
-    console.log(`[TTS] Gerando áudio para ${phone} (${texto.length} chars)...`);
-    const audioBuffer = await gerarAudio(texto);
-    await enviarAudioUazAPI(phone, audioBuffer);
-    console.log(`[TTS] ✅ Áudio enviado para ${phone}`);
+    const response = await axios.post(
+      `${BASE_URL}/send/text`,
+      { number: phone, text: message, delay: delay || 800 },
+      { headers: headers(), timeout: 30000 }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('[WhatsApp] Erro sendMessage:', error.message);
+    throw error;
+  }
+}
+
+// ── Envio de mensagem com botões ──
+// buttons: array de { id, label }
+async function sendButtons(phone, message, buttons) {
+  try {
+    const response = await axios.post(
+      `${BASE_URL}/send/button`,
+      {
+        number: phone,
+        text: message,
+        choices: (buttons || []).map(b => b.label || b.id),
+      },
+      { headers: headers(), timeout: 30000 }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('[WhatsApp] Erro sendButtons:', error.message);
+    // Fallback: se botões falharem (ex: número não suporta), manda como texto simples
+    try {
+      const listaOpcoes = (buttons || []).map(b => `• ${b.label || b.id}`).join('\n');
+      return await sendMessage(phone, `${message}\n\n${listaOpcoes}`);
+    } catch (e2) {
+      console.error('[WhatsApp] Erro no fallback de sendButtons:', e2.message);
+      throw e2;
+    }
+  }
+}
+
+// ── Presença: "digitando..." ──
+// Mostra o indicador de "digitando" no WhatsApp do usuário, dando a
+// sensação de que a Clara está processando/respondendo, em vez de
+// silêncio total durante o tempo de espera (especialmente útil quando a
+// resposta passa por fallback Gemini/OpenRouter, que pode levar alguns
+// segundos extras).
+//
+// IMPORTANTE: o endpoint exato de presença da UazAPI não foi confirmado
+// na documentação durante o desenvolvimento — esta função foi escrita de
+// forma defensiva (best-effort). Se o endpoint/payload estiver incorreto
+// para a sua instância, a chamada falha silenciosamente (não quebra o
+// fluxo principal de envio de mensagem) e só registra um aviso no log.
+// Se não funcionar à primeira, verifique o log por
+// "[WhatsApp] Presença não disponível" e ajuste o endpoint/payload
+// conforme a documentação oficial da sua instância UazAPI.
+async function enviarPresenca(phone, status = 'composing') {
+  try {
+    await axios.post(
+      `${BASE_URL}/chat/presence`,
+      { number: phone, presence: status }, // status: "composing" | "paused" | "available"
+      { headers: headers(), timeout: 10000 }
+    );
     return true;
-  } catch (e) {
-    console.error(`[TTS] Erro ao gerar/enviar áudio para ${phone}:`, e.message);
-    // Falha silenciosa — o texto já foi enviado, o áudio é bônus
+  } catch (error) {
+    console.warn('[WhatsApp] Presença não disponível (endpoint pode divergir nesta instância):', error.message);
+    return false;
+  }
+}
+
+// Atalho: mostra "digitando..." por um tempo (ms), depois para automaticamente.
+// Uso típico: chamar antes de processar uma resposta que pode demorar
+// (ex: fallback de IA), sem precisar lembrar de "parar" manualmente depois.
+async function mostrarDigitando(phone, duracaoMs = 8000) {
+  const iniciou = await enviarPresenca(phone, 'composing');
+  if (!iniciou) return;
+  setTimeout(() => {
+    enviarPresenca(phone, 'paused').catch(() => {});
+  }, duracaoMs);
+}
+
+// ── Marcar mensagem(ns) como lida ──
+// messageIds: string ou array de strings (IDs das mensagens recebidas,
+// disponíveis no payload do webhook). Mesma observação de "best-effort"
+// da função de presença acima — endpoint não confirmado na documentação.
+async function marcarComoLida(phone, messageIds) {
+  try {
+    const ids = Array.isArray(messageIds) ? messageIds : [messageIds];
+    await axios.post(
+      `${BASE_URL}/chat/read`,
+      { number: phone, id: ids },
+      { headers: headers(), timeout: 10000 }
+    );
+    return true;
+  } catch (error) {
+    console.warn('[WhatsApp] Marcar como lida não disponível (endpoint pode divergir nesta instância):', error.message);
     return false;
   }
 }
 
 module.exports = {
-  ttsDisponivel,
-  enviarRespostaComAudio,
-  gerarAudio,
+  sendMessage,
+  sendButtons,
+  enviarPresenca,
+  mostrarDigitando,
+  marcarComoLida,
 };
