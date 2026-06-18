@@ -31,20 +31,41 @@ function horaBRT(d) {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// Padrões de mensagem reconhecidos como consulta direta. Deliberadamente
-// conservador — só pega frases claramente de consulta de leitura, sem
-// ambiguidade. Qualquer coisa fora desses padrões cai no fluxo normal.
-const PADRAO_AGENDA_HOJE = /^(qual|quais)?\s*(é\s+)?(a\s+)?(minha\s+)?agenda\s*(pra|para|de)?\s*(hoje)?[\s?!.]*$/i;
-const PADRAO_AGENDA_AMANHA = /^(qual|quais)?\s*(é\s+)?(a\s+)?(minha\s+)?agenda\s*(pra|para|de)?\s*amanh[ãa][\s?!.]*$/i;
-const PADRAO_LEMBRETES = /^(quais|que)\s+(s[ãa]o\s+)?(os\s+)?(meus\s+)?lembretes(\s+(pendentes|de hoje|tenho))?[\s?!.]*$/i;
-const PADRAO_SALDO = /^(qual|quanto)?\s*(é\s+|tenho\s+de\s+)?(o\s+)?(meu\s+)?saldo[\s?!.]*$/i;
+// Padrões de detecção flexíveis — buscam palavras-chave centrais dentro
+// da frase, em vez de exigir que a mensagem inteira seja só o padrão.
+// A primeira versão usava ^...$ (início/fim exatos), que falhava com
+// qualquer variação natural de fala ("Clara, qual minha agenda hoje?",
+// "me mostra a agenda de hoje", "oi, mostra minha agenda") — cobrindo só
+// a frase exata testada manualmente, não como as pessoas realmente
+// escrevem. Esta versão é mais permissiva: detecta a intenção central
+// (agenda/lembretes/saldo) em qualquer posição da frase, com proteções
+// para não disparar em mensagens que claramente pedem outra coisa (ver
+// EXCLUSOES abaixo).
+
+// Se a mensagem contiver qualquer um desses termos, NÃO é consulta direta
+// mesmo que mencione agenda/lembrete/saldo — são sinais de que o usuário
+// quer fazer uma AÇÃO (criar, mudar, decidir), não só ler um dado pronto.
+const EXCLUSOES = /\b(criar?|cria|adicion[ae]|marca|marque|remarca|remarque|muda|mude|altera|altere|cancela|cancele|exclui|exclua|deleta|delete|apaga|apague|conclui|conclua|vale a pena|devo|deveria|o que acha|me ajuda a decidir|compar[ae])\b/i;
+
+const RE_AGENDA = /\bagenda\b/i;
+const RE_HOJE = /\bhoje\b/i;
+const RE_AMANHA = /\bamanh[ãa]/i;
+const RE_LEMBRETES = /\blembretes?\s+(pendentes?)?\b|\bquais?\s+(s[ãa]o\s+)?(meus\s+)?lembretes\b/i;
+const RE_SALDO = /\bsaldo\b|\bquanto\s+(eu\s+)?tenho\b|\bor[çc]amento\b/i;
 
 function detectarTipoConsultaDireta(texto) {
   const t = (texto || '').trim();
-  if (PADRAO_AGENDA_HOJE.test(t)) return 'agenda_hoje';
-  if (PADRAO_AGENDA_AMANHA.test(t)) return 'agenda_amanha';
-  if (PADRAO_LEMBRETES.test(t)) return 'lembretes_pendentes';
-  if (PADRAO_SALDO.test(t)) return 'saldo';
+  if (!t || t.length > 80) return null; // mensagens muito longas raramente são consulta simples
+  if (EXCLUSOES.test(t)) return null; // sinal de ação/decisão, não leitura pura
+
+  const temAgenda = RE_AGENDA.test(t);
+  const temSaldo = RE_SALDO.test(t);
+  const temLembretes = RE_LEMBRETES.test(t);
+
+  if (temAgenda && RE_AMANHA.test(t)) return 'agenda_amanha';
+  if (temAgenda) return 'agenda_hoje'; // "agenda" sem "amanhã" especificado = hoje (padrão mais comum)
+  if (temLembretes) return 'lembretes_pendentes';
+  if (temSaldo) return 'saldo';
   return null;
 }
 
