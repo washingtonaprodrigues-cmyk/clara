@@ -5,6 +5,14 @@ const { openrouterDisponivel, openrouterFreeResponse, isOpenrouterRateLimit } = 
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+// ── Rastreio do último provider usado (visibilidade técnica) ──
+// Não afeta a personalidade nem a resposta — só registra qual provedor
+// gerou a última resposta de freeResponse, para exibição no Dashboard
+// (não no WhatsApp, onde a Clara deve parecer sempre a mesma "pessoa").
+let _ultimoProvider = 'groq';
+function marcarProvider(p) { _ultimoProvider = p; }
+function getUltimoProvider() { return _ultimoProvider; }
+
 const MODEL_LEVE = 'llama-3.1-8b-instant';
 const MODEL_FORTE = 'llama-3.3-70b-versatile';
 const MODEL_PRIVADO = 'nousresearch/hermes-3-llama-3.1-70b';
@@ -710,13 +718,14 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       // Gemini com a personalidade COMPLETA (objetivo: avaliar o Gemini
       // como possível substituto do Groq, não só um fallback seco).
       const respostaGemini = await tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone);
-      if (respostaGemini) return respostaGemini;
+      if (respostaGemini) { marcarProvider('gemini'); return respostaGemini; }
 
       // Gemini indisponível/falhou — cai pro modo "Direta" seco via
       // cascata Gemini (de novo, com prompt direto) → OpenRouter.
       const respostaModoDireto = await tentarFallbackCascata(contexto, name, message, 'ModoDireto', tom);
-      if (respostaModoDireto) return respostaModoDireto;
+      if (respostaModoDireto) { marcarProvider('openrouter'); return respostaModoDireto; }
       // Fallback final: mensagem fixa, sem custo de LLM.
+      marcarProvider('fallback_fixo');
       return 'Ainda no modo direto — pode me mandar lembretes, listas e tarefas que eu cuido.';
     }
 
@@ -743,6 +752,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         }),
         timeoutPromise
       ]);
+      marcarProvider('groq');
       return completion.choices[0].message.content.trim();
     } catch (e1) {
       if (isRateLimit(e1) && phone) {
@@ -755,7 +765,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         // igual (mesma personalidade/tom) usando o Gemini no lugar do 70b.
         // Sem prefixo de aviso — a ideia é a transição ser transparente.
         const respostaGemini = await tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone);
-        if (respostaGemini) return respostaGemini;
+        if (respostaGemini) { marcarProvider('gemini'); return respostaGemini; }
 
         // ── Gemini indisponível/falhou → mesma personalidade via Gemini→OpenRouter (modo econômico) ──
         // Em vez de ficar em silêncio (ou só confirmações fixas) até o Groq
@@ -764,6 +774,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         // assim o usuário continua produtivo enquanto o papo livre está pausado.
         const respostaTrabalho = await tentarFallbackCascata(contexto, name, message, 'ModoDireto', tom);
         if (respostaTrabalho) {
+          marcarProvider('openrouter');
           // Na primeira vez que entra em modo direto, prefixa com o aviso
           // de que o bate-papo completo está pausado.
           return aviso ? `${aviso}\n\n${respostaTrabalho}` : respostaTrabalho;
@@ -771,6 +782,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
 
         // Cascata indisponível ou falhou — modo direto tradicional
         // (aviso só vem na primeira vez — depois retorna null, handler não responde)
+        marcarProvider('fallback_fixo');
         return aviso || null;
       }
       throw e1;
@@ -842,4 +854,5 @@ module.exports = {
   desativarModoComparacao,
   emModoComparacao,
   detectarComandoComparacao,
+  getUltimoProvider,
 };
