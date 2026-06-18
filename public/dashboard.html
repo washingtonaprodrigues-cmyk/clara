@@ -807,7 +807,7 @@ select option{background:var(--s2)}
           </div>
 
           <!-- Segurança -->
-          <div class="cfg-section" style="margin-bottom:20px">
+          <div class="cfg-section">
             <div class="cfg-security">
               <div class="cfg-security-icon">
                 <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -821,6 +821,20 @@ select option{background:var(--s2)}
                 <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
               </div>
             </div>
+          </div>
+
+          <!-- Gerenciar Usuários (admin/limpeza) -->
+          <div class="cfg-section" style="margin-bottom:20px">
+            <div class="cfg-section-header">
+              <div class="cfg-section-icon" style="background:rgba(239,68,68,.1);color:#FCA5A5">
+                <svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/><line x1="17" y1="8" x2="22" y2="13"/><line x1="22" y1="8" x2="17" y2="13"/></svg>
+              </div>
+              <div>
+                <div class="cfg-section-title">Gerenciar usuários</div>
+                <div class="cfg-section-sub">Números duplicados ou de teste podem ser bloqueados ou excluídos.</div>
+              </div>
+            </div>
+            <div id="admin-usuarios-body" style="padding:14px 18px"><div style="font-size:12px;color:var(--text3)">Carregando...</div></div>
           </div>
 
         </div>
@@ -1364,10 +1378,69 @@ async function loadPrefs(){
   if(pf)pf.value='';
   const phoneDisp=document.getElementById('cfg-wa-phone-display');
   if(phoneDisp)phoneDisp.textContent='+55 '+phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
+  renderAdminUsuarios();
 }
 async function savePrefs(){const tom=currentMood,nome=document.getElementById('pref-nome').value.trim();const saldoInput=document.getElementById('pref-saldo').value;const saldoNum=saldoInput!==''&&saldoInput!==undefined?parseFloat(saldoInput):null;let newPhone=document.getElementById('pref-phone').value.trim().replace(/\D/g,'');if(newPhone&&newPhone.length>=10){if(!newPhone.startsWith('55'))newPhone='55'+newPhone;phone=newPhone;const user=window._currentUser;if(user)localStorage.setItem(`clara_phone_${user.uid}`,newPhone);const sp=document.getElementById('sidebar-phone');if(sp)sp.textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');document.getElementById('drawer-phone').textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');}try{await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tom,nome,saldo:saldoNum})});if(saldoNum!==null)currentSaldo=saldoNum;showToast('Preferências salvas! ✅');
     if(saldoNum!==null){const disp=document.getElementById('cfg-saldo-display');if(disp)disp.textContent='R$ '+Number(saldoNum).toLocaleString('pt-BR',{minimumFractionDigits:2});}
     if(currentNav==='financeiro')renderFin();}catch{showToast('Erro ⚠️');}}
+
+// ── Gerenciar usuários (admin) ──
+async function renderAdminUsuarios(){
+  const el=document.getElementById('admin-usuarios-body');
+  if(!el)return;
+  try{
+    const r=await fetch('/forms/admin/usuarios');
+    const usuarios=await r.json();
+    const totais=usuarios.map(u=>u.lembretes+u.medicamentos+u.gastos+u.listas);
+    const maxTotal=Math.max(...totais);
+    el.innerHTML=usuarios.map((u,i)=>{
+      const isProvavelReal=totais[i]===maxTotal&&maxTotal>0;
+      const isBlocked=u.blocked;
+      return `<div id="admin-card-${u.id}" style="background:var(--s3);border-radius:10px;padding:12px;margin-bottom:8px;${isBlocked?'opacity:.5':''}">
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${u.phone}${isProvavelReal?' <span style="color:#22C55E;font-size:11px">· provável real</span>':''}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${u.name||'(sem nome)'} · ${u.lembretes} lembretes · ${u.medicamentos} medicamentos · ${u.gastos} gastos · ${u.listas} listas</div>
+        ${isBlocked?'<div style="font-size:11px;color:var(--text3);margin-top:6px">🚫 Bloqueado</div>':`
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button onclick="adminBloquear('${u.id}')" id="admin-bloq-${u.id}" style="flex:1;padding:7px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.25);color:#FCD34D;border-radius:8px;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Bloquear</button>
+          <button onclick="adminExcluir('${u.id}','${u.phone}')" id="admin-del-${u.id}" style="flex:1;padding:7px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#FCA5A5;border-radius:8px;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Excluir</button>
+        </div>`}
+        <div id="admin-status-${u.id}" style="font-size:11px;margin-top:6px"></div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    el.innerHTML='<div style="font-size:12px;color:var(--red)">Erro ao carregar usuários</div>';
+  }
+}
+async function adminBloquear(id){
+  const btn=document.getElementById('admin-bloq-'+id);
+  const status=document.getElementById('admin-status-'+id);
+  if(!confirm('Bloquear esse número? Ele para de receber bom dia/boa noite/lembretes automáticos, mas os dados continuam salvos (reversível).'))return;
+  btn.disabled=true;btn.textContent='...';
+  try{
+    const r=await fetch('/forms/admin/bloquear/'+id,{method:'POST'});
+    if(r.ok){showToast('Usuário bloqueado ✅');renderAdminUsuarios();}
+    else throw new Error('falha');
+  }catch{
+    if(status){status.textContent='Erro ao bloquear';status.style.color='var(--red)';}
+    btn.disabled=false;btn.textContent='Bloquear';
+  }
+}
+async function adminExcluir(id,phoneNum){
+  if(!confirm(`Excluir DEFINITIVAMENTE o número ${phoneNum}? Isso remove todos os lembretes, medicamentos, gastos e listas dele. Não pode ser desfeito.`))return;
+  if(!confirm('Tem certeza mesmo? Essa ação é irreversível.'))return;
+  const btn=document.getElementById('admin-del-'+id);
+  const status=document.getElementById('admin-status-'+id);
+  btn.disabled=true;btn.textContent='...';
+  try{
+    const r=await fetch('/forms/admin/usuario/'+id,{method:'DELETE'});
+    if(r.ok){showToast('Usuário excluído ✅');renderAdminUsuarios();}
+    else throw new Error('falha');
+  }catch{
+    if(status){status.textContent='Erro ao excluir';status.style.color='var(--red)';}
+    btn.disabled=false;btn.textContent='Excluir';
+  }
+}
+
 function openModal(id){
   if(id==='m-lembrete'){
     const navDate=remViewDate||new Date();
