@@ -1,5 +1,5 @@
 // v2 - consulta direta sem LLM
-const { classify, extractPersonalInfo, extractPendenciaEmocional, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao } = require('./groq');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao } = require('./groq');
 
 // Importa whatsapp de forma segura com fallback direto via axios
 let _whatsappModule = null;
@@ -1542,6 +1542,28 @@ async function extractAndSavePersonalInfo(userId, text) {
     }
   } catch (e) {
     console.error('[extractPendenciaEmocional]', e.message);
+  }
+
+  // ── Resolução de pendência aberta ──
+  // Cobre o caso em que a Clara trouxe o assunto à tona sozinha NA
+  // CONVERSA (via bloco [SAÚDE EM ABERTO] em responderLivre), não pelo
+  // cron — esse caminho não gera um registro de confirmacao_pendente, então
+  // sem essa checagem aqui a pendência nunca seria marcada como resolvida
+  // e voltaria a ser perguntada para sempre, mesmo já confirmada.
+  try {
+    const pendenciaAberta = await prisma.pendencia.findFirst({
+      where: { userId, resolvido: false },
+      orderBy: { createdAt: 'desc' }
+    });
+    if (pendenciaAberta) {
+      const resolvida = await checkResolucaoPendencia(text, pendenciaAberta.resumo);
+      if (resolvida) {
+        await prisma.pendencia.update({ where: { id: pendenciaAberta.id }, data: { resolvido: true } });
+        console.log(`[pendência emocional] resolvida via conversa: "${pendenciaAberta.resumo}"`);
+      }
+    }
+  } catch (e) {
+    console.error('[checkResolucaoPendencia]', e.message);
   }
 }
 
