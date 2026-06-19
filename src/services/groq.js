@@ -187,7 +187,9 @@ DATAS CALCULADAS — use estes valores EXATOS quando o usuário mencionar dias r
 - NUNCA calcule datas por conta própria — use SEMPRE os valores fornecidos acima
 - Para decidir se um horário sem data é "hoje" ou "amanhã": compare com a hora atual (${horaAtual}). Se o horário pedido já passou hoje, use amanhã; senão use hoje.
 - Se o usuário disser apenas "dia X" (ex: "dia 24", "no dia 5"), SEM mês: use o ANO e MÊS de hoje (${hojeISO.substring(0,7)}) com esse dia. Se esse dia já passou neste mês, use o mês seguinte. NUNCA use anos passados como 2024 ou 2025 — o ano atual é ${hojeISO.substring(0,4)}.
-- Se o usuário disser "dia X de [mês]" (ex: "dia 24 de julho"): use o ano atual (${hojeISO.substring(0,4)}) com esse mês/dia; se a data já passou este ano, use o ano seguinte.
+- Se o usuário disser "dia X de [mês]" (ex: "dia 24 de julho"): use o ano atual (${hojeISO.substring(0,4)}) com esse mês/dia.
+  - Para CRIAR algo (tipo "tarefa"): se a data já passou este ano, use o ano seguinte (lembrete sempre é pra frente).
+  - Para CONSULTAR algo (tipo "consulta", campo "datas"): NUNCA empurre para o ano seguinte só porque a data já passou — perguntas sobre agenda podem ser legitimamente sobre o PASSADO (ex: "o que eu tive no dia 1 de junho?" está perguntando sobre algo que já aconteceu, não pedindo para agendar). Use sempre o ano atual quando o usuário não especificar o ano.
 
 REGRAS:
 - Se a mensagem do usuário contiver "[Mensagem citada: ...]" no início, isso significa que ele arrastou/respondeu a uma notificação específica (lembrete, remédio, etc) — use o CONTEÚDO dessa citação para identificar a QUAL item (nome do remédio, título do lembrete) ele está se referindo, mesmo que a mensagem em si não cite esse nome explicitamente. Ex: se a citação menciona "Remédio da tiroide" e o texto diz apenas "ajusta pra 20 doses", o "nome" do ajustar_remedio deve ser "tiroide" (extraído da citação, não null)
@@ -269,6 +271,7 @@ EXEMPLOS:
 "o que eu tenho pro dia 24?" → {"tipo":"consulta","sobre":"agenda do dia 24","datas":["${hojeISO.substring(0,7)}-24"]} (mês/ano = mês/ano atual, NUNCA 2024/2025)
 "tenho algo amanhã?" → {"tipo":"consulta","sobre":"agenda de amanhã","datas":["${amanhaISO}"]}
 "o que eu tenho pro dia 24 e dia 27?" → {"tipo":"consulta","sobre":"agenda dos dias 24 e 27","datas":["${hojeISO.substring(0,7)}-24","${hojeISO.substring(0,7)}-27"]} (duas datas no mesmo array, mesmo mês/ano de hoje)
+"o que eu tive no dia 1 de junho?" → {"tipo":"consulta","sobre":"agenda do dia 1 de junho","datas":["${hojeISO.substring(0,4)}-06-01"]} (mesmo sendo uma data passada, NÃO rola para o ano seguinte — é consulta, pode ser sobre o passado)
 "no dia 24 tenho consulta com a nutricionista" → {"tipo":"tarefa","titulo":"consulta com a nutricionista","data":"${hojeISO.substring(0,7)}-24","hora":null,"antecedencia":0,"recorrente":false,"frequencia":null} (mês/ano = mês/ano atual, dia 24 — NUNCA 2024/2025)
 "remarca pras 14h" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"14:00","nova_data":null}
 "muda a reunião pra 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
