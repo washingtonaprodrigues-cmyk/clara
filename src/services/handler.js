@@ -676,6 +676,42 @@ async function handleMessage(phone, text, location = null) {
       return;
     }
 
+    // ── Consulta de agenda por DATA ESPECÍFICA (ex: "o que tenho pro dia 24?") ──
+    // O bloco [AGENDA] usado no fluxo normal só cobre hoje/amanhã (ver
+    // construção do contexto em responderLivre) — perguntas sobre datas
+    // mais distantes nunca tinham acesso aos dados reais, fazendo a Clara
+    // dizer "não encontrei nada" mesmo quando existia um compromisso real
+    // (bug observado: consulta com nutricionista dia 24 cadastrada, mas
+    // invisível pra ela porque estava fora da janela hoje/amanhã). Esse
+    // branch busca DIRETO no banco pela data perguntada, cobrindo
+    // Reminder (lembretes/horários) e Task (compromissos sem lembrete).
+    if (classified.tipo === 'consulta' && classified.data) {
+      try {
+        const dataAlvo = new Date(`${classified.data}T00:00:00-03:00`);
+        const fimDia = new Date(`${classified.data}T23:59:59-03:00`);
+        const [lembretesData, tarefasData] = await Promise.all([
+          prisma.reminder.findMany({ where: { userId: user.id, scheduledAt: { gte: dataAlvo, lte: fimDia } }, orderBy: { scheduledAt: 'asc' } }),
+          prisma.task.findMany({ where: { userId: user.id, dueDate: { gte: dataAlvo, lte: fimDia } }, orderBy: { dueDate: 'asc' } })
+        ]);
+        const dataFmt = dataAlvo.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+        let contextoData;
+        if (!lembretesData.length && !tarefasData.length) {
+          contextoData = `\n\n[CONSULTA DATA ${dataFmt}] Não há NADA agendado para essa data no banco de dados — confirmado pela busca real, não é falta de contexto. Informe isso com naturalidade.`;
+        } else {
+          const itens = [
+            ...lembretesData.map(r => `${new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })} — ${r.message}`),
+            ...tarefasData.map(t => `${t.dueTime || '(sem horário)'} — ${t.title}`)
+          ];
+          contextoData = `\n\n[CONSULTA DATA ${dataFmt}] Itens reais encontrados para essa data:\n${itens.map(i => `• ${i}`).join('\n')}`;
+        }
+        await responderLivre(user, phone, text, contextoData, false);
+        return;
+      } catch (e) {
+        console.error('[consulta data específica]', e.message);
+        // Em caso de erro, cai no fluxo padrão abaixo em vez de travar.
+      }
+    }
+
     // ── editar_lembrete e deletar_lembrete: executa sem responderLivre depois ──
     if (classified.tipo === 'editar_lembrete') {
       await editarLembrete(user, phone, classified, contextoClassify, text);
