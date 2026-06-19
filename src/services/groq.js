@@ -358,6 +358,61 @@ async function extractPersonalInfo(message) {
   }
 }
 
+// ── extractPendenciaEmocional: detecta mal-estar passageiro ou evento com
+// resultado incerto que vale a pena a Clara voltar a perguntar depois ──
+// Diferente de extractPersonalInfo (fatos estáveis sobre a pessoa), isso é
+// sobre algo COM PRAZO DE VALIDADE — uma dor de cabeça que deve passar em
+// horas, uma entrevista que vai ter um resultado no mesmo dia. O objetivo é
+// a Clara puxar o assunto de volta sozinha (cron "PENDÊNCIAS EMOCIONAIS" em
+// reminders.js), em vez de só reagir quando o usuário menciona de novo.
+const PENDENCIA_KEYWORDS = /dor de cabe[çc]a|dor (de|no|na)|enjoo|enjoad|febre|grip[ei]|resfriad|mal[\s-]estar|me sinto mal|t[oô] mal|passando mal|dormi mal|sem dormir|n[ãa]o dormi|cansad[oa]|exaust|entrevista|prova|exame|resultado d[ao]|consulta|cirurgia|audi[êe]ncia|reuni[ãa]o importante|decis[ãa]o importante|conversa dif[íi]cil|term[ie]nei com|nervos[oa]|ansios[oa]|preocupad[oa]/i;
+
+const EXTRACT_PENDENCIA_SYSTEM = `Extrator de pendências emocionais/de saúde. Retorne APENAS JSON, sem markdown.
+Detecte se a mensagem do usuário menciona algo NOVO que vale a pena perguntar de novo depois:
+- "saude": mal-estar passageiro (dor de cabeça, gripe, cansaço, mal dormido)
+- "evento": algo com resultado incerto ainda por vir (entrevista, prova, exame, consulta médica, decisão importante, conversa difícil)
+
+Se sim: {"pendencia":true,"categoria":"saude"|"evento","resumo":"resumo curto, 3 a 6 palavras","horas":N}
+- categoria "saude": horas = 3 a 5 (cobrar ainda no mesmo dia)
+- categoria "evento": horas = até a noite do dia do evento (estimar; padrão 6 se não souber horário)
+Se não houver nada para acompanhar, OU se o usuário já está contando o RESULTADO de algo (não é pendência nova, é resposta): {"pendencia":false}
+
+"tô com dor de cabeça" → {"pendencia":true,"categoria":"saude","resumo":"dor de cabeça","horas":4}
+"tenho entrevista de emprego às 14h" → {"pendencia":true,"categoria":"evento","resumo":"entrevista de emprego","horas":6}
+"gastei 50 no mercado" → {"pendencia":false}
+"já melhorei da dor de cabeça, obrigado" → {"pendencia":false}
+"consegui o emprego!" → {"pendencia":false}`;
+
+async function extractPendenciaEmocional(message) {
+  try {
+    if (!message || message.trim().length < 5) return null;
+    if (!PENDENCIA_KEYWORDS.test(message)) return null;
+
+    const completion = await groq.chat.completions.create({
+      model: MODEL_LEVE,
+      messages: [
+        { role: 'system', content: EXTRACT_PENDENCIA_SYSTEM },
+        { role: 'user', content: message }
+      ],
+      temperature: 0.1,
+      max_tokens: 100,
+    });
+    let text = completion.choices[0].message.content.trim();
+    text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const result = JSON.parse(text);
+    if (!result?.pendencia) return null;
+
+    const categoria = result.categoria === 'evento' ? 'evento' : 'saude';
+    const horas = Number(result.horas) > 0 ? Number(result.horas) : (categoria === 'evento' ? 6 : 4);
+    return { categoria, resumo: (result.resumo || message).slice(0, 80), horas };
+  } catch (e) {
+    if (!(e instanceof SyntaxError)) {
+      console.error('[extractPendenciaEmocional] erro:', e.message);
+    }
+    return null;
+  }
+}
+
 async function searchWebGroq(query, locationContext = '') {
   try {
     const fullQuery = locationContext ? `${query} em ${locationContext}` : query;
@@ -871,6 +926,7 @@ async function generateMemorySummary(memories, question) {
 module.exports = {
   classify,
   extractPersonalInfo,
+  extractPendenciaEmocional,
   searchWeb: searchWebGroq,
   freeResponse,
   generateMemorySummary,
