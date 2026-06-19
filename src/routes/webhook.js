@@ -18,12 +18,49 @@ function marcarMessageIdProcessado(id) {
   _messageIdsProcessados.set(id, Date.now() + DEDUP_JANELA_MS);
 }
 
-// Limpeza periódica: remove IDs expirados a cada 5 minutos, evitando que
-// o Map cresça sem limite em uma instância de longa duração.
+// ── Segunda camada: dedup por CONTEÚDO (telefone + texto) ──
+// A deduplicação por messageId depende de a UazAPI sempre mandar o ID em
+// um dos 4 campos verificados abaixo. Se um reenvio vier sem nenhum desses
+// campos (ou em um campo desconhecido), o messageId fica undefined e a
+// primeira camada não pega nada — bug real observado: mesmo lembrete
+// criado 2x com título quase idêntico ("Enviar..." vs "enviar..."),
+// indicando duas chamadas de IA separadas para o mesmo texto do usuário,
+// ou seja, dois processamentos completos do mesmo webhook.
+// Esta camada não depende de nenhum campo de ID — só telefone + texto
+// exatos, numa janela curta (15s). Curta o suficiente para não bloquear
+// um usuário que realmente manda a mesma frase de novo minutos depois,
+// longa o suficiente para cobrir qualquer reenvio realista por timeout.
+const _conteudoProcessadoRecente = new Map(); // `${phone}|${text}` -> timestamp de expiração
+const DEDUP_CONTEUDO_JANELA_MS = 15 * 1000; // 15 segundos
+
+function chaveConteudo(phone, text) {
+  return `${phone}|${text}`;
+}
+
+function conteudoJaProcessado(phone, text) {
+  if (!text) return false; // mensagens vazias (áudio, contato etc.) não passam por aqui
+  const chave = chaveConteudo(phone, text);
+  const expiraEm = _conteudoProcessadoRecente.get(chave);
+  if (!expiraEm) return false;
+  if (Date.now() >= expiraEm) { _conteudoProcessadoRecente.delete(chave); return false; }
+  return true;
+}
+
+function marcarConteudoProcessado(phone, text) {
+  if (!text) return;
+  _conteudoProcessadoRecente.set(chaveConteudo(phone, text), Date.now() + DEDUP_CONTEUDO_JANELA_MS);
+}
+
+// Limpeza periódica: remove entradas expiradas de AMBOS os caches a cada
+// 5 minutos, evitando que cresçam sem limite em uma instância de longa
+// duração.
 setInterval(() => {
   const agora = Date.now();
   for (const [id, expiraEm] of _messageIdsProcessados) {
     if (agora >= expiraEm) _messageIdsProcessados.delete(id);
+  }
+  for (const [chave, expiraEm] of _conteudoProcessadoRecente) {
+    if (agora >= expiraEm) _conteudoProcessadoRecente.delete(chave);
   }
 }, 5 * 60 * 1000);
 
@@ -215,6 +252,11 @@ router.post('/', async (req, res) => {
         return res.json({ ok: true });
       }
       marcarMessageIdProcessado(messageId);
+    } else {
+      // Sem messageId identificável — loga pra eventualmente descobrirmos
+      // o campo certo, já que isso significa que a 1ª camada de dedup não
+      // está protegendo essa mensagem (cai só na 2ª camada, por conteúdo).
+      console.log('[Webhook] messageId não encontrado neste payload — chaves disponíveis:', Object.keys(body.message || {}).join(', '));
     }
 
     const phone = (body.message?.sender_pn || '').replace('@s.whatsapp.net', '').replace(/\D/g, '');
@@ -224,6 +266,18 @@ router.post('/', async (req, res) => {
     }
 
     const text = body.message?.text || body.message?.content?.text || '';
+
+    // ── Deduplicação por conteúdo (2ª camada, ver comentário acima) ──
+    // Roda independente de ter encontrado messageId ou não — cobre o caso
+    // de um reenvio vir com um messageId DIFERENTE do original (não deveria
+    // acontecer, mas não temos garantia formal da UazAPI sobre isso) e
+    // também o caso de não ter messageId nenhum.
+    if (text && conteudoJaProcessado(phone, text)) {
+      console.log(`[Webhook] conteúdo duplicado ignorado (2ª camada): ${phone} — "${text.slice(0, 60)}"`);
+      return res.json({ ok: true });
+    }
+    if (text) marcarConteudoProcessado(phone, text);
+
     const quotedText = extrairQuotedText(body.message);
     const textComContexto = quotedText && text ? `[Mensagem citada: "${quotedText.slice(0, 200)}"]\n${text}` : text;
 
