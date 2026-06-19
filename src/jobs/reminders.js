@@ -1015,6 +1015,21 @@ cron.schedule('0 3 * * *', async () => {
     console.log('[Cleanup] Locks antigos removidos');
   } catch (e) { console.error('[Cleanup] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
+// LIMPEZA DE PENDÊNCIAS EMOCIONAIS ANTIGAS (03:00)
+// Pendências resolvidas ou perguntadas (respondidas ou não) com mais de
+// 3 dias não fazem mais sentido manter — evita a tabela crescer indefinidamente
+// e evita reabrir um assunto que já ficou velho demais pra cobrar.
+cron.schedule('0 3 * * *', async () => {
+  try {
+    const limite = new Date(nowBRT().getTime() - 3 * 24 * 60 * 60 * 1000);
+    const resultado = await prisma.pendencia.deleteMany({
+      where: { createdAt: { lt: limite }, OR: [{ resolvido: true }, { perguntado: true }] }
+    });
+    if (resultado.count > 0) {
+      console.log(`[Cleanup Pendências] ${resultado.count} pendência(s) antiga(s) removida(s)`);
+    }
+  } catch (e) { console.error('[Cleanup Pendências] Erro:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
 // Limpeza de med_lock a cada hora
 cron.schedule('0 * * * *', async () => {
   try {
@@ -1122,4 +1137,74 @@ Envie UMA mensagem curta (1-2 linhas) como parceira presente:
     }
   } catch (e) { console.error('[Parceira] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
+// PENDÊNCIAS EMOCIONAIS — a Clara volta a perguntar sozinha sobre algo que
+// o usuário mencionou antes (mal-estar passageiro, evento com resultado
+// incerto) quando o prazo calculado na extração (extractPendenciaEmocional,
+// groq.js) vence. É isso que faz parecer que ela "lembrou" por conta
+// própria, em vez de só reagir quando o assunto é trazido de novo. A
+// resposta do usuário é tratada no branch "pendencia_emocional" dentro de
+// checkConfirmacaoPendente (handler.js).
+cron.schedule('*/5 * * * *', async () => {
+  try {
+    const vencidas = await prisma.pendencia.findMany({
+      where: { perguntado: false, resolvido: false, checkInAt: { lte: new Date() } },
+      include: { user: true },
+    });
+    for (const p of vencidas) {
+      try {
+        // Marca perguntado=true ANTES de gerar/enviar — mesma lógica de
+        // lock atômico usada nos outros crons (evita pergunta duplicada
+        // se o cron disparar em paralelo).
+        const ganhou = await prisma.pendencia.updateMany({
+          where: { id: p.id, perguntado: false },
+          data: { perguntado: true },
+        });
+        if (ganhou.count === 0) continue;
+
+        const phone = p.user?.phone;
+        if (!phone) continue;
+
+        const prefs = await memory.getUserPreference(p.userId).catch(() => null);
+        const nome = prefs?.name || p.user?.name || null;
+
+        const instrucaoCategoria = p.categoria === 'saude'
+          ? 'Pergunte se já melhorou ou já cuidou disso, com cuidado genuíno — não repita a frase exata de antes, varie.'
+          : 'Pergunte como foi/deu, com curiosidade genuína de quem realmente se importa com o resultado.';
+
+        const systemPendencia = `Você é a Clara, parceira pessoal do ${nome || 'usuário'} no WhatsApp.
+Tom obrigatório: ${tomDesc(prefs?.tom)}
+Mais cedo ele(a) mencionou: "${p.resumo}".
+${instrucaoCategoria}
+Envie UMA mensagem curta (1-2 linhas), natural, como quem realmente lembrou e se importou — NÃO use as palavras "lembrete" ou "pendência", NÃO liste tópicos, NÃO termine com saudação de período.`;
+
+        const msg = await freeResponse('Pergunte de volta sobre o que a pessoa mencionou.', [], {
+          _contexto: '', name: nome, tom: prefs?.tom || 'carinhoso', _systemOverride: systemPendencia,
+        });
+
+        if (!msg || msg.length < 5) {
+          // Libera para tentar de novo no próximo ciclo em vez de perder
+          // a pendência por uma falha temporária de geração.
+          await prisma.pendencia.update({ where: { id: p.id }, data: { perguntado: false } }).catch(() => {});
+          continue;
+        }
+
+        await sendMessage(phone, msg);
+        // Expira em 24h: dá tempo do usuário responder sem pressa, mas
+        // evita que uma resposta de dias depois seja interpretada como
+        // reação a essa pergunta específica.
+        await prisma.memory.create({
+          data: {
+            userId: p.userId, type: 'confirmacao_pendente',
+            content: JSON.stringify({
+              tipo: 'pendencia_emocional', pendenciaId: p.id, categoria: p.categoria,
+              resumo: p.resumo, expira: Date.now() + 24 * 60 * 60 * 1000,
+            }),
+          },
+        });
+        console.log(`[Pendência] ${phone} ← follow-up sobre "${p.resumo}" (${p.categoria})`);
+      } catch (e) { console.error(`[Pendência] Erro pendência ${p.id}:`, e.message); }
+    }
+  } catch (e) { console.error('[Pendência] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
 console.log('Clara scheduler iniciado 💜');
