@@ -1,5 +1,5 @@
 // v2 - consulta direta sem LLM
-const { classify, extractPersonalInfo, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao } = require('./groq');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao } = require('./groq');
 
 // Importa whatsapp de forma segura com fallback direto via axios
 let _whatsappModule = null;
@@ -45,7 +45,7 @@ const memory = require('./memory');
 const { tentarConsultaDireta } = require('./consultaDireta');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName } = memory;
+const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName, savePendencia } = memory;
 
 // Substitui prisma.memory.upsert({ where: { userId_type: {...} } }) — esse
 // nome de campo composto só existe quando o model Memory tem
@@ -1332,6 +1332,22 @@ async function checkConfirmacaoPendente(user, phone, text) {
     if (Date.now() > dados.expira) { await prisma.memory.delete({ where: { id: pendente.id } }); return false; }
     const textNorm = text.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
+    if (dados.tipo === 'pendencia_emocional') {
+      // A Clara puxou de volta um assunto sozinha (cron "PENDÊNCIAS
+      // EMOCIONAIS" em reminders.js) — isso aqui é a resposta do usuário.
+      // Não usamos texto fixo: deixamos o freeResponse reagir de forma
+      // genuína (cobrança leve se ainda não resolveu, comemoração se sim),
+      // mantendo o tom escolhido, em vez de uma confirmação robótica.
+      await prisma.pendencia.update({ where: { id: dados.pendenciaId }, data: { resolvido: true } }).catch(() => {});
+      await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
+      const instrucao = dados.categoria === 'saude'
+        ? 'Se a resposta indicar que ainda não melhorou ou não cuidou disso, dê uma cobrança leve e genuína, do jeito do seu tom. Se já melhorou, comemore brevemente.'
+        : 'Reaja ao resultado contado — comemore se foi bom, console se foi ruim — com curiosidade genuína de amiga, não como assistente.';
+      const contextoExtra = `\n\n[PENDÊNCIA RESPONDIDA] Você tinha perguntado de volta sobre "${dados.resumo}". ${instrucao} NÃO repita a pergunta — isso já é a resposta a ela.`;
+      await responderLivre(user, phone, text, contextoExtra);
+      return true;
+    }
+
     if (dados.tipo === 'hora_lembrete') {
       // Tenta extrair um horário do texto (ex: "10h", "14:30", "10 da manhã", "2 da tarde")
       let horaEscolhida = null;
@@ -1484,11 +1500,25 @@ async function checkConfirmacaoPendente(user, phone, text) {
 
 async function extractAndSavePersonalInfo(userId, text) {
   const infos = await extractPersonalInfo(text);
-  if (!infos || infos.length === 0) return;
-  for (const { chave, valor, categoria } of infos) {
-    if (!chave || !valor) continue;
-    await savePersonalInfo(userId, chave, valor, categoria || 'outro');
-    console.log(`[memória pessoal] salvo: ${chave} = "${valor}"`);
+  if (infos && infos.length > 0) {
+    for (const { chave, valor, categoria } of infos) {
+      if (!chave || !valor) continue;
+      await savePersonalInfo(userId, chave, valor, categoria || 'outro');
+      console.log(`[memória pessoal] salvo: ${chave} = "${valor}"`);
+    }
+  }
+
+  // ── Pendência emocional: mal-estar passageiro ou evento com resultado
+  // incerto, pra Clara voltar a perguntar depois sozinha (ver cron
+  // "PENDÊNCIAS EMOCIONAIS" em reminders.js) ──
+  try {
+    const pendencia = await extractPendenciaEmocional(text);
+    if (pendencia) {
+      await savePendencia(userId, pendencia);
+      console.log(`[pendência emocional] salva: ${pendencia.categoria} — "${pendencia.resumo}" (check-in em ${pendencia.horas}h)`);
+    }
+  } catch (e) {
+    console.error('[extractPendenciaEmocional]', e.message);
   }
 }
 
