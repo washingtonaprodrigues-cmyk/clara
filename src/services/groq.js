@@ -256,17 +256,19 @@ TIPOS E FORMATOS:
 {"tipo":"enviar_mensagem_agendada","destinatario":"nome","mensagem":"texto","phone":null,"quando":"desc","data":null,"hora":"HH:MM"}
 {"tipo":"concluir_lembrete","titulo":"descrição"}
 {"tipo":"listar_contatos"}
-{"tipo":"consulta","sobre":"tema","data":"YYYY-MM-DD ou null — preencha SE o usuário perguntar sobre agenda/compromissos de uma data específica (ex: 'o que tenho pro dia 24', 'tenho algo amanhã', 'o que tenho na sexta'), null se for pergunta genérica sem data"}
+{"tipo":"consulta","sobre":"tema","datas":["YYYY-MM-DD"] ou null}
+- "datas": array com UMA OU MAIS datas em YYYY-MM-DD SE o usuário perguntar sobre agenda/compromissos de data(s) específica(s) (ex: "o que tenho pro dia 24" → uma data; "o que tenho dia 24 e dia 27" → duas datas no array). null se for pergunta genérica sem data.
 
 {"tipo":"outro"}
 
 EXEMPLOS:
 "gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
 "me lembra às 10h de fazer backup" → {"tipo":"tarefa","titulo":"fazer backup","data":null,"hora":"10:00","antecedencia":0,"recorrente":false,"frequencia":null}
-"que horas eu tenho que deixar os sulfites?" → {"tipo":"consulta","sobre":"horário de deixar os sulfites","data":null}
-"a que horas é a reunião?" → {"tipo":"consulta","sobre":"horário da reunião","data":null}
-"o que eu tenho pro dia 24?" → {"tipo":"consulta","sobre":"agenda do dia 24","data":"${hojeISO.substring(0,7)}-24"} (mês/ano = mês/ano atual, NUNCA 2024/2025)
-"tenho algo amanhã?" → {"tipo":"consulta","sobre":"agenda de amanhã","data":"${amanhaISO}"}
+"que horas eu tenho que deixar os sulfites?" → {"tipo":"consulta","sobre":"horário de deixar os sulfites","datas":null}
+"a que horas é a reunião?" → {"tipo":"consulta","sobre":"horário da reunião","datas":null}
+"o que eu tenho pro dia 24?" → {"tipo":"consulta","sobre":"agenda do dia 24","datas":["${hojeISO.substring(0,7)}-24"]} (mês/ano = mês/ano atual, NUNCA 2024/2025)
+"tenho algo amanhã?" → {"tipo":"consulta","sobre":"agenda de amanhã","datas":["${amanhaISO}"]}
+"o que eu tenho pro dia 24 e dia 27?" → {"tipo":"consulta","sobre":"agenda dos dias 24 e 27","datas":["${hojeISO.substring(0,7)}-24","${hojeISO.substring(0,7)}-27"]} (duas datas no mesmo array, mesmo mês/ano de hoje)
 "no dia 24 tenho consulta com a nutricionista" → {"tipo":"tarefa","titulo":"consulta com a nutricionista","data":"${hojeISO.substring(0,7)}-24","hora":null,"antecedencia":0,"recorrente":false,"frequencia":null} (mês/ano = mês/ano atual, dia 24 — NUNCA 2024/2025)
 "remarca pras 14h" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"14:00","nova_data":null}
 "muda a reunião pra 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
