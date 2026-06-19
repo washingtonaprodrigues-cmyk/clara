@@ -334,14 +334,21 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         buildPersonalContext(user.id).catch(() => ''),
         prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null),
         // ── Pendência de saúde ainda não cobrada ──
-        // Se o usuário chamar a Clara ANTES do cron de pendências (reminders.js)
-        // disparar sozinho, ela já traz o assunto à tona na conversa em vez de
-        // esperar o horário do check-in — fica mais natural (ela "lembra"
-        // porque você apareceu, não só porque um timer venceu). Só categoria
-        // saúde por enquanto (pedido explícito); "evento" continua exclusivo
-        // do cron, pois ali o timing real do evento importa mais.
+        // Se o usuário chamar a Clara DEPOIS do horário de check-in
+        // calculado (checkInAt, normalmente 3-5h após a menção original),
+        // ela já traz o assunto à tona na conversa em vez de esperar o
+        // cron disparar sozinho — fica mais natural ("ela lembrou porque
+        // você apareceu"). AJUSTE: antes essa busca não checava checkInAt,
+        // só perguntado/resolvido — isso fazia ela puxar o assunto segundos
+        // depois de você ter mencionado, mesmo sem nenhum tempo ter
+        // passado, colidindo de forma estranha com outras perguntas feitas
+        // logo em seguida (ex: pergunta sobre agenda virando também
+        // pergunta sobre dor de cabeça na mesma resposta). Agora só
+        // considera pendências cujo prazo de check-in já venceu — mesmo
+        // timing que o cron usa, só que com chance de aparecer organicamente
+        // na conversa em vez de só por iniciativa própria da Clara.
         prisma.pendencia.findFirst({
-          where: { userId: user.id, categoria: 'saude', perguntado: false, resolvido: false },
+          where: { userId: user.id, categoria: 'saude', perguntado: false, resolvido: false, checkInAt: { lte: new Date() } },
           orderBy: { createdAt: 'desc' }
         }).catch(() => null)
       ]);
