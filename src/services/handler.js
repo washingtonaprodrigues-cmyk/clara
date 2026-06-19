@@ -324,7 +324,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
       const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
 
-      const [lembretes, meds, gastos, perfilPessoal, relMemoria] = await Promise.all([
+      const [lembretes, meds, gastos, perfilPessoal, relMemoria, pendenciaSaude] = await Promise.all([
         prisma.reminder.findMany({
           where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: inicioHoje, lte: fimAmanha } },
           orderBy: { scheduledAt: 'asc' }, take: 20
@@ -332,7 +332,18 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         prisma.medication.findMany({ where: { userId: user.id, active: true, remaining: { gt: 0 } } }),
         preferences.saldo != null ? prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } } }) : Promise.resolve([]),
         buildPersonalContext(user.id).catch(() => ''),
-        prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null)
+        prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null),
+        // ── Pendência de saúde ainda não cobrada ──
+        // Se o usuário chamar a Clara ANTES do cron de pendências (reminders.js)
+        // disparar sozinho, ela já traz o assunto à tona na conversa em vez de
+        // esperar o horário do check-in — fica mais natural (ela "lembra"
+        // porque você apareceu, não só porque um timer venceu). Só categoria
+        // saúde por enquanto (pedido explícito); "evento" continua exclusivo
+        // do cron, pois ali o timing real do evento importa mais.
+        prisma.pendencia.findFirst({
+          where: { userId: user.id, categoria: 'saude', perguntado: false, resolvido: false },
+          orderBy: { createdAt: 'desc' }
+        }).catch(() => null)
       ]);
 
       if (lembretes.length > 0) {
@@ -397,6 +408,18 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       } catch(e) {}
 
       if (relMemoria?.content) contexto += `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoria.content}`;
+
+      // ── Pendência de saúde: traz à tona se fizer sentido na conversa ──
+      // NÃO marca perguntado=true aqui — deliberado. Preferimos o risco de
+      // ela perguntar duas vezes (uma agora na conversa, outra depois pelo
+      // cron de reminders.js) a correr o risco de "consumir" a pendência
+      // silenciosamente numa resposta onde ela não encaixou o assunto.
+      // Algo que pode gerar preocupação de saúde deve sempre ser
+      // perguntado de novo, nunca esquecido por engano.
+      if (pendenciaSaude) {
+        contexto += `\n\n[SAÚDE EM ABERTO] Mais cedo a pessoa mencionou: "${pendenciaSaude.resumo}". Se fizer sentido natural na conversa, pergunte com carinho genuíno como está se sentindo agora — sem forçar se a mensagem atual for sobre outro assunto completamente diferente, e sem repetir isso em toda resposta.`;
+      }
+
       if (contexto) contexto = `\n\nUse as informações abaixo para responder com precisão:${contexto}`;
       if (perfilPessoal) contexto += perfilPessoal;
       if (contextoExtra) contexto += contextoExtra;
