@@ -701,8 +701,18 @@ async function handleMessage(phone, text, location = null) {
             prisma.task.findMany({ where: { userId: user.id, dueDate: { gte: dataAlvo, lte: fimDia } }, orderBy: { dueDate: 'asc' } })
           ]);
           const dataFmt = dataAlvo.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+          const ehPassado = fimDia < nowBRT();
           if (!lembretesData.length && !tarefasData.length) {
-            blocos.push(`[${dataFmt}] Nada agendado para essa data no banco de dados — confirmado pela busca real.`);
+            // Para datas PASSADAS, não dá pra afirmar com certeza que "não
+            // teve nada" — lembretes não confirmados com mais de 48h são
+            // apagados automaticamente (ver cron de limpeza em
+            // reminders.js), então a ausência pode significar "realmente
+            // não teve nada" OU "teve algo mas já foi limpo por não ter
+            // sido confirmado". Para datas futuras essa ambiguidade não
+            // existe — vazio é só vazio mesmo.
+            blocos.push(ehPassado
+              ? `[${dataFmt}, data passada] Nada encontrado no banco para essa data. IMPORTANTE: isso pode significar que realmente não havia nada, OU que havia algo não confirmado que já foi removido automaticamente (lembretes não confirmados somem após 48h). Avise essa incerteza ao usuário em vez de afirmar com certeza que não teve nada.`
+              : `[${dataFmt}] Nada agendado para essa data no banco de dados — confirmado pela busca real.`);
           } else {
             const itens = [
               ...lembretesData.map(r => `${new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })} — ${r.message}`),
