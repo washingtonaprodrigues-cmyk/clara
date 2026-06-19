@@ -47,6 +47,18 @@ function horaBRT(d) {
 // quer fazer uma AÇÃO (criar, mudar, decidir), não só ler um dado pronto.
 const EXCLUSOES = /\b(criar?|cria|adicion[ae]|marca|marque|remarca|remarque|muda|mude|altera|altere|cancela|cancele|exclui|exclua|deleta|delete|apaga|apague|conclui|conclua|vale a pena|devo|deveria|o que acha|me ajuda a decidir|compar[ae])\b/i;
 
+// ── Data específica mencionada (dia X, X/Y, dia da semana, "semana que
+// vem" etc.) ──
+// Bug real corrigido aqui: "Clara, como está minha agenda pro dia 24 e
+// 27" batia em RE_AGENDA, não batia em RE_AMANHA, e caía no fallback
+// "agenda_hoje" — respondendo sobre HOJE quando a pergunta era sobre datas
+// completamente diferentes. Esse módulo só sabe responder hoje/amanhã;
+// qualquer outra data precisa do fluxo completo (classify com extração de
+// data + busca real no banco, ver handler.js/groq.js), então quando esse
+// padrão bate, retornamos null aqui para NUNCA interceptar — deixa passar
+// para o fluxo normal em vez de arriscar responder sobre o dia errado.
+const RE_DATA_ESPECIFICA = /\bdia\s+\d{1,2}\b|\b\d{1,2}\/\d{1,2}\b|\b(segunda|ter[çc]a|quarta|quinta|sexta|s[áa]bado|domingo)(-feira)?\b|semana que vem|pr[óo]xima semana|m[êe]s que vem/i;
+
 const RE_AGENDA = /\bagenda\b/i;
 const RE_HOJE = /\bhoje\b/i;
 const RE_AMANHA = /\bamanh[ãa]/i;
@@ -57,6 +69,7 @@ function detectarTipoConsultaDireta(texto) {
   const t = (texto || '').trim();
   if (!t || t.length > 80) return null; // mensagens muito longas raramente são consulta simples
   if (EXCLUSOES.test(t)) return null; // sinal de ação/decisão, não leitura pura
+  if (RE_DATA_ESPECIFICA.test(t) && !RE_HOJE.test(t)) return null; // data específica que não é "hoje" — deixa pro fluxo completo
 
   const temAgenda = RE_AGENDA.test(t);
   const temSaldo = RE_SALDO.test(t);
