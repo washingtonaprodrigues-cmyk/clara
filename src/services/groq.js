@@ -413,6 +413,39 @@ async function extractPendenciaEmocional(message) {
   }
 }
 
+// ── checkResolucaoPendencia: detecta se uma mensagem confirma que uma
+// pendência JÁ aberta foi resolvida ──
+// Diferente de extractPendenciaEmocional (que só roda se a mensagem bater
+// com PENDENCIA_KEYWORDS), essa função é chamada pelo handler.js só QUANDO
+// já existe uma Pendencia aberta no banco para o usuário — não depende de
+// palavras-chave na mensagem nova, porque frases de resolução são livres
+// demais ("passou, graças a Deus", "já tá tudo bem", "deu certo!") pra
+// cobrir com regex. Sem isso, uma pendência confirmada como resolvida
+// numa conversa orgânica (fora do fluxo do cron) ficava presa para sempre
+// e a Clara voltava a perguntar sobre ela em toda conversa futura.
+async function checkResolucaoPendencia(message, resumo) {
+  try {
+    if (!message || message.trim().length < 2) return false;
+    const completion = await groq.chat.completions.create({
+      model: MODEL_LEVE,
+      messages: [
+        {
+          role: 'system',
+          content: `Existe um assunto em aberto: "${resumo}". Verifique se a mensagem do usuário indica claramente que isso JÁ passou, melhorou, foi resolvido ou terminou (ex: "passou", "já melhorei", "consegui", "deu tudo certo", "obrigado por perguntar, já tá bem"). Responda APENAS "sim" ou "nao" — "sim" só se for claro, "nao" se a mensagem for sobre outro assunto ou ambígua.`
+        },
+        { role: 'user', content: message }
+      ],
+      temperature: 0,
+      max_tokens: 5,
+    });
+    const resp = completion.choices[0].message.content.trim().toLowerCase();
+    return resp.startsWith('sim');
+  } catch (e) {
+    console.error('[checkResolucaoPendencia] erro:', e.message);
+    return false;
+  }
+}
+
 async function searchWebGroq(query, locationContext = '') {
   try {
     const fullQuery = locationContext ? `${query} em ${locationContext}` : query;
@@ -930,6 +963,7 @@ module.exports = {
   classify,
   extractPersonalInfo,
   extractPendenciaEmocional,
+  checkResolucaoPendencia,
   searchWeb: searchWebGroq,
   freeResponse,
   generateMemorySummary,
