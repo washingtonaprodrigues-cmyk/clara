@@ -305,6 +305,19 @@ async function getMonthExpenses(userId) {
   });
 }
 
+// ====================== PENDÊNCIAS EMOCIONAIS ======================
+// Ver extractPendenciaEmocional (groq.js) e o cron "PENDÊNCIAS EMOCIONAIS"
+// (reminders.js) — isso é o que permite a Clara voltar a perguntar sobre
+// algo passageiro (mal-estar, evento com resultado incerto) sem o usuário
+// precisar trazer o assunto de volta.
+
+async function savePendencia(userId, { categoria, resumo, horas = 4 }) {
+  const checkInAt = new Date(Date.now() + horas * 60 * 60 * 1000);
+  return prisma.pendencia.create({
+    data: { userId, categoria, resumo, checkInAt },
+  });
+}
+
 // ====================== CONTATOS ======================
 
 async function saveContact(userId, { nome, phone, relation = null, notes = null }) {
@@ -357,4 +370,5 @@ module.exports = {
   saveMedication, saveTask,
   saveExpense, getMonthExpenses,
   saveContact, getContacts, findContactByName,
+  savePendencia,
 };
