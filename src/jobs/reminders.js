@@ -434,7 +434,26 @@ async function proativaInteligente(periodo) {
         ]);
         if (!infoPessoal && memsRecentes.length < 3) continue;
         if (Math.random() > 0.33) continue;
-        const contextoMems = memsRecentes
+        // ── Filtro de memórias com data futura ──
+        // memsRecentes inclui qualquer tipo de memória (compromisso, gasto,
+        // remédio etc.) só ordenado por criação, sem olhar se o ASSUNTO em
+        // si já venceu ou ainda é futuro. Isso causava a IA falar de uma
+        // tarefa com vencimento daqui a dias como se já tivesse acontecido
+        // (ex: "você finalmente lembrou do pagamento do remédio?" sobre algo
+        // que só vence dia 24). Cruza com a tabela Task: se a memória for do
+        // tipo 'compromisso' e a Task correspondente tiver dueDate no futuro,
+        // remove do contexto — só sobra o que já é passado/presente ou não
+        // tem data (filtro conservador: na dúvida, mantém).
+        const tasksFuturas = await prisma.task.findMany({
+          where: { userId: user.id, completed: false, dueDate: { gt: now } },
+          select: { title: true }
+        }).catch(() => []);
+        const titulosFuturos = new Set(tasksFuturas.map(t => t.title));
+        const memsFiltradas = memsRecentes.filter(m => {
+          if (m.type !== 'compromisso') return true;
+          return !titulosFuturos.has(m.content);
+        });
+        const contextoMems = memsFiltradas
           .filter(m => !['conversa','bom_dia_enviado','boa_noite_enviado','proativa_lock','med_lock','alerta_data_lock'].includes(m.type))
           .slice(0, 8).map(m => `[${m.type}] ${m.content}`).join('\n');
         const tomDescLocal = {
@@ -450,6 +469,7 @@ REGRAS:
 - NUNCA comece com "Oi", "Olá" ou nome da pessoa
 - NÃO agende nada, NÃO liste tarefas
 - Use o contexto para algo genuíno e específico — nunca genérico
+- NÃO trate nada do contexto como já feito, pago ou resolvido — se não tiver certeza se já aconteceu, pergunte de forma aberta em vez de cobrar como se já devesse ter sido feito
 - Se não tiver nada relevante ou o contexto for fraco, responda APENAS: SKIP
 - Respeite rigorosamente o tom acima — não misture estilos
 Contexto recente: ${contextoMems}
@@ -803,6 +823,28 @@ cron.schedule('* * * * *', async () => {
       }
       if (!reminderesParaEnviar.length) continue;
       grupo.reminders = reminderesParaEnviar;
+
+      // ── Claim atômico (evita envio duplicado) ──
+      // Antes deste fix: o "sent: true" só era gravado no FINAL do
+      // processamento do grupo (depois de gerar mensagem, criar follow-ups
+      // etc). Como o cron roda a cada minuto, se uma execução demorasse
+      // mais que 1min (comum quando entra fallback de IA), a execução
+      // seguinte pegava o MESMO lembrete ainda com sent:false e mandava de
+      // novo — causando duplicidade (3 envios do mesmo lembrete, cada um
+      // com uma variação aleatória de finais[]). Agora "reivindicamos" cada
+      // lembrete individualmente ANTES de processar: só os que este
+      // processo realmente conseguiu marcar como sent:true (ninguém mais
+      // chegou primeiro) seguem adiante.
+      const claimados = [];
+      for (const r of grupo.reminders) {
+        const resultado = await prisma.reminder.updateMany({
+          where: { id: r.id, sent: false },
+          data: { sent: true }
+        });
+        if (resultado.count === 1) claimados.push(r);
+      }
+      if (!claimados.length) continue;
+      grupo.reminders = claimados;
 
       let msg;
       try {
