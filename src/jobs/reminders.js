@@ -586,14 +586,17 @@ NÃO use tópicos ou marcadores. NÃO termine com saudação de período.`;
   } catch (e) { console.error('[Radar] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 // TRADIÇÕES SEMANAIS — SEXTA (17:00)
-cron.schedule('0 17 * * 5', async () => {
+cron.schedule('30 18 * * 5', async () => {
   try {
     const users = await prisma.user.findMany({ where: { blocked: false } });
     const now = nowBRT();
     const inicioSemana = new Date(now); inicioSemana.setDate(now.getDate() - 4); inicioSemana.setHours(0,0,0,0);
     for (const user of users) {
       try {
-        if (await jaEnviouHoje(user.id, 'sexta_enviado')) continue;
+        if (!(await tentarLockDiario(user.id, 'sexta_enviado'))) {
+          console.log(`[Sexta] ja enviado/processando hoje para ${user.phone}`);
+          continue;
+        }
         const [gastosSemana, tarefasSemana, { prefs }] = await Promise.all([
           prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioSemana } } }),
           prisma.reminder.findMany({ where: { userId: user.id, scheduledAt: { gte: inicioSemana }, confirmed: true } }),
@@ -612,7 +615,6 @@ ${ctx}`;
         const msg = await freeResponse('Envie mensagem de sexta.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemSexta });
         if (!msg) { console.log(`[Sexta] Rate limit, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
-        await marcarEnviadoHoje(user.id, 'sexta_enviado');
         console.log(`[Sexta] Enviado para ${user.phone}`);
       } catch (e) { console.error(`[Sexta] Erro ${user.phone}:`, e.message); }
     }
