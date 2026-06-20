@@ -109,7 +109,22 @@ async function responderAgenda(prisma, userId, dia) {
     return `• ${horaBRT(dLocal)} — ${r.message}`;
   });
 
-  return `Sua agenda para ${label}:\n${linhas.join('\n')}`;
+  // ── Linha de fechamento ──
+  // Antes a resposta só despejava a lista e parava, sem responder a
+  // pergunta implícita por trás de "minha agenda hoje acabou?" — alguém
+  // perguntando isso quer um sim/não, não só os dados crus. Para "hoje",
+  // fecha deixando claro quanto ainda falta; para "amanhã" não faz tanto
+  // sentido falar em "restar", então só varia a frase de fechamento.
+  let fechamento;
+  if (dia === 'amanha') {
+    fechamento = lembretes.length === 1 ? 'Só isso por enquanto.' : `${lembretes.length} compromissos no total.`;
+  } else {
+    fechamento = lembretes.length === 1
+      ? 'Ainda falta só isso aí pra hoje! 😊'
+      : `Ainda restam ${lembretes.length} compromissos hoje.`;
+  }
+
+  return `Sua agenda para ${label}:\n${linhas.join('\n')}\n\n${fechamento}`;
 }
 
 // Formata todos os lembretes pendentes (não só hoje/amanhã) — útil para
