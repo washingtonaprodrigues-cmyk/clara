@@ -775,7 +775,19 @@ async function handleMessage(phone, text, location = null) {
         return null;
       });
     } else {
-      executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
+      // ── AWAIT em vez de fire-and-forget ──
+      // Bug corrigido: antes essa chamada não era esperada (.catch() sem
+      // await) — a Clara já respondia "Anotado!" pro usuário enquanto a
+      // gravação real no banco (ex: criação do Reminder) ainda rodava em
+      // segundo plano. Na maioria das vezes isso não dava problema (a
+      // gravação é rápida), mas em dias com muitos deploys em sequência
+      // (como hoje), se o processo fosse reiniciado bem nesse instante, a
+      // gravação podia ser interrompida no meio — o usuário recebia a
+      // confirmação, mas o lembrete nunca chegava a existir de verdade no
+      // banco (bug observado: lembrete confirmado por mensagem mas que
+      // nunca disparou). Agora esperamos a gravação terminar de verdade
+      // antes de seguir pra mensagem de confirmação.
+      await executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
     }
     const isSaudacao = classified.tipo === 'saudacao';
 
