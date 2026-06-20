@@ -1140,7 +1140,15 @@ async function salvarPontoSilencioso(user, acoes) {
 
 function detectarUrgencia(titulo) {
   const t = (titulo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const palavras = ['medico','medica','consulta','dentista','cirurgia','exame','laboratorio','farmacia','remedio','medicamento','vacina','hospital','clinica','psico','terapia','fisio','upa','documento','cartorio','contrato','assinar','entregar','protocolar','prazo','vencimento','vence','renovar','passaporte','rg','cnh','voo','aeroporto','embarque','onibus','trem','reuniao','apresentacao','entrevista','prova','concurso','buscar','pegar','retirar','entregar','entrega','cabelereiro','barbearia','manicure','cabeleireiro','marmita','almoco','janta','jantar','escola','creche'];
+  // ── "farmacia", "remedio" e "medicamento" removidos desta lista ──
+  // Antes, um lembrete criado via chat com essas palavras (ex: "tomar
+  // remédio da gripe às 14h") caía no fluxo "urgente" (aviso 15min antes +
+  // cobrança 15min depois + pergunta "como foi?" 2h depois) — pesado
+  // demais pra remédio do dia a dia, e DUPLICADO com o sistema dedicado
+  // de medicamentos (cadastro via "+ remédio"), que já tem seu próprio
+  // alarme + follow-up de 20min. "vacina" continua na lista pois é um
+  // evento pontual (não recorrente), mais parecido com consulta.
+  const palavras = ['medico','medica','consulta','dentista','cirurgia','exame','laboratorio','vacina','hospital','clinica','psico','terapia','fisio','upa','documento','cartorio','contrato','assinar','entregar','protocolar','prazo','vencimento','vence','renovar','passaporte','rg','cnh','voo','aeroporto','embarque','onibus','trem','reuniao','apresentacao','entrevista','prova','concurso','buscar','pegar','retirar','entregar','entrega','cabelereiro','barbearia','manicure','cabeleireiro','marmita','almoco','janta','jantar','escola','creche'];
   return palavras.some(p => t.includes(p));
 }
 
@@ -1452,7 +1460,7 @@ async function checkConfirmacaoPendente(user, phone, text) {
       const instrucao = dados.categoria === 'saude'
         ? 'Se a resposta indicar que ainda não melhorou ou não cuidou disso, dê uma cobrança leve e genuína, do jeito do seu tom. Se já melhorou, comemore brevemente.'
         : 'Reaja ao resultado contado — comemore se foi bom, console se foi ruim — com curiosidade genuína de amiga, não como assistente.';
-      const contextoExtra = `\n\n[PENDÊNCIA RESPONDIDA] Você tinha perguntado de volta sobre "${dados.resumo}". ${instrucao} NÃO repita a pergunta — isso já é a resposta a ela.`;
+      const contextoExtra = `\n\n[PENDÊNCIA RESPONDIDA] Você tinha perguntado de volta sobre "${dados.resumo}". O usuário acabou de te contar o resultado/detalhes na mensagem atual. ${instrucao} NÃO repita a pergunta. NÃO reformule os fatos que ele contou como uma pergunta de confirmação (ex: NUNCA faça algo como "Foi assim: X. Confirma?") — ele já te contou, é informação dada, não precisa de checagem. Reaja com uma frase genuína (torça, comemore, brinque, console — o que couber), sem repetir os detalhes de volta para ele.`;
       await responderLivre(user, phone, text, contextoExtra);
       return true;
     }
