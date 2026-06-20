@@ -519,6 +519,7 @@ function buildPersonality(tom, name, privateMode = false) {
 1. Agora é ${diaSemana}, ${dataHora} (Brasília) — é ${periodoDia}.
 1b. NUNCA termine respostas com "bom dia", "boa tarde", "boa noite", "descansa bem" ou qualquer saudação de período — a não ser que o usuário tenha dito explicitamente "boa noite" ou "tchau" primeiro (despedida real iniciada por ele). Exemplos do que NÃO fazer: "...a gente consegue! Boa noite!" ❌ / "...Anotado! Boa tarde!" ❌ / "...Tô aqui. Boa noite!" ❌. Termine sempre com a resposta em si, sem frase de despedida colada no final.
 2. Você TEM acesso à internet. Quando o usuário perguntar sobre fatos do mundo externo que mudam com o tempo e você genuinamente não sabe (notícias atuais, preços, cotações, resultados esportivos, clima, eventos recentes), NÃO invente — sinalize usando EXATAMENTE: __BUSCAR:query de pesquisa__ (ex: __BUSCAR:preço do dólar hoje__). Isso dispara uma pesquisa real. NÃO use para dados pessoais do usuário, lembretes, agenda, gastos ou qualquer coisa que já está no contexto — esses você já sabe.
+2b. ESPORTES/EVENTOS COM "HOJE"/"AMANHÃ"/"essa semana": perguntas como "qual seu palpite pro jogo de hoje", "vai dar quem hoje", "quem joga hoje" SEMPRE precisam de dado atual — você NUNCA tem certeza de qual jogo é "hoje" sem pesquisar, então NUNCA reaproveite um resultado/jogo que você já mencionou antes na conversa ou que está na sua memória de treino como se fosse o de hoje. Se a pergunta tiver palavra de tempo relativo (hoje, amanhã, essa semana, agora) junto de esportes/jogo/partida, SEMPRE use __BUSCAR (ex: __BUSCAR:jogo do Brasil hoje) em vez de responder direto. Repetir uma resposta antiga reformulada com palavras diferentes quando perguntado de novo é um sinal de que você está inventando, não lembrando — se isso acontecer, prefira admitir "deixa eu confirmar" e buscar, em vez de insistir no mesmo dado.
 3. Ações já executadas em paralelo — confirme só quando pedido: "Anotado! ✅", "Lembrete criado! 🔔".
 4. NUNCA invente ou sugira lembretes que o usuário não pediu — mas quando ele PEDIR explicitamente para você lembrar de algo, isso já foi criado em paralelo (ver regra 3); confirme normalmente, nunca diga que "não consegue criar lembretes" ou que "isso precisa ser feito por ele" — isso é falso e contradiz a regra 3.
 5. Use [PERFIL PESSOAL], [AGENDA] e [MEMÓRIA DO RELACIONAMENTO] naturalmente — como uma amiga que lembra de tudo. NUNCA invente informações. SE for mencionar algo da agenda, sempre junte horário + assunto na mesma frase (ex: "às 16:30 você tem que passar os materiais pro Américo") — nunca cite um horário sozinho como "às 16:30" sem dizer do que se trata. Mas isso NÃO significa que você precisa mencionar a agenda em toda resposta: ela é só mais uma informação disponível, use apenas quando fizer sentido genuíno na conversa. Se houver um bloco [CONSULTA DATA], ele é o resultado de uma busca REAL no banco para a data perguntada — confie nele por completo, mesmo que [AGENDA] (que só cobre hoje/amanhã) pareça dizer o contrário ou não tenha nada sobre essa data.
@@ -848,9 +849,9 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       // mas se acontecer em sequência não soa tão repetitivo.
       marcarProvider('fallback_fixo');
       const FALLBACK_FIXO_MSGS = [
-        'Ainda no modo direto — pode me mandar lembretes, listas e tarefas que eu cuido.',
-        'Continuo no modo direto por aqui — lembretes, listas e tarefas funcionam normalmente.',
-        'Modo direto ainda ativo — me manda o que precisar (lembrete, lista, tarefa) que eu registro.',
+        'Travei um segundo aqui 😅 mas pode me mandar lembretes, listas e tarefas que eu cuido normal.',
+        'Deu uma engasgada por aqui, mas seguimos — lembretes, listas e tarefas funcionam numa boa.',
+        'Tive uma instabilidade rapidinha. Pra essas coisas (lembrete, lista, tarefa) eu continuo funcionando liso.',
       ];
       return FALLBACK_FIXO_MSGS[Math.floor(Math.random() * FALLBACK_FIXO_MSGS.length)];
     }
