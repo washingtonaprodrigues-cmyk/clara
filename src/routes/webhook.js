@@ -31,7 +31,13 @@ function marcarMessageIdProcessado(id) {
 // um usuário que realmente manda a mesma frase de novo minutos depois,
 // longa o suficiente para cobrir qualquer reenvio realista por timeout.
 const _conteudoProcessadoRecente = new Map(); // `${phone}|${text}` -> timestamp de expiração
-const DEDUP_CONTEUDO_JANELA_MS = 15 * 1000; // 15 segundos
+// Janela aumentada de 15s → 60s: observado na prática um caso de lembrete
+// duplicado ("artes do crediário" criado 2x, mesmo título, mesmo horário)
+// que a janela de 15s não cobriu — sugere que o reenvio da UazAPI (ou
+// alguma instabilidade de rede) demorou mais que 15s pra chegar. 60s ainda
+// é curto o suficiente pra não bloquear alguém que genuinamente manda a
+// mesma frase de novo um minuto depois, mas cobre reenvios mais lentos.
+const DEDUP_CONTEUDO_JANELA_MS = 60 * 1000; // 60 segundos
 
 function chaveConteudo(phone, text) {
   return `${phone}|${text}`;
@@ -183,24 +189,51 @@ async function handleSimpleResponse(phone, text, quotedText) {
     // pode chegar bem depois do horário exato da dose) e resolve a
     // pendência de verdade — sem isso, ela ficaria presa até expirar
     // sozinha à meia-noite (sem decrementar, por design).
-    const pendenteRemedio = await prisma.memory.findFirst({
+    // ── Suporte a múltiplos remédios pendentes ao mesmo tempo ──
+    // Quando dois ou mais remédios batem no mesmo horário (mensagem
+    // agrupada, ver reminders.js), pode haver várias pendências abertas
+    // simultaneamente. Busca TODAS (não só a mais recente) e tenta
+    // identificar qual o usuário quis dizer pelo nome citado na mensagem
+    // — evita decrementar o remédio errado quando há ambiguidade.
+    const todasPendentesMems = await prisma.memory.findMany({
       where: { userId: user.id, type: 'confirmacao_pendente' },
       orderBy: { createdAt: 'desc' }
-    }).then(async (p) => {
-      if (!p) return null;
-      try {
-        const dados = JSON.parse(p.content);
-        if (dados.tipo !== 'remedio_dose') return null;
-        return { memoryId: p.id, ...dados };
-      } catch { return null; }
-    }).catch(() => null);
+    }).catch(() => []);
+    const pendentesRemedio = todasPendentesMems
+      .map(p => { try { const d = JSON.parse(p.content); return d.tipo === 'remedio_dose' ? { memoryId: p.id, ...d } : null; } catch { return null; } })
+      .filter(Boolean);
 
-    if (pendenteRemedio) {
+    if (pendentesRemedio.length === 1) {
+      const pendenteRemedio = pendentesRemedio[0];
       const med = await prisma.medication.findUnique({ where: { id: pendenteRemedio.medId } }).catch(() => null);
       if (med) {
         const atualizado = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
         await prisma.memory.delete({ where: { id: pendenteRemedio.memoryId } }).catch(() => {});
         await sendMessage(phone, `✅ Ótimo! Marquei que você tomou o *${med.name}*. Restam ${atualizado.remaining} doses. 💊`);
+        return true;
+      }
+    } else if (pendentesRemedio.length > 1) {
+      // Tenta achar qual remédio foi citado no texto (match parcial pelo
+      // primeiro nome do medicamento, ex: "tomei pressão" bate com
+      // "Remédio de pressão").
+      const textoLower = textLower.toLowerCase();
+      const match = pendentesRemedio.find(p => {
+        const palavrasNome = p.medNome.toLowerCase().split(' ').filter(w => w.length > 3);
+        return palavrasNome.some(w => textoLower.includes(w));
+      });
+      if (match) {
+        const med = await prisma.medication.findUnique({ where: { id: match.medId } }).catch(() => null);
+        if (med) {
+          const atualizado = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
+          await prisma.memory.delete({ where: { id: match.memoryId } }).catch(() => {});
+          await sendMessage(phone, `✅ Ótimo! Marquei que você tomou o *${med.name}*. Restam ${atualizado.remaining} doses. 💊`);
+          return true;
+        }
+      } else {
+        // Ambíguo — não decrementa nada, pede pra especificar em vez de
+        // arriscar marcar o remédio errado.
+        const nomes = pendentesRemedio.map(p => `• ${p.medNome}`).join('\n');
+        await sendMessage(phone, `Você tem mais de um remédio pendente agora:\n${nomes}\n\nQual deles você tomou? Me diz o nome 😊`);
         return true;
       }
     }
