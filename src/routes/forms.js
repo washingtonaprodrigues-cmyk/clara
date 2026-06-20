@@ -98,7 +98,23 @@ router.get('/remedios/:phone', async (req, res) => {
       orderBy: { createdAt: 'desc' },
       take: 20,
     });
-    res.json(medicamentos);
+    // ── Pendências de confirmação reais (ver reminders.js/MEDICAMENTOS) ──
+    // Antes, o Dashboard inferia "tomado" só comparando o horário atual
+    // com a lista `times` do remédio — se já tinha passado o último
+    // horário do dia, mostrava "Todas as doses tomadas hoje" mesmo sem
+    // nenhuma confirmação real. Agora expomos quais medicamentos têm uma
+    // pendência de confirmação genuinamente aberta, pro frontend distinguir
+    // "realmente confirmado" de "só já passou da hora".
+    const pendentes = await prisma.memory.findMany({ where: { userId: user.id, type: 'confirmacao_pendente' } });
+    const medIdsPendentes = new Set();
+    for (const p of pendentes) {
+      try {
+        const dados = JSON.parse(p.content);
+        if (dados.tipo === 'remedio_dose') medIdsPendentes.add(dados.medId);
+      } catch {}
+    }
+    const enriquecido = medicamentos.map(m => ({ ...m, aguardandoConfirmacao: medIdsPendentes.has(m.id) }));
+    res.json(enriquecido);
   } catch (e) {
     console.error('Erro GET remedios:', e.message);
     res.status(500).json({ error: e.message });
@@ -300,10 +316,30 @@ router.get('/memorias/:phone', async (req, res) => {
 router.post('/remedio-tomado/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    await prisma.medication.update({
+    const med = await prisma.medication.update({
       where: { id },
       data: { remaining: { decrement: 1 } }
     });
+    // ── Limpa a pendência de confirmação criada pelo alarme (reminders.js) ──
+    // Bug corrigido: confirmar pelo Dashboard decrementava normalmente,
+    // mas não cancelava a pendência de confirmação aberta pelo alarme —
+    // isso significava que o follow-up de 20 minutos ("oi, voltei...")
+    // ainda disparava no WhatsApp mesmo já tendo confirmado por aqui,
+    // parecendo que a Clara "esqueceu" que você já tinha confirmado.
+    try {
+      const pendente = await prisma.memory.findFirst({
+        where: { userId: med.userId, type: 'confirmacao_pendente' },
+        orderBy: { createdAt: 'desc' }
+      });
+      if (pendente) {
+        const dados = JSON.parse(pendente.content);
+        if (dados.tipo === 'remedio_dose' && dados.medId === id) {
+          await prisma.memory.delete({ where: { id: pendente.id } });
+        }
+      }
+    } catch (e) {
+      console.error('[remedio-tomado] Erro ao limpar pendência:', e.message);
+    }
     res.json({ ok: true });
   } catch (e) {
     console.error('Erro remedio-tomado:', e.message);
