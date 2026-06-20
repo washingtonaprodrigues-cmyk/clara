@@ -374,6 +374,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .med2-btn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .med2-btn.tomar{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 4px 10px var(--glow)}
 .med2-btn.tomado{background:rgba(34,197,94,.08);color:#22C55E;border:1px solid rgba(34,197,94,.15);cursor:default}
+.med2-btn.pendente{background:linear-gradient(135deg,#F59E0B,#FCD34D);color:#1a1200;box-shadow:0 4px 10px rgba(245,158,11,.3)}
 .med2-section-label{padding:16px 20px 8px;font-size:13px;font-weight:700;color:var(--text)}
 /* ── Financeiro: swipe delete + hover lixeira ── */
 .fin-hist-wrap{position:relative;overflow:hidden}
@@ -1155,7 +1156,19 @@ function renderSaude(){
     info.appendChild(box1);info.appendChild(box2);
 
     const btn=document.createElement('button');
-    if(nextDay==='Amanhã'){
+    if(m.aguardandoConfirmacao){
+      // ── Alarme disparou, ainda aguardando confirmação real ──
+      // Antes, esse estado ficava escondido atrás da checagem só de
+      // horário (se já tinha passado o último horário do dia, mostrava
+      // "Todas as doses tomadas hoje" mesmo sem confirmação nenhuma).
+      // Agora usamos o campo aguardandoConfirmacao vindo do backend
+      // (forms.js GET /remedios/:phone), que reflete uma pendência REAL
+      // criada quando o alarme disparou — distingue "passou da hora" de
+      // "realmente confirmado".
+      btn.className='med2-btn pendente';
+      btn.innerHTML='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Aguardando confirmação — toque para confirmar';
+      btn.addEventListener('click',()=>takeMed(m.id,btn));
+    }else if(nextDay==='Amanhã'){
       btn.className='med2-btn tomado';
       btn.innerHTML='<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Todas as doses tomadas hoje';
       btn.disabled=true;
