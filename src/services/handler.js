@@ -1416,6 +1416,31 @@ async function checkConfirmacaoPendente(user, phone, text) {
     if (Date.now() > dados.expira) { await prisma.memory.delete({ where: { id: pendente.id } }); return false; }
     const textNorm = text.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
+    if (dados.tipo === 'fechamento_pendentes') {
+      // Resposta ao cron de Fechamento (18h, reminders.js) que perguntou
+      // "posso concluir todos, ou quer remarcar algum?" — diferente da
+      // pendência de saúde, aqui a resposta precisa de uma AÇÃO real no
+      // banco, não só uma reação em texto.
+      const afirmativo = /^(sim|pode|isso|s|ok|beleza|confirma|confirmado|concluir? tudo|pode concluir|todos?)\b/i.test(textNorm);
+      if (afirmativo) {
+        await prisma.reminder.updateMany({
+          where: { id: { in: dados.reminderIds } },
+          data: { confirmed: true }
+        });
+        await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
+        const contextoExtra = `\n\n[AÇÃO] Todos os ${dados.reminderIds.length} lembrete(s) pendentes foram marcados como concluídos agora, conforme pedido. Confirme isso brevemente e com naturalidade.`;
+        await responderLivre(user, phone, text, contextoExtra);
+        return true;
+      }
+      // Resposta não é uma confirmação clara de "tudo" — provavelmente o
+      // usuário quer remarcar algo específico ou listar o que falta.
+      // Deixa a pendência expirar sozinha (não força decisão binária aqui)
+      // e segue pro fluxo normal, que já sabe lidar com "remarcar X" via
+      // classify/editar_lembrete.
+      await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
+      return false;
+    }
+
     if (dados.tipo === 'pendencia_emocional') {
       // A Clara puxou de volta um assunto sozinha (cron "PENDÊNCIAS
       // EMOCIONAIS" em reminders.js) — isso aqui é a resposta do usuário.
