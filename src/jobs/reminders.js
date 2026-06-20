@@ -699,8 +699,20 @@ cron.schedule('0 12 * * *', async () => {
     const users = await prisma.user.findMany({ where: { blocked: false } });
     for (const user of users) {
       try {
-        const lockMeioDia = `meio_dia_${hoje}`;
-        if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'meio_dia_lock', content: lockMeioDia } })) continue;
+        // ── Lock atômico ──
+        // Bug corrigido: o lock antigo (findFirst + create DEPOIS de
+        // enviar) tinha a mesma falha de corrida já corrigida em outros
+        // crons hoje (Fechamento, Sexta, Domingo, Bom dia, Boa noite) —
+        // se o cron disparasse em paralelo (deploy reiniciando, múltiplas
+        // réplicas no mesmo minuto), as duas execuções passavam pela
+        // checagem ANTES de qualquer uma criar o lock, mandando a mesma
+        // mensagem 2-3x com textos levemente diferentes (cada chamada de
+        // IA gera uma variação). tentarLockDiario marca o lock ANTES de
+        // gerar/enviar, então só a execução que "ganhar" o lock segue.
+        if (!(await tentarLockDiario(user.id, 'meio_dia_lock'))) {
+          console.log(`[Meio-dia] ja enviado/processando hoje para ${user.phone}`);
+          continue;
+        }
         const inicioDia = new Date(`${hoje}T00:00:00-03:00`);
         const meioDia = new Date(`${hoje}T12:00:00-03:00`);
         const pendentes = await prisma.reminder.findMany({
@@ -717,13 +729,13 @@ São 12h do dia. O usuário tem ${pendentes.length} tarefa(s) da manhã que aind
 ${listaPendentes}
 Envie uma mensagem curta e natural (2-3 linhas) perguntando se conseguiu fazer alguma dessas tarefas — sem ser cobrador(a), sem listar formalmente, com leveza.
 Diga que pode dar baixa ou remarcar.
+IMPORTANTE: você está falando com UMA pessoa só, no singular — NUNCA use "pessoal", "vocês", "galera" ou qualquer tratamento de grupo.
 Tom: ${prefs?.tom || 'carinhoso'}.`;
         const msg = await freeResponse('Mensagem de meio-dia.', [], {
           _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso', _systemOverride: systemMeioDia
         });
         if (!msg) continue;
         await sendMessage(user.phone, msg);
-        await prisma.memory.create({ data: { userId: user.id, type: 'meio_dia_lock', content: lockMeioDia } });
         console.log(`[Meio-dia] Enviado para ${user.phone}`);
       } catch(e) { console.error('[Meio-dia]', e.message); }
     }
@@ -989,6 +1001,18 @@ cron.schedule('* * * * *', async () => {
     const nowLocal = nowBRT();
     const minutoChave = `${pad(nowLocal.getHours())}:${pad(nowLocal.getMinutes())}`;
     const meds = await prisma.medication.findMany({ where: { active: true, remaining: { gt: 0 } }, include: { user: true } });
+
+    // ── Agrupamento por telefone ──
+    // Bug de UX corrigido: antes, cada remédio gerava sua PRÓPRIA mensagem
+    // completa ("Hora do medicamento! ... Não esquece de tomar certinho...
+    // Responde tomei..."), então se dois remédios batiam no mesmo horário
+    // (ex: 07:00), o usuário recebia duas mensagens quase idênticas
+    // seguidas — poluição visual sem necessidade, já que todos os
+    // medicamentos processados NESTE tick do cron compartilham o mesmo
+    // minutoChave (mesmo horário). Agora juntamos numa mensagem só por
+    // telefone, ainda criando uma pendência de confirmação POR remédio
+    // (necessário pro controle individual de estoque/follow-up).
+    const porTelefone = {};
     for (const med of meds) {
       try {
         let horarios = []; try { horarios = JSON.parse(med.times || '[]'); } catch {}
@@ -1007,29 +1031,45 @@ cron.schedule('* * * * *', async () => {
           console.log(`[Med] Lock expirado removido: ${lockKey}`);
         }
         await prisma.memory.create({ data: { userId: med.userId, type: 'med_lock', content: lockKey } });
-        const msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esquece de tomar certinho 😊\n\nResponde "tomei" quando tomar, combinado?`;
-        await sendMessage(phone, msg);
-        // ── NÃO decrementa remaining aqui ──
-        // Bug corrigido: antes a dose era descontada automaticamente só
-        // por o alarme ter disparado, SEM nenhuma confirmação real do
-        // usuário — fazia o Dashboard mostrar "tomado" mesmo quando nunca
-        // foi. Pior: se o usuário também respondesse "tomei" depois, ou
-        // clicasse "Marcar como tomado" no Dashboard, a mesma dose era
-        // descontada de novo (até 2-3x). Agora só decrementa quando há
-        // confirmação real (webhook.js, resposta "tomei", ou botão do
-        // Dashboard) — aqui só registramos a pendência de confirmação.
-        const meiaNoite = new Date(nowLocal); meiaNoite.setHours(23, 59, 59, 999);
-        await prisma.memory.create({
-          data: {
-            userId: med.userId, type: 'confirmacao_pendente',
-            content: JSON.stringify({
-              tipo: 'remedio_dose', medId: med.id, medNome: med.name, horario: minutoChave,
-              expira: meiaNoite.getTime(), nudgeEnviado: false,
-            }),
-          },
-        });
-        console.log(`[Med] ${med.name} → ${phone} (aguardando confirmação)`);
+        if (!porTelefone[phone]) porTelefone[phone] = [];
+        porTelefone[phone].push(med);
       } catch (e) { console.error(`[Med] Erro ${med.id}:`, e.message); }
+    }
+
+    for (const [phone, medsDoTelefone] of Object.entries(porTelefone)) {
+      try {
+        let msg;
+        if (medsDoTelefone.length === 1) {
+          const med = medsDoTelefone[0];
+          msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esquece de tomar certinho 😊\n\nResponde "tomei" quando tomar, combinado?`;
+        } else {
+          const lista = medsDoTelefone.map(m => `• ${m.name}`).join('\n');
+          msg = `💊 Hora do medicamento!\n\n⏰ ${minutoChave} — você tem ${medsDoTelefone.length} remédios agora:\n${lista}\n\nNão esquece de tomar certinho 😊\n\nResponde "tomei [nome]" pra cada um conforme for tomando, combinado?`;
+        }
+        await sendMessage(phone, msg);
+        const meiaNoite = new Date(nowLocal); meiaNoite.setHours(23, 59, 59, 999);
+        for (const med of medsDoTelefone) {
+          // ── NÃO decrementa remaining aqui ──
+          // Bug corrigido: antes a dose era descontada automaticamente só
+          // por o alarme ter disparado, SEM nenhuma confirmação real do
+          // usuário — fazia o Dashboard mostrar "tomado" mesmo quando nunca
+          // foi. Pior: se o usuário também respondesse "tomei" depois, ou
+          // clicasse "Marcar como tomado" no Dashboard, a mesma dose era
+          // descontada de novo (até 2-3x). Agora só decrementa quando há
+          // confirmação real (webhook.js, resposta "tomei", ou botão do
+          // Dashboard) — aqui só registramos a pendência de confirmação.
+          await prisma.memory.create({
+            data: {
+              userId: med.userId, type: 'confirmacao_pendente',
+              content: JSON.stringify({
+                tipo: 'remedio_dose', medId: med.id, medNome: med.name, horario: minutoChave,
+                expira: meiaNoite.getTime(), nudgeEnviado: false,
+              }),
+            },
+          });
+          console.log(`[Med] ${med.name} → ${phone} (aguardando confirmação)`);
+        }
+      } catch (e) { console.error(`[Med] Erro ao enviar pra ${phone}:`, e.message); }
     }
   } catch (e) { console.error('[Med] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
@@ -1095,30 +1135,17 @@ cron.schedule('* * * * *', async () => {
     }
   } catch (e) { console.error('[HoraLembrete] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
-// FOLLOW-UP DE REMÉDIO NÃO CONFIRMADO (20 minutos depois) — a cada minuto
-// Se o alarme disparou e o usuário não respondeu "tomei" em 20 minutos,
-// manda um follow-up uma única vez (controlado por nudgeEnviado, evita
-// reenvio a cada execução do cron) — mesmo espírito do follow-up de
-// lembretes urgentes que já existe, aplicado a remédio.
-cron.schedule('* * * * *', async () => {
-  try {
-    const pendentes = await prisma.memory.findMany({ where: { type: 'confirmacao_pendente' } });
-    for (const p of pendentes) {
-      try {
-        let dados; try { dados = JSON.parse(p.content); } catch { continue; }
-        if (dados.tipo !== 'remedio_dose' || dados.nudgeEnviado) continue;
-        const idadeMin = (Date.now() - new Date(p.createdAt).getTime()) / 60000;
-        if (idadeMin < 20) continue;
-        const user = await prisma.user.findUnique({ where: { id: p.userId } }).catch(() => null);
-        if (!user?.phone) continue;
-        await sendMessage(user.phone, `Oi, voltei! 👋 Só confirmando: já tomou o *${dados.medNome}*? Me responde "tomei" quando puder 💜`);
-        dados.nudgeEnviado = true;
-        await prisma.memory.update({ where: { id: p.id }, data: { content: JSON.stringify(dados) } }).catch(() => {});
-        console.log(`[Remédio] Follow-up 20min enviado: ${dados.medNome} → ${user.phone}`);
-      } catch (e) { console.error(`[Remédio Follow-up] Erro pendente ${p.id}:`, e.message); }
-    }
-  } catch (e) { console.error('[Remédio Follow-up] Erro geral:', e.message); }
-}, { timezone: 'America/Sao_Paulo' });
+// ── FOLLOW-UP DE REMÉDIO 20 MINUTOS — REMOVIDO ──
+// Decisão: remédio é rotina diária, não um evento pontual como consulta
+// ou prazo — cobrar de novo 20min depois do alarme original (que já pediu
+// "responde tomei quando tomar") é repetitivo e cansativo no dia a dia.
+// O mecanismo de cobrança em camadas (15min/2h) continua existindo, só
+// que reservado pra urgências de verdade (ver detectarUrgencia em
+// handler.js, que não inclui mais remédio/farmácia/medicamento desde o
+// ajuste anterior). A confirmação do remédio agora depende só da
+// iniciativa do usuário (responder "tomei") ou do botão no Dashboard —
+// sem nudge automático. A pendência ainda expira normalmente à meia-noite
+// sem decrementar (ver cron "FINALIZA LEMBRETES COM HORÁRIO PENDENTE").
 // LIMPEZA DE LOCKS ANTIGOS (03:00)
 cron.schedule('0 3 * * *', async () => {
   try {
