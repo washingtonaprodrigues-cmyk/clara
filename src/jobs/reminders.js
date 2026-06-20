@@ -290,18 +290,25 @@ cron.schedule('30 21 * * *', async () => {
         if (infoPessoal) ctx += infoPessoal;
         let systemBoaNoite;
         if (totalHoje > 0 || lembretesAmanha.length > 0) {
-          systemBoaNoite = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Crie uma mensagem de boa noite OBJETIVA — um resumo rápido do dia, não poética.
-CONTEXTO DO DIA:
+          // ── Sem repetir números do Fechamento (18:30) ──
+          // Antes, essa mensagem também dizia "concluiu X/Y hoje", quase
+          // idêntico ao que o cron de Fechamento já manda 3h antes — duas
+          // mensagens recapitulando os mesmos números no mesmo dia soa
+          // repetitivo, não como duas pessoas diferentes comentando. Agora
+          // o boa noite é mais curto e mais "amiga": só toca no dia se for
+          // genuíno fazer isso, sem citar contagem de tarefas, e foca em
+          // olhar pra frente (amanhã) e fechar com carinho.
+          systemBoaNoite = `Você é a Clara, parceira pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
+Crie uma mensagem de boa noite curta e genuína — como uma amiga próxima se despedindo, não um resumo do dia.
+CONTEXTO (uso interno, NÃO cite números/contagens disso na mensagem — isso já foi dito mais cedo no fechamento do dia):
 ${ctx}
 REGRAS OBRIGATÓRIAS:
-- 2-3 linhas, direto ao ponto
-- Se concluiu tarefas hoje (${concluidasHoje}/${totalHoje}), parabenize brevemente por isso
-- Se tem compromissos amanhã (${lembretesAmanha.length}), mencione a quantidade de forma breve
-- Encerre com algo curto tipo "durma bem, estarei aqui pra te ajudar amanhã" — adaptado ao seu tom
+- 1-2 linhas, curto mesmo
+- NÃO mencione quantas tarefas foram concluídas nem quantos compromissos teve hoje — isso já foi comunicado antes, repetir parece forçado
+- Se tem compromissos amanhã, pode mencionar BREVEMENTE e de forma leve (ex: "amanhã é dia corrido, descansa bem") sem listar quantidade exata
+- Encerre com algo caloroso e diferente a cada dia, no seu jeito
 - Varie a abertura — não repita sempre a mesma frase
 - Máximo 1 emoji
-- NÃO seja sentimental ou poética. Seja prática.
 Tom: ${prefs.tom || 'carinhoso'}.`;
         } else {
           systemBoaNoite = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
@@ -586,7 +593,11 @@ NÃO use tópicos ou marcadores. NÃO termine com saudação de período.`;
   } catch (e) { console.error('[Radar] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 // TRADIÇÕES SEMANAIS — SEXTA (17:00)
-cron.schedule('30 18 * * 5', async () => {
+// ── Roda às 18:00 (mesma hora do Fechamento diário) ──
+// O Fechamento diário (mais abaixo) agora pula sextas-feiras de propósito
+// — nesse dia, só esta mensagem semanal dispara às 18h, evitando duas
+// mensagens de recap parecidas no mesmo horário.
+cron.schedule('0 18 * * 5', async () => {
   try {
     const users = await prisma.user.findMany({ where: { blocked: false } });
     const now = nowBRT();
@@ -718,10 +729,14 @@ Tom: ${prefs?.tom || 'carinhoso'}.`;
     }
   } catch(e) { console.error('[Meio-dia] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
-// FECHAMENTO DO DIA (18:30)
-cron.schedule('30 18 * * *', async () => {
+// FECHAMENTO DO DIA (18:00)
+cron.schedule('0 18 * * *', async () => {
   try {
     const now = nowBRT();
+    // Nas sextas, o cron "Parabéns da Semana" (18:00) já cobre o dia com
+    // visão semanal — rodar o Fechamento também faria duas mensagens
+    // seguidas no mesmo minuto. Pula sexta aqui, mantendo só a semanal.
+    if (now.getDay() === 5) { console.log('[Fechamento] Pulado (sexta — coberto pelo resumo semanal)'); return; }
     const hoje = dateBRT(now);
     const lockKey = `fechamento_${hoje}`;
     const jaEnviou = await prisma.memory.findFirst({ where: { type: lockKey } });
@@ -735,7 +750,7 @@ cron.schedule('30 18 * * *', async () => {
         if (jaEnviouUser) continue;
         await prisma.memory.create({ data: { userId: user.id, type: lockUser, content: new Date().toISOString() } });
         const inicioDia = new Date(`${hoje}T00:00:00-03:00`);
-        const fimTarde = new Date(`${hoje}T18:30:00-03:00`);
+        const fimTarde = new Date(`${hoje}T18:00:00-03:00`);
         const pendentes = await prisma.reminder.findMany({
           where: { userId: user.id, sent: true, confirmed: false, scheduledAt: { gte: inicioDia, lte: fimTarde } },
           orderBy: { scheduledAt: 'asc' }
@@ -745,40 +760,44 @@ cron.schedule('30 18 * * *', async () => {
         });
         if (!pendentes.length && !concluidos.length) continue;
         const prefs = await memory.getUserPreference(user.id).catch(() => null);
-        const infoPessoal = await memory.buildPersonalContext(user.id).catch(() => '');
-        // Identifica quais pendentes são urgentes (médico, reunião, etc) —
-        // esses merecem menção mais específica ("como foi a consulta?"),
-        // não só "fez essa tarefa?" como os demais.
-        const idsUrgentes = new Set();
-        if (pendentes.length > 0) {
-          const marcacoes = await prisma.memory.findMany({
-            where: { type: 'lembrete_urgente', content: { in: pendentes.map(r => r.id) } }
-          }).catch(() => []);
-          marcacoes.forEach(m => idsUrgentes.add(m.content));
-        }
-        const listaPendentes = pendentes.map(r => {
+        const listaPendentes = pendentes.map((r, i) => {
           const h = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-          const marca = idsUrgentes.has(r.id) ? ' [IMPORTANTE — pergunte como foi/resultado, não só se fez]' : '';
-          return `• ${h} — ${r.message}${marca}`;
+          return `${i + 1}. ${h} — ${r.message}`;
         }).join('\n');
-        const systemFechamento = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-São 18:30h. Resumo do dia do usuário:
+        // ── Mensagem breve e ACIONÁVEL ──
+        // Pedido explícito do usuário: parabéns curto + lista de pendentes
+        // + oferta real de "posso concluir todos?" ou remarcar — não só
+        // uma frase bonita, a resposta dele precisa disparar uma ação de
+        // verdade (ver branch 'fechamento_pendentes' em checkConfirmacaoPendente,
+        // handler.js).
+        const systemFechamento = `Você é a Clara, parceira pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
+São 18h. Resumo do dia:
 - Concluídos hoje: ${concluidos.length}
-- Ainda pendentes (${pendentes.length}):
+- Pendentes (${pendentes.length}):
 ${listaPendentes || '(nenhum pendente)'}
-${infoPessoal}
-Envie uma mensagem natural (2-4 linhas) de fechamento do dia:
-- Se tiver pendentes marcados como [IMPORTANTE], pergunte especificamente sobre o resultado deles (ex: "como foi a consulta com o médico?"), não apenas se fez
-- Outros pendentes (sem marcação), mencione de forma leve — sem cobrar, perguntando se fez e oferecendo remarcar
-- Se concluiu tudo, celebre
-- Varie a abertura — não repita a mesma frase
-- NÃO liste formalmente nem repita a marcação [IMPORTANTE] no texto — é só uma instrução interna
+Envie uma mensagem BREVE (2-3 linhas, direto):
+- Parabenize rapidamente pelos concluídos (se houver)
+- Se houver pendentes, pergunte de forma simples e direta: "posso concluir todos, ou me fala quais quer remarcar?" (adapte as palavras ao seu tom, mas mantenha essa pergunta objetiva no final)
+- Se não houver pendentes, só celebre, sem inventar pergunta
+- NÃO liste os itens formalmente no texto (já estão registrados, você só precisa saber que existem) — a pergunta de ação é o que importa
 Tom: ${prefs?.tom || 'carinhoso'}.`;
         const msg = await freeResponse('Mensagem de fechamento do dia.', [], {
           _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso', _systemOverride: systemFechamento
         });
         if (!msg) { console.log(`[Fechamento] Rate limit, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
+        if (pendentes.length > 0) {
+          await prisma.memory.create({
+            data: {
+              userId: user.id, type: 'confirmacao_pendente',
+              content: JSON.stringify({
+                tipo: 'fechamento_pendentes',
+                reminderIds: pendentes.map(r => r.id),
+                expira: Date.now() + 3 * 60 * 60 * 1000, // 3h de validade
+              }),
+            },
+          });
+        }
         console.log(`[Fechamento] Enviado para ${user.phone}`);
       } catch (e) { console.error(`[Fechamento] Erro ${user.phone}:`, e.message); }
     }
@@ -988,10 +1007,28 @@ cron.schedule('* * * * *', async () => {
           console.log(`[Med] Lock expirado removido: ${lockKey}`);
         }
         await prisma.memory.create({ data: { userId: med.userId, type: 'med_lock', content: lockKey } });
-        const msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esquece de tomar certinho 😊\n\n💜 Restam ${med.remaining - 1} doses.`;
+        const msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esquece de tomar certinho 😊\n\nResponde "tomei" quando tomar, combinado?`;
         await sendMessage(phone, msg);
-        await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
-        console.log(`[Med] ${med.name} → ${phone}`);
+        // ── NÃO decrementa remaining aqui ──
+        // Bug corrigido: antes a dose era descontada automaticamente só
+        // por o alarme ter disparado, SEM nenhuma confirmação real do
+        // usuário — fazia o Dashboard mostrar "tomado" mesmo quando nunca
+        // foi. Pior: se o usuário também respondesse "tomei" depois, ou
+        // clicasse "Marcar como tomado" no Dashboard, a mesma dose era
+        // descontada de novo (até 2-3x). Agora só decrementa quando há
+        // confirmação real (webhook.js, resposta "tomei", ou botão do
+        // Dashboard) — aqui só registramos a pendência de confirmação.
+        const meiaNoite = new Date(nowLocal); meiaNoite.setHours(23, 59, 59, 999);
+        await prisma.memory.create({
+          data: {
+            userId: med.userId, type: 'confirmacao_pendente',
+            content: JSON.stringify({
+              tipo: 'remedio_dose', medId: med.id, medNome: med.name, horario: minutoChave,
+              expira: meiaNoite.getTime(), nudgeEnviado: false,
+            }),
+          },
+        });
+        console.log(`[Med] ${med.name} → ${phone} (aguardando confirmação)`);
       } catch (e) { console.error(`[Med] Erro ${med.id}:`, e.message); }
     }
   } catch (e) { console.error('[Med] Erro geral:', e.message); }
@@ -1032,6 +1069,18 @@ cron.schedule('* * * * *', async () => {
       try {
         let dados;
         try { dados = JSON.parse(p.content); } catch { continue; }
+        if (dados.tipo === 'remedio_dose') {
+          // Pendência de confirmação de remédio expirada (virou meia-noite
+          // sem resposta) — NÃO assume que foi tomado. Decisão deliberada:
+          // silenciosamente assumir "tomado" por padrão esconderia
+          // esquecimentos reais, que é justamente o que mais importa saber
+          // quando o assunto é remédio. Só encerra a espera e remove a
+          // pendência; o estoque (remaining) permanece intacto.
+          if (Date.now() <= dados.expira) continue;
+          await prisma.memory.delete({ where: { id: p.id } }).catch(() => {});
+          console.log(`[Remédio] Dose não confirmada (expirou sem resposta): ${dados.medNome} às ${dados.horario}`);
+          continue;
+        }
         if (dados.tipo !== 'hora_lembrete') continue;
         if (Date.now() <= dados.expira) continue; // ainda não expirou
         const user = await prisma.user.findUnique({ where: { id: p.userId } }).catch(() => null);
@@ -1045,6 +1094,30 @@ cron.schedule('* * * * *', async () => {
       } catch (e) { console.error(`[HoraLembrete] Erro pendente ${p.id}:`, e.message); }
     }
   } catch (e) { console.error('[HoraLembrete] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+// FOLLOW-UP DE REMÉDIO NÃO CONFIRMADO (20 minutos depois) — a cada minuto
+// Se o alarme disparou e o usuário não respondeu "tomei" em 20 minutos,
+// manda um follow-up uma única vez (controlado por nudgeEnviado, evita
+// reenvio a cada execução do cron) — mesmo espírito do follow-up de
+// lembretes urgentes que já existe, aplicado a remédio.
+cron.schedule('* * * * *', async () => {
+  try {
+    const pendentes = await prisma.memory.findMany({ where: { type: 'confirmacao_pendente' } });
+    for (const p of pendentes) {
+      try {
+        let dados; try { dados = JSON.parse(p.content); } catch { continue; }
+        if (dados.tipo !== 'remedio_dose' || dados.nudgeEnviado) continue;
+        const idadeMin = (Date.now() - new Date(p.createdAt).getTime()) / 60000;
+        if (idadeMin < 20) continue;
+        const user = await prisma.user.findUnique({ where: { id: p.userId } }).catch(() => null);
+        if (!user?.phone) continue;
+        await sendMessage(user.phone, `Oi, voltei! 👋 Só confirmando: já tomou o *${dados.medNome}*? Me responde "tomei" quando puder 💜`);
+        dados.nudgeEnviado = true;
+        await prisma.memory.update({ where: { id: p.id }, data: { content: JSON.stringify(dados) } }).catch(() => {});
+        console.log(`[Remédio] Follow-up 20min enviado: ${dados.medNome} → ${user.phone}`);
+      } catch (e) { console.error(`[Remédio Follow-up] Erro pendente ${p.id}:`, e.message); }
+    }
+  } catch (e) { console.error('[Remédio Follow-up] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 // LIMPEZA DE LOCKS ANTIGOS (03:00)
 cron.schedule('0 3 * * *', async () => {
