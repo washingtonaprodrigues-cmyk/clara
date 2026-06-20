@@ -177,6 +177,37 @@ async function handleSimpleResponse(phone, text, quotedText) {
   const textLower = text.trim();
 
   if (TOMEI_REMEDIO.some(r => r.test(textLower))) {
+    // ── Prioridade 1: pendência de confirmação real (criada no alarme,
+    // ver reminders.js) ── Mais confiável que a heurística de janela de
+    // tempo abaixo, porque cobre o caso do follow-up de 20min (a resposta
+    // pode chegar bem depois do horário exato da dose) e resolve a
+    // pendência de verdade — sem isso, ela ficaria presa até expirar
+    // sozinha à meia-noite (sem decrementar, por design).
+    const pendenteRemedio = await prisma.memory.findFirst({
+      where: { userId: user.id, type: 'confirmacao_pendente' },
+      orderBy: { createdAt: 'desc' }
+    }).then(async (p) => {
+      if (!p) return null;
+      try {
+        const dados = JSON.parse(p.content);
+        if (dados.tipo !== 'remedio_dose') return null;
+        return { memoryId: p.id, ...dados };
+      } catch { return null; }
+    }).catch(() => null);
+
+    if (pendenteRemedio) {
+      const med = await prisma.medication.findUnique({ where: { id: pendenteRemedio.medId } }).catch(() => null);
+      if (med) {
+        const atualizado = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
+        await prisma.memory.delete({ where: { id: pendenteRemedio.memoryId } }).catch(() => {});
+        await sendMessage(phone, `✅ Ótimo! Marquei que você tomou o *${med.name}*. Restam ${atualizado.remaining} doses. 💊`);
+        return true;
+      }
+    }
+
+    // ── Fallback: heurística de janela de tempo ── Cobre o caso de o
+    // usuário avisar "tomei" proativamente, sem ter uma pendência ativa
+    // (ex: tomou por conta própria sem esperar o alarme).
     const med = await getRemedioRecente(user.id);
     if (med) {
       await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
