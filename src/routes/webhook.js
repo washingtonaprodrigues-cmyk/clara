@@ -99,6 +99,26 @@ const LEMBRETE_FEITO = [
 ];
 
 async function getLembretePendente(userId, phone, quotedText) {
+  // ── Prioridade absoluta: citação (swipe-reply) ──
+  // Bug corrigido: quando o usuário arrasta pra responder um lembrete
+  // FUTURO (ainda não disparado, sent:false — ex: "dar remédio pra filha"
+  // marcado pra amanhã) e responde "Feito", a busca por janela de tempo
+  // abaixo NÃO encontrava ele (só pega sent:true dos últimos 15min), então
+  // o atalho de concluir falhava e a mensagem caía na classificação geral,
+  // que interpretava errado (como remarcar). Agora, SE há citação, primeiro
+  // procuramos o lembrete pelo título citado entre TODOS os não concluídos
+  // do usuário (passado ou futuro, disparado ou não) — só assim o "Feito"
+  // via reply funciona pra qualquer lembrete, independente da hora dele.
+  if (quotedText) {
+    const quotedLower = quotedText.toLowerCase();
+    const naoConcluidos = await prisma.reminder.findMany({
+      where: { OR: [{ userId, confirmed: false }, { phone, confirmed: false }] },
+      orderBy: { scheduledAt: 'desc' }
+    });
+    const porCitacao = naoConcluidos.find(r => quotedLower.includes(r.message.toLowerCase()));
+    if (porCitacao) return porCitacao;
+  }
+
   const quinze = new Date(nowBRT().getTime() - 15 * 60 * 1000);
   const candidatos = await prisma.reminder.findMany({
     where: {
@@ -110,16 +130,6 @@ async function getLembretePendente(userId, phone, quotedText) {
     orderBy: { scheduledAt: 'desc' }
   });
   if (!candidatos.length) return null;
-
-  // Se o usuário citou (reply) uma mensagem específica, prioriza o
-  // lembrete cujo título aparece nesse texto citado — isso resolve o caso
-  // de 2+ lembretes pendentes ao mesmo tempo, onde a heurística de "mais
-  // recente" pode escolher o errado mesmo com a citação explícita.
-  if (quotedText) {
-    const quotedLower = quotedText.toLowerCase();
-    const porCitacao = candidatos.find(r => quotedLower.includes(r.message.toLowerCase()));
-    if (porCitacao) return porCitacao;
-  }
 
   return candidatos[0];
 }
