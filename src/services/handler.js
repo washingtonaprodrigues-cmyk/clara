@@ -1434,7 +1434,21 @@ async function checkConfirmacaoPendente(user, phone, text) {
     if (!pendente) return false;
     let dados; try { dados = JSON.parse(pendente.content); } catch { return false; }
     if (Date.now() > dados.expira) { await prisma.memory.delete({ where: { id: pendente.id } }); return false; }
-    const textNorm = text.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    // ── BUG CORRIGIDO: strip do prefixo de citação antes de normalizar ──
+    // Quando o usuário responde arrastando (swipe-reply) uma notificação,
+    // webhook.js monta o texto como `[Mensagem citada: "..."]\n${text real}`
+    // antes de chamar handleMessage → checkConfirmacaoPendente. Todas as
+    // regexes aqui (ex: /^(sim|pode|isso|...)/i) são ANCORADAS no início
+    // da string (^) — com o prefixo de citação colado na frente, o ^ nunca
+    // batia com a resposta real do usuário, fazendo TODA confirmação via
+    // swipe-reply (fechamento_pendentes, hora_lembrete, remarcar_negacao,
+    // selecao_contato, sim/não de envio de mensagem, urgente_confirmacao)
+    // cair silenciosamente no fluxo normal de classify — que não sabe lidar
+    // com essas pendências e responde algo desconexo. Removendo o prefixo
+    // aqui, a checagem volta a enxergar só a resposta real ("Pode concluir
+    // tudo fedo"), independente de ter sido enviada com ou sem citação.
+    const textSemCitacao = text.replace(/^\[Mensagem citada:\s*"[^"]*"\]\s*\n?/i, '');
+    const textNorm = textSemCitacao.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
     if (dados.tipo === 'fechamento_pendentes') {
       // Resposta ao cron de Fechamento (18h, reminders.js) que perguntou
