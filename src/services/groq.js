@@ -199,6 +199,8 @@ REGRAS:
   - Isso é CRÍTICO: sem o título extraído da citação, o sistema cai num fallback que pode remarcar/cancelar o lembrete ERRADO (o mais recente, não o que foi citado) — sempre priorize extrair da citação quando ela existir.
 - Valor em dinheiro → gasto
 - Horário/data + intenção de CRIAR um novo lembrete/compromisso → tarefa
+- GATILHO DE LEMBRETE TEM PRIORIDADE SOBRE O CONTEÚDO: se a mensagem contém "me lembra", "me avisa", "me lembre", "me cutuca", "daqui a X minutos/horas", "em X min", "às HH de", "amanhã de" + qualquer descrição → SEMPRE tarefa, MESMO que o conteúdo a ser lembrado pareça uma saudação, recado ou frase casual. Ex: "me lembra daqui 4 minutos, só me manda um oi" é uma TAREFA (titulo: "me mandar um oi"), NUNCA uma saudacao — o "oi" aqui é o CONTEÚDO do lembrete, não um cumprimento dirigido à Clara. Só classifique como saudacao quando a mensagem INTEIRA for um cumprimento, sem nenhum gatilho de lembrete/horário.
+- "daqui a X minutos", "em X minutos", "daqui X horas", "daqui a pouco" são horários RELATIVOS válidos → tarefa com hora=null (o sistema calcula o horário real a partir do texto). NUNCA descarte a mensagem por o horário ser relativo em vez de absoluto.
 - Pergunta sobre horário/data de algo que JÁ EXISTE ("que horas eu tenho que...", "a que horas é...", "quando é...", "tenho algo às...") → consulta (NUNCA tarefa, NUNCA crie novo lembrete para perguntas)
 - Informação para guardar sem horário → anotacao
 - Pergunta EXPLÍCITA sobre clima/notícia/preço/lugar/telefone/fato externo que a Clara não pode saber sem pesquisar → busca
@@ -270,6 +272,9 @@ TIPOS E FORMATOS:
 EXEMPLOS:
 "gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
 "me lembra às 10h de fazer backup" → {"tipo":"tarefa","titulo":"fazer backup","data":null,"hora":"10:00","antecedencia":0,"recorrente":false,"frequencia":null}
+"me lembra daqui 4 minutos, só me manda um oi" → {"tipo":"tarefa","titulo":"me mandar um oi","data":null,"hora":null,"antecedencia":0,"recorrente":false,"frequencia":null} (gatilho "me lembra daqui X min" vence — é tarefa com horário relativo, NUNCA saudacao; hora=null porque o sistema calcula a partir do texto)
+"me avisa daqui meia hora pra tirar o bolo do forno" → {"tipo":"tarefa","titulo":"tirar o bolo do forno","data":null,"hora":null,"antecedencia":0,"recorrente":false,"frequencia":null}
+"me cutuca em 10 minutos" → {"tipo":"tarefa","titulo":"te cutucar","data":null,"hora":null,"antecedencia":0,"recorrente":false,"frequencia":null}
 "que horas eu tenho que deixar os sulfites?" → {"tipo":"consulta","sobre":"horário de deixar os sulfites","datas":null}
 "a que horas é a reunião?" → {"tipo":"consulta","sobre":"horário da reunião","datas":null}
 "o que eu tenho pro dia 24?" → {"tipo":"consulta","sobre":"agenda do dia 24","datas":["${hojeISO.substring(0,7)}-24"]} (mês/ano = mês/ano atual, NUNCA 2024/2025)
