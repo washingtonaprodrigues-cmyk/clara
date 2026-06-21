@@ -88,30 +88,76 @@ async function houveConversaRecente(userId, minutos = 5) {
 async function tentarLockDiario(userId, tipo) {
   const hoje = dateBRT();
   const chaveMemoria = `${userId}_${tipo}_${hoje}`;
+
+  // 1ª camada (rápida): cache em memória do processo. Cobre o caso comum
+  // de o mesmo processo tentar 2x no mesmo tick. Não protege entre
+  // processos diferentes (cada container tem o seu Map), por isso existe
+  // a 2ª camada abaixo.
   if (_locksEmMemoria.has(chaveMemoria)) return false;
   _locksEmMemoria.set(chaveMemoria, true);
-  // Limpa entradas de dias antigos para não crescer indefinidamente
   if (_locksEmMemoria.size > 5000) {
     for (const k of _locksEmMemoria.keys()) {
       if (!k.endsWith(`_${hoje}`)) _locksEmMemoria.delete(k);
     }
   }
+
+  // ── 2ª camada: claim atômico no banco (à prova de corrida entre
+  // processos) ──
+  // Bug corrigido: a versão anterior fazia findFirst → checa → create/
+  // update em passos SEPARADOS. Quando dois containers rodavam o mesmo
+  // cron no mesmo minuto (comum em dias de muitos deploys / restart do
+  // Railway), os dois liam "não existe lock" ANTES de qualquer um
+  // escrever, os dois passavam, e a mensagem saía 2-3x (cada chamada de
+  // IA gerava uma variação diferente — exatamente o que se via no print
+  // das 3 mensagens de meio-dia com textos diferentes).
+  //
+  // Agora usamos a MESMA técnica do claim atômico que já funciona no cron
+  // de lembretes: um updateMany condicional. O updateMany roda como uma
+  // única operação atômica no Postgres — se o lock de hoje já existe, ele
+  // atualiza 0 linhas pra quem chega depois? Não: o truque é marcar o
+  // registro como "de hoje" só se ainda NÃO for de hoje. Só UM processo
+  // consegue fazer essa transição (os outros veem count:0). Assim:
+  //   - registro não existe ainda → create protegido por catch (se dois
+  //     tentarem criar, o segundo erro é engolido e ele perde a corrida
+  //     via a re-checagem logo abaixo)
+  //   - registro existe com content != hoje → updateMany condicional:
+  //     só um consegue mudar de "ontem" pra "hoje"
+  const claim = await prisma.memory.updateMany({
+    where: { userId, type: tipo, NOT: { content: hoje } },
+    data: { content: hoje },
+  }).catch(() => ({ count: 0 }));
+
+  if (claim.count >= 1) {
+    // Este processo venceu a transição "não-era-hoje → hoje". Segue.
+    return true;
+  }
+
+  // claim.count === 0 pode significar duas coisas:
+  //   (a) já existe um lock de hoje (outro processo venceu) → NÃO seguir
+  //   (b) nenhum registro desse tipo existe ainda → precisamos criar
   const existente = await prisma.memory.findFirst({
     where: { userId, type: tipo },
-    orderBy: { createdAt: 'desc' }
+    orderBy: { createdAt: 'desc' },
   }).catch(() => null);
-  if (existente && existente.content === hoje) return false;
-  if (existente) {
-    await prisma.memory.update({
-      where: { id: existente.id },
-      data: { content: hoje }
-    });
-  } else {
-    await prisma.memory.create({
-      data: { userId, type: tipo, content: hoje }
-    });
+
+  if (existente && existente.content === hoje) {
+    // Caso (a): alguém já marcou hoje. Perdeu a corrida.
+    return false;
   }
-  return true;
+
+  if (!existente) {
+    // Caso (b): primeira vez. Cria. Se dois processos chegarem aqui ao
+    // mesmo tempo, ambos criam um registro — não é ideal, mas a janela é
+    // mínima (só na PRIMEIRA execução de um tipo de lock pra um usuário,
+    // que acontece uma vez na vida) e a 1ª camada (memória) + o restante
+    // dos dias usando updateMany cobrem o resto.
+    await prisma.memory.create({
+      data: { userId, type: tipo, content: hoje },
+    }).catch(() => {});
+    return true;
+  }
+
+  return false;
 }
 async function getUserContext(user) {
   const prefs = await memory.getUserPreference(user.id);
@@ -425,7 +471,34 @@ async function proativaInteligente(periodo) {
     for (const user of users) {
       try {
         const lockKey = `proativa_${periodo}_${dateBRT()}`;
-        if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'proativa_lock', content: lockKey } })) continue;
+        // ── Claim atômico (mesmo motivo do tentarLockDiario) ──
+        // Antes: findFirst → continue se existe. Dois processos no mesmo
+        // minuto liam "não existe" antes de qualquer um criar → proativa
+        // enviada 2x. Agora criamos o lock ANTES de processar e, se já
+        // existir um igual, o segundo processo detecta na re-checagem e
+        // para. Como (userId, type, content) identifica unicamente o lock
+        // do dia/período, a contagem de quantos registros existem com essa
+        // chave exata diz se ganhamos (1) ou se houve corrida (>1, e só o
+        // de menor id segue).
+        const jaExiste = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'proativa_lock', content: lockKey }
+        }).catch(() => null);
+        if (jaExiste) continue;
+        const meuLock = await prisma.memory.create({
+          data: { userId: user.id, type: 'proativa_lock', content: lockKey }
+        }).catch(() => null);
+        if (!meuLock) continue;
+        // Re-checagem anti-corrida: se dois processos criaram o lock quase
+        // ao mesmo tempo, ambos têm um registro. Só segue o que tiver o
+        // MENOR id (ordem estável) — o outro desiste e remove o seu.
+        const todosLocks = await prisma.memory.findMany({
+          where: { userId: user.id, type: 'proativa_lock', content: lockKey },
+          orderBy: { id: 'asc' }
+        }).catch(() => [meuLock]);
+        if (todosLocks.length > 1 && todosLocks[0].id !== meuLock.id) {
+          await prisma.memory.delete({ where: { id: meuLock.id } }).catch(() => {});
+          continue;
+        }
         // Pula esse ciclo se há conversa ativa nos últimos minutos — evita
         // interromper de forma deslocada (ex: mandar agenda no meio de
         // uma brincadeira). Não reagenda, apenas não envia hoje.
@@ -484,7 +557,8 @@ ${infoPessoal}`;
         const msg = await freeResponse('Envie uma mensagem proativa.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemProativa });
         if (!msg || msg.trim() === 'SKIP' || msg.length < 5) continue;
         await sendMessage(user.phone, msg);
-        await prisma.memory.create({ data: { userId: user.id, type: 'proativa_lock', content: lockKey } });
+        // Lock já foi criado no início do fluxo (claim atômico) — não
+        // recriar aqui pra não gerar registro duplicado.
         console.log(`[Proativa ${periodo}] Enviado para ${user.phone}`);
       } catch (e) { console.error(`[Proativa] Erro ${user.phone}:`, e.message); }
     }
