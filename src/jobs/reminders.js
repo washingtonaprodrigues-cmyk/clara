@@ -884,9 +884,15 @@ cron.schedule('* * * * *', async () => {
         const user = await prisma.user.findFirst({ where: { phone: grupo.phone } });
         const prefs = user ? await memory.getUserPreference(user.id).catch(() => null) : null;
         const nome = prefs?.name || user?.name || null;
-        const isFollowup = grupo.reminders.length === 1 && /^__followup(_origem__[^_]+__)?__/.test(grupo.reminders[0].message);
+        // ── Bug corrigido: regex exigia um "__" a mais do que o formato
+        // real criado (`__followup_origem__${id}__${mensagem}`), então
+        // NUNCA conseguia remover o prefixo da variante com origem — o
+        // usuário via o texto cru "__followup_origem__ID__..." em vez da
+        // pergunta de verdade. Corrigido pra bater exatamente com o
+        // formato usado na criação (ver linhas mais abaixo).
+        const isFollowup = grupo.reminders.length === 1 && /^__followup_origem__[^_]+__/.test(grupo.reminders[0].message);
         if (isFollowup) {
-          msg = grupo.reminders[0].message.replace(/^__followup(_origem__[^_]+__)?__/, '');
+          msg = grupo.reminders[0].message.replace(/^__followup_origem__[^_]+__/, '');
         } else if (grupo.reminders.length === 1) {
           const r = grupo.reminders[0];
           msg = `🔔 Lembrete\n\n${r.message}\n⏰ ${grupo.hora}\n\n${random(finais)}`;
@@ -1152,7 +1158,7 @@ cron.schedule('0 3 * * *', async () => {
     const ontem = new Date(nowBRT()); ontem.setDate(ontem.getDate() - 2);
     await prisma.memory.deleteMany({
       where: {
-        type: { in: ['med_lock', 'alerta_data_lock', 'proativa_lock', 'sumico_lock', 'bom_dia_lock', 'boa_noite_lock', 'meio_dia_lock', 'meu_dia_criado', 'urgente_resultado_lock', 'radar_lock'] },
+        type: { in: ['med_lock', 'alerta_data_lock', 'proativa_lock', 'sumico_lock', 'bom_dia_lock', 'boa_noite_lock', 'meio_dia_lock', 'meu_dia_criado', 'urgente_resultado_lock', 'radar_lock', 'webhook_msgid'] },
         createdAt: { lt: ontem }
       }
     });
