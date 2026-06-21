@@ -223,11 +223,19 @@ async function handleSimpleResponse(phone, text, quotedText) {
         return true;
       }
     } else if (pendentesRemedio.length > 1) {
-      // Tenta achar qual remédio foi citado no texto (match parcial pelo
-      // primeiro nome do medicamento, ex: "tomei pressão" bate com
-      // "Remédio de pressão").
+      // ── Prioridade pra citação (swipe-reply) ──
+      // Bug corrigido: antes só olhava o texto digitado ("Tomado" não
+      // menciona nome nenhum) — ignorava completamente qual mensagem
+      // específica o usuário respondeu, podia confirmar o remédio errado
+      // mesmo quando a citação deixava claro qual era. Agora tenta achar
+      // o nome do remédio primeiro na CITAÇÃO, e só se não achar lá, tenta
+      // no texto digitado (cobre o caso de "tomei pressão" sem citação).
       const textoLower = textLower.toLowerCase();
+      const quotedLowerMed = (quotedText || '').toLowerCase();
       const match = pendentesRemedio.find(p => {
+        const palavrasNome = p.medNome.toLowerCase().split(' ').filter(w => w.length > 3);
+        return palavrasNome.some(w => quotedLowerMed.includes(w));
+      }) || pendentesRemedio.find(p => {
         const palavrasNome = p.medNome.toLowerCase().split(' ').filter(w => w.length > 3);
         return palavrasNome.some(w => textoLower.includes(w));
       });
