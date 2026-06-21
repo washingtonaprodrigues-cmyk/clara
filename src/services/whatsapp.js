@@ -5,7 +5,7 @@ const headers = {
   'token': TOKEN,
   'Content-Type': 'application/json',
 };
-async function sendMessage(phone, message, delay = 2000) {
+async function sendMessage(phone, message, delay = 800) {
   try {
     console.log(`📤 Enviando para ${phone}: ${String(message).slice(0, 60)}`);
     const response = await axios.post(
