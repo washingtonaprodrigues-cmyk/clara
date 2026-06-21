@@ -306,16 +306,37 @@ router.post('/', async (req, res) => {
     // o servidor demorar a responder. Sem essa proteção, a mesma mensagem
     // do usuário pode ser processada 2-3x, criando lembretes/ações
     // duplicadas (bug real observado: "me lembra às 9 de comprar remédio"
-    // virou 3 lembretes idênticos no banco). Cache em memória com limite
-    // de tamanho — não precisa de persistência, só cobrir a janela de
-    // poucos segundos/minutos em que um reenvio realista aconteceria.
+    // virou 3 lembretes idênticos no banco).
+    //
+    // ── Camada extra: persistência no banco (sobrevive a restart) ──
+    // Bug corrigido: o cache em memória (_messageIdsProcessados) se perde
+    // toda vez que o processo reinicia (cada deploy). Se a UazAPI reenviar
+    // o mesmo webhook bem no instante de um restart, o processo novo não
+    // tem mais nenhum registro de já ter processado aquela mensagem — e
+    // processa de novo do zero, criando lembrete duplicado. Isso ficou
+    // mais visível num dia com muitos deploys em sequência. Agora, além do
+    // cache rápido em memória (cobre o caso comum, sem custo de DB),
+    // também verificamos/registramos no banco — mais lento, mas sobrevive
+    // a qualquer restart.
     const messageId = body.message?.id || body.message?.messageid || body.message?.messageId || body.message?.key?.id;
     if (messageId) {
       if (_messageIdsProcessados.has(messageId)) {
-        console.log(`[Webhook] messageId duplicado ignorado: ${messageId}`);
+        console.log(`[Webhook] messageId duplicado ignorado (cache memória): ${messageId}`);
+        return res.json({ ok: true });
+      }
+      const jaProcessadoDB = await prisma.memory.findFirst({
+        where: { type: 'webhook_msgid', content: messageId }
+      }).catch(() => null);
+      if (jaProcessadoDB) {
+        console.log(`[Webhook] messageId duplicado ignorado (banco, sobreviveu a restart): ${messageId}`);
+        marcarMessageIdProcessado(messageId); // também marca em memória pra próxima checagem ser rápida
         return res.json({ ok: true });
       }
       marcarMessageIdProcessado(messageId);
+      // Fire-and-forget é seguro aqui — não é crítico que esse registro
+      // termine antes da resposta; o pior caso de uma corrida rara é o
+      // mesmo cenário de antes (proteção só pelo cache em memória).
+      prisma.memory.create({ data: { userId: 'system', type: 'webhook_msgid', content: messageId } }).catch(() => {});
     } else {
       // Sem messageId identificável — loga pra eventualmente descobrirmos
       // o campo certo, já que isso significa que a 1ª camada de dedup não
