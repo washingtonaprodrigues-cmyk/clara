@@ -43,19 +43,16 @@ const finais = [
 ];
 
 // ── Final DETERMINÍSTICO por ID do lembrete ──────────────────────────────
-// CORREÇÃO DO DUPLICADO: com random(), dois processos concorrentes (ex:
-// sobreposição de deploy do Railway) geravam finais DIFERENTES para o mesmo
-// lembrete → textos distintos → o dedup do whatsapp.js não pegava.
-// Com índice fixo baseado no ID, os dois processos geram o MESMO texto →
-// whatsapp.js bloqueia o segundo na janela de 90s. Junto com o claim
-// atômico pré-envio, fecha todas as brechas de duplicação.
 function finalParaLembrete(r) {
   if (!r?.id) return finais[0];
   const code = r.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
   return finais[code % finais.length];
 }
 
-// ── Locks ─────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// LOCKS
+// ═══════════════════════════════════════════════════════════════════════
+
 async function jaEnviouHoje(userId, tipo) {
   return prisma.memory.findFirst({ where: { userId, type: tipo, content: dateBRT() } });
 }
@@ -82,8 +79,25 @@ async function tentarLockDiario(userId, tipo) {
   return true;
 }
 
-// Lock por MINUTO — protege contra dois processos rodando o mesmo cron
-// no mesmo minuto (sobreposição de deploy do Railway).
+// ── Lock por MINUTO ──────────────────────────────────────────────────────
+// ARQUITETURA DE SEGURANÇA (importante entender):
+//
+// Este lock NÃO é a barreira principal contra duplicação — é apenas uma
+// otimização para evitar queries desnecessárias quando dois containers
+// sobem ao mesmo tempo (sobreposição de deploy do Railway).
+//
+// A barreira REAL e matematicamente garantida é o CLAIM ATÔMICO no cron
+// de lembretes: `updateMany where { id, sent: false } → sent: true`.
+// Só um processo consegue mudar sent:false → true no banco. Mesmo que
+// 5 containers rodem o cron simultaneamente, cada lembrete só é enviado
+// uma vez — porque após o primeiro claim, sent:true impede os demais.
+//
+// O lock de minuto pode ter race condition em janelas de milissegundos
+// (dois processos chegam exatamente quando o registro ainda não existe).
+// Por isso ele usa try/catch e, em caso de erro (corrida detectada),
+// retorna false (o processo que perdeu a corrida não processa). Mas mesmo
+// que ambos passem pelo lock, o claim atômico por lembrete garante que
+// só um envia.
 const _locksMinutoMemoria = new Map();
 let _ancoraUserId = null;
 async function getAncoraUserId() {
@@ -92,27 +106,80 @@ async function getAncoraUserId() {
   if (u) _ancoraUserId = u.id;
   return _ancoraUserId;
 }
+
 async function tentarLockMinuto(tipo) {
   const n = nowBRT();
   const minutoChave = `${dateBRT(n)}-${pad(n.getHours())}:${pad(n.getMinutes())}`;
   const chaveMemoria = `${tipo}_${minutoChave}`;
+
+  // Cache em memória: rápido, cobre o caso mais comum (mesmo processo
+  // tentando rodar o cron duas vezes no mesmo minuto — não deveria
+  // acontecer, mas é uma defesa barata).
   if (_locksMinutoMemoria.has(chaveMemoria)) return false;
-  _locksMinutoMemoria.set(chaveMemoria, true);
-  if (_locksMinutoMemoria.size > 5000) {
-    for (const k of _locksMinutoMemoria.keys()) { if (!k.endsWith(minutoChave)) _locksMinutoMemoria.delete(k); }
-  }
+
   const ancoraId = await getAncoraUserId();
   if (!ancoraId) return true; // sem usuários = nada a duplicar
+
   const lockType = `__${tipo}__`;
-  const claim = await prisma.memory.updateMany({
-    where: { userId: ancoraId, type: lockType, NOT: { content: minutoChave } },
-    data: { content: minutoChave },
-  }).catch(() => ({ count: 0 }));
-  if (claim.count >= 1) return true;
-  const existente = await prisma.memory.findFirst({ where: { userId: ancoraId, type: lockType }, orderBy: { createdAt: 'desc' } }).catch(() => null);
-  if (existente && existente.content === minutoChave) return false;
-  if (!existente) { await prisma.memory.create({ data: { userId: ancoraId, type: lockType, content: minutoChave } }).catch(() => {}); return true; }
-  return false;
+
+  try {
+    // Passo 1: verifica se já existe lock para este minuto
+    const existente = await prisma.memory.findFirst({
+      where: { userId: ancoraId, type: lockType },
+      orderBy: { createdAt: 'desc' }
+    }).catch(() => null);
+
+    if (existente && existente.content === minutoChave) {
+      // Lock já existe para este minuto — outro processo chegou primeiro
+      _locksMinutoMemoria.set(chaveMemoria, true);
+      return false;
+    }
+
+    if (existente) {
+      // Existe mas é de minuto anterior — tenta atualizar atomicamente.
+      // Se dois processos chegarem aqui ao mesmo tempo, apenas um consegue
+      // atualizar (o WHERE garante que o conteúdo ainda é o minuto anterior).
+      const res = await prisma.memory.updateMany({
+        where: {
+          userId: ancoraId,
+          type: lockType,
+          content: existente.content // só atualiza se ainda tem o valor antigo
+        },
+        data: { content: minutoChave }
+      }).catch(() => ({ count: 0 }));
+
+      if (res.count === 0) {
+        // Outro processo atualizou antes de nós neste milissegundo
+        _locksMinutoMemoria.set(chaveMemoria, true);
+        return false;
+      }
+    } else {
+      // Não existe registro de lock ainda — cria.
+      // Se dois processos chegarem aqui ao mesmo tempo, um vai dar erro
+      // de criação (ou criar dois — não há unique constraint). Por isso
+      // usamos try/catch: quem pegar erro assume que perdeu a corrida.
+      await prisma.memory.create({
+        data: { userId: ancoraId, type: lockType, content: minutoChave }
+      });
+    }
+
+    _locksMinutoMemoria.set(chaveMemoria, true);
+
+    // Limpeza periódica do cache em memória
+    if (_locksMinutoMemoria.size > 5000) {
+      for (const [k] of _locksMinutoMemoria) {
+        if (!k.endsWith(minutoChave)) _locksMinutoMemoria.delete(k);
+      }
+    }
+
+    return true;
+  } catch (e) {
+    // Erro indica corrida detectada (outro processo criou o registro
+    // entre nosso findFirst e create). Assume que perdemos — não processa.
+    console.log(`[LockMinuto] Corrida detectada em ${tipo}, pulando este tick: ${e.message}`);
+    _locksMinutoMemoria.set(chaveMemoria, true);
+    return false;
+  }
 }
 
 async function houveConversaRecente(userId, minutos = 5) {
@@ -211,8 +278,6 @@ Tom: ${prefs.tom || 'carinhoso'}.`;
 
 // ═══════════════════════════════════════════════════════════════════════
 // BOA NOITE + FECHAMENTO DO DIA (21:30)
-// Unificado: resume o dia E deseja boa noite em uma mensagem só.
-// Substituiu os antigos crons de meio-dia (12h) e fechamento (18:30).
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('30 21 * * *', async () => {
   try {
@@ -542,13 +607,25 @@ cron.schedule('0 9 * * *', async () => {
 
 // ═══════════════════════════════════════════════════════════════════════
 // LEMBRETES — a cada minuto
-// Simplificado: dispara o lembrete no horário, o usuário confirma ou não.
-// A boa noite às 21:30 cobre os pendentes do dia de forma natural.
+//
+// ARQUITETURA ANTI-DUPLICAÇÃO (3 camadas independentes):
+//
+// Camada 1 — tentarLockMinuto: otimização que tenta impedir que dois
+//   containers processem a fila no mesmo minuto. Pode falhar em race
+//   conditions extremas — por isso NÃO é a barreira principal.
+//
+// Camada 2 — Claim atômico por lembrete: updateMany WHERE sent:false →
+//   sent:true. Esta é a barreira REAL e matematicamente garantida.
+//   Só um processo consegue mudar sent:false → true. Mesmo que múltiplos
+//   containers passem pelo lock do Camada 1, cada lembrete só é enviado
+//   uma vez. Esta camada nunca falha contanto que o banco seja ACID.
+//
+// Camada 3 — whatsapp.js dedup de saída: mesmo texto pro mesmo número
+//   dentro de 90s é bloqueado. Última defesa contra retries da UazAPI.
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('* * * * *', async () => {
   try {
-    // Lock por minuto — bloqueia segundo processo se dois containers
-    // estiverem vivos ao mesmo tempo (sobreposição de deploy do Railway)
+    // Camada 1: lock por minuto (otimização, não barreira principal)
     if (!(await tentarLockMinuto('lock_cron_lembretes'))) return;
 
     const now = new Date();
@@ -585,13 +662,18 @@ cron.schedule('* * * * *', async () => {
       if (!reminderesParaEnviar.length) continue;
       grupo.reminders = reminderesParaEnviar;
 
-      // ── Claim atômico: marca sent:true ANTES de enviar ──
-      // Se dois processos chegarem ao mesmo tempo, só o primeiro que
-      // conseguir mudar sent:false → sent:true envia de verdade.
+      // ── Camada 2: Claim atômico — barreira REAL anti-duplicação ──
+      // Marca sent:true ANTES de enviar. Se dois processos chegarem aqui
+      // ao mesmo tempo, só o primeiro que conseguir mudar sent:false → true
+      // prossegue. O segundo recebe count:0 e é descartado.
       const claimados = [];
       for (const r of grupo.reminders) {
-        const res = await prisma.reminder.updateMany({ where: { id: r.id, sent: false }, data: { sent: true } });
+        const res = await prisma.reminder.updateMany({
+          where: { id: r.id, sent: false },
+          data: { sent: true }
+        });
         if (res.count === 1) claimados.push(r);
+        // count:0 = outro processo já claimou este lembrete — ignora
       }
       if (!claimados.length) continue;
       grupo.reminders = claimados;
@@ -618,38 +700,90 @@ cron.schedule('* * * * *', async () => {
       }
 
       await sendMessage(grupo.phone, msg);
-      console.log(`[Reminder] ${grupo.phone} → ${grupo.reminders.length} lembrete(s)`);
+      console.log(`[Reminder] ${grupo.phone} → ${grupo.reminders.length} lembrete(s) às ${grupo.hora}`);
     }
   } catch (e) { console.error('[Reminder] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
 // ═══════════════════════════════════════════════════════════════════════
 // MEDICAMENTOS — a cada minuto
+//
+// Agrupamento: remédios do mesmo usuário no mesmo horário chegam em UMA
+// mensagem só. Antes chegavam em mensagens separadas, o que causava:
+// 1) Experiência ruim (2 notificações em sequência)
+// 2) Bug: swipe-reply no segundo remédio retornava "Feito" idêntico ao
+//    primeiro → dedup do whatsapp.js bloqueava a segunda confirmação
+//    → segundo remédio nunca era decrementado via swipe-reply.
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('* * * * *', async () => {
   try {
     const nowLocal = nowBRT();
     const minutoChave = `${pad(nowLocal.getHours())}:${pad(nowLocal.getMinutes())}`;
-    const meds = await prisma.medication.findMany({ where: { active: true, remaining: { gt: 0 } }, include: { user: true } });
+
+    const meds = await prisma.medication.findMany({
+      where: { active: true, remaining: { gt: 0 } },
+      include: { user: true }
+    });
+
+    // Agrupa remédios por usuário (phone) para o horário atual
+    const gruposPorPhone = {};
     for (const med of meds) {
+      let horarios = [];
+      try { horarios = JSON.parse(med.times || '[]'); } catch {}
+      if (!horarios.includes(minutoChave)) continue;
+
+      const phone = med.user?.phone || (await prisma.user.findUnique({ where: { id: med.userId } }))?.phone;
+      if (!phone) continue;
+
+      // Verifica lock individual por remédio (evita duplicar em caso de
+      // container duplo — mesmo mecanismo anterior, mantido aqui)
+      const lockKey = `med_${med.id}_${minutoChave}`;
+      const lockExistente = await prisma.memory.findFirst({
+        where: { type: 'med_lock', content: lockKey },
+        orderBy: { createdAt: 'desc' }
+      });
+      if (lockExistente) {
+        const ageMs = Date.now() - new Date(lockExistente.createdAt).getTime();
+        if (ageMs < 120000) continue;
+        await prisma.memory.delete({ where: { id: lockExistente.id } }).catch(() => {});
+      }
+
+      if (!gruposPorPhone[phone]) gruposPorPhone[phone] = { meds: [], userId: med.userId };
+      gruposPorPhone[phone].meds.push(med);
+    }
+
+    // Processa cada grupo (um envio por usuário por horário)
+    for (const [phone, grupo] of Object.entries(gruposPorPhone)) {
       try {
-        let horarios = []; try { horarios = JSON.parse(med.times || '[]'); } catch {}
-        if (!horarios.includes(minutoChave)) continue;
-        const phone = med.user?.phone || (await prisma.user.findUnique({ where: { id: med.userId } }))?.phone;
-        if (!phone) continue;
-        const lockKey = `med_${med.id}_${minutoChave}`;
-        const lockExistente = await prisma.memory.findFirst({ where: { type: 'med_lock', content: lockKey }, orderBy: { createdAt: 'desc' } });
-        if (lockExistente) {
-          const ageMs = Date.now() - new Date(lockExistente.createdAt).getTime();
-          if (ageMs < 120000) continue;
-          await prisma.memory.delete({ where: { id: lockExistente.id } }).catch(() => {});
+        // Cria locks para todos antes de enviar
+        for (const med of grupo.meds) {
+          const lockKey = `med_${med.id}_${minutoChave}`;
+          await prisma.memory.create({ data: { userId: med.userId, type: 'med_lock', content: lockKey } });
         }
-        await prisma.memory.create({ data: { userId: med.userId, type: 'med_lock', content: lockKey } });
-        const msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esquece de tomar certinho 😊\n\n💜 Restam ${med.remaining - 1} doses.`;
+
+        let msg;
+        if (grupo.meds.length === 1) {
+          const med = grupo.meds[0];
+          msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esqueces de tomar certinho 😊\n\n💜 Restam ${med.remaining - 1} doses.`;
+        } else {
+          // Múltiplos remédios no mesmo horário — mensagem unificada
+          const lista = grupo.meds.map(m => `• *${m.name}* — restam ${m.remaining - 1} doses`).join('\n');
+          msg = `💊 Hora dos medicamentos!\n\n${lista}\n\n⏰ ${minutoChave}\n\nNão esqueces de tomar certinho 😊`;
+        }
+
         await sendMessage(phone, msg);
-        await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
-        console.log(`[Med] ${med.name} → ${phone}`);
-      } catch (e) { console.error(`[Med] Erro ${med.id}:`, e.message); }
+
+        // Decrementa todos após o envio
+        for (const med of grupo.meds) {
+          await prisma.medication.update({
+            where: { id: med.id },
+            data: { remaining: { decrement: 1 } }
+          });
+          console.log(`[Med] ${med.name} → ${phone}`);
+        }
+      } catch (e) {
+        console.error(`[Med] Erro ao enviar grupo para ${phone}:`, e.message);
+      }
     }
   } catch (e) { console.error('[Med] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
@@ -703,7 +837,6 @@ cron.schedule('* * * * *', async () => {
 
 // ═══════════════════════════════════════════════════════════════════════
 // PARCEIRA — aviso 30min antes de compromissos IMPORTANTES
-// Uma única mensagem antecipada — não é cobrança, é presença.
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('* * * * *', async () => {
   try {
@@ -755,13 +888,11 @@ cron.schedule('0 3 * * *', async () => {
         createdAt: { lt: ontem }
       }
     });
-    // Limpeza de pendências de conversa encerradas ou expiradas (> 7 dias)
     const seteDiasAtras = new Date(nowBRT()); seteDiasAtras.setDate(seteDiasAtras.getDate() - 7);
     const pendencias = await prisma.memory.findMany({ where: { type: 'pendencia_conversa', createdAt: { lt: seteDiasAtras } } });
     if (pendencias.length) {
       await prisma.memory.deleteMany({ where: { id: { in: pendencias.map(p => p.id) } } });
     }
-    // Limpa pendências manualmente marcadas como encerradas há mais de 1 dia
     const pendenciasEncerradas = await prisma.memory.findMany({ where: { type: 'pendencia_conversa', createdAt: { lt: ontem } } });
     for (const p of pendenciasEncerradas) {
       try { const d = JSON.parse(p.content); if (d.encerrado) await prisma.memory.delete({ where: { id: p.id } }); } catch {}
