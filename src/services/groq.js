@@ -353,7 +353,7 @@ async function classify(message, phone = null, contexto = '') {
       max_tokens: 200,
     });
     let text = completion.choices[0].message.content.trim();
-    text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    text = text.replace(/```/g, '').replace(/```/g, '').trim();
     return JSON.parse(text);
   } catch (error) {
     if (isRateLimit(error) && phone) {
@@ -454,9 +454,7 @@ Resposta do usuário: ${message}`
       max_tokens: 150,
     });
     let text = completion.choices[0].message.content.trim();
-    text = text.replace(/```json
-?/g, '').replace(/```
-?/g, '').trim();
+    text = text.replace(/```/g, '').replace(/```/g, '').trim();
     const result = JSON.parse(text);
     return Array.isArray(result) ? result : [];
   } catch (e) {
@@ -507,7 +505,7 @@ async function extractPendenciaEmocional(message) {
       max_tokens: 100,
     });
     let text = completion.choices[0].message.content.trim();
-    text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    text = text.replace(/```/g, '').replace(/```/g, '').trim();
     const result = JSON.parse(text);
     if (!result?.pendencia) return null;
 
