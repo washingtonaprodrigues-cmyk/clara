@@ -755,7 +755,18 @@ cron.schedule('0 3 * * *', async () => {
         createdAt: { lt: ontem }
       }
     });
-    console.log('[Cleanup] Locks antigos removidos');
+    // Limpeza de pendências de conversa encerradas ou expiradas (> 7 dias)
+    const seteDiasAtras = new Date(nowBRT()); seteDiasAtras.setDate(seteDiasAtras.getDate() - 7);
+    const pendencias = await prisma.memory.findMany({ where: { type: 'pendencia_conversa', createdAt: { lt: seteDiasAtras } } });
+    if (pendencias.length) {
+      await prisma.memory.deleteMany({ where: { id: { in: pendencias.map(p => p.id) } } });
+    }
+    // Limpa pendências manualmente marcadas como encerradas há mais de 1 dia
+    const pendenciasEncerradas = await prisma.memory.findMany({ where: { type: 'pendencia_conversa', createdAt: { lt: ontem } } });
+    for (const p of pendenciasEncerradas) {
+      try { const d = JSON.parse(p.content); if (d.encerrado) await prisma.memory.delete({ where: { id: p.id } }); } catch {}
+    }
+    console.log('[Cleanup] Locks antigos e pendências expiradas removidos');
   } catch (e) { console.error('[Cleanup] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
