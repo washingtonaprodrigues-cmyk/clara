@@ -422,8 +422,10 @@ cron.schedule('0 8 * * *', async () => {
 // ═══════════════════════════════════════════════════════════════════════
 // MENSAGENS PROATIVAS (10:00 e 15:00, dias úteis)
 // ═══════════════════════════════════════════════════════════════════════
-cron.schedule('0 10 * * 1-5', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0 15 * * 1-5', async () => proativaInteligente('tarde'), { timezone: 'America/Sao_Paulo' });
+// Proativa almoço: 12:15 todos os dias (horário de pausa natural)
+cron.schedule('15 12 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
+// Proativa noite: 20:00 todos os dias (pessoa relaxada, receptiva)
+cron.schedule('0 20 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
 async function proativaInteligente(periodo) {
   try {
     const users = await prisma.user.findMany({ where: { blocked: false } });
@@ -481,15 +483,31 @@ async function proativaInteligente(periodo) {
           const contextoMems = memsRecentes
             .filter(m => !['conversa','bom_dia_enviado','boa_noite_enviado','proativa_lock','med_lock','alerta_data_lock'].includes(m.type))
             .slice(0, 8).map(m => `[${m.type}] ${m.content}`).join('\n');
+          // Assuntos em aberto têm prioridade — mantém o fio da conversa vivo
+          const pendenciasAbertas = await prisma.pendencia.findMany({
+            where: { userId: user.id, resolvido: false },
+            orderBy: { createdAt: 'desc' },
+            take: 2
+          }).catch(() => []);
+          const ctxPendencias = pendenciasAbertas.length > 0
+            ? `\nASSUNTOS EM ABERTO (prioridade):\n${pendenciasAbertas.map(p => `- ${p.assunto}: ${p.contexto} → ${p.como_retomar}`).join('\n')}`
+            : '';
+
+          const instrucaoPeriodo = periodo === 'noite'
+            ? 'É noite — a pessoa provavelmente relaxou. Pode ser mais pessoal, curiosa, ou retomar um assunto que ficou em aberto com naturalidade.'
+            : 'É horário de almoço — pausa natural. Mensagem leve, pode perguntar como tá sendo o dia ou retomar algo em aberto de forma breve.';
+
           const systemProativa = `Você é a Clara, parceira pessoal do ${user.name || 'usuário'} no WhatsApp.
 SEU TOM AGORA: ${tomDesc(prefs.tom)}
+${instrucaoPeriodo}
 Envie UMA mensagem curta e natural (1-2 linhas) como parceira presente — não como assistente genérica.
 REGRAS:
+- Se houver ASSUNTO EM ABERTO, priorize retomá-lo de forma natural (não robótica)
 - NUNCA comece com "Oi", "Olá" ou nome da pessoa
 - NÃO agende nada, NÃO liste tarefas
 - Use o contexto para algo genuíno — nunca genérico
-- Se não tiver nada relevante, responda APENAS: SKIP
-Contexto recente: ${contextoMems}\n${infoPessoal}`;
+- Se não tiver NADA relevante pra dizer, responda APENAS: SKIP
+Contexto recente: ${contextoMems}${ctxPendencias}\n${infoPessoal}`;
           const msg = await freeResponse('Envie uma mensagem proativa.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemProativa });
           if (!msg || msg.trim() === 'SKIP' || msg.length < 5) continue;
           await sendMessage(user.phone, msg);
@@ -1123,6 +1141,200 @@ cron.schedule('30 8 * * *', async () => {
       } catch (e) { console.error(`[Estoque] Erro ${med.id}:`, e.message); }
     }
   } catch (e) { console.error('[Estoque] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// PROATIVA PONTO — ALMOÇO (12:15) E PÓS-TRABALHO (18:15)
+// Apresenta a função de ponto de forma natural para quem ainda não usa,
+// ou puxa assunto sobre o dia para quem já tem ponto registrado.
+// Horários escolhidos por serem os momentos mais naturais de interação:
+// almoço = pausa natural do trabalho; 18h = fim do expediente típico.
+// ═══════════════════════════════════════════════════════════════════════
+async function proativaPonto(momento) {
+  try {
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    const now = nowBRT();
+    const hoje = dateBRT();
+
+    for (const user of users) {
+      try {
+        const lockKey = `ponto_proativa_${momento}_${hoje}_${user.id}`;
+        if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'ponto_proativa_lock', content: lockKey } })) continue;
+
+        // Verifica se já tem algum registro de ponto hoje
+        const pontoHoje = await prisma.workLog.findFirst({ where: { userId: user.id, date: hoje } });
+
+        // Verifica se já usa ponto (tem histórico nos últimos 7 dias)
+        const usaPonto = await prisma.workLog.findFirst({
+          where: { userId: user.id, date: { gte: (() => { const d = nowBRT(); d.setDate(d.getDate() - 7); return d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); })() } }
+        });
+
+        let msg = null;
+
+        if (momento === 'almoco') {
+          // Verifica se já sabe o horário de almoço do usuário
+          const horarioAlmocoMem = await prisma.memory.findFirst({
+            where: { userId: user.id, type: 'horario_almoco' }
+          }).catch(() => null);
+
+          if (pontoHoje) {
+            // Já tem ponto hoje — só puxa assunto se não sabe o horário de almoço
+            // (se souber, o followup automático dos 20min já cuida disso)
+            if (!horarioAlmocoMem) {
+              const prefs = await memory.getUserPreference(user.id);
+              const nome = prefs.name ? ` ${prefs.name.split(' ')[0]}` : '';
+              const msgs = [
+                `Boa hora de almoço${nome}! 🍽️ Como tá sendo o dia até agora?`,
+                `Ei${nome}, já é hora do almoço! ☀️ Vai parar pra comer hoje?`,
+              ];
+              msg = msgs[Math.floor(Math.random() * msgs.length)];
+            }
+            // Se já sabe o horário de almoço → o followup automático já cuida
+          } else if (!usaPonto) {
+            // Não usa ponto — apresenta a função de forma natural
+            const msgs = [
+              `Ei, sabia que posso registrar seu ponto de trabalho? ⏱️\n\nSó me manda uma mensagem tipo "entrei às 8h" ou "saí pra almoçar" que eu anoto tudo e te mostro o resumo do dia. Prático né? 😄`,
+              `Hora do almoço! 🍽️\n\nA propósito — você sabia que posso funcionar como um relógio de ponto pra você? É só me dizer quando entrou, quando saiu pro almoço e quando foi embora. Te mando o total de horas no final do dia! ⏰`,
+            ];
+            msg = msgs[Math.floor(Math.random() * msgs.length)];
+          }
+        } else if (momento === 'pos_trabalho') {
+          if (pontoHoje) {
+            // Tem ponto — verifica se já bateu saída
+            const saida = await prisma.workLog.findFirst({ where: { userId: user.id, date: hoje, type: 'saida' } });
+            if (!saida) {
+              const entrada = await prisma.workLog.findFirst({ where: { userId: user.id, date: hoje, type: 'entrada' } });
+              const msgs = [
+                `Ei, já tá na hora de ir embora? 😄 Me avisa quando sair que eu fecho seu ponto do dia!`,
+                `Como foi o trabalho hoje? Se já terminou, me manda "saí" pra eu fechar seu ponto! 🏠`,
+              ];
+              msg = msgs[Math.floor(Math.random() * msgs.length)];
+            }
+            // Se já bateu saída, não incomoda
+          } else if (!usaPonto) {
+            const msgs = [
+              `Boa noite! 🌙 Como foi o dia?\n\nSe trabalha em horário fixo, posso te ajudar a controlar suas horas — é só me falar quando entra e sai. Tenho essa função de ponto digital que pode ser útil pra você! 📍`,
+            ];
+            msg = msgs[Math.floor(Math.random() * msgs.length)];
+          }
+        }
+
+        if (msg) {
+          await prisma.memory.create({ data: { userId: user.id, type: 'ponto_proativa_lock', content: lockKey } });
+          await sendMessage(user.phone, msg);
+          console.log(`[PontoPro] ${momento} → ${user.phone}`);
+        }
+      } catch (e) { console.error(`[PontoPro] Erro user ${user.id}:`, e.message); }
+    }
+  } catch (e) { console.error('[PontoPro] Erro geral:', e.message); }
+}
+
+cron.schedule('15 12 * * 1-5', async () => proativaPonto('almoco'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('15 18 * * 1-5', async () => proativaPonto('pos_trabalho'), { timezone: 'America/Sao_Paulo' });
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// FOLLOWUP ALMOÇO — verifica a cada minuto se há lembrete de volta do almoço
+// Disparado 20min após "saí pra almoçar" — pergunta como foi
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('* * * * *', async () => {
+  try {
+    const agora = new Date();
+    const followups = await prisma.reminder.findMany({
+      where: {
+        message: '__PONTO_ALMOCO_FOLLOWUP__',
+        sent: false,
+        scheduledAt: { lte: agora }
+      },
+      include: { user: true }
+    });
+    for (const f of followups) {
+      try {
+        await prisma.reminder.update({ where: { id: f.id }, data: { sent: true, confirmed: true } });
+        const prefs = await memory.getUserPreference(f.userId).catch(() => ({}));
+        const nome = prefs.name ? ' ' + prefs.name.split(' ')[0] : '';
+        const msgs = [
+          `Oi${nome}! Tá curtindo o almoço? 😄 Me avisa quando voltar que registro sua entrada!`,
+          `E aí${nome}, já voltou do almoço? Me manda uma mensagem quando chegar que eu marco! 🍽️`,
+          `Espero que o almoço esteja ótimo${nome}! 😊 Me avisa quando voltar pra registrar a volta.`,
+        ];
+        const msg = msgs[Math.floor(Math.random() * msgs.length)];
+        await sendMessage(f.user.phone, msg);
+        console.log(`[Almoço followup] Enviado para ${f.user.phone}`);
+      } catch(e) { console.error('[Almoço followup]', e.message); }
+    }
+  } catch(e) {}
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
+// HORA EXTRA — verifica a cada 15min se usuário passou do horário de saída
+// Só dispara se: tem horário habitual salvo, não bateu saída ainda, e
+// já passou mais de 30min do horário habitual
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('*/15 * * * *', async () => {
+  try {
+    const now = nowBRT();
+    const hoje = dateBRT();
+    const hmAgora = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+    // Busca usuários que têm horário habitual de saída cadastrado
+    const memoriasSaida = await prisma.memory.findMany({
+      where: { type: 'horario_saida_trabalho' },
+      include: { user: true }
+    }).catch(() => []);
+
+    for (const mem of memoriasSaida) {
+      try {
+        const user = mem.user;
+        if (!user || user.blocked) continue;
+
+        const horaSaida = mem.content; // ex: "18:00"
+        const [hs, ms] = horaSaida.split(':').map(Number);
+        const [ha, ma] = hmAgora.split(':').map(Number);
+        const diffMin = (ha * 60 + ma) - (hs * 60 + ms);
+
+        // Só avisa se passou 30min+ do horário habitual
+        if (diffMin < 30 || diffMin > 180) continue; // não incomoda depois de 3h
+
+        // Verifica se já bateu saída hoje
+        const saidaHoje = await prisma.workLog.findFirst({
+          where: { userId: user.id, type: 'saida', date: hoje }
+        });
+        if (saidaHoje) continue;
+
+        // Verifica se tem entrada hoje (trabalhou de fato)
+        const entradaHoje = await prisma.workLog.findFirst({
+          where: { userId: user.id, type: 'entrada', date: hoje }
+        });
+        if (!entradaHoje) continue;
+
+        // Lock por dia pra não repetir
+        const lockKey = `hora_extra_aviso_${hoje}_${user.id}`;
+        const jaAvisou = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'hora_extra_lock', content: lockKey }
+        });
+        if (jaAvisou) continue;
+
+        await prisma.memory.create({ data: { userId: user.id, type: 'hora_extra_lock', content: lockKey } });
+
+        const extraMin = diffMin;
+        const extraStr = extraMin >= 60
+          ? `${Math.floor(extraMin/60)}h${extraMin%60 > 0 ? extraMin%60+'min' : ''}`
+          : `${extraMin}min`;
+
+        const prefs = await memory.getUserPreference(user.id).catch(() => ({}));
+        const nome = prefs.name ? ' ' + prefs.name.split(' ')[0] : '';
+        const msgs = [
+          `Ei${nome}, já são ${hmAgora} e você costuma sair às ${horaSaida} — já são ${extraStr} de hora extra! 😅 Tudo certo por aí?`,
+          `${extraStr} de hora extra e contando${nome}! ⏰ Seu horário de saída era ${horaSaida} — ainda no trabalho?`,
+          `Oi${nome}! Passou ${extraStr} do seu horário de saída (${horaSaida}). Hora extra ou mudou de planos? 😄`,
+        ];
+        await sendMessage(user.phone, msgs[Math.floor(Math.random() * msgs.length)]);
+        console.log(`[HoraExtra] Aviso enviado para ${user.phone} (+${extraStr})`);
+      } catch(e) { console.error('[HoraExtra] Erro user:', e.message); }
+    }
+  } catch(e) { console.error('[HoraExtra] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
 console.log('Clara scheduler iniciado 💜');
