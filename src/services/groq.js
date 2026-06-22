@@ -409,32 +409,57 @@ EXEMPLOS:
 // Palavras-chave que indicam info pessoal — evita chamar o Groq à toa
 const PERSONAL_KEYWORDS = /minha|meu|meus|minhas|moro|trabalho|sou|tenho|família|filh|esposa|marido|pai|mãe|irmão|irmã|namorad|saúde|remédio|doença|objetivo|meta|aniversário|nasci|adoro|gosto|prefiro|odeio|n[ãa]o gosto|fã de|curto|amo (?!você|vc)|torço|torce|time|cargo|empresa|chefe|casad|signo|filho|filha|namorad|hobby|série|serie|comida favorita|alergi|restrição/i;
 
-async function extractPersonalInfo(message) {
+// ── extractPersonalInfo: extrai informações pessoais da mensagem do usuário ──
+// ultimaPerguntaClara: última mensagem da Clara (opcional) — permite entender
+// respostas curtas como "Corinthians" ou "sou de escorpião" no contexto certo.
+// Exemplo: Clara pergunta "você torce pra algum time?" → usuário responde
+// "Corinthians" → sem contexto, o extrator ignora (mensagem curta, sem keywords).
+// Com o contexto da pergunta, entende que é time_futebol: Corinthians.
+async function extractPersonalInfo(message, ultimaPerguntaClara = null) {
   try {
-    if (!message || message.trim().length < 8) return [];
-    // Só chama o Groq se a mensagem tem palavras que sugerem info pessoal
-    if (!PERSONAL_KEYWORDS.test(message)) return [];
-    const lower = message.toLowerCase();
-    if (/^(oi|olá|ola|ok|sim|não|nao|bom dia|boa tarde|boa noite|obrigad)/.test(lower)) return [];
+    if (!message || message.trim().length < 2) return [];
+
+    const lower = message.toLowerCase().trim();
+
+    // Com contexto da Clara: aceita respostas curtas (a pergunta já diz o que é)
+    // Sem contexto: exige keywords para não desperdiçar chamadas de IA
+    const temContexto = !!ultimaPerguntaClara;
+    if (!temContexto) {
+      if (message.trim().length < 8) return [];
+      if (!PERSONAL_KEYWORDS.test(message)) return [];
+      if (/^(oi|olá|ola|ok|bom dia|boa tarde|boa noite|obrigad)/.test(lower)) return [];
+    } else {
+      // Com contexto: só ignora confirmações vazias sem substância
+      if (/^(ok|okay|sim|não|nao|talvez|claro|com certeza|kkk|rs|😊|👍)$/.test(lower)) return [];
+    }
+
+    // Monta as mensagens — se há contexto da Clara, passa como conversa
+    // para o extrator entender o que a resposta significa
+    const messages = [{ role: 'system', content: EXTRACT_SYSTEM }];
+    if (temContexto) {
+      messages.push({
+        role: 'user',
+        content: `[CONTEXTO: a Clara acabou de perguntar: "${ultimaPerguntaClara.slice(0, 150)}"]
+
+Resposta do usuário: ${message}`
+      });
+    } else {
+      messages.push({ role: 'user', content: message });
+    }
 
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
-      messages: [
-        { role: 'system', content: EXTRACT_SYSTEM },
-        { role: 'user', content: message }
-      ],
+      messages,
       temperature: 0.1,
-      max_tokens: 120,
+      max_tokens: 150,
     });
     let text = completion.choices[0].message.content.trim();
-    text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    text = text.replace(/```json
+?/g, '').replace(/```
+?/g, '').trim();
     const result = JSON.parse(text);
     return Array.isArray(result) ? result : [];
   } catch (e) {
-    // Erros de parse de JSON são esperados ocasionalmente (o modelo pode
-    // responder com texto livre em vez do JSON pedido) e já são tratados
-    // retornando array vazio — não vale logar isso, só polui o log.
-    // Outros erros (rede, API) ainda são logados para investigação.
     if (!(e instanceof SyntaxError)) {
       console.error('[extractPersonalInfo] erro:', e.message);
     }
