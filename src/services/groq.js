@@ -5,6 +5,44 @@ const { openrouterDisponivel, openrouterFreeResponse, isOpenrouterRateLimit } = 
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+// ── Chave 2 do Groq (Clara 2) — fallback quando a chave 1 bate TPD ──
+// Cascata: Groq KEY_1 → Groq KEY_2 → Gemini → OpenRouter
+// Com duas chaves, o TPD diário dobra e o Gemini só entra em último caso.
+const groq2 = process.env.GROQ_API_KEY_2
+  ? new Groq({ apiKey: process.env.GROQ_API_KEY_2 })
+  : null;
+
+let _groq2EmTPD = false;
+let _groq2TPDTimer = null;
+function marcarGroq2TPD() {
+  _groq2EmTPD = true;
+  if (_groq2TPDTimer) clearTimeout(_groq2TPDTimer);
+  // Reset na meia-noite BRT (mesmo ciclo da chave 1)
+  _groq2TPDTimer = setTimeout(() => { _groq2EmTPD = false; }, msAteMeiaNoiteBRT());
+  console.log('[Groq2] TPD atingido — chave 2 em cooldown até meia-noite');
+}
+async function tentarGroq2(msgs, isCurta) {
+  if (!groq2 || _groq2EmTPD) return null;
+  try {
+    const timeout2 = new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000));
+    const completion = await Promise.race([
+      groq2.chat.completions.create({
+        model: MODEL_FORTE,
+        messages: msgs,
+        temperature: 0.7,
+        max_tokens: isCurta ? 60 : 400,
+      }),
+      timeout2
+    ]);
+    console.log('[Groq2] Respondeu com chave 2');
+    return completion.choices[0].message.content.trim();
+  } catch (e2) {
+    if (isTPD(e2)) marcarGroq2TPD();
+    else console.error('[Groq2] Erro:', e2.message);
+    return null;
+  }
+}
+
 // ── Rastreio do último provider usado (visibilidade técnica) ──
 // Não afeta a personalidade nem a resposta — só registra qual provedor
 // gerou a última resposta de freeResponse, para exibição no Dashboard
@@ -901,6 +939,21 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       if (isRateLimit(e1) && phone) {
         const tipo = isTPD(e1) ? 'tpd' : 'rpm';
         const aviso = await ativarModoDireto(phone, tipo);
+
+        // ── Groq chave 2 — primeiro fallback quando chave 1 bate TPD ──
+        // Mantém velocidade e personalidade do Groq sem cair no Gemini.
+        if (isTPD(e1) && groq2 && !_groq2EmTPD) {
+          const msgs2 = [
+            { role: 'system', content: buildPersonality(tom, name, false) + contexto },
+            ...history.slice(-6),
+            { role: 'user', content: message }
+          ];
+          const respostaGroq2 = await tentarGroq2(msgs2, isCurta);
+          if (respostaGroq2) {
+            marcarProvider('groq2');
+            return respostaGroq2;
+          }
+        }
 
         // ── Gemini como substituto do Groq (personalidade completa) ──
         // Objetivo: avaliar o Gemini como possível substituto do Groq, não
