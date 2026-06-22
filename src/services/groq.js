@@ -366,19 +366,48 @@ async function classify(message, phone = null, contexto = '') {
 }
 
 // ── extractPersonalInfo: só roda se mensagem tem conteúdo pessoal relevante ──
-const EXTRACT_SYSTEM = `Extrator de informações pessoais. Retorne APENAS array JSON ou [].
-Categorias: familia | trabalho | rotina | saude | objetivos | datas | gostos | outro
-Extraia APENAS o que o usuário declarou explicitamente sobre si mesmo. NUNCA deduza.
-NUNCA extraia nome, apelido, profissão ou cargo como informação de nome.
-Categoria "gostos" cobre preferências de entretenimento/estilo (gêneros de filme/série/livro/música, hobbies, tipos de comida, estilo de viagem, etc) — esses detalhes são valiosos para recomendações futuras personalizadas.
-"minha filha se chama Ana" → [{"chave":"filha_ana","valor":"Filha chamada Ana","categoria":"familia"}]
-"adoro filme de suspense e investigação policial" → [{"chave":"gosto_filmes","valor":"Gosta de suspense e investigação policial","categoria":"gostos"}]
-"prefiro praia a montanha" → [{"chave":"gosto_viagem","valor":"Prefere praia a montanha","categoria":"gostos"}]
+const EXTRACT_SYSTEM = `Extrator de informações pessoais para a Clara 3.0. Retorne APENAS array JSON ou [].
+
+CATEGORIAS DISPONÍVEIS:
+- familia: pais, irmãos, avós, parentes
+- relacionamento: cônjuge/namorado(a), tempo juntos, aniversário de relacionamento
+- filhos: nomes, idades, aniversários dos filhos
+- trabalho: empresa, cargo, área, chefe, colegas importantes, horários, projetos
+- hobbies: esportes praticados, passatempos, atividades de lazer
+- entretenimento: séries, filmes, músicas, times de futebol, jogos, livros
+- alimentacao: comidas favoritas, restrições alimentares, alergias
+- metas: objetivos de vida, financeiros, profissionais, pessoais
+- personalidade: signo, introvertido/extrovertido, jeito de ser
+- saude: condições, medicamentos, hábitos de saúde
+- datas: aniversários (próprio ou de outros), datas comemorativas importantes
+- rotina: horários habituais, hábitos diários
+- outro: qualquer informação pessoal relevante que não se encaixa acima
+
+REGRAS:
+- Extraia APENAS o que o usuário declarou explicitamente. NUNCA deduza.
+- Para filhos: chave = "filho_[nome]" ou "filha_[nome]", inclua idade/aniversário se mencionado
+- Para relacionamento: chave = "conjuge" com nome + detalhes
+- Para trabalho: chave específica = "empresa", "cargo", "chefe", "colega_[nome]"
+- Para entretenimento: chave específica = "time_futebol", "serie_favorita", "filme_favorito", "musica_genero"
+- Para datas: inclua dia/mês no valor quando mencionado
+- NUNCA extraia nome/apelido do usuário como info_pessoal
+
+EXEMPLOS:
+"minha filha se chama Ana, faz 7 anos amanhã" → [{"chave":"filha_ana","valor":"Filha Ana, 7 anos","categoria":"filhos"}]
+"sou casado com a Maria há 10 anos" → [{"chave":"conjuge","valor":"Casado com Maria há 10 anos","categoria":"relacionamento"}]
+"trabalho na empresa X como gerente de vendas" → [{"chave":"empresa","valor":"Empresa X"},{"chave":"cargo","valor":"Gerente de vendas","categoria":"trabalho"}]
+"meu chefe se chama Vinicius" → [{"chave":"chefe","valor":"Chefe: Vinicius","categoria":"trabalho"}]
+"torço pro Corinthians" → [{"chave":"time_futebol","valor":"Torce pro Corinthians","categoria":"entretenimento"}]
+"adoro filme de suspense e investigação policial" → [{"chave":"gosto_filmes","valor":"Gosta de suspense e investigação policial","categoria":"entretenimento"}]
+"minha comida favorita é pizza" → [{"chave":"comida_favorita","valor":"Comida favorita: pizza","categoria":"alimentacao"}]
+"quero juntar 50 mil reais esse ano" → [{"chave":"meta_financeira","valor":"Meta: juntar R$ 50 mil em 2026","categoria":"metas"}]
+"sou de escorpião" → [{"chave":"signo","valor":"Signo: Escorpião","categoria":"personalidade"}]
+"aniversário da minha esposa é dia 15 de março" → [{"chave":"aniversario_conjuge","valor":"Aniversário da esposa: 15 de março","categoria":"datas"}]
 "pode me chamar de ela, sou mulher" → [{"chave":"genero","valor":"ela","categoria":"outro"}]
 "oi" → []`;
 
 // Palavras-chave que indicam info pessoal — evita chamar o Groq à toa
-const PERSONAL_KEYWORDS = /minha|meu|meus|minhas|moro|trabalho|sou|tenho|família|filh|esposa|marido|pai|mãe|irmão|irmã|namorad|saúde|remédio|doença|objetivo|meta|aniversário|nasci|adoro|gosto|prefiro|odeio|n[ãa]o gosto|fã de|curto|amo (?!você|vc)/i;
+const PERSONAL_KEYWORDS = /minha|meu|meus|minhas|moro|trabalho|sou|tenho|família|filh|esposa|marido|pai|mãe|irmão|irmã|namorad|saúde|remédio|doença|objetivo|meta|aniversário|nasci|adoro|gosto|prefiro|odeio|n[ãa]o gosto|fã de|curto|amo (?!você|vc)|torço|torce|time|cargo|empresa|chefe|casad|signo|filho|filha|namorad|hobby|série|serie|comida favorita|alergi|restrição/i;
 
 async function extractPersonalInfo(message) {
   try {
