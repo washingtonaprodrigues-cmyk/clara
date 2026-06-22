@@ -1333,4 +1333,183 @@ carregar();
 </html>`);
 });
 
+
+// ═══════════════════════════════════════════════════════════════════════
+// MEMÓRIAS — Perfil rico da Clara 3.0
+// GET  /memorias/:phone        → lista todas as memórias por categoria
+// DELETE /memoria/:id/:phone   → deleta uma memória específica
+// POST /memoria/:phone         → adiciona memória manualmente
+// GET  /memorias-categorias    → retorna as categorias disponíveis
+// ═══════════════════════════════════════════════════════════════════════
+
+router.get('/memorias/:phone', async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { phone: req.params.phone } });
+    if (!user) return res.json({ categorias: {} });
+
+    const mems = await prisma.memory.findMany({
+      where: { userId: user.id, type: 'info_pessoal' },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Agrupa por categoria para exibição no Dashboard
+    const categorias = {};
+    for (const m of mems) {
+      let meta = {};
+      try { meta = JSON.parse(m.metadata || '{}'); } catch {}
+      const cat = meta.categoria || 'outro';
+      if (!categorias[cat]) categorias[cat] = [];
+      categorias[cat].push({
+        id: m.id,
+        chave: meta.chave || '',
+        valor: m.content,
+        categoria: cat,
+        criadoEm: m.createdAt,
+        atualizadoEm: meta.updatedAt || meta.createdAt || m.createdAt
+      });
+    }
+
+    // Também inclui assuntos em aberto
+    const pendencias = await prisma.memory.findMany({
+      where: { userId: user.id, type: 'pendencia_conversa' },
+      orderBy: { createdAt: 'desc' },
+      take: 10
+    });
+    const pendenciasAtivas = pendencias
+      .map(m => { try { return { id: m.id, criadoEm: m.createdAt, ...JSON.parse(m.content) }; } catch { return null; } })
+      .filter(p => p && !p.encerrado);
+
+    res.json({ categorias, pendenciasAbertas: pendenciasAtivas });
+  } catch (e) {
+    console.error('[GET /memorias]', e.message);
+    res.status(500).json({ error: 'Erro ao buscar memórias' });
+  }
+});
+
+router.delete('/memoria/:id/:phone', async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { phone: req.params.phone } });
+    if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
+
+    const mem = await prisma.memory.findFirst({
+      where: { id: req.params.id, userId: user.id }
+    });
+    if (!mem) return res.status(404).json({ error: 'Memória não encontrada' });
+
+    await prisma.memory.delete({ where: { id: req.params.id } });
+
+    // Marca que o usuário não quer ser perguntado sobre isso por 30 dias
+    let meta = {};
+    try { meta = JSON.parse(mem.metadata || '{}'); } catch {}
+    if (meta.chave) {
+      await prisma.memory.create({
+        data: {
+          userId: user.id,
+          type: 'perfil_deletado',
+          content: meta.chave,
+          metadata: JSON.stringify({
+            deletadoEm: new Date().toISOString(),
+            expira: Date.now() + 30 * 24 * 60 * 60 * 1000
+          })
+        }
+      }).catch(() => {});
+    }
+
+    // Avisa a Clara via WhatsApp que a memória foi removida (opcional, não bloqueia)
+    try {
+      const w = require('../services/whatsapp');
+      if (w && user.phone) {
+        const chave = meta.chave || 'essa informação';
+        await w.sendMessage(user.phone, `🗑️ Entendido! Removi "${mem.content}" das minhas memórias. Não vou mais trazer esse assunto 😊`);
+      }
+    } catch {}
+
+    res.json({ ok: true, deletado: mem.content });
+  } catch (e) {
+    console.error('[DELETE /memoria]', e.message);
+    res.status(500).json({ error: 'Erro ao deletar memória' });
+  }
+});
+
+router.post('/memoria/:phone', async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { phone: req.params.phone } });
+    if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
+
+    const { chave, valor, categoria } = req.body;
+    if (!chave || !valor) return res.status(400).json({ error: 'chave e valor são obrigatórios' });
+
+    // Verifica se já existe e atualiza
+    const existing = await prisma.memory.findFirst({
+      where: { userId: user.id, type: 'info_pessoal', metadata: { contains: `"chave":"${chave}"` } }
+    });
+
+    let mem;
+    if (existing) {
+      mem = await prisma.memory.update({
+        where: { id: existing.id },
+        data: {
+          content: valor,
+          metadata: JSON.stringify({ chave, categoria: categoria || 'outro', updatedAt: new Date().toISOString() })
+        }
+      });
+    } else {
+      mem = await prisma.memory.create({
+        data: {
+          userId: user.id,
+          type: 'info_pessoal',
+          content: valor,
+          metadata: JSON.stringify({ chave, categoria: categoria || 'outro', createdAt: new Date().toISOString() })
+        }
+      });
+    }
+
+    res.json({ ok: true, id: mem.id, chave, valor, categoria });
+  } catch (e) {
+    console.error('[POST /memoria]', e.message);
+    res.status(500).json({ error: 'Erro ao salvar memória' });
+  }
+});
+
+router.delete('/pendencia/:id/:phone', async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { phone: req.params.phone } });
+    if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
+    const mem = await prisma.memory.findFirst({
+      where: { id: req.params.id, userId: user.id, type: 'pendencia_conversa' }
+    });
+    if (!mem) return res.status(404).json({ error: 'Pendência não encontrada' });
+    // Marca como encerrada em vez de deletar — preserva histórico
+    const dados = JSON.parse(mem.content || '{}');
+    await prisma.memory.update({
+      where: { id: req.params.id },
+      data: { content: JSON.stringify({ ...dados, encerrado: true }) }
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Erro ao encerrar pendência' });
+  }
+});
+
+router.get('/memorias-categorias', (req, res) => {
+  // Retorna as categorias disponíveis com labels para o Dashboard
+  res.json({
+    categorias: {
+      relacionamento:  { label: 'Relacionamento',  emoji: '❤️' },
+      filhos:          { label: 'Filhos',           emoji: '👶' },
+      familia:         { label: 'Família',          emoji: '👨‍👩‍👧' },
+      trabalho:        { label: 'Trabalho',         emoji: '💼' },
+      hobbies:         { label: 'Hobbies',          emoji: '🎯' },
+      entretenimento:  { label: 'Entretenimento',   emoji: '🎬' },
+      alimentacao:     { label: 'Alimentação',      emoji: '🍔' },
+      metas:           { label: 'Metas',            emoji: '🚀' },
+      personalidade:   { label: 'Personalidade',    emoji: '✨' },
+      saude:           { label: 'Saúde',            emoji: '💊' },
+      datas:           { label: 'Datas importantes',emoji: '📅' },
+      rotina:          { label: 'Rotina',           emoji: '⏰' },
+      outro:           { label: 'Informações gerais',emoji: '📌' },
+    }
+  });
+});
+
 module.exports = router;
