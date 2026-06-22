@@ -386,11 +386,15 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .fin-del-btn{flex-shrink:0;margin-left:8px}
 .fin-empty{text-align:center;padding:40px 16px;color:var(--text3)}
 .cofre-card{background:var(--s2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r);padding:14px 14px 14px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px}
-.mem-header-stats{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0}
+.mem-header-stats{display:flex;flex-direction:column;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0;padding-bottom:10px}
 .mem-stat{text-align:center;min-width:44px}
 .mem-stat-num{font-size:20px;font-weight:700;color:#C4B5FD;line-height:1}
 .mem-stat-label{font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:.04em}
 .mem-stat-divider{width:1px;height:28px;background:var(--border);flex-shrink:0}
+.mem-banner{display:flex;align-items:center;gap:12px;padding:14px 16px;background:rgba(139,92,246,.06);border-bottom:1px solid rgba(139,92,246,.1);width:100%}
+.mem-banner-icon{width:44px;height:44px;border-radius:50%;background:rgba(139,92,246,.12);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.mem-banner-text{flex:1;font-size:12px;color:var(--text3);line-height:1.5}
+.mem-banner-num{text-align:center;flex-shrink:0;min-width:60px}
 .mem-search-bar{flex:1;display:flex;align-items:center;gap:8px;background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:6px 12px}
 .mem-search-bar input{flex:1;background:none;border:none;color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none}
 .mem-search-bar input::placeholder{color:var(--text3)}
@@ -430,6 +434,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .mem-empty-brain{width:52px;height:52px;border-radius:50%;background:rgba(139,92,246,.08);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:22px}
 .mem-empty-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px}
 .mem-empty-sub{font-size:12px;color:var(--text3);line-height:1.6;max-width:240px}
+.mem-timeline-group{margin-bottom:16px}
+.mem-timeline-label{font-size:12px;font-weight:700;color:var(--text2);display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:0 2px}
+.mem-timeline-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;box-shadow:0 0 6px var(--glow)}
 .cofre-card-body{flex:1;min-width:0}
 .cofre-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px}
 .cofre-name{font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px}
@@ -615,7 +622,7 @@ select option{background:var(--s2)}
       <div class="s-item" onclick="navTo('financeiro')" data-nav="financeiro"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg><span class="s-item-label">Financeiro</span></div>
       <div class="s-item" onclick="navTo('listas')" data-nav="listas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span class="s-item-label">Listas</span><span class="s-badge" id="d-badge-list" style="display:none">0</span></div>
       <div class="s-item" onclick="navTo('cofre')" data-nav="cofre"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span class="s-item-label">Cofre</span></div>
-      <div class="s-item" onclick="navTo('memorias')" data-nav="memorias"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.5 4.5H18l-3.75 2.75 1.5 4.5L12 11l-3.75 2.75 1.5-4.5L6 6.5h4.5z"/><circle cx="19" cy="4" r="1.2" fill="currentColor" stroke="none"/><circle cx="5" cy="19" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="19" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span class="s-item-label">Memórias</span></div>
+      <div class="s-item" onclick="navTo('memorias')" data-nav="memorias"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2c0 0-.8 3.5-2.5 5.5C7.5 9.5 4 10 4 12c0 0 3.5.8 5.5 2.5C11.5 16.5 12 20 12 20s.8-3.5 2.5-5.5C16.5 12.8 20 12 20 12s-3.5-.8-5.5-2.5C12.5 7 12 2 12 2z"/><circle cx="5" cy="5" r="1.2" opacity=".7"/><circle cx="19" cy="19" r="1" opacity=".5"/><circle cx="19" cy="6" r=".8" opacity=".6"/></svg><span class="s-item-label">Memórias</span></div>
       <div class="sidebar-divider"></div>
       <div class="s-item" onclick="navTo('preferencias')" data-nav="preferencias"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="s-item-label">Configurações</span></div>
     </nav>
@@ -719,13 +726,16 @@ select option{background:var(--s2)}
       <div class="page" id="page-memorias" style="display:flex;flex-direction:column">
         <div class="ph" style="flex-shrink:0">
           <button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
-          <div class="ph-icon" style="background:rgba(139,92,246,.1);color:#C4B5FD"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.5 4.5H18l-3.75 2.75 1.5 4.5L12 11l-3.75 2.75 1.5-4.5L6 6.5h4.5z"/><circle cx="19" cy="4" r="1.2" fill="currentColor" stroke="none"/><circle cx="5" cy="19" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="19" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></div>
+          <div class="ph-icon" style="background:rgba(139,92,246,.1);color:#C4B5FD"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2c0 0-.8 3.5-2.5 5.5C7.5 9.5 4 10 4 12c0 0 3.5.8 5.5 2.5C11.5 16.5 12 20 12 20s.8-3.5 2.5-5.5C16.5 12.8 20 12 20 12s-3.5-.8-5.5-2.5C12.5 7 12 2 12 2z"/><circle cx="5" cy="5" r="1.2" opacity=".7"/><circle cx="19" cy="19" r="1" opacity=".5"/><circle cx="19" cy="6" r=".8" opacity=".6"/></svg></div>
           <div style="flex:1"><div class="ph-title">Memórias</div><div class="ph-sub">O que a Clara sabe sobre você</div></div>
         </div>
         <div class="mem-header-stats">
-          <div class="mem-stat"><div class="mem-stat-num" id="mem-total-num">—</div><div class="mem-stat-label">memórias</div></div>
-          <div class="mem-stat-divider"></div>
-          <div class="mem-search-bar"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="mem-search-input" placeholder="Buscar memórias..." oninput="filtrarMemorias()"/></div>
+          <div class="mem-banner">
+            <div class="mem-banner-icon">&#x2728;</div>
+            <div class="mem-banner-text">A Clara guarda informa&#xE7;&#xF5;es importantes para te entender melhor e te ajudar de forma personalizada.</div>
+            <div class="mem-banner-num"><span id="mem-total-num" style="font-size:22px;font-weight:700;color:#C4B5FD;line-height:1">&#x2014;</span><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-top:2px">mem&#xF3;rias salvas</div></div>
+          </div>
+          <div class="mem-search-bar" style="margin:10px 16px 0"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="mem-search-input" placeholder="Buscar mem&#xF3;rias..." oninput="filtrarMemorias()"/></div>
         </div>
         <div class="mem-filters" id="mem-filters">
           <button class="mem-filter active" data-cat="todas" onclick="setMemFilter('todas')">Todas</button>
@@ -935,7 +945,7 @@ select option{background:var(--s2)}
     <div class="d-item" onclick="navTo('financeiro')" data-nav="financeiro"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> Financeiro</div>
     <div class="d-item" onclick="navTo('listas')" data-nav="listas"><svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Listas <span class="d-badge" id="d-badge-list2" style="display:none">0</span></div>
     <div class="d-item" onclick="navTo('cofre')" data-nav="cofre"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Cofre</div>
-    <div class="d-item" onclick="navTo('memorias')" data-nav="memorias"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.5 4.5H18l-3.75 2.75 1.5 4.5L12 11l-3.75 2.75 1.5-4.5L6 6.5h4.5z"/><circle cx="19" cy="4" r="1.2" fill="currentColor" stroke="none"/><circle cx="5" cy="19" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="19" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg> Memórias</div>
+    <div class="d-item" onclick="navTo('memorias')" data-nav="memorias"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2c0 0-.8 3.5-2.5 5.5C7.5 9.5 4 10 4 12c0 0 3.5.8 5.5 2.5C11.5 16.5 12 20 12 20s.8-3.5 2.5-5.5C16.5 12.8 20 12 20 12s-3.5-.8-5.5-2.5C12.5 7 12 2 12 2z"/><circle cx="5" cy="5" r="1.2" opacity=".7"/><circle cx="19" cy="19" r="1" opacity=".5"/><circle cx="19" cy="6" r=".8" opacity=".6"/></svg> Memórias</div>
     
     <div class="d-item" onclick="navTo('preferencias')" data-nav="preferencias"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Configurações</div>
   </div>
@@ -1430,25 +1440,41 @@ function filtrarMemorias(){
   _renderMemoriasUI();
 }
 
+function _fmtDataMem(iso){
+  if(!iso)return'';
+  var d=new Date(iso);
+  var hoje=new Date();
+  var ontem=new Date(hoje);ontem.setDate(ontem.getDate()-1);
+  var toStr=function(x){return x.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric'});};
+  if(toStr(d)===toStr(hoje))return'Hoje';
+  if(toStr(d)===toStr(ontem))return'Ontem';
+  var meses=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  return d.getDate()+' de '+meses[d.getMonth()];
+}
+
 function _renderMemoriasUI(){
   var el=document.getElementById('memorias-body');
   if(!el||!_memDados)return;
   var cats=_memDados.categorias||{};
   var pends=_memDados.pendenciasAbertas||[];
-  var total=0;
-  ORDEM_CATS_MEM.forEach(function(cat){total+=(cats[cat]?cats[cat].length:0);});
-  var numEl=document.getElementById('mem-total-num');
-  if(numEl)numEl.textContent=total;
   var busca=_memBuscaAtiva,filtro=_memFiltroAtivo;
+
+  // Contador total
+  var totalTodos=0;
+  ORDEM_CATS_MEM.forEach(function(cat){totalTodos+=(cats[cat]?cats[cat].length:0);});
+  var numEl=document.getElementById('mem-total-num');
+  if(numEl)numEl.textContent=totalTodos;
+
   var html='',temConteudo=false;
 
+  // Assuntos em aberto — sempre no topo
   if(filtro==='todas'||filtro==='pendencias'){
     var pendsF=pends.filter(function(p){
       return !busca||(p.assunto||'').toLowerCase().indexOf(busca)>=0||(p.contexto||'').toLowerCase().indexOf(busca)>=0;
     });
     if(pendsF.length){
       temConteudo=true;
-      html+='<div class="mem-group"><div class="mem-group-header"><span class="mem-group-emoji">&#x1F7E1;</span><span class="mem-group-label">Assuntos em aberto</span><span class="mem-group-count">'+pendsF.length+'</span></div>';
+      html+='<div class="mem-timeline-group"><div class="mem-timeline-label"><span class="mem-timeline-dot"></span>Assuntos em aberto</div>';
       pendsF.forEach(function(p){
         html+='<div class="mem-pendencia-card"><div class="mem-pendencia-icon">&#x1F4AC;</div>'
           +'<div class="mem-pendencia-body">'
@@ -1464,33 +1490,57 @@ function _renderMemoriasUI(){
     }
   }
 
-  var catsRender=filtro==='todas'?ORDEM_CATS_MEM:filtro==='pendencias'?[]:ORDEM_CATS_MEM.filter(function(c){return c===filtro;});
-  catsRender.forEach(function(cat){
-    var items=cats[cat]||[];
-    if(busca)items=items.filter(function(i){return (i.valor||'').toLowerCase().indexOf(busca)>=0||(i.chave||'').toLowerCase().indexOf(busca)>=0;});
-    if(!items.length)return;
-    temConteudo=true;
+  // Memórias agrupadas por data
+  var catsParaIncluir=filtro==='todas'?ORDEM_CATS_MEM:filtro==='pendencias'?[]:ORDEM_CATS_MEM.filter(function(cat){return cat===filtro;});
+  var todosItens=[];
+  catsParaIncluir.forEach(function(cat){
     var m=CATS_MEM_DATA[cat]||{label:cat,e:'&#x1F4CC;',cor:'rgba(107,114,128,.12)',txt:'#9CA3AF',ac:'#6B7280'};
-    html+='<div class="mem-group"><div class="mem-group-header"><span class="mem-group-emoji">'+m.e+'</span><span class="mem-group-label">'+m.label+'</span><span class="mem-group-count">'+items.length+'</span></div>';
-    items.forEach(function(item){
-      var chave=item.chave?item.chave.replace(/_/g,' '):'';
-      html+='<div class="mem-card" style="border-left-color:'+m.ac+'">'
-        +'<div class="mem-card-icon" style="background:'+m.cor+';color:'+m.txt+'">'+m.e+'</div>'
-        +'<div class="mem-card-body">'
-        +'<div class="mem-card-valor">'+item.valor+'</div>'
-        +(chave?'<div class="mem-card-meta">'+chave+'</div>':'')
-        +'</div>'
-        +'<button class="mem-card-del" data-mem-id="'+String(item.id||'')+'" title="Esquecer">'
-        +'<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>'
-        +'</button></div>';
+    (cats[cat]||[]).forEach(function(item){
+      if(busca&&(item.valor||'').toLowerCase().indexOf(busca)<0&&(item.chave||'').toLowerCase().indexOf(busca)<0)return;
+      todosItens.push({item:item,m:m});
     });
-    html+='</div>';
   });
+
+  if(todosItens.length){
+    temConteudo=true;
+    // Agrupa por data (usando createdAt se disponível, senão agrupa tudo em "Recente")
+    var grupos={};
+    var ordemLabels=[];
+    todosItens.forEach(function(entry){
+      var label=entry.item.createdAt?_fmtDataMem(entry.item.createdAt):'Recente';
+      if(!grupos[label]){grupos[label]=[];ordemLabels.push(label);}
+      grupos[label].push(entry);
+    });
+    // Ordena: Hoje > Ontem > resto
+    ordemLabels.sort(function(a,b){
+      if(a==='Hoje')return -1;if(b==='Hoje')return 1;
+      if(a==='Ontem')return -1;if(b==='Ontem')return 1;
+      if(a==='Recente')return 1;if(b==='Recente')return -1;
+      return 0;
+    });
+    ordemLabels.forEach(function(label){
+      html+='<div class="mem-timeline-group"><div class="mem-timeline-label"><span class="mem-timeline-dot"></span>'+label+'</div>';
+      grupos[label].forEach(function(entry){
+        var item=entry.item,m=entry.m;
+        var hora=item.createdAt?new Date(item.createdAt).toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'}):'';
+        html+='<div class="mem-card" style="border-left-color:'+m.ac+'">'
+          +'<div class="mem-card-icon" style="background:'+m.cor+';color:'+m.txt+'">'+m.e+'</div>'
+          +'<div class="mem-card-body">'
+          +'<div class="mem-card-valor">'+item.valor+'</div>'
+          +'<div class="mem-card-meta"><span style="color:'+m.txt+';font-weight:600;font-size:10px">'+m.label+'</span>'+(hora?'&nbsp;&middot;&nbsp;'+hora:'')+'</div>'
+          +'</div>'
+          +'<button class="mem-card-del" data-mem-id="'+String(item.id||'')+'" title="Esquecer">'
+          +'<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>'
+          +'</button></div>';
+      });
+      html+='</div>';
+    });
+  }
 
   if(!temConteudo){
     html=busca
-      ?'<div class="mem-empty-state"><div class="mem-empty-brain">&#x1F50D;</div><div class="mem-empty-title">Nenhum resultado</div><div class="mem-empty-sub">Nenhuma mem\u00f3ria para "'+busca+'".</div></div>'
-      :'<div class="mem-empty-state"><div class="mem-empty-brain">&#x1F9E0;</div><div class="mem-empty-title">A Clara ainda est\u00e1 te conhecendo</div><div class="mem-empty-sub">Conforme voc\u00eas conversam, ela vai salvando o que aprende sobre voc\u00ea aqui.</div></div>';
+      ?'<div class="mem-empty-state"><div class="mem-empty-brain">&#x1F50D;</div><div class="mem-empty-title">Nenhum resultado</div><div class="mem-empty-sub">Nenhuma memória para "'+busca+'".</div></div>'
+      :'<div class="mem-empty-state"><div class="mem-empty-brain">&#x2728;</div><div class="mem-empty-title">A Clara ainda está te conhecendo</div><div class="mem-empty-sub">Conforme vocês conversam, ela vai salvando o que aprende sobre você aqui.</div></div>';
   }
   el.innerHTML=html;
   el.querySelectorAll('[data-mem-id]').forEach(function(btn){
