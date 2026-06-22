@@ -386,30 +386,50 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .fin-del-btn{flex-shrink:0;margin-left:8px}
 .fin-empty{text-align:center;padding:40px 16px;color:var(--text3)}
 .cofre-card{background:var(--s2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r);padding:14px 14px 14px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px}
-.mem-categoria{margin-bottom:18px}
-.mem-cat-header{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.mem-cat-emoji{font-size:16px;line-height:1}
-.mem-cat-label{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em}
-.mem-cat-count{font-size:10px;color:var(--text3);background:var(--s3);padding:1px 6px;border-radius:20px}
-.mem-item{background:var(--s2);border:1px solid var(--border);border-radius:var(--r-sm);padding:11px 12px;margin-bottom:6px;display:flex;align-items:center;gap:10px;transition:border-color .15s}
-.mem-item:hover{border-color:var(--border2)}
-.mem-item-body{flex:1;min-width:0}
-.mem-item-valor{font-size:13px;color:var(--text);line-height:1.4}
-.mem-item-chave{font-size:11px;color:var(--text3);margin-top:2px}
-.mem-del-btn{width:28px;height:28px;background:none;border:none;cursor:pointer;color:var(--text3);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;opacity:0}
-.mem-item:hover .mem-del-btn{opacity:1}
-.mem-del-btn:hover{background:rgba(239,68,68,.1);color:#EF4444}
-.mem-del-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round}
-.mem-pendencia{background:var(--s2);border:1px solid var(--border);border-left:3px solid #F59E0B;border-radius:var(--r-sm);padding:11px 12px;margin-bottom:6px;display:flex;align-items:flex-start;gap:10px}
+.mem-header-stats{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0}
+.mem-stat{text-align:center;min-width:44px}
+.mem-stat-num{font-size:20px;font-weight:700;color:#C4B5FD;line-height:1}
+.mem-stat-label{font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:.04em}
+.mem-stat-divider{width:1px;height:28px;background:var(--border);flex-shrink:0}
+.mem-search-bar{flex:1;display:flex;align-items:center;gap:8px;background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:6px 12px}
+.mem-search-bar input{flex:1;background:none;border:none;color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none}
+.mem-search-bar input::placeholder{color:var(--text3)}
+.mem-search-bar svg{width:14px;height:14px;stroke:var(--text3);fill:none;stroke-width:2;flex-shrink:0}
+.mem-filters{display:flex;gap:6px;padding:10px 16px;overflow-x:auto;scrollbar-width:none;flex-shrink:0;border-bottom:1px solid var(--border)}
+.mem-filters::-webkit-scrollbar{display:none}
+.mem-filter{padding:5px 12px;background:var(--s2);border:1px solid var(--border);border-radius:16px;font-size:11px;font-weight:500;color:var(--text3);cursor:pointer;white-space:nowrap;transition:all .15s;font-family:'Inter',sans-serif}
+.mem-filter:hover{border-color:var(--border2);color:var(--text2)}
+.mem-filter.active{background:rgba(139,92,246,.12);border-color:rgba(139,92,246,.35);color:#C4B5FD}
+.mem-list{flex:1;overflow-y:auto;padding:12px 16px 20px}
+.mem-group{margin-bottom:18px}
+.mem-group-header{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.mem-group-emoji{font-size:14px;line-height:1;flex-shrink:0}
+.mem-group-label{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;flex:1}
+.mem-group-count{font-size:10px;color:var(--text3);background:var(--s3);padding:2px 7px;border-radius:10px}
+.mem-card{background:var(--s2);border:1px solid var(--border);border-left:3px solid #6B7280;border-radius:12px;padding:11px 12px;margin-bottom:6px;display:flex;align-items:flex-start;gap:10px;transition:all .15s}
+.mem-card:hover{border-color:var(--border2);transform:translateX(1px)}
+.mem-card-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;margin-top:1px}
+.mem-card-body{flex:1;min-width:0}
+.mem-card-valor{font-size:13px;color:var(--text);line-height:1.5;word-break:break-word}
+.mem-card-meta{font-size:10px;color:var(--text3);margin-top:3px;text-transform:capitalize}
+.mem-card-del{width:24px;height:24px;background:none;border:none;cursor:pointer;color:var(--text3);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;opacity:0;margin-top:2px}
+.mem-card:hover .mem-card-del{opacity:.5}
+.mem-card-del:hover{background:rgba(239,68,68,.1);color:#EF4444;opacity:1!important}
+.mem-card-del svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round}
+.mem-pendencia-card{background:var(--s2);border:1px solid rgba(245,158,11,.2);border-left:3px solid #F59E0B;border-radius:12px;padding:11px 12px;margin-bottom:6px;display:flex;align-items:flex-start;gap:10px;transition:all .15s}
+.mem-pendencia-card:hover{border-color:rgba(245,158,11,.4)}
+.mem-pendencia-icon{width:30px;height:30px;border-radius:8px;background:rgba(245,158,11,.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px}
 .mem-pendencia-body{flex:1;min-width:0}
-.mem-pendencia-assunto{font-size:12px;font-weight:600;color:#FCD34D;margin-bottom:3px}
-.mem-pendencia-ctx{font-size:12px;color:var(--text2);line-height:1.4}
-.mem-pendencia-retomar{font-size:11px;color:var(--text3);margin-top:3px;font-style:italic}
-.mem-section-title{font-size:12px;font-weight:600;color:var(--text2);margin:20px 0 10px;display:flex;align-items:center;gap:6px}
-.mem-empty{text-align:center;padding:32px 20px;color:var(--text3);font-size:13px}
-.mem-empty-icon{font-size:32px;display:block;margin-bottom:8px}
-.mem-add-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:10px;background:none;border:1px dashed var(--border2);border-radius:var(--r-sm);color:var(--text3);font-size:12px;cursor:pointer;transition:all .15s;margin-top:4px}
-.mem-add-btn:hover{border-color:var(--accent);color:#C4B5FD;background:rgba(139,92,246,.05)}
+.mem-pendencia-assunto{font-size:13px;font-weight:600;color:#FCD34D;margin-bottom:3px}
+.mem-pendencia-ctx{font-size:12px;color:var(--text2);line-height:1.5}
+.mem-pendencia-retomar{font-size:11px;color:var(--text3);margin-top:4px;font-style:italic}
+.mem-pendencia-del{width:24px;height:24px;background:none;border:none;cursor:pointer;color:var(--text3);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;opacity:.4;transition:all .15s;margin-top:2px}
+.mem-pendencia-del:hover{opacity:1;background:rgba(239,68,68,.1);color:#EF4444}
+.mem-pendencia-del svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round}
+.mem-empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 24px;text-align:center}
+.mem-empty-brain{width:52px;height:52px;border-radius:50%;background:rgba(139,92,246,.08);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:22px}
+.mem-empty-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px}
+.mem-empty-sub{font-size:12px;color:var(--text3);line-height:1.6;max-width:240px}
 .cofre-card-body{flex:1;min-width:0}
 .cofre-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px}
 .cofre-name{font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px}
@@ -595,7 +615,7 @@ select option{background:var(--s2)}
       <div class="s-item" onclick="navTo('financeiro')" data-nav="financeiro"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg><span class="s-item-label">Financeiro</span></div>
       <div class="s-item" onclick="navTo('listas')" data-nav="listas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span class="s-item-label">Listas</span><span class="s-badge" id="d-badge-list" style="display:none">0</span></div>
       <div class="s-item" onclick="navTo('cofre')" data-nav="cofre"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span class="s-item-label">Cofre</span></div>
-      <div class="s-item" onclick="navTo('memorias')" data-nav="memorias"><svg viewBox="0 0 24 24"><path d="M9.5 2C6.46 2 4 4.46 4 7.5c0 1.74.8 3.29 2.05 4.33C4.2 12.66 3 14.7 3 17c0 2.76 2.24 5 5 5h8c2.76 0 5-2.24 5-5 0-2.3-1.2-4.34-3.05-5.17C19.2 10.79 20 9.24 20 7.5 20 4.46 17.54 2 14.5 2c-1.33 0-2.54.47-3.49 1.24A5.47 5.47 0 0 0 9.5 2zm0 2c.95 0 1.82.31 2.53.83L9.7 7.16A1 1 0 0 0 10 8h4a1 1 0 0 0 .3-.84L12 4.83A3.5 3.5 0 0 1 14.5 4 3.5 3.5 0 0 1 18 7.5 3.5 3.5 0 0 1 14.5 11H9.5A3.5 3.5 0 0 1 6 7.5 3.5 3.5 0 0 1 9.5 4zM9 9h6v1H9V9zm-1 4h8c1.65 0 3 1.35 3 3s-1.35 3-3 3H8c-1.65 0-3-1.35-3-3s1.35-3 3-3z"/></svg><span class="s-item-label">Memórias</span></div>
+      <div class="s-item" onclick="navTo('memorias')" data-nav="memorias"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A5.5 5.5 0 0 0 4 7.5c0 1.8.85 3.4 2.18 4.43A6 6 0 0 0 3 17c0 3.31 2.69 6 6 6h6c3.31 0 6-2.69 6-6a6 6 0 0 0-3.18-5.27A5.49 5.49 0 0 0 20 7.5 5.5 5.5 0 0 0 14.5 2c-1.4 0-2.68.53-3.64 1.39A5.47 5.47 0 0 0 9.5 2z"/><circle cx="12" cy="11" r="2"/><line x1="12" y1="13" x2="12" y2="17"/></svg><span class="s-item-label">Memórias</span></div>
       <div class="sidebar-divider"></div>
       <div class="s-item" onclick="navTo('preferencias')" data-nav="preferencias"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="s-item-label">Configurações</span></div>
     </nav>
@@ -696,9 +716,33 @@ select option{background:var(--s2)}
         <div class="ph"><button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><div class="ph-icon" style="background:rgba(139,92,246,.1);color:#C4B5FD"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><div><div class="ph-title">Cofre</div><div class="ph-sub">Senhas e segredos protegidos</div></div><div class="ph-actions"><button class="btn-p" onclick="openModal('m-cofre')">+ Novo</button></div></div>
         <div class="scroll-body" style="padding:14px 20px" id="cofre-body"><div class="spin"></div></div>
       </div>
-      <div class="page" id="page-memorias">
-        <div class="ph"><button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><div class="ph-icon" style="background:rgba(139,92,246,.1);color:#C4B5FD"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A5.5 5.5 0 0 0 4 7.5c0 1.8.85 3.4 2.18 4.43A6 6 0 0 0 3 17c0 3.31 2.69 6 6 6h6c3.31 0 6-2.69 6-6a6 6 0 0 0-3.18-5.27A5.49 5.49 0 0 0 20 7.5 5.5 5.5 0 0 0 14.5 2c-1.4 0-2.68.53-3.64 1.39A5.47 5.47 0 0 0 9.5 2z"/><circle cx="12" cy="11" r="2"/><line x1="12" y1="13" x2="12" y2="17"/></svg></div><div><div class="ph-title">Memórias</div><div class="ph-sub">O que a Clara sabe sobre você</div></div></div>
-        <div class="scroll-body" style="padding:14px 20px" id="memorias-body"><div class="spin"></div></div>
+      <div class="page" id="page-memorias" style="display:flex;flex-direction:column">
+        <div class="ph" style="flex-shrink:0">
+          <button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+          <div class="ph-icon" style="background:rgba(139,92,246,.1);color:#C4B5FD"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A5.5 5.5 0 0 0 4 7.5c0 1.8.85 3.4 2.18 4.43A6 6 0 0 0 3 17c0 3.31 2.69 6 6 6h6c3.31 0 6-2.69 6-6a6 6 0 0 0-3.18-5.27A5.49 5.49 0 0 0 20 7.5 5.5 5.5 0 0 0 14.5 2c-1.4 0-2.68.53-3.64 1.39A5.47 5.47 0 0 0 9.5 2z"/><circle cx="12" cy="11" r="2"/><line x1="12" y1="13" x2="12" y2="17"/></svg></div>
+          <div style="flex:1"><div class="ph-title">Memórias</div><div class="ph-sub">O que a Clara sabe sobre você</div></div>
+        </div>
+        <div class="mem-header-stats">
+          <div class="mem-stat"><div class="mem-stat-num" id="mem-total-num">—</div><div class="mem-stat-label">memórias</div></div>
+          <div class="mem-stat-divider"></div>
+          <div class="mem-search-bar"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="mem-search-input" placeholder="Buscar memórias..." oninput="filtrarMemorias()"/></div>
+        </div>
+        <div class="mem-filters" id="mem-filters">
+          <button class="mem-filter active" data-cat="todas" onclick="setMemFilter('todas')">Todas</button>
+          <button class="mem-filter" data-cat="pendencias" onclick="setMemFilter('pendencias')">🟡 Em aberto</button>
+          <button class="mem-filter" data-cat="relacionamento" onclick="setMemFilter('relacionamento')">❤️ Relacionamento</button>
+          <button class="mem-filter" data-cat="filhos" onclick="setMemFilter('filhos')">👶 Filhos</button>
+          <button class="mem-filter" data-cat="familia" onclick="setMemFilter('familia')">👪 Família</button>
+          <button class="mem-filter" data-cat="trabalho" onclick="setMemFilter('trabalho')">💼 Trabalho</button>
+          <button class="mem-filter" data-cat="hobbies" onclick="setMemFilter('hobbies')">🎯 Hobbies</button>
+          <button class="mem-filter" data-cat="entretenimento" onclick="setMemFilter('entretenimento')">🎬 Entretenimento</button>
+          <button class="mem-filter" data-cat="alimentacao" onclick="setMemFilter('alimentacao')">🍔 Alimentação</button>
+          <button class="mem-filter" data-cat="metas" onclick="setMemFilter('metas')">🚀 Metas</button>
+          <button class="mem-filter" data-cat="saude" onclick="setMemFilter('saude')">💊 Saúde</button>
+          <button class="mem-filter" data-cat="personalidade" onclick="setMemFilter('personalidade')">✨ Personalidade</button>
+          <button class="mem-filter" data-cat="datas" onclick="setMemFilter('datas')">📅 Datas</button>
+        </div>
+        <div class="mem-list" id="memorias-body"><div class="spin"></div></div>
       </div>
 
       <div class="page" id="page-preferencias" style="display:flex;flex-direction:column">
@@ -1338,104 +1382,16 @@ async function delGasto(id,wrapEl){
   }catch{showToast('Erro ⚠️');}
 }
 
-async function renderMemorias(){
-  const el=document.getElementById('memorias-body');
-  if(!el)return;
-  el.innerHTML='<div class="spin"></div>';
-  try{
-    const r=await fetch(`/forms/memorias/${phone}`);
-    const {categorias,pendenciasAbertas}=await r.json();
 
-    const CATS={
-      relacionamento:{label:'Relacionamento',emoji:'❤️'},
-      filhos:{label:'Filhos',emoji:'👶'},
-      familia:{label:'Família',emoji:'👨‍👩‍👧'},
-      trabalho:{label:'Trabalho',emoji:'💼'},
-      hobbies:{label:'Hobbies',emoji:'🎯'},
-      entretenimento:{label:'Entretenimento',emoji:'🎬'},
-      alimentacao:{label:'Alimentação',emoji:'🍔'},
-      metas:{label:'Metas',emoji:'🚀'},
-      personalidade:{label:'Personalidade',emoji:'✨'},
-      saude:{label:'Saúde',emoji:'💊'},
-      datas:{label:'Datas importantes',emoji:'📅'},
-      rotina:{label:'Rotina',emoji:'⏰'},
-      outro:{label:'Informações gerais',emoji:'📌'},
-    };
-
-    let html='';
-    let totalItems=0;
-
-    // Assuntos em aberto
-    if(pendenciasAbertas&&pendenciasAbertas.length>0){
-      html+=`<div class="mem-section-title"><span>🟡</span> Assuntos em aberto</div>`;
-      for(const p of pendenciasAbertas){
-        html+=`<div class="mem-pendencia">
-          <div class="mem-pendencia-body">
-            <div class="mem-pendencia-assunto">${p.assunto||''}</div>
-            <div class="mem-pendencia-ctx">${p.contexto||''}</div>
-            <div class="mem-pendencia-retomar">${p.como_retomar||''}</div>
-          </div>
-          <button class="mem-del-btn" onclick="encerrarPendencia('${p.id}')" title="Encerrar assunto">
-            <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>`;
-      }
-    }
-
-    // Categorias do perfil
-    const ordemCats=['relacionamento','filhos','familia','trabalho','hobbies','entretenimento','alimentacao','metas','personalidade','saude','datas','rotina','outro'];
-    for(const cat of ordemCats){
-      const items=categorias[cat];
-      if(!items||!items.length)continue;
-      const {label,emoji}=CATS[cat]||{label:cat,emoji:'📌'};
-      totalItems+=items.length;
-      html+=`<div class="mem-categoria">
-        <div class="mem-cat-header">
-          <span class="mem-cat-emoji">${emoji}</span>
-          <span class="mem-cat-label">${label}</span>
-          <span class="mem-cat-count">${items.length}</span>
-        </div>`;
-      for(const item of items){
-        const chaveLabel=item.chave?item.chave.replace(/_/g,' '):'';
-        html+=`<div class="mem-item">
-          <div class="mem-item-body">
-            <div class="mem-item-valor">${item.valor}</div>
-            ${chaveLabel?`<div class="mem-item-chave">${chaveLabel}</div>`:''}
-          </div>
-          <button class="mem-del-btn" onclick="deletarMemoria('${item.id}')" title="Esquecer isso">
-            <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-          </button>
-        </div>`;
-      }
-      html+='</div>';
-    }
-
-    if(totalItems===0&&(!pendenciasAbertas||pendenciasAbertas.length===0)){
-      html=`<div class="mem-empty"><span class="mem-empty-icon">🧠</span>A Clara ainda não conhece muito sobre você.<br>Converse com ela e ela vai aprendendo naturalmente!</div>`;
-    }
-
-    el.innerHTML=html;
-  }catch(e){
-    el.innerHTML='<div class="empty"><span class="empty-icon">🧠</span>Erro ao carregar memórias</div>';
-  }
-}
-
-async function deletarMemoria(id){
-  if(!confirm('Quer que eu esqueça isso? A Clara não vai mais trazer esse assunto por 30 dias.'))return;
-  try{
-    const r=await fetch(`/forms/memoria/${id}/${phone}`,{method:'DELETE'});
-    if(r.ok){showToast('Memória removida 🗑️');renderMemorias();}
-    else showToast('Erro ao remover ⚠️');
-  }catch{showToast('Erro ⚠️');}
-}
-
-async function encerrarPendencia(id){
-  try{
-    const r=await fetch(`/forms/pendencia/${id}/${phone}`,{method:'DELETE'});
-    if(r.ok){showToast('Assunto encerrado ✅');renderMemorias();}
-  }catch{showToast('Erro ⚠️');}
-}
-
+const CATS_MEM={relacionamento:{label:'Relacionamento',emoji:'❤️',cor:'rgba(239,68,68,.12)',texto:'#FCA5A5',ac:'#EF4444'},filhos:{label:'Filhos',emoji:'👶',cor:'rgba(251,191,36,.12)',texto:'#FCD34D',ac:'#F59E0B'},familia:{label:'Família',emoji:'👪',cor:'rgba(245,158,11,.12)',texto:'#FCD34D',ac:'#F59E0B'},trabalho:{label:'Trabalho',emoji:'💼',cor:'rgba(59,130,246,.12)',texto:'#93C5FD',ac:'#3B82F6'},hobbies:{label:'Hobbies',emoji:'🎯',cor:'rgba(16,185,129,.12)',texto:'#6EE7B7',ac:'#10B981'},entretenimento:{label:'Entretenimento',emoji:'🎬',cor:'rgba(168,85,247,.12)',texto:'#D8B4FE',ac:'#A855F7'},alimentacao:{label:'Alimentação',emoji:'🍔',cor:'rgba(234,88,12,.12)',texto:'#FDBA74',ac:'#EA580C'},metas:{label:'Metas',emoji:'🚀',cor:'rgba(99,102,241,.12)',texto:'#A5B4FC',ac:'#6366F1'},personalidade:{label:'Personalidade',emoji:'✨',cor:'rgba(236,72,153,.12)',texto:'#F9A8D4',ac:'#EC4899'},saude:{label:'Saúde',emoji:'💊',cor:'rgba(239,68,68,.12)',texto:'#FCA5A5',ac:'#EF4444'},datas:{label:'Datas importantes',emoji:'📅',cor:'rgba(245,158,11,.12)',texto:'#FCD34D',ac:'#F59E0B'},rotina:{label:'Rotina',emoji:'⏰',cor:'rgba(139,92,246,.12)',texto:'#C4B5FD',ac:'#8B5CF6'},outro:{label:'Informações gerais',emoji:'📌',cor:'rgba(107,114,128,.12)',texto:'#9CA3AF',ac:'#6B7280'}};
+const ORDEM_CATS_MEM=['relacionamento','filhos','familia','trabalho','hobbies','entretenimento','alimentacao','metas','personalidade','saude','datas','rotina','outro'];
+let _memDados=null,_memFiltroAtivo='todas',_memBuscaAtiva='';
+async function renderMemorias(){const el=document.getElementById('memorias-body');if(!el)return;el.innerHTML='<div class="spin"></div>';try{const r=await fetch('/forms/memorias/'+phone);_memDados=await r.json();_memBuscaAtiva='';const si=document.getElementById('mem-search-input');if(si)si.value='';_renderMemoriasUI();}catch(e){el.innerHTML='<div class="mem-empty-state"><div class="mem-empty-brain">🧠</div><div class="mem-empty-title">Erro ao carregar</div><div class="mem-empty-sub">Tente novamente.</div></div>';}}
+function setMemFilter(cat){_memFiltroAtivo=cat;document.querySelectorAll('.mem-filter').forEach(el=>el.classList.toggle('active',el.dataset.cat===cat));_renderMemoriasUI();}
+function filtrarMemorias(){const inp=document.getElementById('mem-search-input');_memBuscaAtiva=(inp?.value||'').trim().toLowerCase();_renderMemoriasUI();}
+function _renderMemoriasUI(){const el=document.getElementById('memorias-body');if(!el||!_memDados)return;const{categorias,pendenciasAbertas}=_memDados;let total=0;ORDEM_CATS_MEM.forEach(cat=>{total+=(categorias[cat]?.length||0);});const numEl=document.getElementById('mem-total-num');if(numEl)numEl.textContent=total;const busca=_memBuscaAtiva,filtro=_memFiltroAtivo;let html='',temConteudo=false;if(filtro==='todas'||filtro==='pendencias'){const pends=(pendenciasAbertas||[]).filter(p=>!busca||(p.assunto||'').toLowerCase().includes(busca)||(p.contexto||'').toLowerCase().includes(busca));if(pends.length){temConteudo=true;html+='<div class="mem-group"><div class="mem-group-header"><span class="mem-group-emoji">🟡</span><span class="mem-group-label">Assuntos em aberto</span><span class="mem-group-count">'+pends.length+'</span></div>';pends.forEach(p=>{html+='<div class="mem-pendencia-card"><div class="mem-pendencia-icon">💬</div><div class="mem-pendencia-body"><div class="mem-pendencia-assunto">'+(p.assunto||'')+'</div><div class="mem-pendencia-ctx">'+(p.contexto||'')+'</div>'+(p.como_retomar?'<div class="mem-pendencia-retomar">'+p.como_retomar+'</div>':'')+'</div><button class="mem-pendencia-del" onclick="encerrarPendencia(''+p.id+'')"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>';});html+='</div>';}}const catsRender=filtro==='todas'?ORDEM_CATS_MEM:filtro==='pendencias'?[]:ORDEM_CATS_MEM.filter(c=>c===filtro);for(const cat of catsRender){let items=(categorias[cat]||[]);if(busca)items=items.filter(i=>(i.valor||'').toLowerCase().includes(busca)||(i.chave||'').toLowerCase().includes(busca));if(!items.length)continue;temConteudo=true;const m=CATS_MEM[cat]||{label:cat,emoji:'📌',cor:'rgba(107,114,128,.12)',texto:'#9CA3AF',ac:'#6B7280'};html+='<div class="mem-group"><div class="mem-group-header"><span class="mem-group-emoji">'+m.emoji+'</span><span class="mem-group-label">'+m.label+'</span><span class="mem-group-count">'+items.length+'</span></div>';items.forEach(item=>{const chave=item.chave?(item.chave.replace(/_/g,' ')):'';html+='<div class="mem-card" style="border-left-color:'+m.ac+'"><div class="mem-card-icon" style="background:'+m.cor+';color:'+m.texto+'">'+m.emoji+'</div><div class="mem-card-body"><div class="mem-card-valor">'+item.valor+'</div>'+(chave?'<div class="mem-card-meta">'+chave+'</div>':'')+'</div><button class="mem-card-del" onclick="deletarMemoria(''+item.id+'')"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button></div>';});html+='</div>';}if(!temConteudo){html=busca?'<div class="mem-empty-state"><div class="mem-empty-brain">🔍</div><div class="mem-empty-title">Nenhum resultado</div><div class="mem-empty-sub">Nenhuma memória para "'+busca+'".</div></div>':'<div class="mem-empty-state"><div class="mem-empty-brain">🧠</div><div class="mem-empty-title">A Clara ainda está te conhecendo</div><div class="mem-empty-sub">Conforme vocês conversam, ela vai salvando o que aprende sobre você aqui.</div></div>';}el.innerHTML=html;}
+async function deletarMemoria(id){if(!confirm('Quer que eu esqueça isso? A Clara não vai mais trazer esse assunto por 30 dias.'))return;try{const r=await fetch('/forms/memoria/'+id+'/'+phone,{method:'DELETE'});if(r.ok){showToast('Memória removida 🗑️');await renderMemorias();}else showToast('Erro ao remover ⚠️');}catch{showToast('Erro ⚠️');}}
+async function encerrarPendencia(id){try{const r=await fetch('/forms/pendencia/'+id+'/'+phone,{method:'DELETE'});if(r.ok){showToast('Assunto encerrado ✅');await renderMemorias();}}catch{showToast('Erro ⚠️');}}
 async function renderCofre(){const el=document.getElementById('cofre-body');el.innerHTML='<div class="spin"></div>';try{const r=await fetch(`/forms/cofre/${phone}`);const items=await r.json();displayCofre(items);}catch{el.innerHTML='<div class="empty"><span class="empty-icon">🔐</span>Nenhum segredo salvo</div>';}}
 function displayCofre(items){
   const el=document.getElementById('cofre-body');
