@@ -1,7 +1,6 @@
-// Clara memory v6 — com memória pessoal expandida
+// Clara memory v7 — Clara 3.0: perfil rico + curiosidade orgânica
 
 const { PrismaClient } = require('@prisma/client');
-
 const prisma = new PrismaClient();
 
 // ====================== HELPERS ======================
@@ -39,24 +38,14 @@ async function getJornada(userId) {
 
 async function saveUserPreference(userId, name, tom, saldo = null) {
   const data = {};
-
-  // ── FIX: só atualiza o nome se for uma string não vazia e não parecer apelido de contexto ──
-  // Nunca sobrescreve com null — só atualiza se vier explicitamente
   if (name && typeof name === 'string' && name.trim().length > 0) {
     data.name = name.trim();
   }
-
   const user = await prisma.user.findUnique({ where: { id: userId } });
   let meta = {};
   if (user?.metadata) { try { meta = JSON.parse(user.metadata); } catch {} }
-
-  // ── FIX: só atualiza tom se vier explicitamente (não null, não undefined, não vazio) ──
-  if (tom && typeof tom === 'string' && tom.trim().length > 0) {
-    meta.tom = tom.trim();
-  }
-
+  if (tom && typeof tom === 'string' && tom.trim().length > 0) meta.tom = tom.trim();
   if (saldo !== null && saldo !== undefined && !isNaN(saldo)) meta.saldo = parseFloat(saldo);
-
   data.metadata = JSON.stringify(meta);
   return prisma.user.update({ where: { id: userId }, data });
 }
@@ -75,12 +64,62 @@ async function getUserPreference(userId) {
   return { name: user.name, tom, saldo };
 }
 
-// ====================== MEMÓRIA PESSOAL ======================
+// ====================== MEMÓRIA PESSOAL RICA ======================
+// Clara 3.0: categorias expandidas para conhecer o usuário de verdade.
+// Cada categoria alimenta tanto o contexto da Clara quanto alertas proativos.
 
 const PERSONAL_INFO_TYPE = 'info_pessoal';
 
-// ── FIX: lista de chaves que NÃO devem ser salvas como nome no preference ──
-const CHAVES_PROTEGIDAS_NOME = ['profissao', 'ocupacao', 'cargo', 'area', 'setor', 'empresa', 'trabalho'];
+// Categorias do perfil rico — usadas pelo extractPersonalInfo (groq.js)
+// e exibidas no Dashboard > Memórias com labels amigáveis
+const CATEGORIAS_PERFIL = {
+  familia:         { label: '👨‍👩‍👧 Família',          emoji: '👨‍👩‍👧' },
+  relacionamento:  { label: '❤️ Relacionamento',     emoji: '❤️' },
+  filhos:          { label: '👶 Filhos',              emoji: '👶' },
+  trabalho:        { label: '💼 Trabalho',            emoji: '💼' },
+  hobbies:         { label: '🎯 Hobbies',             emoji: '🎯' },
+  entretenimento:  { label: '🎬 Entretenimento',      emoji: '🎬' },
+  alimentacao:     { label: '🍔 Alimentação',         emoji: '🍔' },
+  metas:           { label: '🎯 Metas',               emoji: '🎯' },
+  personalidade:   { label: '✨ Personalidade',       emoji: '✨' },
+  saude:           { label: '💊 Saúde',               emoji: '💊' },
+  datas:           { label: '📅 Datas importantes',   emoji: '📅' },
+  rotina:          { label: '⏰ Rotina',              emoji: '⏰' },
+  objetivos:       { label: '🚀 Objetivos',           emoji: '🚀' },
+  outro:           { label: '📌 Informações gerais',  emoji: '📌' },
+};
+
+// Campos que a Clara ainda não conhece e pode perguntar organicamente.
+// Cada item tem: categoria, pergunta natural, e quando faz sentido perguntar.
+// Usado pelo sistema de curiosidade orgânica no groq.js.
+const CAMPOS_CURIOSIDADE = [
+  // Família / Relacionamento
+  { chave: 'conjuge',         categoria: 'relacionamento',  pergunta: 'você é casado(a) ou tem namorado(a)?',                    contexto: 'qualquer' },
+  { chave: 'aniversario_relacionamento', categoria: 'relacionamento', pergunta: 'quando é o aniversário de vocês juntos?',        contexto: 'relacionamento' },
+  { chave: 'filhos_nomes',    categoria: 'filhos',          pergunta: 'você tem filhos?',                                        contexto: 'qualquer' },
+  { chave: 'filhos_idades',   categoria: 'filhos',          pergunta: 'quantos anos tem seu(s) filho(s)?',                       contexto: 'filhos' },
+  // Trabalho
+  { chave: 'empresa',         categoria: 'trabalho',        pergunta: 'em qual empresa você trabalha?',                          contexto: 'trabalho' },
+  { chave: 'cargo',           categoria: 'trabalho',        pergunta: 'qual é o seu cargo?',                                     contexto: 'trabalho' },
+  { chave: 'chefe',           categoria: 'trabalho',        pergunta: 'como é seu chefe? te dá espaço ou é mais controlador?',   contexto: 'trabalho' },
+  // Entretenimento
+  { chave: 'time_futebol',    categoria: 'entretenimento',  pergunta: 'você torce pra algum time de futebol?',                   contexto: 'qualquer' },
+  { chave: 'series_favoritas', categoria: 'entretenimento', pergunta: 'tem alguma série que você está assistindo agora?',        contexto: 'lazer' },
+  { chave: 'filmes_favoritos', categoria: 'entretenimento', pergunta: 'que tipo de filme você mais curte?',                     contexto: 'lazer' },
+  { chave: 'musica_genero',   categoria: 'entretenimento',  pergunta: 'que tipo de música você mais ouve?',                     contexto: 'lazer' },
+  // Hobbies
+  { chave: 'hobby_principal', categoria: 'hobbies',         pergunta: 'o que você curte fazer quando está de folga?',            contexto: 'qualquer' },
+  { chave: 'esporte',         categoria: 'hobbies',         pergunta: 'você pratica algum esporte ou academia?',                 contexto: 'saude' },
+  // Alimentação
+  { chave: 'comida_favorita', categoria: 'alimentacao',     pergunta: 'qual é sua comida favorita?',                            contexto: 'qualquer' },
+  { chave: 'restricao_alimentar', categoria: 'alimentacao', pergunta: 'você tem alguma restrição alimentar?',                   contexto: 'saude' },
+  // Personalidade
+  { chave: 'signo',           categoria: 'personalidade',   pergunta: 'qual é o seu signo?',                                    contexto: 'qualquer' },
+  { chave: 'introvertido_extrovertido', categoria: 'personalidade', pergunta: 'você se considera mais introvertido ou extrovertido?', contexto: 'qualquer' },
+  // Metas
+  { chave: 'meta_principal',  categoria: 'metas',           pergunta: 'qual é o seu maior objetivo agora?',                     contexto: 'qualquer' },
+  { chave: 'meta_financeira', categoria: 'metas',           pergunta: 'você tem alguma meta financeira que está perseguindo?',  contexto: 'financeiro' },
+];
 
 async function savePersonalInfo(userId, chave, valor, categoria = 'outro') {
   const existing = await prisma.memory.findFirst({
@@ -112,6 +151,29 @@ async function savePersonalInfo(userId, chave, valor, categoria = 'outro') {
   });
 }
 
+async function deletePersonalInfo(userId, memoryId) {
+  // Verifica que a memória pertence ao usuário antes de deletar
+  const mem = await prisma.memory.findFirst({
+    where: { id: memoryId, userId, type: PERSONAL_INFO_TYPE }
+  }).catch(() => null);
+  if (!mem) return false;
+  await prisma.memory.delete({ where: { id: memoryId } }).catch(() => {});
+  // Quando o usuário deleta, marca que não quer ser perguntado sobre aquilo de novo por 30 dias
+  let meta = {};
+  try { meta = JSON.parse(mem.metadata || '{}'); } catch {}
+  if (meta.chave) {
+    await prisma.memory.create({
+      data: {
+        userId,
+        type: 'perfil_deletado',
+        content: meta.chave,
+        metadata: JSON.stringify({ deletadoEm: new Date().toISOString(), expira: Date.now() + 30 * 24 * 60 * 60 * 1000 })
+      }
+    }).catch(() => {});
+  }
+  return true;
+}
+
 async function getPersonalInfo(userId, categoria = null) {
   const where = { userId, type: PERSONAL_INFO_TYPE };
   const mems = await prisma.memory.findMany({
@@ -124,38 +186,66 @@ async function getPersonalInfo(userId, categoria = null) {
     let meta = {};
     try { meta = JSON.parse(m.metadata || '{}'); } catch {}
     if (categoria && meta.categoria !== categoria) continue;
-    result[meta.chave || m.id] = { valor: m.content, categoria: meta.categoria || 'outro' };
+    result[meta.chave || m.id] = { id: m.id, valor: m.content, categoria: meta.categoria || 'outro' };
   }
   return result;
+}
+
+// Retorna lista de chaves que o usuário deletou recentemente (não perguntar de novo)
+async function getChavesDeletadas(userId) {
+  const mems = await prisma.memory.findMany({
+    where: { userId, type: 'perfil_deletado' },
+    orderBy: { createdAt: 'desc' }
+  }).catch(() => []);
+  const agora = Date.now();
+  return mems
+    .map(m => { try { const d = JSON.parse(m.metadata || '{}'); return d.expira > agora ? m.content : null; } catch { return null; } })
+    .filter(Boolean);
+}
+
+// Retorna quais campos do CAMPOS_CURIOSIDADE a Clara ainda não conhece
+// e o usuário não deletou — usados para perguntas orgânicas
+async function getCamposDesconhecidos(userId) {
+  const infos = await getPersonalInfo(userId);
+  const chavesConhecidas = new Set(Object.keys(infos));
+  const chavesDeletadas = new Set(await getChavesDeletadas(userId));
+
+  return CAMPOS_CURIOSIDADE.filter(campo =>
+    !chavesConhecidas.has(campo.chave) && !chavesDeletadas.has(campo.chave)
+  );
+}
+
+// Retorna o próximo campo que faz sentido perguntar dado o contexto atual
+// contextoAtual: 'qualquer' | 'trabalho' | 'lazer' | 'saude' | 'financeiro' | 'relacionamento'
+async function getProximaCuriosidade(userId, contextoAtual = 'qualquer') {
+  const desconhecidos = await getCamposDesconhecidos(userId);
+  if (!desconhecidos.length) return null;
+
+  // Prioriza campos que combinam com o contexto atual da conversa
+  const contextuais = desconhecidos.filter(c => c.contexto === contextoAtual);
+  const gerais = desconhecidos.filter(c => c.contexto === 'qualquer');
+
+  const candidatos = contextuais.length > 0 ? contextuais : gerais;
+  if (!candidatos.length) return desconhecidos[0]; // fallback: qualquer desconhecido
+
+  // Retorna um aleatório entre os candidatos (evita sempre a mesma ordem)
+  return candidatos[Math.floor(Math.random() * candidatos.length)];
 }
 
 async function buildPersonalContext(userId) {
   const infos = await getPersonalInfo(userId);
 
-  const grupos = {
-    familia: [],
-    trabalho: [],
-    rotina: [],
-    saude: [],
-    objetivos: [],
-    datas: [],
-    outro: [],
-  };
+  const grupos = {};
+  for (const cat of Object.keys(CATEGORIAS_PERFIL)) grupos[cat] = [];
 
   for (const [chave, { valor, categoria }] of Object.entries(infos)) {
     const grupo = grupos[categoria] || grupos.outro;
     grupo.push(valor);
   }
 
-  const labels = {
-    familia: 'Família',
-    trabalho: 'Trabalho',
-    rotina: 'Rotina',
-    saude: 'Saúde',
-    objetivos: 'Objetivos',
-    datas: 'Datas importantes',
-    outro: 'Informações pessoais',
-  };
+  const labels = Object.fromEntries(
+    Object.entries(CATEGORIAS_PERFIL).map(([cat, { label }]) => [cat, label])
+  );
 
   let texto = '';
   for (const [cat, items] of Object.entries(grupos)) {
@@ -163,15 +253,22 @@ async function buildPersonalContext(userId) {
     texto += `\n[${labels[cat]}]\n${items.map(i => `• ${i}`).join('\n')}`;
   }
 
-  // ── Assuntos em aberto — contexto conversacional contínuo ──
-  // A Clara vê esses assuntos em TODO contexto (bom dia, lembretes,
-  // conversa) e pode retomá-los naturalmente quando fizer sentido.
+  // ── Assuntos em aberto ──
   const pendencias = await getPendenciasAbertas(userId);
   if (pendencias.length > 0) {
     const linhas = pendencias.slice(0, 3).map(p =>
       `• ${p.assunto}: ${p.contexto} → ${p.como_retomar}`
     ).join('\n');
     texto += `\n\n[ASSUNTOS EM ABERTO — retome naturalmente quando fizer sentido, sem forçar]\n${linhas}`;
+  }
+
+  // ── Campos que a Clara ainda não conhece (para curiosidade orgânica) ──
+  // Passa no contexto como dica para o modelo saber o que pode perguntar,
+  // sem forçar — só aparece quando a conversa estiver esfriando.
+  const desconhecidos = await getCamposDesconhecidos(userId);
+  if (desconhecidos.length > 0) {
+    const exemplos = desconhecidos.slice(0, 4).map(c => c.pergunta).join('; ');
+    texto += `\n\n[AINDA NÃO SEI — posso perguntar organicamente quando a conversa permitir, MÁXIMO 1 por conversa, NUNCA force]: ${exemplos}`;
   }
 
   return texto ? `\n\n[PERFIL DO USUÁRIO — use para personalizar respostas e ser proativa]${texto}` : '';
@@ -192,13 +289,10 @@ async function getRecentMemories(userId, limit = 30) {
   const mems = await prisma.memory.findMany({
     where: { userId, type: { not: 'conversa' } },
     orderBy: { createdAt: 'desc' },
-    take: limit + 10, // folga pra compensar os locks internos filtrados abaixo
+    take: limit + 10,
   });
-  // Memórias internas de controle (locks de cron, dedup de webhook) usam
-  // tipos com prefixo/sufixo "__" ou nomes técnicos — nunca devem entrar no
-  // contexto que a Clara lê pra conversar. Filtra e respeita o limite real.
   return mems
-    .filter(m => !/^__.*__$/.test(m.type) && !m.type.startsWith('lock_') && m.type !== 'webhook_msgid')
+    .filter(m => !/^__.*__$/.test(m.type) && !m.type.startsWith('lock_') && m.type !== 'webhook_msgid' && m.type !== 'perfil_deletado')
     .slice(0, limit);
 }
 
@@ -228,20 +322,13 @@ async function clearTemporaryContext(userId) {
 
 async function saveConversationMessage(userId, role, content, privateMode = false) {
   if (privateMode) return;
-
   await prisma.memory.create({
-    data: {
-      userId,
-      type: 'conversa',
-      content: JSON.stringify({ role, content, ts: Date.now() }),
-    },
+    data: { userId, type: 'conversa', content: JSON.stringify({ role, content, ts: Date.now() }) },
   });
-
   const msgs = await prisma.memory.findMany({
     where: { userId, type: 'conversa' },
     orderBy: { createdAt: 'desc' },
   });
-
   if (msgs.length > 40) {
     const toDelete = msgs.slice(40).map((m) => m.id);
     await prisma.memory.deleteMany({ where: { id: { in: toDelete } } });
@@ -322,10 +409,6 @@ async function getMonthExpenses(userId) {
 }
 
 // ====================== PENDÊNCIAS EMOCIONAIS ======================
-// Ver extractPendenciaEmocional (groq.js) e o cron "PENDÊNCIAS EMOCIONAIS"
-// (reminders.js) — isso é o que permite a Clara voltar a perguntar sobre
-// algo passageiro (mal-estar, evento com resultado incerto) sem o usuário
-// precisar trazer o assunto de volta.
 
 async function savePendencia(userId, { categoria, resumo, horas = 4 }) {
   const checkInAt = new Date(Date.now() + horas * 60 * 60 * 1000);
@@ -339,44 +422,29 @@ async function savePendencia(userId, { categoria, resumo, horas = 4 }) {
 async function saveContact(userId, { nome, phone, relation = null, notes = null }) {
   let phoneClean = phone.replace(/\D/g, '');
   if (!phoneClean.startsWith('55') && phoneClean.length <= 11) phoneClean = '55' + phoneClean;
-
-  const existing = await prisma.contact.findFirst({
-    where: { userId, phone: phoneClean }
-  });
-
+  const existing = await prisma.contact.findFirst({ where: { userId, phone: phoneClean } });
   if (existing) {
     return prisma.contact.update({
       where: { id: existing.id },
       data: { name: nome, relation, notes, updatedAt: new Date() }
     });
   }
-
   return prisma.contact.create({
     data: { userId, name: nome, phone: phoneClean, relation, notes }
   });
 }
 
 async function getContacts(userId) {
-  return prisma.contact.findMany({
-    where: { userId },
-    orderBy: { name: 'asc' }
-  });
+  return prisma.contact.findMany({ where: { userId }, orderBy: { name: 'asc' } });
 }
 
 async function findContactByName(userId, nome) {
   return prisma.contact.findMany({
-    where: {
-      userId,
-      name: { contains: nome, mode: 'insensitive' }
-    }
+    where: { userId, name: { contains: nome, mode: 'insensitive' } }
   });
 }
 
-// ====================== ASSUNTOS EM ABERTO (contexto conversacional) ======================
-// Detecta automaticamente quando uma conversa gerou um assunto não resolvido
-// (hospital, reunião, resultado esperado, conflito, plano futuro) e o salva
-// pra Clara retomar naturalmente nas próximas interações — como uma amiga
-// que genuinamente lembra do que ficou pendente entre vocês.
+// ====================== ASSUNTOS EM ABERTO ======================
 
 async function getPendenciasAbertas(userId) {
   const mems = await prisma.memory.findMany({
@@ -385,7 +453,7 @@ async function getPendenciasAbertas(userId) {
     take: 10,
   }).catch(() => []);
   const agora = Date.now();
-  const EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias
+  const EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
   return mems
     .map(m => { try { return { id: m.id, criadoEm: m.createdAt, ...JSON.parse(m.content) }; } catch { return null; } })
     .filter(Boolean)
@@ -393,7 +461,6 @@ async function getPendenciasAbertas(userId) {
 }
 
 async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_retomar }) {
-  // Evita duplicatas: se já existe pendência aberta com o mesmo assunto, atualiza
   const existentes = await getPendenciasAbertas(userId);
   const mesmoAssunto = existentes.find(p =>
     p.assunto?.toLowerCase().includes(assunto?.toLowerCase()?.split(' ')[0]) ||
@@ -426,12 +493,10 @@ async function fecharPendencia(userId, pendenciaId) {
 }
 
 async function fecharPendenciasPorResolucao(userId, textoUsuario) {
-  // Detecta sinais de que o usuário está encerrando um assunto em aberto
   const SINAIS = /\b(estou bem|tá bem|já passou|passou|deu certo|foi ótimo|foi bem|resolvido|resolveu|já fiz|normal|tranquilo|melhorei|melhor|alta|cheguei em casa|chegou|saiu|terminou|acabou|tudo certo|tudo bem|sem problema|não foi nada|era nada|nada grave|liberado)\b/i;
   if (!SINAIS.test(textoUsuario)) return;
   const pendencias = await getPendenciasAbertas(userId);
   if (!pendencias.length) return;
-  // Fecha a pendência mais recente (última aberta = mais provável de ser o assunto atual)
   await fecharPendencia(userId, pendencias[0].id);
 }
 
@@ -442,7 +507,8 @@ module.exports = {
   getOrCreateUser,
   saveJornada, getJornada,
   saveUserPreference, getUserPreference,
-  savePersonalInfo, getPersonalInfo, buildPersonalContext,
+  savePersonalInfo, deletePersonalInfo, getPersonalInfo, buildPersonalContext,
+  getCamposDesconhecidos, getProximaCuriosidade, CAMPOS_CURIOSIDADE, CATEGORIAS_PERFIL,
   saveMemory, getRecentMemories,
   setTemporaryContext, getTemporaryContext, clearTemporaryContext,
   saveConversationMessage, getConversationHistory,
