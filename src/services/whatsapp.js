@@ -5,8 +5,53 @@ const headers = {
   'token': TOKEN,
   'Content-Type': 'application/json',
 };
+
+// ── Dedup de SAÍDA (idempotência de entrega) ──────────────────────────
+// Diagnóstico (sessão de debug): o backend comprovadamente envia cada
+// lembrete UMA vez só (log mostra um único "📤 Enviando" + "[Reminder] →
+// 1 lembrete(s)", e o claim atômico grava sent:true ANTES do envio, então
+// o registro não volta pra fila). Mesmo assim a mensagem chegava 2-3x no
+// WhatsApp — e só em momentos de estresse (timeout do Gemini, modo direto
+// por rate limit), nunca quando o sistema estava tranquilo (ex: o lembrete
+// de remédio das 22:00 chegou 1x). Causa: quando a UazAPI demora a
+// devolver o ACK do POST /send/text (mensagem JÁ entregue), a camada de
+// entrega reenvia o POST por timeout — duplicando no destino sem que o
+// nosso código saiba.
+//
+// Esta trava bloqueia, no NOSSO lado, qualquer reenvio do MESMO texto pro
+// MESMO número dentro de uma janela curta. Usa um cache em memória (rápido,
+// cobre o caso comum dentro do mesmo processo) — não precisa de banco nem
+// de FK, e a janela é curta o suficiente pra nunca barrar uma repetição
+// legítima do usuário (ex: pedir "manda oi" duas vezes de propósito teria
+// textos/horários diferentes no corpo do lembrete).
+const JANELA_DEDUP_MS = 90 * 1000; // 90s cobre a janela de retry por timeout
+const _enviosRecentes = new Map(); // hash(phone+texto) -> timestamp
+function _hashEnvio(phone, message) {
+  return `${phone}::${String(message).trim()}`;
+}
+function _jaEnviadoRecentemente(phone, message) {
+  const chave = _hashEnvio(phone, message);
+  const agora = Date.now();
+  // limpeza preguiçosa de entradas expiradas
+  if (_enviosRecentes.size > 2000) {
+    for (const [k, t] of _enviosRecentes) {
+      if (agora - t > JANELA_DEDUP_MS) _enviosRecentes.delete(k);
+    }
+  }
+  const ultimo = _enviosRecentes.get(chave);
+  if (ultimo && (agora - ultimo) < JANELA_DEDUP_MS) return true;
+  _enviosRecentes.set(chave, agora);
+  return false;
+}
+
 async function sendMessage(phone, message, delay = 800) {
   try {
+    // Trava de idempotência: se o MESMO texto já foi enviado pro MESMO
+    // número nos últimos 90s, é reenvio (retry de entrega) — ignora.
+    if (_jaEnviadoRecentemente(phone, message)) {
+      console.log(`🔁 Ignorando reenvio duplicado para ${phone}: ${String(message).slice(0, 40)}`);
+      return { status: 'deduped' };
+    }
     console.log(`📤 Enviando para ${phone}: ${String(message).slice(0, 60)}`);
     const response = await axios.post(
       `${BASE_URL}/send/text`,
@@ -16,6 +61,10 @@ async function sendMessage(phone, message, delay = 800) {
     console.log(`✅ Enviado OK para ${phone}:`, response.data?.status || 'sem status');
     return response.data;
   } catch (error) {
+    // Se falhou (ex: timeout do ACK), libera a chave pra permitir um reenvio
+    // MANUAL/legítimo depois — mas só se realmente não entregou. Como não
+    // dá pra ter certeza se entregou, mantemos a trava pela janela (melhor
+    // perder um reenvio incerto do que duplicar). Não removemos a chave.
     console.error(`❌ Erro sendMessage para ${phone}:`, error.response?.data || error.message);
     throw error;
   }
