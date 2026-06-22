@@ -44,7 +44,7 @@ function _jaEnviadoRecentemente(phone, message) {
   return false;
 }
 
-async function sendMessage(phone, message, delay = 800) {
+async function sendMessage(phone, message, delay = 400) {
   try {
     // Trava de idempotência: se o MESMO texto já foi enviado pro MESMO
     // número nos últimos 90s, é reenvio (retry de entrega) — ignora.
