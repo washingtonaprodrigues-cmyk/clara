@@ -1,5 +1,21 @@
 const cron = require('node-cron');
 
+// ── Singleton guard ──────────────────────────────────────────────────────
+// O Node.js faz cache de módulos pelo caminho resolvido, então em condições
+// normais este arquivo só é carregado uma vez. Mas em alguns cenários de
+// hot-reload, restart sem exit limpo ou ferramentas de dev que limpam o
+// cache do require, o módulo pode ser carregado mais de uma vez no mesmo
+// processo — e o node-cron acumula todos os schedules, dobrando os crons.
+// Este guard garante que os crons só sejam registrados uma única vez,
+// mesmo que o módulo seja requerido múltiplas vezes.
+if (global.__claraCronsRegistrados) {
+  console.log('[Reminders] Crons já registrados — ignorando duplo require.');
+  module.exports = {};
+  return;
+}
+global.__claraCronsRegistrados = true;
+
+
 // sendMessage via whatsapp.js (com fallback direto pra evitar circular dependency)
 async function sendMessage(phone, msg, delay) {
   try {
