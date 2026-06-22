@@ -1044,6 +1044,41 @@ async function generateMemorySummary(memories, question) {
   } catch (error) { return 'Deixa eu verificar...'; }
 }
 
+// ── Detecta assunto em aberto numa conversa ──────────────────────────────
+// Roda após cada troca significativa (fire-and-forget no handler.js).
+// Usa o modelo leve pra não adicionar latência perceptível.
+// Retorna { assunto, contexto, como_retomar } ou null se não houver nada relevante.
+async function detectarAssuntoEmAberto(history) {
+  if (!history || history.length < 2) return null;
+  try {
+    const resumo = history.slice(-8).map(m =>
+      `${m.role === 'user' ? 'Usuário' : 'Clara'}: ${m.content}`
+    ).join('\n');
+    const completion = await groq.chat.completions.create({
+      model: MODEL_LEVE,
+      messages: [{
+        role: 'user',
+        content: `Analisa essa conversa e verifica se ficou algum assunto relevante em aberto que merece acompanhamento posterior: saúde, trabalho, relações, evento com resultado esperado, plano futuro, situação emocional.
+
+CONVERSA:
+${resumo}
+
+Se houver algo relevante e ainda não resolvido, retorna APENAS JSON sem markdown:
+{"assunto":"nome curto (2-4 palavras)","contexto":"o que aconteceu em 1 linha","como_retomar":"como perguntar naturalmente depois"}
+
+Se for conversa trivial (saudação, lembrete simples, tarefa rotineira, pergunta rápida) ou o assunto já foi resolvido na própria conversa, retorna APENAS: null`
+      }],
+      temperature: 0,
+      max_tokens: 120,
+    });
+    const text = (completion.choices[0].message.content || '').trim();
+    if (!text || text === 'null' || !text.startsWith('{')) return null;
+    const parsed = JSON.parse(text);
+    if (!parsed.assunto || !parsed.contexto || !parsed.como_retomar) return null;
+    return parsed;
+  } catch { return null; }
+}
+
 module.exports = {
   classify,
   extractPersonalInfo,
@@ -1058,4 +1093,5 @@ module.exports = {
   emModoComparacao,
   detectarComandoComparacao,
   getUltimoProvider,
+  detectarAssuntoEmAberto,
 };
