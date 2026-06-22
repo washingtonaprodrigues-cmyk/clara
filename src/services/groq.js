@@ -873,7 +873,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     }
 
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('timeout')), 15000)
+      setTimeout(() => reject(new Error('timeout')), 8000)
     );
 
     const sistemaCompleto = buildPersonality(tom, name, false) + contexto;
@@ -891,7 +891,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
           model: MODEL_FORTE,
           messages: msgs,
           temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-          max_tokens: isCurta ? 80 : 800,
+          max_tokens: isCurta ? 60 : 400,
         }),
         timeoutPromise
       ]);
