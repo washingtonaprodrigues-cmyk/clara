@@ -417,13 +417,41 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       if (relMemoria?.content) contexto += `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoria.content}`;
 
       // ── Pendência de saúde: traz à tona se fizer sentido na conversa ──
-      // NÃO marca perguntado=true aqui — deliberado. Preferimos o risco de
-      // ela perguntar duas vezes (uma agora na conversa, outra depois pelo
-      // cron de reminders.js) a correr o risco de "consumir" a pendência
-      // silenciosamente numa resposta onde ela não encaixou o assunto.
-      // Algo que pode gerar preocupação de saúde deve sempre ser
-      // perguntado de novo, nunca esquecido por engano.
-      if (pendenciaSaude) {
+      // ── Pendência de saúde: só aparece no contexto se fizer sentido ──
+      // REGRAS DE PRIORIDADE E TIMING:
+      // 1. Se já existe assunto em aberto de CONVERSA (pendencia_conversa, ex:
+      //    hospital), ele já aparece via buildPersonalContext → [ASSUNTOS EM ABERTO].
+      //    Adicionar pendenciaSaude por cima causaria dois assuntos competindo,
+      //    tornando a resposta sobrecarregada. Nesse caso, pendenciaSaude é omitida.
+      // 2. Para remédios: só inclui se o horário da dose estiver dentro de 2h
+      //    (antes ou depois). Perguntar sobre remédio das 22h às 15h é fora de
+      //    contexto e perturbador — bug real observado em produção.
+      // 3. Para outros tipos (saúde geral, dor de cabeça etc.): mantém o
+      //    comportamento anterior — aparece quando checkInAt já venceu.
+      const temAssuntoAberto = (perfilPessoal || '').includes('[ASSUNTOS EM ABERTO');
+      let mostrarPendenciaSaude = false;
+      if (pendenciaSaude && !temAssuntoAberto) {
+        const resumoLower = (pendenciaSaude.resumo || '').toLowerCase();
+        const ehRemedio = /rem[eé]dio|medicamento|comp|dose|tomar/.test(resumoLower);
+        if (ehRemedio) {
+          // Só mostra se algum remédio ativo tem horário dentro de 2h
+          const now2 = nowBRT();
+          const hm2 = `${String(now2.getHours()).padStart(2,'0')}:${String(now2.getMinutes()).padStart(2,'0')}`;
+          const dentroJanela = meds.some(m => {
+            let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
+            return times.some(t => {
+              const [th, tm] = t.split(':').map(Number);
+              const [nh, nm] = hm2.split(':').map(Number);
+              const diffMin = Math.abs((th * 60 + tm) - (nh * 60 + nm));
+              return diffMin <= 120; // dentro de 2h
+            });
+          });
+          mostrarPendenciaSaude = dentroJanela;
+        } else {
+          mostrarPendenciaSaude = true; // saúde geral — comportamento anterior
+        }
+      }
+      if (mostrarPendenciaSaude) {
         contexto += `\n\n[SAÚDE EM ABERTO] Mais cedo a pessoa mencionou: "${pendenciaSaude.resumo}". Se fizer sentido natural na conversa, pergunte com carinho genuíno como está se sentindo agora — sem forçar se a mensagem atual for sobre outro assunto completamente diferente, e sem repetir isso em toda resposta.`;
       }
 
@@ -478,24 +506,22 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     await sendMessage(phone, respStr);
     updateRelationshipSummary(user.id, history, respStr).catch(() => {});
 
-    // ── Detecção de assunto em aberto + extração com contexto (fire-and-forget) ──
-    // Roda após a resposta, sem adicionar latência.
+    // ── Detecção de assunto em aberto (fire-and-forget) ──────────────
+    // Roda após a resposta, sem adicionar latência. Se a conversa gerou
+    // um assunto relevante não resolvido (saúde, trabalho, evento esperado),
+    // salva como pendencia_conversa pra Clara retomar naturalmente depois.
+    // Também detecta quando o usuário fecha um assunto aberto.
     ;(async () => {
       try {
         await memory.fecharPendenciasPorResolucao(user.id, text);
         const histAtual = [...history, { role: 'user', content: text }, { role: 'assistant', content: respStr }];
+        // Só roda se for conversa com substância (não saudação curta)
         if (histAtual.length >= 2 && text.length > 15) {
           const pendencia = await detectarAssuntoEmAberto(histAtual);
           if (pendencia) await memory.salvarOuAtualizarPendencia(user.id, pendencia);
         }
-      } catch { /* silencioso */ }
+      } catch { /* silencioso — nunca bloqueia a resposta */ }
     })();
-
-    // ── Extração de info pessoal com contexto da última pergunta da Clara ──
-    // Roda separado do fire-and-forget acima para manter isolamento de erros.
-    // Passa respStr (última resposta da Clara) como contexto para o extrator
-    // entender respostas curtas do usuário ("Corinthians", "sou de escorpião").
-    extractAndSavePersonalInfo(user.id, text, respStr).catch(e => console.error('[extract pessoal ctx]', e.message));
   } catch (e) {
     console.error(`[${phone}] Erro responderLivre:`, e.message);
     await sendMessage(phone, 'Ops, tive um probleminha. Pode repetir?');
@@ -852,7 +878,7 @@ async function handleMessage(phone, text, location = null) {
     const acaoConfirmacao = CONFIRMACOES_ACAO[classified.tipo] || null;
 
     await responderLivre(user, phone, text, '', isSaudacao, acaoConfirmacao);
-    // extractAndSavePersonalInfo é chamado dentro de responderLivre com contexto da Clara
+    extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
   } catch (error) {
     console.error('Erro handleMessage:', error.message);
     try {
@@ -1660,17 +1686,13 @@ async function checkConfirmacaoPendente(user, phone, text) {
   }
 }
 
-async function extractAndSavePersonalInfo(userId, text, ultimaPerguntaClara = null) {
-  // Passa a última pergunta da Clara para o extrator entender respostas curtas.
-  // Exemplo: Clara pergunta "você torce pra algum time?" → usuário responde
-  // "Corinthians" → sem contexto seria ignorado; com contexto vira
-  // time_futebol: Corinthians automaticamente.
-  const infos = await extractPersonalInfo(text, ultimaPerguntaClara);
+async function extractAndSavePersonalInfo(userId, text) {
+  const infos = await extractPersonalInfo(text);
   if (infos && infos.length > 0) {
     for (const { chave, valor, categoria } of infos) {
       if (!chave || !valor) continue;
       await savePersonalInfo(userId, chave, valor, categoria || 'outro');
-      console.log(`[memória pessoal] salvo: ${chave} = "${valor}"${ultimaPerguntaClara ? ' (via contexto Clara)' : ''}`);
+      console.log(`[memória pessoal] salvo: ${chave} = "${valor}"`);
     }
   }
 
