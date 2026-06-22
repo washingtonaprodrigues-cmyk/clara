@@ -7,59 +7,46 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 // ── Cache de deduplicação de messageId ──
-// Guarda os IDs de mensagens já processadas recentemente (10 minutos é
-// mais que suficiente para cobrir qualquer reenvio realista por timeout
-// de rede). Usa um Map (id -> timestamp de expiração) com limpeza
-// periódica simples, para não crescer indefinidamente em memória.
 const _messageIdsProcessados = new Map();
-const DEDUP_JANELA_MS = 10 * 60 * 1000; // 10 minutos
+const DEDUP_JANELA_MS = 10 * 60 * 1000;
 
 function marcarMessageIdProcessado(id) {
   _messageIdsProcessados.set(id, Date.now() + DEDUP_JANELA_MS);
 }
 
-// ── Segunda camada: dedup por CONTEÚDO (telefone + texto) ──
-// A deduplicação por messageId depende de a UazAPI sempre mandar o ID em
-// um dos 4 campos verificados abaixo. Se um reenvio vier sem nenhum desses
-// campos (ou em um campo desconhecido), o messageId fica undefined e a
-// primeira camada não pega nada — bug real observado: mesmo lembrete
-// criado 2x com título quase idêntico ("Enviar..." vs "enviar..."),
-// indicando duas chamadas de IA separadas para o mesmo texto do usuário,
-// ou seja, dois processamentos completos do mesmo webhook.
-// Esta camada não depende de nenhum campo de ID — só telefone + texto
-// exatos, numa janela curta (15s). Curta o suficiente para não bloquear
-// um usuário que realmente manda a mesma frase de novo minutos depois,
-// longa o suficiente para cobrir qualquer reenvio realista por timeout.
-const _conteudoProcessadoRecente = new Map(); // `${phone}|${text}` -> timestamp de expiração
-// Janela aumentada de 15s → 60s: observado na prática um caso de lembrete
-// duplicado ("artes do crediário" criado 2x, mesmo título, mesmo horário)
-// que a janela de 15s não cobriu — sugere que o reenvio da UazAPI (ou
-// alguma instabilidade de rede) demorou mais que 15s pra chegar. 60s ainda
-// é curto o suficiente pra não bloquear alguém que genuinamente manda a
-// mesma frase de novo um minuto depois, mas cobre reenvios mais lentos.
-const DEDUP_CONTEUDO_JANELA_MS = 60 * 1000; // 60 segundos
+// ── Segunda camada: dedup por CONTEÚDO (telefone + texto + quotedText) ──
+// CORREÇÃO (sessão 7.1): a chave agora inclui o quotedText (mensagem
+// citada via swipe-reply). Sem isso, dois "Feito" em resposta a remédios
+// diferentes chegavam com o mesmo hash phone+texto → o segundo era
+// ignorado como duplicata → confirmação do segundo remédio nunca
+// processada.
+//
+// Com quotedText no hash:
+//   "Feito" citando "Remédio de pressão"  → hash A → processa
+//   "Feito" citando "Remédio de Toróide"  → hash B → processa
+//   "Feito" citando "Remédio de pressão"  → hash A de novo → ignora (retry real)
+const _conteudoProcessadoRecente = new Map();
+const DEDUP_CONTEUDO_JANELA_MS = 60 * 1000;
 
-function chaveConteudo(phone, text) {
-  return `${phone}|${text}`;
+function chaveConteudo(phone, text, quotedText) {
+  const quoted = quotedText ? String(quotedText).trim().slice(0, 100) : '';
+  return `${phone}|${text}|${quoted}`;
 }
 
-function conteudoJaProcessado(phone, text) {
-  if (!text) return false; // mensagens vazias (áudio, contato etc.) não passam por aqui
-  const chave = chaveConteudo(phone, text);
+function conteudoJaProcessado(phone, text, quotedText) {
+  if (!text) return false;
+  const chave = chaveConteudo(phone, text, quotedText);
   const expiraEm = _conteudoProcessadoRecente.get(chave);
   if (!expiraEm) return false;
   if (Date.now() >= expiraEm) { _conteudoProcessadoRecente.delete(chave); return false; }
   return true;
 }
 
-function marcarConteudoProcessado(phone, text) {
+function marcarConteudoProcessado(phone, text, quotedText) {
   if (!text) return;
-  _conteudoProcessadoRecente.set(chaveConteudo(phone, text), Date.now() + DEDUP_CONTEUDO_JANELA_MS);
+  _conteudoProcessadoRecente.set(chaveConteudo(phone, text, quotedText), Date.now() + DEDUP_CONTEUDO_JANELA_MS);
 }
 
-// Limpeza periódica: remove entradas expiradas de AMBOS os caches a cada
-// 5 minutos, evitando que cresçam sem limite em uma instância de longa
-// duração.
 setInterval(() => {
   const agora = Date.now();
   for (const [id, expiraEm] of _messageIdsProcessados) {
@@ -70,10 +57,10 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
-// Imports lazy para evitar circular dependency / problema de ordem de carregamento
-function sendMessage(phone, msg, delay) {
+// Imports lazy para evitar circular dependency
+function sendMessage(phone, msg, delay, quotedText) {
   const w = require('../services/whatsapp');
-  if (w && typeof w.sendMessage === 'function') return w.sendMessage(phone, msg, delay);
+  if (w && typeof w.sendMessage === 'function') return w.sendMessage(phone, msg, delay, quotedText);
   const axios = require('axios');
   return axios.post(`${process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com'}/send/text`,
     { number: phone, text: msg, delay: delay || 800 },
@@ -99,16 +86,6 @@ const LEMBRETE_FEITO = [
 ];
 
 async function getLembretePendente(userId, phone, quotedText) {
-  // ── Prioridade absoluta: citação (swipe-reply) ──
-  // Bug corrigido: quando o usuário arrasta pra responder um lembrete
-  // FUTURO (ainda não disparado, sent:false — ex: "dar remédio pra filha"
-  // marcado pra amanhã) e responde "Feito", a busca por janela de tempo
-  // abaixo NÃO encontrava ele (só pega sent:true dos últimos 15min), então
-  // o atalho de concluir falhava e a mensagem caía na classificação geral,
-  // que interpretava errado (como remarcar). Agora, SE há citação, primeiro
-  // procuramos o lembrete pelo título citado entre TODOS os não concluídos
-  // do usuário (passado ou futuro, disparado ou não) — só assim o "Feito"
-  // via reply funciona pra qualquer lembrete, independente da hora dele.
   if (quotedText) {
     const quotedLower = quotedText.toLowerCase();
     const naoConcluidos = await prisma.reminder.findMany({
@@ -130,7 +107,6 @@ async function getLembretePendente(userId, phone, quotedText) {
     orderBy: { scheduledAt: 'desc' }
   });
   if (!candidatos.length) return null;
-
   return candidatos[0];
 }
 
@@ -169,10 +145,6 @@ function parseVCard(vcard) {
   return { nome, telefone };
 }
 
-// ── Extrai o texto da mensagem citada (reply / "arrastar para responder")
-// de qualquer um dos formatos conhecidos que a UazAPI pode usar.
-// Se nenhum bater, retorna '' — nesse caso o log abaixo (DEBUG_QUOTE)
-// mostra o payload completo para descobrirmos o campo certo.
 function extrairQuotedText(message) {
   return message?.quotedMsg?.body
     || message?.quotedMsg?.text
@@ -193,18 +165,6 @@ async function handleSimpleResponse(phone, text, quotedText) {
   const textLower = text.trim();
 
   if (TOMEI_REMEDIO.some(r => r.test(textLower))) {
-    // ── Prioridade 1: pendência de confirmação real (criada no alarme,
-    // ver reminders.js) ── Mais confiável que a heurística de janela de
-    // tempo abaixo, porque cobre o caso do follow-up de 20min (a resposta
-    // pode chegar bem depois do horário exato da dose) e resolve a
-    // pendência de verdade — sem isso, ela ficaria presa até expirar
-    // sozinha à meia-noite (sem decrementar, por design).
-    // ── Suporte a múltiplos remédios pendentes ao mesmo tempo ──
-    // Quando dois ou mais remédios batem no mesmo horário (mensagem
-    // agrupada, ver reminders.js), pode haver várias pendências abertas
-    // simultaneamente. Busca TODAS (não só a mais recente) e tenta
-    // identificar qual o usuário quis dizer pelo nome citado na mensagem
-    // — evita decrementar o remédio errado quando há ambiguidade.
     const todasPendentesMems = await prisma.memory.findMany({
       where: { userId: user.id, type: 'confirmacao_pendente' },
       orderBy: { createdAt: 'desc' }
@@ -219,17 +179,10 @@ async function handleSimpleResponse(phone, text, quotedText) {
       if (med) {
         const atualizado = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
         await prisma.memory.delete({ where: { id: pendenteRemedio.memoryId } }).catch(() => {});
-        await sendMessage(phone, `✅ Ótimo! Marquei que você tomou o *${med.name}*. Restam ${atualizado.remaining} doses. 💊`);
+        await sendMessage(phone, `✅ Ótimo! Marquei que você tomou o *${med.name}*. Restam ${atualizado.remaining} doses. 💊`, 400, quotedText);
         return true;
       }
     } else if (pendentesRemedio.length > 1) {
-      // ── Prioridade pra citação (swipe-reply) ──
-      // Bug corrigido: antes só olhava o texto digitado ("Tomado" não
-      // menciona nome nenhum) — ignorava completamente qual mensagem
-      // específica o usuário respondeu, podia confirmar o remédio errado
-      // mesmo quando a citação deixava claro qual era. Agora tenta achar
-      // o nome do remédio primeiro na CITAÇÃO, e só se não achar lá, tenta
-      // no texto digitado (cobre o caso de "tomei pressão" sem citação).
       const textoLower = textLower.toLowerCase();
       const quotedLowerMed = (quotedText || '').toLowerCase();
       const match = pendentesRemedio.find(p => {
@@ -244,25 +197,20 @@ async function handleSimpleResponse(phone, text, quotedText) {
         if (med) {
           const atualizado = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
           await prisma.memory.delete({ where: { id: match.memoryId } }).catch(() => {});
-          await sendMessage(phone, `✅ Ótimo! Marquei que você tomou o *${med.name}*. Restam ${atualizado.remaining} doses. 💊`);
+          await sendMessage(phone, `✅ Ótimo! Marquei que você tomou o *${med.name}*. Restam ${atualizado.remaining} doses. 💊`, 400, quotedText);
           return true;
         }
       } else {
-        // Ambíguo — não decrementa nada, pede pra especificar em vez de
-        // arriscar marcar o remédio errado.
         const nomes = pendentesRemedio.map(p => `• ${p.medNome}`).join('\n');
         await sendMessage(phone, `Você tem mais de um remédio pendente agora:\n${nomes}\n\nQual deles você tomou? Me diz o nome 😊`);
         return true;
       }
     }
 
-    // ── Fallback: heurística de janela de tempo ── Cobre o caso de o
-    // usuário avisar "tomei" proativamente, sem ter uma pendência ativa
-    // (ex: tomou por conta própria sem esperar o alarme).
     const med = await getRemedioRecente(user.id);
     if (med) {
       await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
-      await sendMessage(phone, `✅ Ótimo! Marquei que você tomou o *${med.name}*. Restam ${med.remaining - 1} doses. 💊`);
+      await sendMessage(phone, `✅ Ótimo! Marquei que você tomou o *${med.name}*. Restam ${med.remaining - 1} doses. 💊`, 400, quotedText);
       return true;
     }
   }
@@ -277,23 +225,22 @@ async function handleSimpleResponse(phone, text, quotedText) {
         `Perfeito! ✅ Anotei que você concluiu "${lembrete.message}" 💜`,
         `Isso! ✅ "${lembrete.message}" concluído com sucesso 🎉`,
       ];
-      await sendMessage(phone, msgs[Math.floor(Math.random() * msgs.length)]);
+      // Passa quotedText pra garantir que a resposta não seja bloqueada
+      // pelo dedup quando há múltiplos lembretes sendo confirmados em sequência
+      await sendMessage(phone, msgs[Math.floor(Math.random() * msgs.length)], 400, quotedText);
       return true;
     }
   }
 
   if (CONFIRMACOES.some(r => r.test(textLower))) {
     const lembrete = await getLembretePendente(user.id, phone, quotedText);
-    if (lembrete) { await sendMessage(phone, `👍 Ok! Te lembro de: *${lembrete.message}*`); return true; }
+    if (lembrete) { await sendMessage(phone, `👍 Ok! Te lembro de: *${lembrete.message}*`, 400, quotedText); return true; }
     return false;
   }
 
   if (NEGACOES.some(r => r.test(textLower))) {
     const lembrete = await getLembretePendente(user.id, phone, quotedText);
     if (lembrete) {
-      // Em vez de remarcar automaticamente +30min, pergunta pra que
-      // horário o usuário quer remarcar — fica registrado como pendência
-      // pra próxima mensagem (checkConfirmacaoPendente trata isso).
       const expira = Date.now() + 10 * 60 * 1000;
       await prisma.memory.create({
         data: {
@@ -319,23 +266,6 @@ router.post('/', async (req, res) => {
     if (body.message?.isGroup === true) return res.json({ ok: true });
 
     // ── Deduplicação por messageId ──
-    // A UazAPI (como a maioria das integrações de WhatsApp) pode reenviar
-    // o mesmo webhook em caso de timeout/retry de rede, especialmente se
-    // o servidor demorar a responder. Sem essa proteção, a mesma mensagem
-    // do usuário pode ser processada 2-3x, criando lembretes/ações
-    // duplicadas (bug real observado: "me lembra às 9 de comprar remédio"
-    // virou 3 lembretes idênticos no banco).
-    //
-    // ── Camada extra: persistência no banco (sobrevive a restart) ──
-    // Bug corrigido: o cache em memória (_messageIdsProcessados) se perde
-    // toda vez que o processo reinicia (cada deploy). Se a UazAPI reenviar
-    // o mesmo webhook bem no instante de um restart, o processo novo não
-    // tem mais nenhum registro de já ter processado aquela mensagem — e
-    // processa de novo do zero, criando lembrete duplicado. Isso ficou
-    // mais visível num dia com muitos deploys em sequência. Agora, além do
-    // cache rápido em memória (cobre o caso comum, sem custo de DB),
-    // também verificamos/registramos no banco — mais lento, mas sobrevive
-    // a qualquer restart.
     const messageId = body.message?.id || body.message?.messageid || body.message?.messageId || body.message?.key?.id;
     if (messageId) {
       if (_messageIdsProcessados.has(messageId)) {
@@ -347,18 +277,12 @@ router.post('/', async (req, res) => {
       }).catch(() => null);
       if (jaProcessadoDB) {
         console.log(`[Webhook] messageId duplicado ignorado (banco, sobreviveu a restart): ${messageId}`);
-        marcarMessageIdProcessado(messageId); // também marca em memória pra próxima checagem ser rápida
+        marcarMessageIdProcessado(messageId);
         return res.json({ ok: true });
       }
       marcarMessageIdProcessado(messageId);
-      // Fire-and-forget é seguro aqui — não é crítico que esse registro
-      // termine antes da resposta; o pior caso de uma corrida rara é o
-      // mesmo cenário de antes (proteção só pelo cache em memória).
       prisma.memory.create({ data: { userId: 'system', type: 'webhook_msgid', content: messageId } }).catch(() => {});
     } else {
-      // Sem messageId identificável — loga pra eventualmente descobrirmos
-      // o campo certo, já que isso significa que a 1ª camada de dedup não
-      // está protegendo essa mensagem (cai só na 2ª camada, por conteúdo).
       console.log('[Webhook] messageId não encontrado neste payload — chaves disponíveis:', Object.keys(body.message || {}).join(', '));
     }
 
@@ -370,28 +294,25 @@ router.post('/', async (req, res) => {
 
     const text = body.message?.text || body.message?.content?.text || '';
 
-    // ── Deduplicação por conteúdo (2ª camada, ver comentário acima) ──
-    // Roda independente de ter encontrado messageId ou não — cobre o caso
-    // de um reenvio vir com um messageId DIFERENTE do original (não deveria
-    // acontecer, mas não temos garantia formal da UazAPI sobre isso) e
-    // também o caso de não ter messageId nenhum.
-    if (text && conteudoJaProcessado(phone, text)) {
+    // Extrai quoted ANTES do dedup de conteúdo — necessário para o hash correto
+    const quotedText = extrairQuotedText(body.message);
+
+    // ── Deduplicação por conteúdo (2ª camada) ──
+    // Hash inclui quotedText para não bloquear confirmações de itens diferentes
+    if (text && conteudoJaProcessado(phone, text, quotedText)) {
       console.log(`[Webhook] conteúdo duplicado ignorado (2ª camada): ${phone} — "${text.slice(0, 60)}"`);
       return res.json({ ok: true });
     }
-    if (text) marcarConteudoProcessado(phone, text);
+    if (text) marcarConteudoProcessado(phone, text, quotedText);
 
-    const quotedText = extrairQuotedText(body.message);
     const textComContexto = quotedText && text ? `[Mensagem citada: "${quotedText.slice(0, 200)}"]\n${text}` : text;
 
     console.log(`📨 WEBHOOK: ${phone} — "${text.slice(0, 80)}"${quotedText ? ` [citou: "${quotedText.slice(0, 40)}"]` : ''}`);
 
     if (text) {
-      // ── Verificar pausa criativa (rate limit) ──
       const pausaStatus = await rateLimit.verificarPausa(phone);
 
       if (pausaStatus && !pausaStatus.expirou) {
-        // Clara ainda está em pausa — responde contextualmente
         const msg = rateLimit.mensagemDurantePausa(
           pausaStatus.dados.tipo,
           pausaStatus.dados.ausencia,
@@ -402,10 +323,8 @@ router.post('/', async (req, res) => {
       }
 
       if (pausaStatus && pausaStatus.expirou) {
-        // Pausa expirou — Clara voltou! Manda mensagem de retorno
         const msgRetorno = rateLimit.mensagemRetorno(pausaStatus.dados.tipo, pausaStatus.dados.retorno);
         await sendMessage(phone, msgRetorno);
-        // Continua processando a mensagem normalmente
       }
 
       const handled = await handleSimpleResponse(phone, text, quotedText);
@@ -528,8 +447,6 @@ async function transcribeAndProcess(phone, body) {
       return;
     }
     console.log(`[Áudio] ${phone} transcrito: "${texto.slice(0, 80)}"`);
-
-    // Processa normalmente — resposta sempre em texto (sem TTS/áudio).
     await handleMessage(phone, texto);
   } catch (e) {
     console.error('[Áudio] Erro:', e.message);
