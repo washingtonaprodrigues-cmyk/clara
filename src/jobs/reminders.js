@@ -966,7 +966,7 @@ cron.schedule('0 3 * * *', async () => {
     const ontem = new Date(nowBRT()); ontem.setDate(ontem.getDate() - 2);
     await prisma.memory.deleteMany({
       where: {
-        type: { in: ['med_lock','alerta_data_lock','proativa_lock','sumico_lock','bom_dia_lock','boa_noite_lock','meu_dia_criado','radar_lock','parceira_lock','reminder_lock'] },
+        type: { in: ['med_lock','alerta_data_lock','proativa_lock','sumico_lock','bom_dia_lock','boa_noite_lock','meu_dia_criado','radar_lock','parceira_lock','reminder_lock','alerta_perfil_lock'] },
         createdAt: { lt: ontem }
       }
     });
@@ -999,6 +999,110 @@ cron.schedule('0 4 * * *', async () => {
     if (resultado.count > 0) console.log(`[Cleanup Lembretes] ${resultado.count} removidos`);
   } catch (e) { console.error('[Cleanup Lembretes] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
+// ALERTAS PROATIVOS — Perfil rico da Clara 3.0
+// Roda junto com alertas de datas (08:00) mas separado pra clareza.
+// Verifica: aniversários de filhos, cônjuge, relacionamento, metas, etc.
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('15 8 * * *', async () => {
+  try {
+    const now = nowBRT();
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    for (const user of users) {
+      try {
+        await alertasPerfilRico(user, now);
+      } catch (e) { console.error(`[AlertasPerfil] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error('[AlertasPerfil] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+async function alertasPerfilRico(user, now) {
+  const mems = await prisma.memory.findMany({
+    where: { userId: user.id, type: 'info_pessoal' },
+    orderBy: { createdAt: 'desc' }
+  }).catch(() => []);
+
+  for (const m of mems) {
+    let meta = {};
+    try { meta = JSON.parse(m.metadata || '{}'); } catch { continue; }
+    const { chave, categoria } = meta;
+    const valor = m.content || '';
+
+    // ── Datas: aniversários de pessoas próximas ──
+    if (categoria === 'datas' || categoria === 'filhos' || categoria === 'relacionamento') {
+      const matchData = valor.match(/(\d{1,2})\s+de\s+(\w+)/i) ||
+                        valor.match(/(\d{1,2})\/(\d{1,2})/);
+      if (matchData) {
+        const mesesMap = { janeiro:1,fevereiro:2,março:3,abril:4,maio:5,junho:6,julho:7,agosto:8,setembro:9,outubro:10,novembro:11,dezembro:12 };
+        let dia, mes;
+        if (matchData[0].includes('/')) {
+          dia = parseInt(matchData[1]);
+          mes = parseInt(matchData[2]);
+        } else {
+          dia = parseInt(matchData[1]);
+          mes = mesesMap[(matchData[2] || '').toLowerCase()];
+        }
+        if (!dia || !mes) continue;
+
+        const dataEvento = new Date(now.getFullYear(), mes - 1, dia);
+        const diffDias = Math.round((dataEvento - now) / (1000 * 60 * 60 * 24));
+        const lockKey = `alerta_perfil_${m.id}_${dateBRT()}`;
+        if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'alerta_perfil_lock', content: lockKey } })) continue;
+
+        let msg = null;
+        const prefs = await memory.getUserPreference(user.id).catch(() => null);
+
+        // Aniversário de filho(a)
+        if (categoria === 'filhos' && chave?.startsWith('filh')) {
+          const nomeMatch = valor.match(/[Ff]ilh[oa]\s+(\w+)/);
+          const nome = nomeMatch ? nomeMatch[1] : 'seu filho(a)';
+          if (diffDias === 7) msg = `📅 Daqui uma semana é aniversário d${valor.toLowerCase().includes('filha') ? 'a' : 'o'} ${nome}! Já pensou no presente?`;
+          else if (diffDias === 3) msg = `⏰ Em 3 dias é aniversário d${valor.toLowerCase().includes('filha') ? 'a' : 'o'} ${nome} — já tem algum plano?`;
+          else if (diffDias === 1) msg = `🎂 Amanhã é aniversário d${valor.toLowerCase().includes('filha') ? 'a' : 'o'} ${nome}! Não esquece 😊`;
+          else if (diffDias === 0) msg = `🎉 Hoje é aniversário d${valor.toLowerCase().includes('filha') ? 'a' : 'o'} ${nome}! Já deu os parabéns? 🎂`;
+        }
+        // Aniversário do cônjuge
+        else if (categoria === 'relacionamento' && chave?.includes('aniversario')) {
+          if (diffDias === 7) msg = `📅 Uma semana pro aniversário da sua parceira/o — hora de planejar algo especial?`;
+          else if (diffDias === 3) msg = `⏰ Daqui 3 dias é o aniversário! Já tem ideia do que vai fazer?`;
+          else if (diffDias === 1) msg = `🎂 Amanhã é o aniversário! Não esquece 😊`;
+          else if (diffDias === 0) msg = `🎉 Hoje é o grande dia! Já deu os parabéns? 💜`;
+        }
+        // Data importante genérica
+        else if (categoria === 'datas') {
+          if (diffDias === 3) msg = `📅 Em 3 dias: ${valor} — lembrete antecipado 😊`;
+          else if (diffDias === 1) msg = `⏰ Amanhã: ${valor} — não esquece!`;
+          else if (diffDias === 0) msg = `🎉 Hoje: ${valor}!`;
+        }
+
+        if (msg) {
+          // Oferece criar lembrete se for aniversário próximo
+          const ofertaLembrete = diffDias <= 3 && diffDias > 0
+            ? `\n\nQuer que eu crie um lembrete pra isso?`
+            : '';
+          await sendMessage(user.phone, msg + ofertaLembrete);
+          await prisma.memory.create({ data: { userId: user.id, type: 'alerta_perfil_lock', content: lockKey } });
+          console.log(`[AlertasPerfil] ${chave} → ${user.phone} (${diffDias} dias)`);
+        }
+      }
+    }
+
+    // ── Metas: check-in mensal ──
+    if (categoria === 'metas') {
+      const diaDoMes = now.getDate();
+      // Check-in no dia 1 de cada mês
+      if (diaDoMes === 1) {
+        const lockKey = `meta_checkin_${m.id}_${now.getFullYear()}_${now.getMonth()}`;
+        if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'alerta_perfil_lock', content: lockKey } })) continue;
+        const msg = `🚀 Começo de mês — como está o progresso da sua meta? "${valor.slice(0, 60)}"`;
+        await sendMessage(user.phone, msg);
+        await prisma.memory.create({ data: { userId: user.id, type: 'alerta_perfil_lock', content: lockKey } });
+        console.log(`[AlertasPerfil] Meta check-in → ${user.phone}`);
+      }
+    }
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 // ALERTA ESTOQUE BAIXO DE REMÉDIO (08:30)
