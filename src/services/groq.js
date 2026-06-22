@@ -886,9 +886,19 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       if (preferences?._acaoConfirmacao) {
         return preferences._acaoConfirmacao;
       }
-      // Já em modo direto (Groq 70b ainda em cooldown). Tenta primeiro o
-      // Gemini com a personalidade COMPLETA (objetivo: avaliar o Gemini
-      // como possível substituto do Groq, não só um fallback seco).
+      // ── Groq chave 2 — primeira opção quando chave 1 está em TPD ──
+      // Mesma velocidade e personalidade do Groq. Só cai pro Gemini se
+      // a chave 2 também estiver esgotada ou indisponível.
+      if (groq2 && !_groq2EmTPD) {
+        const msgs2 = [
+          { role: 'system', content: buildPersonality(tom, name, false) + contexto },
+          ...history.slice(-6),
+          { role: 'user', content: message }
+        ];
+        const respostaGroq2 = await tentarGroq2(msgs2, isCurta);
+        if (respostaGroq2) { marcarProvider('groq2'); return respostaGroq2; }
+      }
+      // Groq2 indisponível/esgotado — tenta Gemini com personalidade completa
       const respostaGemini = await tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone);
       if (respostaGemini) { marcarProvider('gemini'); return respostaGemini; }
 
@@ -896,11 +906,6 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       // cascata Gemini (de novo, com prompt direto) → OpenRouter.
       const respostaModoDireto = await tentarFallbackCascata(contexto, name, message, 'ModoDireto', tom);
       if (respostaModoDireto) { marcarProvider('openrouter'); return respostaModoDireto; }
-      // Fallback final: mensagem fixa, sem custo de LLM. Varia entre
-      // algumas opções (em vez de repetir sempre a mesma frase) — esse
-      // caminho só é alcançado quando TODA a cascata falhou de verdade
-      // (Gemini esgotado + OpenRouter indisponível), então deve ser raro,
-      // mas se acontecer em sequência não soa tão repetitivo.
       marcarProvider('fallback_fixo');
       const FALLBACK_FIXO_MSGS = [
         'Travei um segundo aqui 😅 mas pode me mandar lembretes, listas e tarefas que eu cuido normal.',
