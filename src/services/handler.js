@@ -478,22 +478,24 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     await sendMessage(phone, respStr);
     updateRelationshipSummary(user.id, history, respStr).catch(() => {});
 
-    // ── Detecção de assunto em aberto (fire-and-forget) ──────────────
-    // Roda após a resposta, sem adicionar latência. Se a conversa gerou
-    // um assunto relevante não resolvido (saúde, trabalho, evento esperado),
-    // salva como pendencia_conversa pra Clara retomar naturalmente depois.
-    // Também detecta quando o usuário fecha um assunto aberto.
+    // ── Detecção de assunto em aberto + extração com contexto (fire-and-forget) ──
+    // Roda após a resposta, sem adicionar latência.
     ;(async () => {
       try {
         await memory.fecharPendenciasPorResolucao(user.id, text);
         const histAtual = [...history, { role: 'user', content: text }, { role: 'assistant', content: respStr }];
-        // Só roda se for conversa com substância (não saudação curta)
         if (histAtual.length >= 2 && text.length > 15) {
           const pendencia = await detectarAssuntoEmAberto(histAtual);
           if (pendencia) await memory.salvarOuAtualizarPendencia(user.id, pendencia);
         }
-      } catch { /* silencioso — nunca bloqueia a resposta */ }
+      } catch { /* silencioso */ }
     })();
+
+    // ── Extração de info pessoal com contexto da última pergunta da Clara ──
+    // Roda separado do fire-and-forget acima para manter isolamento de erros.
+    // Passa respStr (última resposta da Clara) como contexto para o extrator
+    // entender respostas curtas do usuário ("Corinthians", "sou de escorpião").
+    extractAndSavePersonalInfo(user.id, text, respStr).catch(e => console.error('[extract pessoal ctx]', e.message));
   } catch (e) {
     console.error(`[${phone}] Erro responderLivre:`, e.message);
     await sendMessage(phone, 'Ops, tive um probleminha. Pode repetir?');
@@ -850,7 +852,7 @@ async function handleMessage(phone, text, location = null) {
     const acaoConfirmacao = CONFIRMACOES_ACAO[classified.tipo] || null;
 
     await responderLivre(user, phone, text, '', isSaudacao, acaoConfirmacao);
-    extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
+    // extractAndSavePersonalInfo é chamado dentro de responderLivre com contexto da Clara
   } catch (error) {
     console.error('Erro handleMessage:', error.message);
     try {
@@ -1658,13 +1660,17 @@ async function checkConfirmacaoPendente(user, phone, text) {
   }
 }
 
-async function extractAndSavePersonalInfo(userId, text) {
-  const infos = await extractPersonalInfo(text);
+async function extractAndSavePersonalInfo(userId, text, ultimaPerguntaClara = null) {
+  // Passa a última pergunta da Clara para o extrator entender respostas curtas.
+  // Exemplo: Clara pergunta "você torce pra algum time?" → usuário responde
+  // "Corinthians" → sem contexto seria ignorado; com contexto vira
+  // time_futebol: Corinthians automaticamente.
+  const infos = await extractPersonalInfo(text, ultimaPerguntaClara);
   if (infos && infos.length > 0) {
     for (const { chave, valor, categoria } of infos) {
       if (!chave || !valor) continue;
       await savePersonalInfo(userId, chave, valor, categoria || 'outro');
-      console.log(`[memória pessoal] salvo: ${chave} = "${valor}"`);
+      console.log(`[memória pessoal] salvo: ${chave} = "${valor}"${ultimaPerguntaClara ? ' (via contexto Clara)' : ''}`);
     }
   }
 
