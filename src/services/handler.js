@@ -1,1748 +1,1953 @@
-// v2 - consulta direta sem LLM
-const { classify, extractPersonalInfo, extractPendenciaEmocional, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto } = require('./groq');
+<!DOCTYPE html>
+<!-- clara-v3 -->
+<html lang="pt-BR" style="background:#08090D">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover,maximum-scale=1.0,user-scalable=no"/>
+<title>Clara</title>
+<link rel="manifest" href="/manifest.json"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black"/>
+<meta name="apple-mobile-web-app-title" content="Clara"/>
+<meta name="theme-color" content="#08090D"/><meta name="msapplication-navbutton-color" content="#08090D"/><meta name="apple-mobile-web-app-status-bar-style" content="black"/>
+<style>*{-webkit-tap-highlight-color:transparent}html{background:#08090D!important;background-color:#08090D!important}body{background:#08090D!important;background-color:#08090D!important}#loading-screen{background:#08090D!important;background-color:#08090D!important}</style>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=DM+Serif+Display:ital@0;1&family=Outfit:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+:root{--bg:#08090D;--s1:#0D0E15;--s2:#13141D;--s3:#1A1B26;--accent:#8B5CF6;--accent2:#A855F7;--glow:rgba(139,92,246,.2);--green:#22C55E;--red:#EF4444;--border:rgba(255,255,255,.06);--border2:rgba(255,255,255,.1);--text:#F8F8FF;--text2:#9CA3AF;--text3:#4B5563;--r:14px;--r-sm:10px;--safe-top:env(safe-area-inset-top,0px);--safe-bot:env(safe-area-inset-bottom,0px);--sidebar-w:220px;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-size:14px;height:100dvh}
+#loading-screen{position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;transition:opacity .4s ease}
+#loading-screen.hidden{opacity:0;pointer-events:none}
+.ls-stars{position:relative;width:80px;height:80px;margin-bottom:24px}
+.ls-star{position:absolute;background:var(--accent);border-radius:50%;animation:lsSpin 2s ease-in-out infinite}
+.ls-star:nth-child(1){width:12px;height:12px;top:0;left:50%;transform:translateX(-50%);animation-delay:0s;background:#A855F7}
+.ls-star:nth-child(2){width:8px;height:8px;top:20%;right:0;animation-delay:.3s;background:#8B5CF6}
+.ls-star:nth-child(3){width:6px;height:6px;bottom:10%;right:10%;animation-delay:.6s;background:#C4B5FD}
+.ls-star:nth-child(4){width:10px;height:10px;bottom:0;left:50%;transform:translateX(-50%);animation-delay:.9s;background:#7C3AED}
+.ls-star:nth-child(5){width:7px;height:7px;top:20%;left:0;animation-delay:1.2s;background:#A855F7}
+.ls-star:nth-child(6){width:5px;height:5px;bottom:10%;left:10%;animation-delay:1.5s;background:#DDD6FE}
+@keyframes lsSpin{0%,100%{opacity:.2;transform:scale(.7)}50%{opacity:1;transform:scale(1.2)}}
+.ls-title{font-family:'DM Serif Display',serif;font-size:26px;color:var(--text);letter-spacing:.5px}
+.ls-sub{font-size:12px;color:var(--text3);margin-top:6px;letter-spacing:1px;text-transform:uppercase}
+#auth-screen{position:fixed;inset:0;background:var(--bg);z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
+#auth-screen.hidden{display:none}
+.auth-logo{font-size:52px;margin-bottom:12px}
+.auth-title{font-family:'DM Serif Display',serif;font-size:30px;color:var(--text);margin-bottom:6px}
+.auth-sub{font-size:13px;color:var(--text2);margin-bottom:32px;text-align:center}
+.auth-box{width:100%;max-width:360px;background:var(--s1);border:1px solid var(--border2);border-radius:20px;padding:24px}
+.auth-tabs{display:flex;gap:4px;background:var(--s2);border-radius:10px;padding:4px;margin-bottom:20px}
+.auth-tab{flex:1;padding:8px;text-align:center;font-size:13px;font-weight:500;color:var(--text3);border-radius:8px;cursor:pointer;transition:all .15s}
+.auth-tab.active{background:var(--s3);color:var(--text)}
+.auth-field{margin-bottom:12px}
+.auth-field label{display:block;font-size:11px;color:var(--text2);margin-bottom:5px}
+.auth-field input{width:100%;padding:10px 14px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:'Inter',sans-serif;font-size:14px;outline:none;transition:border .15s}
+.auth-field input:focus{border-color:var(--accent)}
+.auth-btn{width:100%;padding:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 12px var(--glow);margin-top:4px}
+.auth-btn:disabled{opacity:.5;cursor:default}
+.auth-divider{display:flex;align-items:center;gap:10px;margin:16px 0;color:var(--text3);font-size:12px}
+.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.auth-google{width:100%;padding:11px;background:var(--s2);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);font-family:'Inter',sans-serif;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;transition:all .15s}
+.auth-google:hover{border-color:rgba(255,255,255,.2);background:var(--s3)}
+.auth-error{font-size:12px;color:var(--red);margin-top:8px;text-align:center;min-height:16px}
+#phone-screen{position:fixed;inset:0;background:var(--bg);z-index:190;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
+#phone-screen.hidden{display:none}
+.phone-screen-box{width:100%;max-width:360px;background:var(--s1);border:1px solid var(--border2);border-radius:20px;padding:24px}
+.phone-screen-title{font-family:'DM Serif Display',serif;font-size:20px;color:var(--text);margin-bottom:6px}
+.phone-screen-user{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--s2);border-radius:var(--r-sm);margin-bottom:16px}
+.app-layout{display:flex;height:100dvh;padding-top:var(--safe-top)}
+.sidebar{width:var(--sidebar-w);background:var(--s1);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:width .25s cubic-bezier(.4,0,.2,1);overflow:hidden;position:relative;z-index:10}
+.sidebar.collapsed{width:56px}
 
-// Importa whatsapp de forma segura com fallback direto via axios
-let _whatsappModule = null;
-function getWhatsapp() {
-  if (!_whatsappModule) {
-    try {
-      _whatsappModule = require('./whatsapp');
-    } catch(e) {
-      console.error('[Handler] Erro ao carregar whatsapp.js:', e.message);
+
+.sidebar-user-av{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;overflow:hidden}
+.sidebar-user-av img{width:100%;height:100%;object-fit:cover}
+.sidebar-user-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--r-sm);background:var(--s2);margin:0 0 4px;overflow:hidden}
+.sidebar.collapsed .sidebar-user-row{padding:8px;justify-content:center;background:none}
+.sidebar-user-info-col{flex:1;min-width:0;transition:opacity .2s}
+.sidebar.collapsed .sidebar-user-info-col{opacity:0;width:0;overflow:hidden}
+.sidebar-user-name{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sidebar-user-phone{font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.sidebar-header{display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid var(--border);min-height:58px}
+.sidebar-header-info{flex:1;min-width:0;transition:opacity .15s}
+.sidebar.collapsed .sidebar-header-info{opacity:0;width:0;overflow:hidden;transition:opacity .1s,width 0s .1s}
+.sidebar.collapsed .sidebar-header{justify-content:center;padding:12px 8px}
+.sidebar-header .tb-clara-avatar{transition:opacity .15s,width .2s,margin .2s}
+.sidebar.collapsed .sidebar-header .tb-clara-avatar{opacity:0;width:0;margin:0;transition:opacity .1s,width 0s .1s,margin 0s .1s}
+.sidebar-collapse-btn{width:32px;height:32px;background:none;border:none;cursor:pointer;color:var(--text3);flex-shrink:0;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.sidebar-collapse-btn:hover{background:var(--s3);color:var(--text)}
+.sidebar-collapse-btn svg{width:18px;height:18px}
+.sidebar.collapsed .sidebar-collapse-btn{margin:0 auto}
+.sidebar-nav{flex:1;padding:8px 10px;overflow-y:auto;overflow-x:hidden;padding-top:8px}
+.s-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:var(--r-sm);cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;transition:all .15s;white-space:nowrap;min-height:44px;position:relative}
+.s-item:hover{background:var(--s2);color:var(--text)}
+.s-item.active{background:rgba(139,92,246,.1);color:#C4B5FD}
+.s-item svg{flex-shrink:0;width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.s-item-label{flex:1;transition:opacity .2s;overflow:hidden}
+.sidebar.collapsed .s-item-label{opacity:0;width:0;pointer-events:none}
+.s-badge{background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:auto;flex-shrink:0;transition:opacity .15s}
+.sidebar.collapsed .s-badge{opacity:0;width:0;overflow:hidden;padding:0}
+.sidebar-divider{height:1px;background:var(--border);margin:8px 10px}
+.sidebar-foot{padding:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:4px}
+.s-foot-btn{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:var(--r-sm);cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;transition:all .15s;width:100%;background:none;border:none;font-family:"Inter",sans-serif;white-space:nowrap;min-height:40px}
+.s-foot-btn:hover{background:var(--s2);color:var(--text)}
+.s-foot-btn.danger{color:#EF4444}
+.s-foot-btn.danger:hover{background:rgba(239,68,68,.08)}
+.s-foot-btn svg{flex-shrink:0;width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.s-foot-label{transition:opacity .2s;overflow:hidden}
+.sidebar.collapsed .s-foot-label{opacity:0;width:0}
+.sidebar.collapsed .s-foot-btn{padding:9px;justify-content:center}
+.sidebar.collapsed .sidebar-user-row{display:none}
+.topbar{display:flex;height:56px;background:var(--s1);border-bottom:1px solid var(--border);align-items:center;padding:0 16px;gap:12px;flex-shrink:0;z-index:10}
+.tb-menu{width:36px;height:36px;background:none;border:none;cursor:pointer;display:none;flex-direction:column;justify-content:center;gap:5px;padding:6px;flex-shrink:0}
+.tb-menu span{display:block;height:1.5px;background:var(--text2);border-radius:2px}
+.tb-clara-avatar{width:34px;height:34px;border-radius:50%;overflow:hidden;flex-shrink:0;box-shadow:0 0 12px var(--glow);background:var(--s3);position:relative}
+.tb-clara-avatar::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.15) 50%,transparent 100%);background-size:200% 100%;animation:avatarShimmer 1.5s ease-in-out infinite;z-index:1}
+.tb-clara-avatar img{width:100%;height:100%;object-fit:cover;position:relative;z-index:2;opacity:0;transition:opacity .5s ease}
+.tb-clara-avatar img.loaded{opacity:1}
+.avatar-shimmer{position:relative;overflow:hidden}
+.avatar-shimmer::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.15) 50%,transparent 100%);background-size:200% 100%;animation:avatarShimmer 1.5s ease-in-out infinite;z-index:1}
+.avatar-shimmer img{position:relative;z-index:2;opacity:0;transition:opacity .5s ease}
+.avatar-shimmer img.loaded{opacity:1}
+@keyframes avatarShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.tb-info{min-width:0;flex:1}
+.tb-name{font-size:15px;font-weight:600;color:var(--text)}
+.tb-status{font-size:11px;color:var(--green);display:flex;align-items:center;gap:4px}
+.tb-status::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);flex-shrink:0}
+.tb-status.no-dot::before{display:none}
+.tb-nova{padding:7px 14px;background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.25);border-radius:20px;color:#C4B5FD;font-family:'Inter',sans-serif;font-size:12px;font-weight:500;cursor:pointer;transition:all .2s;white-space:nowrap}
+.tb-nova:hover{background:rgba(139,92,246,.22);border-color:rgba(139,92,246,.45);color:#fff}
+.tb-icon-btn{width:36px;height:36px;background:var(--s2);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;flex-shrink:0}
+.drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:40;opacity:0;pointer-events:none;transition:opacity .25s;backdrop-filter:blur(2px);display:none}
+.drawer-overlay.open{opacity:1;pointer-events:all}
+.drawer{position:fixed;top:0;left:-280px;bottom:0;width:280px;background:var(--s1);z-index:50;transition:left .25s cubic-bezier(.4,0,.2,1);display:none;flex-direction:column;padding-top:var(--safe-top)}
+.drawer.open{left:0}
+.drawer-head{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;min-height:48px}
+.drawer-user-avatar{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;overflow:hidden}
+.drawer-user-avatar img{width:100%;height:100%;object-fit:cover}
+.drawer-user-info{flex:1;min-width:0}
+.drawer-user-name{font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drawer-user-phone{font-size:11px;color:var(--text3);margin-top:1px}
+.drawer-close{width:28px;height:28px;background:var(--s2);border:none;border-radius:7px;color:var(--text3);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+.drawer-user-row-foot{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--r-sm);background:var(--s2);margin-bottom:4px;cursor:pointer;transition:background .15s}.drawer-user-row-foot:hover{background:var(--s3)}
+.drawer-nav{padding:8px 8px 4px;flex:1;overflow-y:auto}
+
+.d-item{display:flex;align-items:center;gap:10px;padding:10px;border-radius:var(--r-sm);cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;transition:all .15s}
+.d-item:hover{background:var(--s2);color:var(--text)}
+.d-item.active{background:rgba(139,92,246,.15);color:#C4B5FD}
+.d-item svg{flex-shrink:0;width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.d-badge{margin-left:auto;background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px}
+.drawer-foot{padding:12px;border-top:1px solid var(--border)}
+.d-foot-btn{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r-sm);cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;transition:all .15s;width:100%;background:none;border:none;font-family:'Inter',sans-serif}
+.d-foot-btn:hover{background:var(--s2);color:var(--text)}
+.d-foot-btn.danger{color:var(--red)}
+.d-foot-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.main-content{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.pages{flex:1;overflow:hidden;position:relative}
+.page{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;opacity:0;pointer-events:none;transition:opacity .15s}
+.page.active{opacity:1;pointer-events:all}
+.private-banner{background:rgba(239,68,68,.08);border-bottom:1px solid rgba(239,68,68,.2);padding:6px 16px;font-size:11px;color:var(--red);display:none;align-items:center;gap:6px;flex-shrink:0}
+.private-banner.on{display:flex}
+.msgs{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:12px;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
+.msg-row{display:flex;gap:8px;align-items:flex-end}
+.msg-row.user{flex-direction:row-reverse}
+.msg-avatar{width:28px;height:28px;border-radius:50%;flex-shrink:0;overflow:hidden;box-shadow:0 0 8px var(--glow)}
+.msg-avatar img{width:100%;height:100%;object-fit:cover}
+.msg-content{display:flex;flex-direction:column;gap:3px;max-width:72%}
+.msg-row.user .msg-content{align-items:flex-end}
+.msg-bubble{padding:10px 14px;border-radius:16px;font-size:13.5px;line-height:1.6;word-break:break-word}
+.msg-row.bot .msg-bubble{background:var(--s2);border:1px solid var(--border);color:var(--text);border-bottom-left-radius:4px}
+.msg-row.user .msg-bubble{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-bottom-right-radius:4px;box-shadow:0 4px 12px var(--glow)}
+.msg-row.bot.loading .msg-bubble{color:var(--text3);font-style:italic}
+.msg-time{font-size:10px;color:var(--text3);padding:0 4px}
+.welcome-screen{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px;text-align:center}
+.welcome-greeting{font-family:'Outfit',sans-serif;font-size:11px;font-weight:400;letter-spacing:4px;text-transform:uppercase;color:var(--text3);margin-bottom:16px}
+.welcome-title{font-family:'DM Serif Display',serif;font-size:28px;color:var(--text);margin-bottom:10px;line-height:1.3;font-weight:400}
+.welcome-name{font-family:'DM Serif Display',serif;font-style:italic;color:#C4B5FD;font-weight:400}
+.welcome-sub{font-family:'Outfit',sans-serif;font-size:13px;font-weight:300;color:var(--text3);letter-spacing:.3px}
+.welcome-action-card:hover{border-color:var(--border2)!important}
+.input-area{padding:12px 20px 16px;padding-bottom:calc(16px + var(--safe-bot));background:var(--bg);border-top:1px solid var(--border);flex-shrink:0;position:sticky;bottom:0;z-index:5}
+.chips-row{display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;scrollbar-width:none}
+.chips-row::-webkit-scrollbar{display:none}
+.chip{padding:5px 12px;background:var(--s2);border:1px solid var(--border);border-radius:16px;font-size:11px;color:var(--text3);cursor:pointer;white-space:nowrap;transition:all .15s;font-family:'Inter',sans-serif;font-weight:500}
+.chip:hover{border-color:rgba(139,92,246,.4);color:var(--text2)}
+.input-row{display:flex;align-items:center;gap:8px;background:var(--s2);border:1px solid var(--border);border-radius:14px;padding:8px 8px 8px 16px;transition:border-color .15s,box-shadow .15s;box-shadow:0 0 0 1px rgba(139,92,246,.08),0 4px 20px rgba(139,92,246,.12)}
+.input-row:focus-within{box-shadow:0 0 0 1px rgba(139,92,246,.25),0 4px 24px rgba(139,92,246,.25)}
+.input-row .input-spark{flex-shrink:0;width:18px;height:18px;display:flex;align-items:center;justify-content:center;color:#C4B5FD;font-size:14px;font-weight:300;opacity:.8}
+.input-row:focus-within{border-color:rgba(139,92,246,.5)}
+.input-row textarea{flex:1;background:none;border:none;color:var(--text);font-family:'Inter',sans-serif;font-size:16px;outline:none;resize:none;max-height:100px;line-height:1.5;min-height:22px}
+.input-row textarea::placeholder{color:var(--text3)}
+.send-btn{width:36px;height:36px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 10px var(--glow);transition:transform .1s}
+.msg-lista-card{background:var(--s1);border:1px solid var(--border2);border-radius:12px;padding:12px;margin-top:8px;min-width:220px;max-width:300px}
+.msg-lista-titulo{font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.msg-lista-items{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
+.msg-lista-item{display:flex;align-items:center;gap:8px;padding:7px 4px;border-radius:6px;cursor:pointer;transition:background .1s;user-select:none}
+.msg-lista-item:hover{background:var(--s2)}
+.msg-lista-item.done .msg-lista-nome{text-decoration:line-through;color:var(--text3)}
+.msg-lista-check{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--border2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px;font-weight:700;transition:all .15s}
+.msg-lista-item.done .msg-lista-check{background:var(--green);border-color:var(--green);color:#fff}
+.msg-lista-item:not(.done) .msg-lista-check{color:transparent}
+.msg-lista-nome{font-size:13px;color:var(--text);flex:1}
+.msg-lista-footer{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.msg-lista-progress{flex:1;height:3px;background:var(--s3);border-radius:2px;overflow:hidden}
+.msg-lista-progress-bar{height:100%;background:var(--green);border-radius:2px;transition:width .3s}
+.msg-lista-count{font-size:11px;color:var(--text3);white-space:nowrap}
+.msg-lista-add-row{display:flex;gap:6px}
+.msg-lista-add-inp{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-family:'Inter',sans-serif;font-size:12px;outline:none}
+.msg-lista-add-inp:focus{border-color:var(--accent)}
+.msg-lista-add-btn{padding:5px 10px;background:var(--accent);border:none;border-radius:6px;color:#fff;font-family:'Inter',sans-serif;font-size:12px;cursor:pointer;font-weight:500}
+.lista-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.lista-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.lista-titulo{font-size:14px;font-weight:600;color:var(--text)}
+.lista-contador{font-size:11px;color:var(--text3);background:var(--s3);padding:2px 8px;border-radius:10px}
+.lista-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:all .15s}
+.lista-item:last-child{border-bottom:none}
+.lista-item:hover{opacity:.85}
+.lista-item.done .lista-item-nome{text-decoration:line-through;color:var(--text3)}
+.lista-check{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--border2);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}
+.lista-item.done .lista-check{background:var(--green);border-color:var(--green)}
+.lista-item.done .lista-check::after{content:'✓';color:#fff;font-size:11px;font-weight:700}
+.lista-item-num{font-size:11px;color:var(--text3);min-width:20px;text-align:center;flex-shrink:0}
+.lista-item-nome{font-size:13px;color:var(--text);flex:1}
+.lista-item-del{width:22px;height:22px;background:none;border:none;cursor:pointer;color:var(--text3);opacity:0;transition:opacity .15s;display:flex;align-items:center;justify-content:center;font-size:14px;border-radius:4px}
+.lista-item-arrows{display:flex;gap:2px;flex-shrink:0;opacity:0;transition:opacity .15s}
+.lista-item:hover .lista-item-arrows{opacity:1}
+.lista-arrow-btn{width:24px;height:24px;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text3);font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;line-height:1}
+.lista-arrow-btn:hover{background:rgba(139,92,246,.15);border-color:var(--accent);color:#C4B5FD}
+@media(max-width:768px){.lista-item-arrows{opacity:.6}}
+.lista-item:hover .lista-item-del{opacity:.5}
+.lista-item-del:hover{opacity:1!important;color:var(--red)!important}
+.lista-add-row{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.lista-add-input{flex:1;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);padding:7px 10px;color:var(--text);font-family:'Inter',sans-serif;font-size:12px;outline:none}
+.lista-add-input:focus{border-color:var(--accent)}
+.lista-add-btn{padding:7px 12px;background:var(--accent);border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:12px;cursor:pointer}
+.lista-footer{display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px solid var(--border)}
+.lista-progress{flex:1;height:4px;background:var(--s3);border-radius:2px;overflow:hidden;margin-right:10px}
+.lista-progress-bar{height:100%;background:var(--green);border-radius:2px;transition:width .3s}
+.lista-arquivar{background:none;border:none;cursor:pointer;font-size:11px;color:var(--text3);font-family:'Inter',sans-serif;padding:2px 6px;border-radius:4px}
+.lista-edit-btn{background:none;border:none;cursor:pointer;color:var(--text3);padding:2px 4px;border-radius:4px;display:flex;align-items:center;opacity:.5;transition:opacity .15s}
+.lista-edit-btn:hover{opacity:1;color:var(--accent)}
+.lista-item-edit{background:none;border:none;cursor:pointer;color:var(--text3);padding:2px;border-radius:4px;display:flex;align-items:center;opacity:0;transition:opacity .15s;flex-shrink:0}
+.lista-item:hover .lista-item-edit{opacity:.5}
+.lista-item-edit:hover{opacity:1!important;color:var(--accent)!important}
+.lista-arquivar:hover{color:var(--text2);background:var(--s3)}
+.mic-btn{width:40px;height:40px;background:none;border:none;border-radius:12px;color:var(--text3);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s}
+.mic-btn:hover{background:var(--s2);color:var(--text2)}
+.mic-btn.listening{background:rgba(239,68,68,.15);color:var(--red);animation:micPulse 1s ease-in-out infinite}
+@keyframes micPulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.3)}50%{box-shadow:0 0 0 6px rgba(239,68,68,0)}}
+.voice-mode-on{border-color:rgba(139,92,246,.5)!important;color:#C4B5FD!important;background:rgba(139,92,246,.12)!important}
+.ph{padding:14px 20px;border-bottom:1px solid var(--border);background:var(--s1);display:flex;align-items:center;gap:12px;flex-shrink:0}
+.ph-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ph-icon svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.ph-title{font-size:16px;font-weight:600;color:var(--text)}
+.ph-sub{font-size:11px;color:var(--text3);margin-top:1px}
+.ph-actions{margin-left:auto}
+.btn-p{padding:7px 14px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 4px 10px var(--glow)}
+.scroll-body{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
+.empty{text-align:center;padding:40px 16px;color:var(--text3)}
+.empty-icon{font-size:28px;display:block;margin-bottom:10px;opacity:.2}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;margin:24px auto}
+.clara-thinking{position:fixed;inset:0;background:rgba(8,9,13,.7);backdrop-filter:blur(4px);z-index:250;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;opacity:0;pointer-events:none;transition:opacity .3s ease}
+.clara-thinking.show{opacity:1;pointer-events:all}
+.ct-stars{position:relative;width:60px;height:60px;margin-bottom:16px}
+.ct-star{position:absolute;background:var(--accent);border-radius:50%;animation:lsSpin 1.6s ease-in-out infinite}
+.ct-star:nth-child(1){width:10px;height:10px;top:0;left:50%;transform:translateX(-50%);animation-delay:0s;background:#A855F7}
+.ct-star:nth-child(2){width:7px;height:7px;top:20%;right:0;animation-delay:.25s;background:#8B5CF6}
+.ct-star:nth-child(3){width:5px;height:5px;bottom:10%;right:8%;animation-delay:.5s;background:#C4B5FD}
+.ct-star:nth-child(4){width:8px;height:8px;bottom:0;left:50%;transform:translateX(-50%);animation-delay:.75s;background:#7C3AED}
+.ct-star:nth-child(5){width:6px;height:6px;top:20%;left:0;animation-delay:1s;background:#A855F7}
+.ct-star:nth-child(6){width:4px;height:4px;bottom:10%;left:8%;animation-delay:1.25s;background:#DDD6FE}
+.ct-text{font-family:'DM Serif Display',serif;font-size:18px;color:var(--text);letter-spacing:.3px}
+.ct-sub{font-size:11px;color:var(--text3);margin-top:6px;letter-spacing:1px}
+.toast{position:fixed;bottom:calc(20px + var(--safe-bot));left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid var(--border2);padding:9px 18px;border-radius:20px;font-size:12px;color:var(--text);z-index:300;opacity:0;pointer-events:none;transition:all .2s;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast.show{opacity:1}
+.toast-undo{position:fixed;bottom:calc(20px + var(--safe-bot));left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid var(--border2);padding:10px 16px;border-radius:20px;font-size:12px;color:var(--text);z-index:300;display:none;align-items:center;gap:12px;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.5);animation:toastIn .2s ease}
+.toast-undo.show{display:flex}
+.toast-undo-msg{color:var(--text2)}
+.toast-undo-btn{background:var(--accent);border:none;border-radius:10px;color:#fff;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;padding:4px 12px}
+.toast-undo-count{font-size:13px;font-weight:700;color:var(--accent);min-width:16px;text-align:center}
+.toast-undo-bar{position:fixed;bottom:calc(20px + var(--safe-bot));left:50%;transform:translateX(-50%);height:2px;background:var(--accent);z-index:301;transition:width linear;border-radius:2px}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+.rem-del-btn,.med-del-btn{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);cursor:pointer;color:#FCA5A5;font-size:15px;padding:5px 8px;border-radius:8px;transition:all .15s;flex-shrink:0;opacity:.9}
+.rem-del-btn:hover,.med-del-btn:hover{background:rgba(239,68,68,.25);color:#fff;opacity:1;border-color:rgba(239,68,68,.5)}
+.drawer-section{padding:10px 8px 4px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.7px}
+.search-input-row input::placeholder{color:var(--text3)}
+.search-images::-webkit-scrollbar{display:none}
+.search-img:hover{opacity:.85}
+.sf-btn.active{background:rgba(139,92,246,.15);border-color:var(--accent);color:#C4B5FD}
+.search-img-card:hover img{transform:scale(1.05)}
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--s3);border-radius:2px}
+.rem-date-nav{display:flex;align-items:center;gap:8px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0}
+.rem-nav-btn{width:28px;height:28px;background:var(--s2);border:1px solid var(--border);border-radius:7px;color:var(--text2);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
+.rem-today-btn{padding:4px 10px;background:var(--s2);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-family:'Inter',sans-serif;font-size:11px;font-weight:500;cursor:pointer}
+.rem-timeline{flex:1;overflow-y:auto;padding:0 20px 16px}
+.rem-now-line{display:flex;align-items:center;gap:8px;margin:4px 0}
+.rem-now-time{font-size:10px;font-weight:700;color:var(--accent);min-width:36px;text-align:right}
+.rem-now-bar{flex:1;height:1.5px;background:var(--accent);opacity:.6}
+.rem-now-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent);flex-shrink:0}
+.rem-row{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px}
+.rem-row:hover{border-color:var(--border2)}
+.rem-row.done-row{opacity:.45}
+.rem-row-time{font-size:13px;font-weight:700;color:var(--accent);min-width:38px;flex-shrink:0}
+.rem-row-check{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--border2);background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}
+.rem-row-check:hover{border-color:var(--accent)}
+.rem-row-check.done{background:var(--accent);border-color:var(--accent)}
+.rem-row-check.done::after{content:'✓';color:#fff;font-size:11px;font-weight:700}
+.rem-row-title{flex:1;font-size:13px;font-weight:500;color:var(--text);min-width:0}
+.rem-row-title.done{text-decoration:line-through;color:var(--text3)}
+.rem-done-toggle{display:flex;align-items:center;gap:6px;padding:8px 0;cursor:pointer;color:var(--text3);font-size:12px;font-weight:500;background:none;border:none;font-family:'Inter',sans-serif}
+.rem-done-toggle:hover{color:var(--text2)}
+.rem-done-toggle svg{transition:transform .2s;width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+.rem-done-toggle.open svg{transform:rotate(180deg)}
+.med-section-label{padding:14px 20px 6px;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.6px}
+.med-row{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r);margin:0 20px 10px;transition:all .15s}
+.med-row.concluido{opacity:.4;filter:saturate(.3)}
+.med-icon-wrap{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.med-icon-wrap svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.med-info{flex:1;min-width:0}
+.med-name{font-size:13px;font-weight:600;color:var(--text)}
+.med-freq{font-size:11px;color:var(--text3);margin-top:2px}
+.med-next{text-align:center;flex-shrink:0;min-width:60px}
+.med-next-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px}
+.med-next-time{font-size:17px;font-weight:700;line-height:1.2}
+.med-next-day{font-size:10px;color:var(--text3)}
+.med-doses{font-size:10px;color:var(--text3);text-align:center;flex-shrink:0;min-width:56px}
+.med-doses-num{font-size:13px;font-weight:600;color:var(--text2)}
+.med-action-btn{padding:7px 13px;border:none;border-radius:var(--r-sm);font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.med-action-btn.tomar{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 4px 10px var(--glow)}
+.med-action-btn.concluido-btn{background:rgba(34,197,94,.08);color:#22C55E;border:1px solid rgba(34,197,94,.15);cursor:default}
+.med-tip{margin:12px 20px;padding:12px 14px;background:rgba(139,92,246,.06);border:1px solid rgba(139,92,246,.12);border-radius:var(--r);display:flex;gap:10px}
+.med-tip svg{width:16px;height:16px;stroke:#C4B5FD;fill:none;stroke-width:1.5;flex-shrink:0;margin-top:1px}
+.med-tip-title{font-size:11px;font-weight:600;color:#C4B5FD;margin-bottom:2px}
+.med-tip-text{font-size:11px;color:var(--text3)}
+.fin-hero{padding:20px;flex-shrink:0}
+.fin-mes-nav{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:16px}
+.fin-mes-btn{width:28px;height:28px;background:var(--s2);border:1px solid var(--border);border-radius:7px;color:var(--text2);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
+.fin-mes-label{font-size:14px;font-weight:600;color:var(--text)}
+.fin-cards-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.fin-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:14px;position:relative;overflow:hidden}
+.fin-card-accent{position:absolute;top:0;left:0;right:0;height:3px;border-radius:var(--r) var(--r) 0 0}
+.fin-card-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:5px}
+.fin-card-label svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2}
+.fin-card-val{font-size:20px;font-weight:700;color:var(--text);line-height:1}
+.fin-card-sub{font-size:10px;color:var(--text3);margin-top:4px}
+.fin-btns-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fin-action-btn{padding:12px;border:none;border-radius:var(--r);font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+.fin-action-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+.fin-action-btn.entrada{background:rgba(34,197,94,.12);color:#22C55E;border:1px solid rgba(34,197,94,.2)}
+.fin-action-btn.saida{background:rgba(239,68,68,.1);color:#EF4444;border:1px solid rgba(239,68,68,.2)}
+.fin-action-btn:hover{opacity:.85}
+.fin-history{flex:1;overflow-y:auto}
+.fin-hist-section{padding:12px 16px 6px;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px}
+.fin-hist-item{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--border);transition:background .1s;position:relative;background:transparent;touch-action:pan-y;transition:transform .2s ease}
+.fin-hist-item:hover{background:var(--s2)}
+.fin-hist-item:last-child{border-bottom:none}
+.fin-hist-info{flex:1;min-width:0}
+.fin-hist-name{font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fin-hist-cat{font-size:11px;color:var(--text3);margin-top:3px;display:flex;align-items:center;gap:4px}
+.fin-hist-right{text-align:right;flex-shrink:0}
+.fin-hist-val{font-size:14px;font-weight:700}
+.fin-hist-val.neg{color:#EF4444}
+.fin-hist-val.pos{color:#22C55E}
+.fin-hist-date{font-size:10px;color:var(--text3);margin-top:2px}
+.med2-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin:0 20px 12px}
+.med2-top{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.med2-icon{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.med2-icon svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.med2-title{flex:1;min-width:0}
+.med2-name{font-size:15px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.med2-freq{font-size:12px;color:var(--text3);margin-top:2px}
+.med2-del{width:36px;height:36px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.15);cursor:pointer;color:#FCA5A5;border-radius:8px;display:flex;align-items:center;justify-content:center;opacity:.85;transition:all .15s;flex-shrink:0}
+.med2-del:hover{opacity:1;color:#fff;background:rgba(239,68,68,.35);border-color:rgba(239,68,68,.5)}
+.med2-del svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.med2-info{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.med2-info-box{background:var(--s3);border-radius:10px;padding:10px 12px}
+.med2-info-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;display:flex;align-items:center;gap:5px}
+.med2-info-label svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;flex-shrink:0}
+.med2-info-val{font-size:20px;font-weight:700;line-height:1.1}
+.med2-info-sub{font-size:11px;margin-top:2px}
+.med2-btn{width:100%;padding:11px;border:none;border-radius:var(--r-sm);font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:opacity .15s}
+.med2-btn:hover{opacity:.85}
+.med2-btn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.med2-btn.tomar{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 4px 10px var(--glow)}
+.med2-btn.tomado{background:rgba(34,197,94,.08);color:#22C55E;border:1px solid rgba(34,197,94,.15);cursor:default}
+.med2-btn.pendente{background:linear-gradient(135deg,#F59E0B,#FCD34D);color:#1a1200;box-shadow:0 4px 10px rgba(245,158,11,.3)}
+.med2-section-label{padding:16px 20px 8px;font-size:13px;font-weight:700;color:var(--text)}
+/* ── Financeiro: swipe delete + hover lixeira ── */
+.fin-hist-wrap{position:relative;overflow:hidden}
+.fin-hist-wrap+.fin-hist-wrap{border-top:1px solid var(--border)}
+.fin-hist-delete-bg{position:absolute;right:0;top:0;bottom:0;width:0;background:rgba(239,68,68,.15);display:flex;align-items:center;justify-content:center;color:var(--red);font-size:18px;pointer-events:none;transition:width .15s}
+.fin-hist-delete-bg{display:none!important}
+.fin-hist-item{position:relative;background:transparent;touch-action:pan-y;transition:transform .2s ease}
+.fin-hist-item:hover{background:var(--s2)}
+.fin-del-btn{flex-shrink:0;margin-left:8px}
+.fin-empty{text-align:center;padding:40px 16px;color:var(--text3)}
+.cofre-card{background:var(--s2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r);padding:14px 14px 14px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px}
+.mem-header-stats{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0}
+.mem-stat{text-align:center;min-width:44px}
+.mem-stat-num{font-size:20px;font-weight:700;color:#C4B5FD;line-height:1}
+.mem-stat-label{font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:.04em}
+.mem-stat-divider{width:1px;height:28px;background:var(--border);flex-shrink:0}
+.mem-search-bar{flex:1;display:flex;align-items:center;gap:8px;background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:6px 12px}
+.mem-search-bar input{flex:1;background:none;border:none;color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none}
+.mem-search-bar input::placeholder{color:var(--text3)}
+.mem-search-bar svg{width:14px;height:14px;stroke:var(--text3);fill:none;stroke-width:2;flex-shrink:0}
+.mem-filters{display:flex;gap:6px;padding:10px 16px;overflow-x:auto;scrollbar-width:none;flex-shrink:0;border-bottom:1px solid var(--border)}
+.mem-filters::-webkit-scrollbar{display:none}
+.mem-filter{padding:5px 12px;background:var(--s2);border:1px solid var(--border);border-radius:16px;font-size:11px;font-weight:500;color:var(--text3);cursor:pointer;white-space:nowrap;transition:all .15s;font-family:'Inter',sans-serif}
+.mem-filter:hover{border-color:var(--border2);color:var(--text2)}
+.mem-filter.active{background:rgba(139,92,246,.12);border-color:rgba(139,92,246,.35);color:#C4B5FD}
+.mem-list{flex:1;overflow-y:auto;padding:12px 16px 20px}
+.mem-group{margin-bottom:18px}
+.mem-group-header{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.mem-group-emoji{font-size:14px;line-height:1;flex-shrink:0}
+.mem-group-label{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;flex:1}
+.mem-group-count{font-size:10px;color:var(--text3);background:var(--s3);padding:2px 7px;border-radius:10px}
+.mem-card{background:var(--s2);border:1px solid var(--border);border-left:3px solid #6B7280;border-radius:12px;padding:11px 12px;margin-bottom:6px;display:flex;align-items:flex-start;gap:10px;transition:all .15s}
+.mem-card:hover{border-color:var(--border2);transform:translateX(1px)}
+.mem-card-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;margin-top:1px}
+.mem-card-body{flex:1;min-width:0}
+.mem-card-valor{font-size:13px;color:var(--text);line-height:1.5;word-break:break-word}
+.mem-card-meta{font-size:10px;color:var(--text3);margin-top:3px;text-transform:capitalize}
+.mem-card-del{width:24px;height:24px;background:none;border:none;cursor:pointer;color:var(--text3);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;opacity:0;margin-top:2px}
+.mem-card:hover .mem-card-del{opacity:.5}
+.mem-card-del:hover{background:rgba(239,68,68,.1);color:#EF4444;opacity:1!important}
+.mem-card-del svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round}
+.mem-pendencia-card{background:var(--s2);border:1px solid rgba(245,158,11,.2);border-left:3px solid #F59E0B;border-radius:12px;padding:11px 12px;margin-bottom:6px;display:flex;align-items:flex-start;gap:10px;transition:all .15s}
+.mem-pendencia-card:hover{border-color:rgba(245,158,11,.4)}
+.mem-pendencia-icon{width:30px;height:30px;border-radius:8px;background:rgba(245,158,11,.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px}
+.mem-pendencia-body{flex:1;min-width:0}
+.mem-pendencia-assunto{font-size:13px;font-weight:600;color:#FCD34D;margin-bottom:3px}
+.mem-pendencia-ctx{font-size:12px;color:var(--text2);line-height:1.5}
+.mem-pendencia-retomar{font-size:11px;color:var(--text3);margin-top:4px;font-style:italic}
+.mem-pendencia-del{width:24px;height:24px;background:none;border:none;cursor:pointer;color:var(--text3);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;opacity:.4;transition:all .15s;margin-top:2px}
+.mem-pendencia-del:hover{opacity:1;background:rgba(239,68,68,.1);color:#EF4444}
+.mem-pendencia-del svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round}
+.mem-empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 24px;text-align:center}
+.mem-empty-brain{width:52px;height:52px;border-radius:50%;background:rgba(139,92,246,.08);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:22px}
+.mem-empty-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px}
+.mem-empty-sub{font-size:12px;color:var(--text3);line-height:1.6;max-width:240px}
+.cofre-card-body{flex:1;min-width:0}
+.cofre-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px}
+.cofre-name{font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px}
+.cofre-lock{color:#FCA5A5;display:flex;align-items:center;transition:color .3s}
+.cofre-lock.unlocked{color:var(--green)}
+.cofre-lock .lock-shackle{transform-origin:center bottom;transition:transform .35s ease,opacity .35s ease}
+.cofre-lock.unlocked .lock-shackle{transform:rotate(-30deg) translateY(-2px);opacity:.6}
+.cofre-badge{font-size:10px;font-weight:600;padding:2px 7px;border-radius:6px;background:rgba(239,68,68,.12);color:#FCA5A5}
+.cofre-actions{display:flex;gap:5px}
+.cofre-btn{width:26px;height:26px;border:none;background:none;cursor:pointer;opacity:.4;transition:opacity .15s;border-radius:6px;display:flex;align-items:center;justify-content:center}
+.cofre-btn:hover{opacity:1;background:var(--s3)}
+.cofre-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.cofre-field{font-size:11px;color:var(--text3);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.cofre-val{color:var(--text2);font-family:monospace}
+.cofre-hidden{letter-spacing:2px;color:var(--text3)}
+.cofre-eye{background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.15);cursor:pointer;opacity:.9;transition:all .15s;display:flex;align-items:center;padding:5px 8px;border-radius:8px;color:#C4B5FD}
+.cofre-eye:hover{opacity:1;background:rgba(139,92,246,.2)}
+.cofre-eye svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.cofre-date{font-size:10px;color:var(--text3);margin-top:8px}
+.pref-section{padding:16px 20px;border-bottom:1px solid var(--border)}
+.pref-label{font-size:11px;font-weight:600;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.6px}
+.mood-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.mood-card{padding:12px;border:1px solid var(--border);border-radius:var(--r-sm);cursor:pointer;transition:all .15s;background:none;font-family:'Inter',sans-serif;text-align:left}
+.mood-card:hover{border-color:var(--border2)}
+.mood-card.active{border-color:var(--accent);background:rgba(139,92,246,.08)}
+.mood-icon{font-size:18px;display:block;margin-bottom:5px}
+.mood-name{font-size:12px;font-weight:600;color:var(--text)}
+.mood-desc{font-size:11px;color:var(--text3);margin-top:2px}
+.pref-field{margin-bottom:12px}
+.pref-field label{display:block;font-size:11px;color:var(--text2);margin-bottom:5px}
+.pref-field input{width:100%;padding:9px 12px;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none}
+.pref-field input:focus{border-color:var(--accent)}
+.pref-save-btn{width:100%;padding:11px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 12px var(--glow);margin-top:4px}
+/* ── Settings v2 ── */
+.cfg-body{flex:1;overflow-y:auto;padding:0 0 32px}
+.cfg-section{margin:20px 16px 0;background:var(--s2);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.cfg-section-header{display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid var(--border)}
+.cfg-section-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.cfg-section-icon svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.cfg-section-title{font-size:15px;font-weight:600;color:var(--text)}
+.cfg-section-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.cfg-mood-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;padding:0}
+.cfg-mood-item{display:flex;align-items:center;gap:12px;padding:14px 18px;cursor:pointer;transition:background .15s;border-bottom:1px solid var(--border);border-right:1px solid var(--border);position:relative}
+.cfg-mood-item:nth-child(even){border-right:none}
+.cfg-mood-item:nth-last-child(-n+2){border-bottom:none}
+.cfg-mood-grid-3{grid-template-columns:1fr}
+.cfg-mood-grid-3 .cfg-mood-item{border-right:none}
+.cfg-mood-grid-3 .cfg-mood-item:last-child{border-bottom:none}
+.cfg-mood-item:hover{background:rgba(255,255,255,.02)}
+.cfg-mood-item.active{background:rgba(139,92,246,.06)}
+.cfg-mood-emoji{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;background:var(--s3)}
+.cfg-mood-info{flex:1;min-width:0}
+.cfg-mood-name{font-size:13px;font-weight:600;color:var(--text)}
+.cfg-mood-desc{font-size:11px;color:var(--text3);margin-top:1px}
+.cfg-mood-radio{width:18px;height:18px;border-radius:50%;border:2px solid var(--border2);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.cfg-mood-item.active .cfg-mood-radio{border-color:var(--accent);background:var(--accent)}
+.cfg-mood-item.active .cfg-mood-radio::after{content:'';width:6px;height:6px;border-radius:50%;background:#fff}
+.cfg-preview{padding:16px 18px;background:var(--s1)}
+.cfg-preview-label{font-size:11px;color:var(--accent);font-weight:600;display:flex;align-items:center;gap:6px;margin-bottom:10px}
+.cfg-preview-bubble{background:var(--s2);border:1px solid var(--border);border-radius:12px;border-bottom-left-radius:4px;padding:12px 14px;font-size:13px;color:var(--text);line-height:1.6}
+.cfg-preview-sub{font-size:11px;color:var(--text3);margin-top:8px}
+.cfg-preview-sub a{color:var(--accent);text-decoration:none}
+.cfg-field-row{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.cfg-field{padding:14px 18px;border-bottom:1px solid var(--border)}
+.cfg-field:last-child{border-bottom:none}
+.cfg-field-label{font-size:11px;color:var(--text3);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.cfg-field-label svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.5;flex-shrink:0}
+.cfg-field input{width:100%;background:none;border:none;color:var(--text);font-family:'Inter',sans-serif;font-size:14px;font-weight:500;outline:none;padding:0}
+.cfg-field input::placeholder{color:var(--text3)}
+.cfg-field-sub{font-size:11px;color:var(--text3);margin-top:4px}
+.cfg-wa-row{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)}
+.cfg-wa-left{display:flex;align-items:center;gap:10px}
+.cfg-wa-icon{width:34px;height:34px;border-radius:9px;background:rgba(34,197,94,.1);display:flex;align-items:center;justify-content:center}
+.cfg-wa-icon svg{width:16px;height:16px;stroke:#22C55E;fill:none;stroke-width:1.5}
+.cfg-wa-title{font-size:13px;font-weight:500;color:var(--text)}
+.cfg-wa-sub{font-size:11px;color:var(--text3);margin-top:1px}
+.cfg-wa-badge{background:rgba(34,197,94,.12);color:#22C55E;border:1px solid rgba(34,197,94,.2);font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;display:flex;align-items:center;gap:5px}
+.cfg-wa-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:#22C55E}
+.cfg-wa-phone{padding:8px 18px 8px;font-size:13px;color:var(--text2);font-weight:500}
+.cfg-wa-change{padding:0 18px 14px}
+.cfg-wa-change-btn{background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.2);color:#C4B5FD;font-family:'Inter',sans-serif;font-size:12px;font-weight:500;padding:6px 14px;border-radius:8px;cursor:pointer;transition:all .15s}
+.cfg-wa-change-btn:hover{background:rgba(139,92,246,.2)}
+.cfg-fin-row{display:flex;align-items:center;gap:14px;padding:16px 18px}
+.cfg-fin-icon{width:48px;height:48px;border-radius:14px;background:rgba(139,92,246,.12);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.cfg-fin-icon svg{width:22px;height:22px;stroke:#C4B5FD;fill:none;stroke-width:1.5}
+.cfg-fin-info{flex:1}
+.cfg-fin-label{font-size:12px;color:var(--text3);margin-bottom:4px}
+.cfg-fin-val{font-size:22px;font-weight:700;color:var(--text)}
+.cfg-fin-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.cfg-fin-btn{background:var(--s3);border:1px solid var(--border);color:var(--text2);font-family:'Inter',sans-serif;font-size:12px;font-weight:500;padding:7px 14px;border-radius:8px;cursor:pointer;white-space:nowrap}
+.cfg-fin-btn:hover{border-color:var(--border2);color:var(--text)}
+.cfg-security{display:flex;align-items:center;gap:12px;padding:14px 18px}
+.cfg-security-icon{width:34px;height:34px;border-radius:9px;background:rgba(139,92,246,.1);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.cfg-security-icon svg{width:16px;height:16px;stroke:#C4B5FD;fill:none;stroke-width:1.5}
+.cfg-security-text{flex:1}
+.cfg-security-title{font-size:13px;font-weight:600;color:var(--text)}
+.cfg-security-sub{font-size:11px;color:var(--text3);margin-top:1px}
+.cfg-security-badge{color:#22C55E;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.cfg-security-badge svg{width:14px;height:14px;stroke:#22C55E;fill:none;stroke-width:2}
+.cfg-save-bar{padding:16px;background:var(--bg);border-top:1px solid var(--border);flex-shrink:0}
+.cfg-save-btn{width:100%;padding:13px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--r);color:#fff;font-family:'Inter',sans-serif;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px var(--glow);display:flex;align-items:center;justify-content:center;gap:8px}
+.cfg-save-btn svg{width:16px;height:16px;stroke:#fff;fill:none;stroke-width:2}
+@media(max-width:768px){.cfg-field-row{grid-template-columns:1fr}.cfg-mood-grid{grid-template-columns:1fr}.cfg-mood-item{border-right:none!important}.cfg-mood-item:nth-last-child(-n+2){border-bottom:1px solid var(--border)}.cfg-mood-item:last-child{border-bottom:none}.cfg-perfil-grid{grid-template-columns:1fr!important}.cfg-perfil-grid>div:first-child{border-right:none!important;border-bottom:1px solid var(--border)}}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);z-index:100;display:none;align-items:center;justify-content:center;padding:16px}
+.overlay.open{display:flex}
+.modal{background:var(--s2);border:1px solid var(--border2);border-radius:20px;padding:24px;width:100%;max-width:420px;max-height:90dvh;overflow-y:auto;animation:modalIn .2s ease}
+@keyframes modalIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
+.modal-title{font-family:'Inter',sans-serif;font-size:16px;font-weight:600;color:var(--text);margin-bottom:18px}
+.mf{margin-bottom:12px}
+.mf label{display:block;font-size:11px;font-weight:500;color:var(--text2);margin-bottom:5px}
+.mf input,.mf textarea{width:100%;padding:9px 12px;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none}
+.mf select{width:100%;padding:9px 12px;background:var(--s3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none;cursor:pointer;-webkit-appearance:none;appearance:none}
+.mf select:focus{border-color:var(--accent)}
+.mf-select-wrap{position:relative}
+.mf-select-wrap::after{content:'';position:absolute;right:12px;top:50%;transform:translateY(-50%);width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--text3);pointer-events:none}
+.mf-select-wrap select{padding-right:30px}
+.mf input[type="date"]{font-size:13px;padding:9px 12px;cursor:pointer;-webkit-appearance:none;appearance:none}
+.mf textarea{resize:none;height:65px}
+.mf input:focus,.mf select:focus,.mf textarea:focus{border-color:var(--accent)}
+.mf-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.modal-btns{display:flex;gap:8px;margin-top:18px}
+.btn-cancel{flex:1;padding:10px;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text2);font-family:'Inter',sans-serif;font-size:13px;cursor:pointer}
+.btn-save{flex:2;padding:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--r-sm);color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 10px var(--glow)}
+select option{background:var(--s2)}
+.ph-back{width:36px;height:36px;background:none;border:none;cursor:pointer;display:none;align-items:center;justify-content:center;flex-shrink:0;color:var(--text2);margin-right:4px;border-radius:8px;padding:0}
+.ph-back:hover{background:var(--s2);color:var(--text)}
+.ph-back svg{width:18px;height:18px}
+.tb-clara-avatar-mobile,.tb-info-mobile{display:none}
+@media(max-width:768px){.sidebar{display:none}.tb-menu{display:flex!important}.tb-expand-btn{display:none!important}.drawer{display:flex}.drawer-overlay{display:block}.ph-back{display:flex}.tb-info-desktop{display:none!important}.tb-clara-avatar-mobile,.tb-info-mobile{display:flex!important}.tb-info-mobile{display:block!important}#topbar .ph-icon{display:none!important}}
+</style>
+</head>
+<body>
+<div id="loading-screen" style="position:fixed;inset:0;background:#08090D;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center">
+  <div class="ls-stars">
+    <div class="ls-star"></div>
+    <div class="ls-star"></div>
+    <div class="ls-star"></div>
+    <div class="ls-star"></div>
+    <div class="ls-star"></div>
+    <div class="ls-star"></div>
+  </div>
+  <div class="ls-title">Clara</div>
+  <div class="ls-sub">Entrando...</div>
+</div>
+<div id="auth-screen">
+  <div class="auth-logo">✨</div>
+  <div class="auth-title">Clara</div>
+  <div class="auth-sub">Sua assistente pessoal inteligente</div>
+  <div class="auth-box">
+    <div class="auth-tabs"><div class="auth-tab active" onclick="setAuthTab('login')" id="tab-login">Entrar</div><div class="auth-tab" onclick="setAuthTab('register')" id="tab-register">Criar conta</div></div>
+    <div class="auth-field"><label>E-mail</label><input type="email" id="auth-email" placeholder="seu@email.com"/></div>
+    <div class="auth-field"><label>Senha</label><input type="password" id="auth-password" placeholder="••••••••"/></div>
+    <div class="auth-field" id="auth-name-field" style="display:none"><label>Seu nome</label><input type="text" id="auth-name" placeholder="Como quer ser chamado?"/></div>
+    <button class="auth-btn" id="auth-email-btn" onclick="authWithEmail()">Entrar</button>
+    <div class="auth-error" id="auth-error"></div>
+    <div class="auth-divider">ou</div>
+    <button class="auth-google" onclick="authWithGoogle()"><svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 002.38-5.88c0-.57-.05-.66-.15-1.18z"/><path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 01-7.18-2.54H1.83v2.07A8 8 0 008.98 17z"/><path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 010-3.04V5.41H1.83a8 8 0 000 7.18l2.67-2.07z"/><path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 001.83 5.4L4.5 7.49a4.77 4.77 0 014.48-3.31z"/></svg>Continuar com Google</button>
+  </div>
+</div>
+<div id="phone-screen" class="hidden">
+  <div class="phone-screen-box">
+    <div class="phone-screen-title">Quase lá! 📱</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:20px">Informe seu WhatsApp para receber lembretes.</div>
+    <div class="phone-screen-user" id="phone-screen-user"></div>
+    <div class="auth-field"><label>Número WhatsApp (com DDD, sem +55)</label><input type="tel" id="phone-setup-input" placeholder="Ex: 43999998888"/></div>
+    <button class="auth-btn" onclick="savePhone()">Salvar e continuar</button>
+    <div class="auth-error" id="phone-error"></div>
+  </div>
+</div>
+<div class="app-layout" id="main-app" style="display:none">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="tb-clara-avatar" id="sb-clara-avatar"><img src="/avatar" onload="this.classList.add('loaded')" onerror="this.style.display='none';this.parentElement.style.animation='none';this.parentElement.insertAdjacentHTML('beforeend','<span style=\'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:16px;z-index:2\'>✨</span>')" alt="Clara"/></div>
+      <div class="tb-info sidebar-header-info"><div class="tb-name">Clara</div><div class="tb-status">Online agora</div></div>
+      <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" onclick="toggleSidebar()" title="Recolher menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="s-item active" onclick="navTo('chat')" data-nav="chat"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="s-item-label">Mensagens</span></div>
+      <div class="s-item" onclick="navTo('lembretes')" data-nav="lembretes"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><span class="s-item-label">Lembretes</span><span class="s-badge" id="d-badge-rem" style="display:none">0</span></div>
+      <div class="s-item" onclick="navTo('saude')" data-nav="saude"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg><span class="s-item-label">Saúde</span><span class="s-badge" id="d-badge-med" style="display:none">0</span></div>
+      <div class="s-item" onclick="navTo('financeiro')" data-nav="financeiro"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg><span class="s-item-label">Financeiro</span></div>
+      <div class="s-item" onclick="navTo('listas')" data-nav="listas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span class="s-item-label">Listas</span><span class="s-badge" id="d-badge-list" style="display:none">0</span></div>
+      <div class="s-item" onclick="navTo('cofre')" data-nav="cofre"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span class="s-item-label">Cofre</span></div>
+      <div class="s-item" onclick="navTo('memorias')" data-nav="memorias"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.5 4.5H18l-3.75 2.75 1.5 4.5L12 11l-3.75 2.75 1.5-4.5L6 6.5h4.5z"/><circle cx="19" cy="4" r="1.2" fill="currentColor" stroke="none"/><circle cx="5" cy="19" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="19" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span class="s-item-label">Memórias</span></div>
+      <div class="sidebar-divider"></div>
+      <div class="s-item" onclick="navTo('preferencias')" data-nav="preferencias"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="s-item-label">Configurações</span></div>
+    </nav>
+    <div class="sidebar-foot">
+      <button class="s-foot-btn danger" onclick="doLogout()">
+        <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span class="s-foot-label">Sair</span>
+      </button>
+    </div>
+  </aside>
+  <div class="main-content">
+    <div class="pages">
+      <div class="page active" id="page-chat">
+        <div class="topbar" id="topbar">
+          <button class="tb-menu" onclick="toggleDrawer()"><span></span><span></span><span></span></button>
+          <div class="ph-icon" style="background:rgba(139,92,246,.1);color:#C4B5FD"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+          <div class="tb-info-desktop" style="flex:1"><div class="ph-title">Chat</div><div class="ph-sub">Converse naturalmente com a Clara.</div></div>
+          <div class="tb-clara-avatar tb-clara-avatar-mobile" id="tb-clara-avatar-mobile"><img src="/avatar" onload="this.classList.add('loaded')" onerror="this.style.display='none';this.parentElement.style.animation='none';this.parentElement.insertAdjacentHTML('beforeend','<span style=\'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:16px;z-index:2\'>✨</span>')" alt="Clara"/></div>
+          <div class="tb-info tb-info-mobile" style="flex:1"><div class="tb-name">Clara</div><div class="tb-status">Online agora</div></div>
+          <button class="tb-nova" onclick="newChat()">+ Novo Chat</button>
+          <div class="tb-icon-btn" id="private-btn" onclick="togglePrivate()" style="cursor:pointer">🔓</div>
+        </div>
+        <div class="private-banner" id="priv-banner">🔒 <strong>Modo privado</strong></div>
+        <div class="msgs" id="msgs">
+          <div class="welcome-screen" id="welcome">
+            <div style="font-size:48px;margin-bottom:20px">✨</div>
+            <div class="welcome-greeting" id="welcome-greeting">BOA NOITE</div>
+            <div class="welcome-title">O que posso ajudar,<br><span class="welcome-name" id="welcome-name">Washington</span>?</div>
+            <div class="welcome-sub">Sou a Clara, sua assistente pessoal</div>
+          </div>
+        </div>
+        <div class="input-area">
+          <div class="chips-row">
+            <span class="chip" onclick="cs('Ver minha agenda de hoje')">Agenda</span>
+            <span class="chip" onclick="cs('Criar um lembrete')">Lembrete</span>
+            <span class="chip" onclick="cs('Registrar um gasto')">Gasto</span>
+            <span class="chip" onclick="cs('Adicionar remédio')">Remédio</span>
+            <span class="chip" onclick="cs('Minhas listas')">Listas</span>
+            
+          </div>
+          <div class="input-row">
+            <span class="input-spark">✦</span>
+            <textarea id="chat-msg" rows="1" placeholder="Pergunte ou peça algo para a Clara..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"></textarea>
+            <button class="mic-btn" id="mic-btn" onclick="toggleMic()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
+            <button class="send-btn" onclick="sendChat()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="page" id="page-lembretes">
+        <div class="ph"><button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><div class="ph-icon" style="background:rgba(139,92,246,.12);color:#C4B5FD"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div><div class="ph-title">Lembretes</div><div class="ph-sub">Nunca esqueça nada</div></div><div class="ph-actions"><button class="btn-p" onclick="openModal('m-lembrete')">+ Novo</button></div></div>
+        <div class="rem-date-nav"><button class="rem-nav-btn" onclick="changeRemDate(-1)">‹</button><div style="flex:1"><div style="font-size:13px;font-weight:600;color:var(--text)" id="rem-date-label">Hoje</div><div style="font-size:11px;color:var(--text3)" id="rem-date-sub"></div></div><button class="rem-today-btn" id="rem-today-btn" onclick="goRemToday()">Hoje</button><button class="rem-nav-btn" onclick="changeRemDate(1)">›</button></div>
+        <div class="rem-timeline" id="rem-timeline"><div class="spin"></div></div>
+      </div>
+      <div class="page" id="page-saude">
+        <div class="ph"><button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><div class="ph-icon" style="background:rgba(239,68,68,.1);color:#FCA5A5"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></div><div><div class="ph-title">Saúde</div><div class="ph-sub">Acompanhe seus medicamentos</div></div><div class="ph-actions"><button class="btn-p" onclick="openModal('m-remedio')">+ Adicionar</button></div></div>
+        <div class="scroll-body" id="saude-body"><div class="spin"></div></div>
+      </div>
+      <div class="page" id="page-financeiro">
+        <div class="ph"><button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><div class="ph-icon" style="background:rgba(245,158,11,.1);color:#FCD34D"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></div><div><div class="ph-title">Financeiro</div><div class="ph-sub">Controle seus gastos</div></div></div>
+        <div class="fin-hero">
+          <div class="fin-mes-nav">
+            <button class="fin-mes-btn" onclick="finMesAnterior()">‹</button>
+            <span class="fin-mes-label" id="fin-mes-label">Junho 2026</span>
+            <button class="fin-mes-btn" onclick="finMesProximo()">›</button>
+          </div>
+          <div class="fin-cards-row">
+            <div class="fin-card">
+              <div class="fin-card-accent" style="background:linear-gradient(90deg,#EF4444,#F87171)"></div>
+              <div class="fin-card-label"><svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>Gasto do mês</div>
+              <div class="fin-card-val" id="fs-total">R$ 0,00</div>
+              <div class="fin-card-sub" id="fs-count-sub">0 lançamentos</div>
+            </div>
+            <div class="fin-card">
+              <div class="fin-card-accent" style="background:linear-gradient(90deg,#22C55E,#4ADE80)"></div>
+              <div class="fin-card-label"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Saldo restante</div>
+              <div class="fin-card-val" id="fs-saldo" style="font-size:16px">—</div>
+              <div class="fin-card-sub" id="fs-saldo-sub">orçamento não definido</div>
+            </div>
+          </div>
+          <div class="fin-btns-row">
+            <button class="fin-action-btn entrada" onclick="openModal('m-entrada')">
+              <svg viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+              Recebi
+            </button>
+            <button class="fin-action-btn saida" onclick="openModal('m-gasto')">
+              <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+              Gastei
+            </button>
+          </div>
+        </div>
+        <div class="fin-history" id="fin-history"><div class="spin"></div></div>
+      </div>
+      <div class="page" id="page-listas">
+        <div class="ph"><button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><div class="ph-icon" style="background:rgba(34,197,94,.1);color:#6EE7B7"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div><div class="ph-title">Listas</div><div class="ph-sub">Mercado, farmácia e mais</div></div><div class="ph-actions"><button class="btn-p" onclick="openModal('m-lista')">+ Nova lista</button></div></div>
+        <div class="scroll-body" style="padding:14px 16px" id="listas-body"><div class="spin"></div></div>
+      </div>
+      <div class="page" id="page-cofre">
+        <div class="ph"><button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><div class="ph-icon" style="background:rgba(139,92,246,.1);color:#C4B5FD"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><div><div class="ph-title">Cofre</div><div class="ph-sub">Senhas e segredos protegidos</div></div><div class="ph-actions"><button class="btn-p" onclick="openModal('m-cofre')">+ Novo</button></div></div>
+        <div class="scroll-body" style="padding:14px 20px" id="cofre-body"><div class="spin"></div></div>
+      </div>
+      <div class="page" id="page-memorias" style="display:flex;flex-direction:column">
+        <div class="ph" style="flex-shrink:0">
+          <button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+          <div class="ph-icon" style="background:rgba(139,92,246,.1);color:#C4B5FD"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.5 4.5H18l-3.75 2.75 1.5 4.5L12 11l-3.75 2.75 1.5-4.5L6 6.5h4.5z"/><circle cx="19" cy="4" r="1.2" fill="currentColor" stroke="none"/><circle cx="5" cy="19" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="19" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></div>
+          <div style="flex:1"><div class="ph-title">Memórias</div><div class="ph-sub">O que a Clara sabe sobre você</div></div>
+        </div>
+        <div class="mem-header-stats">
+          <div class="mem-stat"><div class="mem-stat-num" id="mem-total-num">—</div><div class="mem-stat-label">memórias</div></div>
+          <div class="mem-stat-divider"></div>
+          <div class="mem-search-bar"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="mem-search-input" placeholder="Buscar memórias..." oninput="filtrarMemorias()"/></div>
+        </div>
+        <div class="mem-filters" id="mem-filters">
+          <button class="mem-filter active" data-cat="todas" onclick="setMemFilter('todas')">Todas</button>
+          <button class="mem-filter" data-cat="pendencias" onclick="setMemFilter('pendencias')">🟡 Em aberto</button>
+          <button class="mem-filter" data-cat="relacionamento" onclick="setMemFilter('relacionamento')">❤️ Relacionamento</button>
+          <button class="mem-filter" data-cat="filhos" onclick="setMemFilter('filhos')">👶 Filhos</button>
+          <button class="mem-filter" data-cat="familia" onclick="setMemFilter('familia')">👪 Família</button>
+          <button class="mem-filter" data-cat="trabalho" onclick="setMemFilter('trabalho')">💼 Trabalho</button>
+          <button class="mem-filter" data-cat="hobbies" onclick="setMemFilter('hobbies')">🎯 Hobbies</button>
+          <button class="mem-filter" data-cat="entretenimento" onclick="setMemFilter('entretenimento')">🎬 Entretenimento</button>
+          <button class="mem-filter" data-cat="alimentacao" onclick="setMemFilter('alimentacao')">🍔 Alimentação</button>
+          <button class="mem-filter" data-cat="metas" onclick="setMemFilter('metas')">🚀 Metas</button>
+          <button class="mem-filter" data-cat="saude" onclick="setMemFilter('saude')">💊 Saúde</button>
+          <button class="mem-filter" data-cat="personalidade" onclick="setMemFilter('personalidade')">✨ Personalidade</button>
+          <button class="mem-filter" data-cat="datas" onclick="setMemFilter('datas')">📅 Datas</button>
+        </div>
+        <div class="mem-list" id="memorias-body"><div class="spin"></div></div>
+      </div>
+
+      <div class="page" id="page-preferencias" style="display:flex;flex-direction:column">
+        <div class="ph" style="flex-shrink:0">
+          <button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+          <div class="ph-icon" style="background:rgba(139,92,246,.1);color:#C4B5FD"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+          <div><div class="ph-title">Configurações</div><div class="ph-sub">Personalize a Clara do seu jeito</div></div>
+        </div>
+
+        <div class="cfg-body">
+
+          <!-- Personalidade -->
+          <div class="cfg-section">
+            <div class="cfg-section-header">
+              <div class="cfg-section-icon" style="background:rgba(139,92,246,.12);color:#C4B5FD">
+                <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+              </div>
+              <div>
+                <div class="cfg-section-title">Personalidade da Clara</div>
+                <div class="cfg-section-sub">Escolha como a Clara deve se comunicar com você.</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+              <div class="cfg-mood-grid cfg-mood-grid-3" style="border-right:1px solid var(--border)">
+                <div class="cfg-mood-item active" onclick="selectMood('clara_sendo_clara')" data-mood="clara_sendo_clara">
+                  <div class="cfg-mood-emoji">👩🏻</div>
+                  <div class="cfg-mood-info"><div class="cfg-mood-name">Clara Sendo Clara</div><div class="cfg-mood-desc">Se adapta a você</div></div>
+                  <div class="cfg-mood-radio"></div>
+                </div>
+                <div class="cfg-mood-item" onclick="selectMood('carinhoso')" data-mood="carinhoso">
+                  <div class="cfg-mood-emoji">🥰</div>
+                  <div class="cfg-mood-info"><div class="cfg-mood-name">Simpática</div><div class="cfg-mood-desc">Carinhosa, leve e animada</div></div>
+                  <div class="cfg-mood-radio"></div>
+                </div>
+                <div class="cfg-mood-item" onclick="selectMood('direto')" data-mood="direto">
+                  <div class="cfg-mood-emoji">🎯</div>
+                  <div class="cfg-mood-info"><div class="cfg-mood-name">Direta</div><div class="cfg-mood-desc">Objetiva e prática</div></div>
+                  <div class="cfg-mood-radio"></div>
+                </div>
+                <div class="cfg-mood-item" onclick="selectMood('sarcastico')" data-mood="sarcastico" style="border-bottom:none">
+                  <div class="cfg-mood-emoji">🔥</div>
+                  <div class="cfg-mood-info"><div class="cfg-mood-name">Sem Filtro</div><div class="cfg-mood-desc">Sincera e sem rodeios</div></div>
+                  <div class="cfg-mood-radio"></div>
+                </div>
+              </div>
+              <div class="cfg-preview">
+                <div class="cfg-preview-label">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  Exemplo de mensagem
+                </div>
+                <div class="cfg-preview-bubble" id="cfg-preview-text">Bom dia, Washington! ☀️<br>Você tem 3 compromissos hoje.<br><br>Vamos fazer acontecer! 💜</div>
+                <div class="cfg-preview-sub" id="cfg-preview-sub">Este é um exemplo de como a Clara se comunica no estilo <a href="#" onclick="return false" id="cfg-preview-link" style="color:var(--accent)">Simpática</a>.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Perfil -->
+          <div class="cfg-section">
+            <div class="cfg-section-header">
+              <div class="cfg-section-icon" style="background:rgba(99,102,241,.12);color:#A5B4FC">
+                <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </div>
+              <div>
+                <div class="cfg-section-title">Perfil</div>
+                <div class="cfg-section-sub">Suas informações pessoais para a Clara te conhecer melhor.</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid var(--border)" class="cfg-perfil-grid">
+              <!-- Nome -->
+              <div style="padding:20px;border-right:1px solid var(--border)">
+                <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+                  <div id="cfg-user-avatar" class="avatar-shimmer" style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.8)" stroke-width="1.5" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  </div>
+                  <div>
+                    <div id="cfg-nome-display" style="font-size:22px;font-weight:700;color:var(--text)">Washington</div>
+                    <div style="font-size:12px;color:var(--text3);margin-top:5px;line-height:1.5">A Clara vai te chamar assim nas conversas, lembretes e mensagens.</div>
+                  </div>
+                </div>
+                <div id="cfg-nome-input-wrap" style="display:none;margin-bottom:10px">
+                  <input type="text" id="pref-nome" placeholder="Como quer ser chamado?" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);padding:9px 12px;color:var(--text);font-family:'Inter',sans-serif;font-size:14px;outline:none"/>
+                </div>
+                <button id="cfg-nome-btn" onclick="const w=document.getElementById('cfg-nome-input-wrap');const open=w.style.display==='none';w.style.display=open?'block':'none';if(open){document.getElementById('pref-nome').focus();this.innerHTML='Cancelar';}else{this.innerHTML='<svg width=\'12\' height=\'12\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\'><path d=\'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7\'/><path d=\'M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z\'/></svg> Alterar nome';}" style="background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.25);color:#C4B5FD;font-family:'Inter',sans-serif;font-size:12px;font-weight:500;padding:7px 16px;border-radius:20px;cursor:pointer;display:flex;align-items:center;gap:6px">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  Alterar nome
+                </button>
+              </div>
+              <!-- WhatsApp -->
+              <div style="padding:20px">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <div style="width:40px;height:40px;border-radius:10px;background:rgba(34,197,94,.1);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="1.5" stroke-linecap="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+                    </div>
+                    <div>
+                      <div style="font-size:13px;font-weight:600;color:var(--text)">WhatsApp conectado</div>
+                      <div style="font-size:11px;color:var(--text3);margin-top:1px">Número usado para receber lembretes</div>
+                    </div>
+                  </div>
+                  <div class="cfg-wa-badge">Conectado</div>
+                </div>
+                <div id="cfg-wa-phone-display" style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:12px">+55 14 99646-6922</div>
+                <div style="position:relative">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2" stroke-linecap="round" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  <input type="tel" id="pref-phone" placeholder="Novo número (com DDD)" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);padding:9px 12px 9px 32px;color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none"/>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Finanças -->
+          <div class="cfg-section">
+            <div class="cfg-section-header">
+              <div class="cfg-section-icon" style="background:rgba(245,158,11,.1);color:#FCD34D">
+                <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+              </div>
+              <div>
+                <div class="cfg-section-title">Finanças</div>
+                <div class="cfg-section-sub">Informações financeiras para ajudar você a ter mais controle.</div>
+              </div>
+            </div>
+            <div class="cfg-fin-row">
+              <div class="cfg-fin-icon">
+                <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              </div>
+              <div class="cfg-fin-info">
+                <div class="cfg-fin-label">Orçamento mensal</div>
+                <div class="cfg-fin-val" id="cfg-saldo-display">—</div>
+                <div class="cfg-fin-sub">A Clara usa este valor para acompanhar seus gastos.</div>
+              </div>
+              <button class="cfg-fin-btn" onclick="document.getElementById('cfg-saldo-input-wrap').style.display='block';this.style.display='none'">Alterar valor</button>
+            </div>
+            <div id="cfg-saldo-input-wrap" style="display:none;padding:0 18px 16px">
+              <input type="number" id="pref-saldo" placeholder="Ex: 3500" step="0.01" min="0" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);padding:9px 12px;color:var(--text);font-family:'Inter',sans-serif;font-size:14px;outline:none"/>
+              <div style="font-size:11px;color:var(--text3);margin-top:6px">Ou diga no chat: "meu orçamento é 3500"</div>
+            </div>
+          </div>
+
+          <!-- Segurança -->
+          <div class="cfg-section">
+            <div class="cfg-security">
+              <div class="cfg-security-icon">
+                <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              </div>
+              <div class="cfg-security-text">
+                <div class="cfg-security-title">Seus dados estão protegidos</div>
+                <div class="cfg-security-sub">Todas as informações são criptografadas e armazenadas com segurança.</div>
+              </div>
+              <div class="cfg-security-badge">
+                100% Seguro
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- Gerenciar Usuários (admin/limpeza) -->
+          <div class="cfg-section" style="margin-bottom:20px">
+            <div class="cfg-section-header">
+              <div class="cfg-section-icon" style="background:rgba(239,68,68,.1);color:#FCA5A5">
+                <svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/><line x1="17" y1="8" x2="22" y2="13"/><line x1="22" y1="8" x2="17" y2="13"/></svg>
+              </div>
+              <div>
+                <div class="cfg-section-title">Gerenciar usuários</div>
+                <div class="cfg-section-sub">Números duplicados ou de teste podem ser bloqueados ou excluídos.</div>
+              </div>
+            </div>
+            <div id="admin-usuarios-body" style="padding:14px 18px"><div style="font-size:12px;color:var(--text3)">Carregando...</div></div>
+          </div>
+
+        </div>
+
+        <div class="cfg-save-bar">
+          <button class="cfg-save-btn" onclick="savePrefs()">
+            <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Salvar alterações
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-head"></div>
+  <div class="drawer-nav">
+    <div class="drawer-section">Navegação</div>
+    <div class="d-item active" onclick="navTo('chat')" data-nav="chat"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Mensagens</div>
+    <div class="d-item" onclick="navTo('lembretes')" data-nav="lembretes"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Lembretes <span class="d-badge" id="d-badge-rem2" style="display:none">0</span></div>
+    <div class="d-item" onclick="navTo('saude')" data-nav="saude"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg> Saúde <span class="d-badge" id="d-badge-med2" style="display:none">0</span></div>
+    <div class="d-item" onclick="navTo('financeiro')" data-nav="financeiro"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> Financeiro</div>
+    <div class="d-item" onclick="navTo('listas')" data-nav="listas"><svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Listas <span class="d-badge" id="d-badge-list2" style="display:none">0</span></div>
+    <div class="d-item" onclick="navTo('cofre')" data-nav="cofre"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Cofre</div>
+    <div class="d-item" onclick="navTo('memorias')" data-nav="memorias"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.5 4.5H18l-3.75 2.75 1.5 4.5L12 11l-3.75 2.75 1.5-4.5L6 6.5h4.5z"/><circle cx="19" cy="4" r="1.2" fill="currentColor" stroke="none"/><circle cx="5" cy="19" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="19" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg> Memórias</div>
+    
+    <div class="d-item" onclick="navTo('preferencias')" data-nav="preferencias"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Configurações</div>
+  </div>
+  <div class="drawer-foot">
+
+    <div class="drawer-user-row-foot" onclick="closeDrawer()">
+      <div class="drawer-user-avatar" id="drawer-avatar">✨</div>
+      <div class="drawer-user-info"><div class="drawer-user-name" id="drawer-name">Usuário</div><div class="drawer-user-phone" id="drawer-phone">—</div></div>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="flex-shrink:0;color:var(--text3)"><polyline points="15 18 9 12 15 6"/></svg>
+    </div>
+    <button class="d-foot-btn danger" onclick="doLogout()"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Sair</button>
+  </div>
+</div>
+<div class="overlay" id="m-lista"><div class="modal"><div class="modal-title">🛒 Nova lista</div><div class="mf"><label>Nome da lista</label><input type="text" id="ml-nome" placeholder="Ex: Mercado, Farmácia..."/></div><div class="mf"><label>Itens (um por linha ou separados por vírgula)</label><textarea id="ml-itens" placeholder="Arroz&#10;Feijão&#10;Leite&#10;Frango" style="height:120px"></textarea></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-lista')">Cancelar</button><button class="btn-save" id="slista-btn" onclick="saveLista()">Criar lista</button></div></div></div>
+<div class="overlay" id="m-remarcar"><div class="modal"><div class="modal-title">📅 Alterar data/hora</div><div class="mf"><label>Lembrete</label><div id="remarcar-titulo" style="font-size:13px;color:var(--text2);padding:6px 0;font-style:italic;line-height:1.4"></div></div><div class="mf-row"><div class="mf"><label>Nova data</label><input type="date" id="remarcar-data"/></div><div class="mf"><label>Novo horário</label><input type="time" id="remarcar-hora"/></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-remarcar')">Cancelar</button><button class="btn-save" id="remarcar-btn" onclick="salvarRemarcar()">Salvar</button></div></div></div>
+<div class="overlay" id="m-lembrete"><div class="modal"><div class="modal-title">Novo lembrete</div><div class="mf"><label>O que lembrar?</label><textarea id="ml-titulo" placeholder="Descreva o lembrete..."></textarea></div><div class="mf-row"><div class="mf"><label>Data</label><input type="date" id="ml-data"/></div><div class="mf"><label>Horário</label><input type="time" id="ml-hora"/></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-lembrete')">Cancelar</button><button class="btn-save" id="sl-btn" onclick="saveLembrete()">Criar</button></div></div></div>
+<div class="overlay" id="m-remedio"><div class="modal"><div class="modal-title">Cadastrar medicamento</div><div class="mf"><label>Nome</label><input type="text" id="mr-nome" placeholder="Ex: Nebivolol 5mg"/></div><div class="mf-row"><div class="mf"><label>Dose</label><input type="text" id="mr-dose" placeholder="1 comprimido"/></div><div class="mf"><label>A cada</label><div class="mf-select-wrap"><select id="mr-int"><option value="4">4h</option><option value="6">6h</option><option value="8">8h</option><option value="12" selected>12h</option><option value="24">24h</option></select></div></div></div><div class="mf-row"><div class="mf"><label>Dias</label><input type="number" id="mr-dias" placeholder="30" min="1"/></div><div class="mf"><label>Primeira dose</label><input type="time" id="mr-inicio"/></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-remedio')">Cancelar</button><button class="btn-save" id="sr-btn" onclick="saveRemedio()">Cadastrar</button></div></div></div>
+<div class="overlay" id="m-entrada"><div class="modal"><div class="modal-title">💰 Registrar entrada</div><div class="mf"><label>Descrição</label><input type="text" id="me-desc" placeholder="Ex: Salário, freelance, pensão..."/></div><div class="mf-row"><div class="mf"><label>Valor (R$)</label><input type="number" id="me-val" placeholder="0,00" step="0.01" min="0"/></div><div class="mf"><label>Data</label><input type="date" id="me-data"/></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-entrada')">Cancelar</button><button class="btn-save" id="se-btn" onclick="saveEntrada()">Registrar</button></div></div></div>
+<div class="overlay" id="m-gasto"><div class="modal"><div class="modal-title">Registrar gasto</div><div class="mf"><label>Descrição</label><input type="text" id="mg-desc" placeholder="Ex: Mercado, combustível..."/></div><div class="mf-row"><div class="mf"><label>Valor (R$)</label><input type="number" id="mg-val" placeholder="0,00" step="0.01" min="0"/></div><div class="mf"><label>Data</label><input type="date" id="mg-data"/></div></div><div class="mf"><label>Categoria</label><div class="mf-select-wrap"><select id="mg-cat"><option value="alimentacao">🍔 Alimentação</option><option value="mercado">🛒 Mercado</option><option value="transporte">🚗 Transporte</option><option value="saude">💊 Saúde</option><option value="lazer">🎮 Lazer</option><option value="moradia">🏠 Moradia</option><option value="educacao">📚 Educação</option><option value="outro">📦 Outro</option></select></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-gasto')">Cancelar</button><button class="btn-save" id="sg-btn" onclick="saveGasto()">Registrar</button></div></div></div>
+<div class="overlay" id="m-cofre"><div class="modal"><div class="modal-title">Novo segredo</div><div class="mf"><label>Tipo</label><div class="mf-select-wrap"><select id="ct" onchange="updateCofreFields()"><option value="senha">🔑 Senha / Login</option><option value="cartao">💳 Cartão</option><option value="nota">📝 Nota secreta</option><option value="outro">📦 Outro</option></select></div></div><div class="mf"><label>Nome</label><input type="text" id="cn" placeholder="Ex: Gmail, Netflix..."/></div><div id="cf-senha"><div class="mf"><label>Email/Usuário</label><input type="text" id="ce" placeholder="seu@email.com"/></div><div class="mf"><label>Senha</label><input type="password" id="cs-pw" placeholder="••••••••"/></div><div class="mf"><label>URL</label><input type="text" id="cu" placeholder="https://..."/></div></div><div id="cf-cartao" style="display:none"><div class="mf"><label>Número</label><input type="text" id="cc-num" placeholder="•••• •••• •••• ••••"/></div><div class="mf-row"><div class="mf"><label>Validade</label><input type="text" id="cc-val" placeholder="MM/AA"/></div><div class="mf"><label>CVV</label><input type="password" id="cc-cvv" placeholder="•••"/></div></div></div><div id="cf-nota" style="display:none"><div class="mf"><label>Conteúdo</label><textarea id="cn-txt" placeholder="Nota secreta..."></textarea></div></div><div id="cf-outro" style="display:none"><div class="mf"><label>Conteúdo</label><textarea id="co-txt" placeholder="Informação importante..."></textarea></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-cofre')">Cancelar</button><button class="btn-save" id="sc-btn" onclick="saveCofre()">Salvar</button></div></div></div>
+<div class="clara-thinking" id="clara-thinking">
+  <div class="ct-stars">
+    <div class="ct-star"></div><div class="ct-star"></div><div class="ct-star"></div>
+    <div class="ct-star"></div><div class="ct-star"></div><div class="ct-star"></div>
+  </div>
+  <div class="ct-text" id="ct-text">Atualizando...</div>
+  <div class="ct-sub" id="ct-sub">um segundo</div>
+</div>
+<div class="toast" id="toast"></div>
+<div class="toast-undo" id="toast-undo">
+  <span class="toast-undo-msg" id="toast-undo-msg">Lista excluída</span>
+  <span class="toast-undo-count" id="toast-undo-count">5</span>
+  <button class="toast-undo-btn" onclick="undoDelete()">Desfazer</button>
+</div>
+<script type="module">
+import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import{getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signInWithPopup,GoogleAuthProvider,signOut,updateProfile}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+const fc={apiKey:"AIzaSyAc9W2PZP1PX4h1ZPqGr4C7xJChhrek2-A",authDomain:"clara-ia-850b2.firebaseapp.com",projectId:"clara-ia-850b2",storageBucket:"clara-ia-850b2.firebasestorage.app",messagingSenderId:"942967325103",appId:"1:942967325103:web:cd3fdaad215f6d5a672f5a"};
+const app=initializeApp(fc);const auth=getAuth(app);const provider=new GoogleAuthProvider();
+window._firebaseAuth=auth;window._googleProvider=provider;window._signInWithEmailAndPassword=signInWithEmailAndPassword;window._createUserWithEmailAndPassword=createUserWithEmailAndPassword;window._signInWithPopup=signInWithPopup;window._signOut=signOut;window._updateProfile=updateProfile;
+onAuthStateChanged(auth,async(user)=>{if(user){window._currentUser=user;const p=localStorage.getItem(`clara_phone_${user.uid}`);if(!p)showPhoneScreen(user);else showMainApp(user,p);}else{window._currentUser=null;showAuthScreen();}});
+</script>
+<script>
+let phone='',privateMode=false,currentNav='chat';
+let allRem=[],allMeds=[],allGastos=[],allListas=[];
+let currentMood='carinhoso',remViewDate=new Date(),authTab='login';
+let pollInterval=null,sidebarCollapsed=false,currentSaldo=null;
+const CAT_ICONS={alimentacao:'🍔',mercado:'🛒',transporte:'🚗',saude:'💊',lazer:'🎮',moradia:'🏠',educacao:'📚',entrada:'💰',outro:'📦'};
+const CAT_BG={alimentacao:'rgba(245,158,11,.12)',mercado:'rgba(16,185,129,.12)',transporte:'rgba(59,130,246,.12)',saude:'rgba(239,68,68,.12)',lazer:'rgba(168,85,247,.12)',moradia:'rgba(236,72,153,.12)',educacao:'rgba(6,182,212,.12)',entrada:'rgba(34,197,94,.12)',outro:'rgba(107,114,128,.12)'};
+const MED_COLORS=['rgba(139,92,246,.15)','rgba(59,130,246,.15)','rgba(16,185,129,.15)','rgba(245,158,11,.15)','rgba(239,68,68,.15)'];
+const MED_TEXT=['#C4B5FD','#93C5FD','#6EE7B7','#FCD34D','#FCA5A5'];
+const pad=n=>String(n).padStart(2,'0');
+const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+function nowLocal(){const n=new Date();return{data:`${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`,hora:`${pad(n.getHours())}:${pad(n.getMinutes())}`};}
+function fmtD(d){try{return new Date(d).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});}catch{return'—';}}
+function showThinking(texto='Pensando...', sub='um segundo'){
+  document.getElementById('ct-text').textContent=texto;
+  document.getElementById('ct-sub').textContent=sub;
+  document.getElementById('clara-thinking').classList.add('show');
+}
+function hideThinking(){
+  document.getElementById('clara-thinking').classList.remove('show');
+}
+function showToast(m,d=2500){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),d);}
+function getGreeting(){const h=new Date().getHours();if(h>=5&&h<12)return'BOM DIA';if(h>=12&&h<18)return'BOA TARDE';return'BOA NOITE';}
+function setNotifAtivo(ativo){}
+
+function toggleSidebar(){
+  sidebarCollapsed=!sidebarCollapsed;
+  document.getElementById('sidebar').classList.toggle('collapsed',sidebarCollapsed);
+}
+function showAuthScreen(){document.getElementById('loading-screen').classList.add('hidden');document.getElementById('auth-screen').classList.remove('hidden');document.getElementById('phone-screen').classList.add('hidden');document.getElementById('main-app').style.display='none';if(pollInterval){clearInterval(pollInterval);pollInterval=null;}}
+function showPhoneScreen(user){document.getElementById('loading-screen').classList.add('hidden');document.getElementById('auth-screen').classList.add('hidden');document.getElementById('phone-screen').classList.remove('hidden');document.getElementById('main-app').style.display='none';const av=user.photoURL?`<img src="${user.photoURL}" style="width:32px;height:32px;border-radius:50%;object-fit:cover"/>`:`<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#8B5CF6,#A855F7);display:flex;align-items:center;justify-content:center;font-size:14px">✨</div>`;document.getElementById('phone-screen-user').innerHTML=`${av}<div><div style="font-size:13px;font-weight:500;color:var(--text)">${user.displayName||user.email}</div><div style="font-size:11px;color:var(--text3)">${user.email}</div></div>`;}
+function showMainApp(user,savedPhone){
+  document.getElementById('loading-screen').classList.add('hidden');document.getElementById('auth-screen').classList.add('hidden');document.getElementById('phone-screen').classList.add('hidden');document.getElementById('main-app').style.display='flex';
+  phone=savedPhone;
+  const name=user.displayName||user.email?.split('@')[0]||'Usuário';
+  const drawerNameEl=document.getElementById('drawer-name');
+  if(drawerNameEl)drawerNameEl.textContent=name;
+  const drawerPhoneEl=document.getElementById('drawer-phone');
+  if(drawerPhoneEl)drawerPhoneEl.textContent='+55 '+phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
+  if(user.photoURL){
+    const drawerAv=document.getElementById('drawer-avatar');
+    if(drawerAv)drawerAv.innerHTML=`<img src="${user.photoURL}" style="width:100%;height:100%;object-fit:cover"/>`;
+    const cfgAv=document.getElementById('cfg-user-avatar');
+    if(cfgAv){cfgAv.innerHTML=`<img src="${user.photoURL}" onload="this.classList.add('loaded')" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/>`;}
+  }
+  document.getElementById('welcome-greeting').textContent=getGreeting();
+  document.getElementById('welcome-name').textContent=name.split(' ')[0];
+  loadAll().then(()=>{if(currentNav==='lembretes')renderRem();if(currentNav==='saude')renderSaude();});loadMood();loadSaldo();initPWA();
+  if(pollInterval)clearInterval(pollInterval);
+  pollInterval=setInterval(async()=>{await Promise.all([loadAll(),loadSaldo()]);if(currentNav==='lembretes')renderRem();if(currentNav==='saude')renderSaude();if(currentNav==='financeiro')renderFin();if(currentNav==='cofre')renderCofre();if(currentNav==='memorias')renderMemorias();},30000);
+}
+function setAuthTab(tab){authTab=tab;document.getElementById('tab-login').classList.toggle('active',tab==='login');document.getElementById('tab-register').classList.toggle('active',tab==='register');document.getElementById('auth-email-btn').textContent=tab==='login'?'Entrar':'Criar conta';document.getElementById('auth-name-field').style.display=tab==='register'?'block':'none';document.getElementById('auth-error').textContent='';}
+async function authWithEmail(){const email=document.getElementById('auth-email').value.trim(),password=document.getElementById('auth-password').value;const errEl=document.getElementById('auth-error'),btn=document.getElementById('auth-email-btn');if(!email||!password){errEl.textContent='Preencha email e senha';return;}btn.disabled=true;btn.textContent='Aguarde...';try{if(authTab==='login'){await window._signInWithEmailAndPassword(window._firebaseAuth,email,password);}else{const name=document.getElementById('auth-name').value.trim();const cred=await window._createUserWithEmailAndPassword(window._firebaseAuth,email,password);if(name)await window._updateProfile(cred.user,{displayName:name});}}catch(e){const msgs={'auth/user-not-found':'Usuário não encontrado','auth/wrong-password':'Senha incorreta','auth/email-already-in-use':'Email já cadastrado','auth/weak-password':'Senha fraca (mín. 6 caracteres)','auth/invalid-email':'Email inválido','auth/invalid-credential':'Email ou senha incorretos'};errEl.textContent=msgs[e.code]||'Erro ao autenticar';btn.disabled=false;btn.textContent=authTab==='login'?'Entrar':'Criar conta';}}
+async function authWithGoogle(){try{await window._signInWithPopup(window._firebaseAuth,window._googleProvider);}catch{document.getElementById('auth-error').textContent='Erro ao entrar com Google';}}
+async function savePhone(){let v=document.getElementById('phone-setup-input').value.trim().replace(/\D/g,'');const errEl=document.getElementById('phone-error');if(!v||v.length<10){errEl.textContent='Número inválido';return;}if(!v.startsWith('55'))v='55'+v;localStorage.setItem(`clara_phone_${window._currentUser.uid}`,v);showMainApp(window._currentUser,v);}
+async function doLogout(){closeDrawer();if(pollInterval){clearInterval(pollInterval);pollInterval=null;}await window._signOut(window._firebaseAuth);phone='';allRem=[];allMeds=[];allGastos=[];}
+function toggleDrawer(){document.getElementById('drawer').classList.toggle('open');document.getElementById('drawer-overlay').classList.toggle('open');}
+function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('drawer-overlay').classList.remove('open');}
+async function navTo(p){closeDrawer();document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.s-item,.d-item').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll(`[data-nav="${p}"]`).forEach(x=>x.classList.add('active'));currentNav=p;if(!phone)return;if(p==='lembretes'){await loadAll();renderRem();}if(p==='saude')renderSaude();if(p==='financeiro'){await loadSaldo();renderFin();}if(p==='listas')renderListas();if(p==='cofre')renderCofre();if(p==='memorias')renderMemorias();if(p==='preferencias')loadPrefs();}
+function togglePrivate(){privateMode=!privateMode;const btn=document.getElementById('private-btn');btn.textContent=privateMode?'🔒':'🔓';document.getElementById('priv-banner').classList.toggle('on',privateMode);showToast(privateMode?'🔒 Modo privado ativado':'🔓 Modo público ativado');}
+async function loadAll(){if(!phone)return;try{const[l,r,g]=await Promise.all([fetch(`/forms/lembretes/${phone}`).then(x=>x.json()).catch(()=>[]),fetch(`/forms/remedios/${phone}`).then(x=>x.json()).catch(()=>[]),fetch(`/forms/gastos/${phone}`).then(x=>x.json()).catch(()=>[])]);allRem=l;allMeds=r;allGastos=g;const todayBRT=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});const now=new Date();const hm=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;const todayCnt=l.filter(x=>!x.confirmed&&!x.sent&&new Date(x.scheduledAt).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'})===todayBRT).length;['d-badge-rem','d-badge-rem2'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display=todayCnt?'':'none';if(todayCnt)el.textContent=todayCnt;}});const medCnt=r.filter(m=>{let times=[];try{times=JSON.parse(m.times||'[]');}catch{}return times.some(t=>t>=hm);}).length;const listCnt=await fetch(`/forms/listas/${phone}`).then(x=>x.json()).then(d=>d.filter(l=>!l.done).length).catch(()=>0);['d-badge-list','d-badge-list2'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display=listCnt?'':'none';if(listCnt)el.textContent=listCnt;}});['d-badge-med','d-badge-med2'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display=medCnt?'':'none';if(medCnt)el.textContent=medCnt;}});}catch{}}
+async function loadSaldo(){if(!phone)return;try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();currentSaldo=(d.saldo!==undefined&&d.saldo!==null)?d.saldo:null;}catch{}}
+function addMsg(role,text){const msgs=document.getElementById('msgs');const w=document.getElementById('welcome');if(w)w.remove();const row=document.createElement('div');row.className='msg-row '+role;if(role==='bot'){const av=document.createElement('div');av.className='msg-avatar';av.innerHTML='<img src="/avatar" onerror="this.parentElement.style.background=\'linear-gradient(135deg,#8B5CF6,#A855F7)\';this.parentElement.textContent=\'✨\'" alt="Clara" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/>';const c=document.createElement('div');c.className='msg-content';const b=document.createElement('div');b.className='msg-bubble';b.textContent=text;c.appendChild(b);row.appendChild(av);row.appendChild(c);}else{const c=document.createElement('div');c.className='msg-content';const b=document.createElement('div');b.className='msg-bubble';b.textContent=text;const t=document.createElement('div');t.className='msg-time';const n=new Date();t.textContent=pad(n.getHours())+':'+pad(n.getMinutes());c.appendChild(b);c.appendChild(t);row.appendChild(c);}msgs.appendChild(row);msgs.scrollTop=msgs.scrollHeight;return row;}
+function buildListaCard(listaData){const{listaId,listaNome,listaItems}=listaData;const div=document.createElement('div');div.className='msg-lista-card';div.id='msg-lista-'+listaId;renderListaCardChat(div,listaId,listaNome,listaItems);return div;}
+function renderListaCardChat(div,listaId,listaNome,items){const done=items.filter(i=>i.done).length;const total=items.length;const pct=total>0?Math.round((done/total)*100):0;div.innerHTML=`<div class="msg-lista-titulo">${listaNome}</div><div class="msg-lista-items">${items.map(item=>`<div class="msg-lista-item${item.done?' done':''}" onclick="toggleMsgItem('${listaId}',${item.id})"><div class="msg-lista-check">${item.done?'✓':''}</div><span class="msg-lista-nome">${item.nome}</span></div>`).join('')}</div><div class="msg-lista-footer"><div class="msg-lista-progress"><div class="msg-lista-progress-bar" style="width:${pct}%"></div></div><span class="msg-lista-count">${done}/${total}</span></div><div class="msg-lista-add-row"><input class="msg-lista-add-inp" id="msgadd-${listaId}" placeholder="Adicionar item..." onkeydown="if(event.key==='Enter')addMsgItem('${listaId}')"/><button class="msg-lista-add-btn" onclick="addMsgItem('${listaId}')">+</button></div>`;}
+async function toggleMsgItem(listaId,itemId){try{const r=await fetch(`/forms/lista-item/${listaId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({itemId})});const d=await r.json();const card=document.getElementById('msg-lista-'+listaId);if(card){const titulo=card.querySelector('.msg-lista-titulo')?.textContent||'Lista';renderListaCardChat(card,listaId,titulo,d.items);}if(d.allDone)showToast('🎉 Lista concluída!',3000);if(currentNav==='listas')renderListas();}catch{showToast('Erro ⚠️');}}
+async function addMsgItem(listaId){const inp=document.getElementById('msgadd-'+listaId);const nome=inp?.value.trim();if(!nome)return;try{const r=await fetch(`/forms/lista-add-item/${listaId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome})});const d=await r.json();const card=document.getElementById('msg-lista-'+listaId);if(card){const titulo=card.querySelector('.msg-lista-titulo')?.textContent||'Lista';renderListaCardChat(card,listaId,titulo,d.items);}}catch{showToast('Erro ⚠️');}}
+async function sendChat(){
+  const inp=document.getElementById('chat-msg');const text=inp.value.trim();if(!text||!phone)return;inp.value='';inp.style.height='auto';
+  addMsg('user',text);
+  const loading=addMsg('bot','digitando...');loading.classList.add('loading');
+  try{
+    const res=await fetch(`/chat/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,privateMode})});
+    const data=await res.json();
+    const msgBubble=loading.querySelector('.msg-bubble');
+    const msgContent=loading.querySelector('.msg-content');
+    msgBubble.textContent=data.reply||'Pode repetir? 😊';
+    loading.classList.remove('loading');
+    if(data.actionData?.listaId){
+      const existingCard=document.getElementById('msg-lista-'+data.actionData.listaId);
+      if(existingCard){const titulo=existingCard.querySelector('.msg-lista-titulo')?.textContent||data.actionData.listaNome;renderListaCardChat(existingCard,data.actionData.listaId,titulo,data.actionData.listaItems);}
+      else{msgContent.appendChild(buildListaCard(data.actionData));}
+    }
+    speakText(data.reply||'');
+    const delay=(data.actionType&&data.actionType!=='outro')?600:1500;
+    setTimeout(async()=>{await Promise.all([loadAll(),loadSaldo()]);if(currentNav==='lembretes')renderRem();if(currentNav==='saude')renderSaude();if(currentNav==='financeiro')renderFin();if(currentNav==='listas')renderListas();if(currentNav==='cofre')renderCofre();},delay);
+  }catch{loading.querySelector('.msg-bubble').textContent='Erro de conexão.';loading.classList.remove('loading');}
+}
+function cs(t){document.getElementById('chat-msg').value=t;sendChat();}
+async function newChat(){if(privateMode&&phone){try{await fetch(`/forms/conversa-limpar/${phone}`,{method:'POST'});}catch{}showToast('🔒 Histórico apagado');}document.getElementById('msgs').innerHTML='';if(phone)addMsg('bot','Nova conversa! Como posso ajudar? 💛');navTo('chat');}
+async function loadMood(){try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();if(d.tom)applyMood(d.tom);}catch{}}
+function applyMood(tom){currentMood=tom;document.querySelectorAll('.mood-card').forEach(b=>b.classList.toggle('active',b.dataset.mood===tom));}
+function selectMood(tom){
+  applyMood(tom);
+  // Update new cfg mood items
+  document.querySelectorAll('.cfg-mood-item').forEach(el=>{
+    el.classList.toggle('active', el.dataset.mood===tom);
+  });
+  // Update preview
+  const previews={
+    'clara_sendo_clara':'Oie! 😄 Vi que tá animado hoje! Bora ver sua agenda? Você tem 3 coisas pra hoje, mas relaxa que eu cuido de te lembrar! ✨',
+    'carinhoso':'Eiii Washington! 🎉 Bom dia! Você tem 3 compromissos hoje, bora arrasar! 💜',
+    'direto':'Washington, você tem 3 coisas hoje: reunião 14h, backup 15h, lembrete 16h.<br><br>Confirma?',
+    'sarcastico':'Oi. Você tem 3 lembretes hoje. Não esquece, tá?<br><br>Dessa vez sem desculpa. 🔥'
+  };
+  const names={'clara_sendo_clara':'Clara Sendo Clara','carinhoso':'Simpática','direto':'Direta','sarcastico':'Sem Filtro'};
+  const prev=document.getElementById('cfg-preview-text');
+  const sub=document.getElementById('cfg-preview-sub');
+  const link=document.getElementById('cfg-preview-link');
+  if(prev)prev.innerHTML=previews[tom]||'';
+  if(link)link.textContent=names[tom]||tom;
+  if(sub)sub.innerHTML='Este é um exemplo de como a Clara se comunica no estilo <a href="#" onclick="return false" id="cfg-preview-link" style="color:var(--accent)">'+( names[tom]||tom)+'</a>.';
+}
+function dateBRTStr(d){return new Date(d).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});}
+function changeRemDate(delta){remViewDate=new Date(remViewDate);remViewDate.setDate(remViewDate.getDate()+delta);renderRem();}
+function goRemToday(){remViewDate=new Date();renderRem();}
+function renderRem(){
+  const el=document.getElementById('rem-timeline');
+  const now=new Date(),todayStr=dateBRTStr(now),viewStr=dateBRTStr(remViewDate),isToday=viewStr===todayStr;
+
+  const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'],meses=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  const offset=-3*60,utc=remViewDate.getTime()+remViewDate.getTimezoneOffset()*60000,vd=new Date(utc+offset*60000);
+  document.getElementById('rem-date-label').textContent=isToday?'Hoje':`${dias[vd.getDay()]}, ${pad(vd.getDate())} de ${meses[vd.getMonth()]}`;
+  document.getElementById('rem-date-sub').textContent=isToday?`${dias[vd.getDay()]}, ${pad(vd.getDate())} de ${meses[vd.getMonth()]}`:'';
+  document.getElementById('rem-today-btn').style.display=isToday?'none':'';
+
+  // Só mostra não confirmados (sent=false) e não vencidos atrasados (sent=true) — sem concluídos
+  const dayRems=allRem.filter(r=>dateBRTStr(r.scheduledAt)===viewStr&&!r.confirmed);
+  const vencidos=dayRems.filter(r=>r.sent).sort((a,b)=>new Date(a.scheduledAt)-new Date(b.scheduledAt));
+  const avencer=dayRems.filter(r=>!r.sent).sort((a,b)=>new Date(a.scheduledAt)-new Date(b.scheduledAt));
+
+  if(!dayRems.length){el.innerHTML='<div class="empty"><span class="empty-icon">📅</span>Nenhum lembrete neste dia</div>';return;}
+
+  el.innerHTML='';
+  const wrap=document.createElement('div');wrap.style.paddingTop='8px';
+
+  function makeRow(r,overdue){
+    const t=new Date(r.scheduledAt),hm=t.toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit',hour12:false});
+    const row=document.createElement('div');
+    row.className='rem-row';
+    row.id='ri-'+r.id;
+    if(overdue)row.style.borderColor='rgba(245,158,11,.35)';
+
+    const timeSpan=document.createElement('span');
+    timeSpan.className='rem-row-time';
+    timeSpan.textContent=hm;
+    if(overdue)timeSpan.style.color='#F59E0B';
+    timeSpan.style.cssText+=(overdue?'color:#F59E0B;':'')+'cursor:pointer;text-decoration:underline;text-underline-offset:3px';
+    timeSpan.title='Alterar data/hora';
+    timeSpan.addEventListener('click',function(){abrirRemarcar(r.id,r.message);});
+
+    const check=document.createElement('div');
+    check.className='rem-row-check';
+    check.addEventListener('click',function(){doneRemCheck(r.id,check,row);});
+
+    const title=document.createElement('div');
+    title.className='rem-row-title';
+    title.textContent=r.message;
+
+    const del=document.createElement('button');
+    del.className='rem-del-btn';del.textContent='✕';del.title='Excluir';
+    del.addEventListener('click',function(){delRem(r.id);});
+
+    row.appendChild(timeSpan);row.appendChild(check);row.appendChild(title);row.appendChild(del);
+    return row;
+  }
+
+  if(vencidos.length){
+    const lbl=document.createElement('div');
+    lbl.style.cssText='font-size:11px;font-weight:600;color:#F59E0B;padding:10px 0 6px';
+    lbl.textContent='⚠️ Não confirmados ('+vencidos.length+')';
+    wrap.appendChild(lbl);
+    vencidos.forEach(r=>wrap.appendChild(makeRow(r,true)));
+  }
+
+  if(avencer.length){
+    const lbl2=document.createElement('div');
+    lbl2.style.cssText='font-size:11px;font-weight:600;color:var(--text3);padding:10px 0 6px;text-transform:uppercase;letter-spacing:.5px';
+    lbl2.textContent='📌 A vencer ('+avencer.length+')';
+    wrap.appendChild(lbl2);
+    let nowInserted=false;
+    avencer.forEach(r=>{
+      const t=new Date(r.scheduledAt);
+      if(isToday&&!nowInserted&&t>now){
+        nowInserted=true;
+        const nl=document.createElement('div');nl.className='rem-now-line';
+        const nowHM=now.toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit',hour12:false});
+        nl.innerHTML='<span class="rem-now-time">'+nowHM+'</span><div class="rem-now-bar"></div><div class="rem-now-dot"></div>';
+        wrap.appendChild(nl);
+      }
+      wrap.appendChild(makeRow(r,false));
+    });
+    if(isToday&&!nowInserted){
+      const nl=document.createElement('div');nl.className='rem-now-line';
+      const nowHM=now.toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit',hour12:false});
+      nl.innerHTML='<span class="rem-now-time">'+nowHM+'</span><div class="rem-now-bar"></div><div class="rem-now-dot"></div>';
+      wrap.appendChild(nl);
     }
   }
-  return _whatsappModule;
+
+  el.appendChild(wrap);
 }
 
-async function sendMessage(phone, msg, delay) {
-  const w = getWhatsapp();
-  if (w && typeof w.sendMessage === 'function') {
-    return w.sendMessage(phone, msg, delay);
+function renderSaude(){
+  const el=document.getElementById('saude-body');
+  if(!allMeds.length){el.innerHTML='<div class="empty"><span class="empty-icon">💊</span>Nenhum medicamento cadastrado</div>';return;}
+  const now=new Date(),hm=`${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const MED_COLORS=['rgba(139,92,246,.15)','rgba(59,130,246,.15)','rgba(16,185,129,.15)','rgba(245,158,11,.15)','rgba(239,68,68,.15)'];
+  const MED_TEXT=['#C4B5FD','#93C5FD','#6EE7B7','#FCD34D','#FCA5A5'];
+  const pendentes=[];
+  allMeds.forEach((m,i)=>{
+    let times=[];try{times=JSON.parse(m.times);}catch{}
+    const nextHoje=times.find(t=>t>=hm);
+    const nextTime=nextHoje||times[0]||'—';
+    const nextDay=nextHoje?'Hoje':'Amanhã';
+    pendentes.push({m,i,nextTime,nextDay});
+  });
+
+  function makeCard(m,i,nextTime,nextDay){
+    const ci=i%MED_COLORS.length;
+    const card=document.createElement('div');
+    card.className='med2-card';
+
+    const top=document.createElement('div');top.className='med2-top';
+    const icon=document.createElement('div');
+    icon.className='med2-icon';
+    icon.style.cssText='background:'+MED_COLORS[ci]+';color:'+MED_TEXT[ci];
+    icon.innerHTML='<svg viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>';
+    const titleWrap=document.createElement('div');titleWrap.className='med2-title';
+    const nameEl=document.createElement('div');nameEl.className='med2-name';nameEl.textContent=m.name;
+    const freqEl=document.createElement('div');freqEl.className='med2-freq';freqEl.textContent=m.frequency+'x por dia';
+    titleWrap.appendChild(nameEl);titleWrap.appendChild(freqEl);
+    const delBtn=document.createElement('button');delBtn.className='med2-del';delBtn.title='Excluir';
+    delBtn.innerHTML='<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+    delBtn.addEventListener('click',()=>delMed(m.id));
+    top.appendChild(icon);top.appendChild(titleWrap);top.appendChild(delBtn);
+
+    const info=document.createElement('div');info.className='med2-info';
+    const box1=document.createElement('div');box1.className='med2-info-box';box1.style.cursor='pointer';box1.title='Clique para ajustar os horários';
+    box1.innerHTML=
+      '<div class="med2-info-label"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Próxima dose</div>'+
+      '<div class="med2-info-val" style="color:'+MED_TEXT[ci]+'">'+nextTime+'</div>'+
+      '<div class="med2-info-sub" style="color:'+(nextDay==='Hoje'?'var(--green)':'var(--text3)')+'">'+nextDay+' · toque p/ ajustar</div>';
+    box1.addEventListener('click',()=>ajustarHorariosRemedio(m.id,m.times));
+    const box2=document.createElement('div');box2.className='med2-info-box';box2.style.cursor='pointer';box2.title='Clique para ajustar o estoque';
+    box2.innerHTML=
+      '<div class="med2-info-label"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Restam</div>'+
+      '<div class="med2-info-val" style="color:'+(m.remaining<=5?'var(--red)':'var(--text)')+'">'+m.remaining+'</div>'+
+      '<div class="med2-info-sub" style="color:var(--text3)">doses · toque p/ ajustar</div>';
+    box2.addEventListener('click',()=>ajustarEstoqueRemedio(m.id,m.remaining));
+    info.appendChild(box1);info.appendChild(box2);
+
+    const btn=document.createElement('button');
+    if(m.aguardandoConfirmacao){
+      // ── Alarme disparou, ainda aguardando confirmação real ──
+      // Antes, esse estado ficava escondido atrás da checagem só de
+      // horário (se já tinha passado o último horário do dia, mostrava
+      // "Todas as doses tomadas hoje" mesmo sem confirmação nenhuma).
+      // Agora usamos o campo aguardandoConfirmacao vindo do backend
+      // (forms.js GET /remedios/:phone), que reflete uma pendência REAL
+      // criada quando o alarme disparou — distingue "passou da hora" de
+      // "realmente confirmado".
+      btn.className='med2-btn pendente';
+      btn.innerHTML='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Aguardando confirmação — toque para confirmar';
+      btn.addEventListener('click',()=>takeMed(m.id,btn));
+    }else if(nextDay==='Amanhã'){
+      btn.className='med2-btn tomado';
+      btn.innerHTML='<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Todas as doses tomadas hoje';
+      btn.disabled=true;
+    }else{
+      btn.className='med2-btn tomar';
+      btn.innerHTML='<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Marcar como tomado';
+      btn.addEventListener('click',()=>takeMed(m.id,btn));
+    }
+
+    card.appendChild(top);card.appendChild(info);card.appendChild(btn);
+    return card;
   }
-  // Fallback direto via axios se whatsapp.js não carregar
-  const axios = require('axios');
-  const BASE_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
-  const TOKEN = process.env.UAZAPI_TOKEN;
-  console.log(`[Handler/Fallback] Enviando direto para ${phone}: ${String(msg).slice(0,60)}`);
-  return axios.post(`${BASE_URL}/send/text`,
-    { number: phone, text: msg, delay: delay || 800 },
-    { headers: { token: TOKEN, 'Content-Type': 'application/json' }, timeout: 30000 }
-  );
-}
 
-async function sendButtons(phone, msg, buttons) {
-  const w = getWhatsapp();
-  if (w && typeof w.sendButtons === 'function') return w.sendButtons(phone, msg, buttons);
-  return sendMessage(phone, msg);
-}
-
-async function sendReminderWithButtons(phone, msg, id) {
-  const w = getWhatsapp();
-  if (w && typeof w.sendReminderWithButtons === 'function') return w.sendReminderWithButtons(phone, msg, id);
-  return sendMessage(phone, msg);
-}
-const memory = require('./memory');
-const { tentarConsultaDireta } = require('./consultaDireta');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName, savePendencia } = memory;
-
-// Substitui prisma.memory.upsert({ where: { userId_type: {...} } }) — esse
-// nome de campo composto só existe quando o model Memory tem
-// @@unique([userId, type]) no schema, o que NÃO é o caso aqui. Em vez de
-// depender disso, fazemos findFirst + create/update manual.
-async function upsertMemoryPorTipo(userId, type, content) {
-  const existente = await prisma.memory.findFirst({
-    where: { userId, type },
-    orderBy: { createdAt: 'desc' }
-  }).catch(() => null);
-
-  if (existente) {
-    return prisma.memory.update({ where: { id: existente.id }, data: { content } });
+  el.innerHTML='';
+  if(pendentes.length){
+    const lbl=document.createElement('div');lbl.className='med2-section-label';lbl.textContent='Medicamentos';
+    el.appendChild(lbl);
+    pendentes.forEach(({m,i,nextTime,nextDay})=>el.appendChild(makeCard(m,i,nextTime,nextDay)));
+  }else{
+    el.innerHTML='<div class="empty"><span class="empty-icon">💊</span>Nenhum medicamento</div>';
+    return;
   }
-  return prisma.memory.create({ data: { userId, type, content } });
+  const tip=document.createElement('div');
+  tip.className='med-tip';tip.style.margin='4px 20px 16px';
+  tip.innerHTML='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div><div class="med-tip-title">Dica da Clara</div><div class="med-tip-text">Mantenha sua rotina de medicamentos em dia. Isso faz toda a diferença!</div></div>';
+  el.appendChild(tip);
+}
+async function takeMed(id,btn){btn.textContent='✓ Tomado';btn.disabled=true;btn.className='med-action-btn concluido-btn';try{await fetch(`/forms/remedio-tomado/${id}`,{method:'POST'});showToast('Dose registrada! 💊');setTimeout(()=>loadAll().then(()=>renderSaude()),800);}catch{showToast('Erro ⚠️');}}
+async function ajustarEstoqueRemedio(id,atual){
+  const novo=prompt('Quantas doses restam em estoque?',atual);
+  if(novo===null)return;
+  const num=parseInt(novo);
+  if(isNaN(num)||num<0){showToast('Quantidade inválida ⚠️');return;}
+  try{
+    const r=await fetch(`/forms/remedio-estoque/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({remaining:num})});
+    if(r.ok){showToast('Estoque ajustado! ✅');await loadAll();renderSaude();}
+    else showToast('Erro ao ajustar ⚠️');
+  }catch{showToast('Erro ⚠️');}
+}
+async function ajustarHorariosRemedio(id,timesJson){
+  let horarios=[];
+  try{horarios=JSON.parse(timesJson||'[]');}catch{}
+  const atual=horarios.join(', ');
+  const novo=prompt('Horários das doses (separados por vírgula, formato HH:MM):',atual);
+  if(novo===null)return;
+  const novosHorarios=novo.split(',').map(h=>h.trim()).filter(Boolean);
+  const formatoValido=/^([01]\d|2[0-3]):[0-5]\d$/;
+  if(!novosHorarios.length||!novosHorarios.every(h=>formatoValido.test(h))){
+    showToast('Use o formato HH:MM, ex: 07:00, 19:00 ⚠️');
+    return;
+  }
+  novosHorarios.sort();
+  try{
+    const r=await fetch(`/forms/remedio-horarios/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({horarios:novosHorarios})});
+    if(r.ok){showToast('Horários ajustados! ✅');await loadAll();renderSaude();}
+    else showToast('Erro ao ajustar ⚠️');
+  }catch{showToast('Erro ⚠️');}
+}
+// Navegação por mês no financeiro
+let finMes=new Date().getMonth(), finAno=new Date().getFullYear();
+const MESES_PT=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+function finMesAnterior(){finMes--;if(finMes<0){finMes=11;finAno--;}renderFin();}
+function finMesProximo(){finMes++;if(finMes>11){finMes=0;finAno++;}renderFin();}
+function renderFin(){
+  const mesLabel=document.getElementById('fin-mes-label');
+  if(mesLabel)mesLabel.textContent=MESES_PT[finMes]+' '+finAno;
+  const hist=document.getElementById('fin-history');
+  const saldoEl=document.getElementById('fs-saldo');
+  const saldoSub=document.getElementById('fs-saldo-sub');
+  const gastosMes=allGastos.filter(g=>{const d=new Date(g.createdAt);return d.getMonth()===finMes&&d.getFullYear()===finAno;});
+  const saidas=gastosMes.filter(g=>g.value>0);
+  const entradas=gastosMes.filter(g=>g.value<0);
+  const total=saidas.reduce((a,g)=>a+g.value,0);
+  const totalEntradas=entradas.reduce((a,g)=>a+Math.abs(g.value),0);
+  const totalEl=document.getElementById('fs-total');
+  const countSub=document.getElementById('fs-count-sub');
+  if(totalEl)totalEl.textContent=brl(total);
+  if(countSub)countSub.textContent=gastosMes.length+' lançamento'+(gastosMes.length!==1?'s':'');
+  if(saldoEl){
+    if(currentSaldo!==null&&currentSaldo!==undefined){
+      const restante=currentSaldo-total+totalEntradas;
+      saldoEl.textContent=brl(restante);
+      saldoEl.style.color=restante<0?'var(--red)':restante<currentSaldo*0.2?'#FCD34D':'#22C55E';
+      if(saldoSub)saldoSub.textContent='de '+brl(currentSaldo)+' orçados';
+    }else{saldoEl.textContent='—';saldoEl.style.color='var(--text3)';if(saldoSub)saldoSub.textContent='orçamento não definido';}
+  }
+  if(!gastosMes.length){hist.innerHTML='<div class="fin-empty"><span style="font-size:32px;opacity:.2;display:block;margin-bottom:10px">💳</span>Nenhum lançamento em '+MESES_PT[finMes]+'</div>';return;}
+  const container=document.createElement('div');
+  container.innerHTML='<div class="fin-hist-section">Histórico</div>';
+  gastosMes.slice().reverse().forEach(g=>{
+    const isEntrada=g.value<0;
+    const absVal=Math.abs(g.value);
+    const name=g.description&&g.description!==g.category?g.description:(g.category.charAt(0).toUpperCase()+g.category.slice(1));
+    const wrap=document.createElement('div');wrap.className='fin-hist-wrap';
+    const bg=document.createElement('div');bg.className='fin-hist-delete-bg';bg.innerHTML='🗑️';
+    const item=document.createElement('div');item.className='fin-hist-item';
+    item.innerHTML=
+      '<div class="fin-hist-info">'+
+        '<div class="fin-hist-name">'+name+'</div>'+
+        '<div class="fin-hist-cat">'+(isEntrada?'💰 Entrada':((CAT_ICONS[g.category]||'📦')+' '+(g.category.charAt(0).toUpperCase()+g.category.slice(1))))+'</div>'+
+      '</div>'+
+      '<div class="fin-hist-right">'+
+        '<div class="fin-hist-val '+(isEntrada?'pos':'neg')+'">'+(isEntrada?'+':'-')+brl(absVal)+'</div>'+
+        '<div class="fin-hist-date">'+fmtD(g.createdAt)+'</div>'+
+      '</div>'+
+      '<button class="med2-del fin-del-btn" title="Excluir" data-gasto-id="'+g.id+'">'+
+        '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>'+
+      '</button>'
+    // Swipe mobile
+    let sX=0,cX=0,sw=false;
+    item.addEventListener('touchstart',e=>{sX=e.touches[0].clientX;sw=true;cX=0;},{passive:true});
+    item.addEventListener('touchmove',e=>{
+      if(!sw)return;cX=e.touches[0].clientX-sX;
+      if(cX<0){const off=Math.max(cX,-80);item.style.transform='translateX('+off+'px)';bg.style.width=Math.abs(off)+'px';bg.style.pointerEvents=Math.abs(off)>55?'all':'none';}
+    },{passive:true});
+    item.addEventListener('touchend',()=>{
+      sw=false;
+      if(cX<-55){item.style.transform='translateX(-80px)';bg.style.width='80px';bg.style.pointerEvents='all';bg.onclick=()=>delGasto(g.id,wrap);}
+      else{item.style.transform='';bg.style.width='0';bg.style.pointerEvents='none';}
+    });
+    // Attach delete button event
+    const delBtnEl = item.querySelector('.fin-del-btn');
+    if(delBtnEl) delBtnEl.addEventListener('click', function(e){e.stopPropagation();delGasto(g.id,wrap);});
+    wrap.appendChild(bg);wrap.appendChild(item);container.appendChild(wrap);
+  });
+  hist.innerHTML='';hist.appendChild(container);
+}
+async function delGasto(id,wrapEl){
+  try{
+    const r=await fetch('/forms/gasto/'+id,{method:'DELETE'});
+    if(r.ok){
+      if(wrapEl){wrapEl.style.transition='opacity .2s';wrapEl.style.opacity='0';}
+      setTimeout(()=>{allGastos=allGastos.filter(g=>g.id!==id);renderFin();},200);
+      showToast('Lançamento excluído ✅');
+    }else showToast('Erro ao excluir ⚠️');
+  }catch{showToast('Erro ⚠️');}
 }
 
-const MENU = `✨ *Oi, eu sou a Clara.*
 
-Posso cuidar de lembretes, anotações, gastos, saúde, ponto e pesquisas rápidas.
-
-Você pode tocar em uma opção ou escrever do seu jeito:
-- _"me lembra de tomar remédio às 22h"_
-- _"gastei 42 reais no mercado"_
-- _"cheguei às 9h no trabalho"_
-- _"qual foi a senha do Wi-Fi?"_
-
-O que vamos resolver agora?`;
-
-const MENU_BUTTONS = [
-  { id: 'criar_lembrete', label: '⏰ Lembrete' },
-  { id: 'nova_anotacao', label: '📝 Anotação' },
-  { id: 'novo_gasto', label: '💰 Gasto' },
-  { id: 'bater_ponto', label: '📍 Ponto' },
-  { id: 'pesquisar', label: '🔍 Pesquisa' },
-  { id: 'conversar', label: '💬 Conversar' },
-];
-
-const BOAS_VINDAS_MODO = {
-  'lembrete':  `⏰ *Lembretes*\n\nPosso te lembrar de qualquer compromisso!\n\nExemplos:\n• _"Me lembra às 19h de buscar minha filha"_\n• _"Lembrete amanhã às 8h de tomar remédio"_\n\n_É só me dizer!_ 😊`,
-  'anotacao':  `📝 *Anotações*\n\nGuardo qualquer informação pra você!\n\nExemplos:\n• _"Senha do Wi-Fi: 12345"_\n• _"Código do cliente: ABC123"_\n\n_O que quer guardar?_ 😊`,
-  'gasto':     `💰 *Gastos*\n\nRegistro tudo e te mostro resumo do mês!\n\nExemplos:\n• _"Gastei 45 reais no mercado"_\n• _"Quanto gastei esse mês?"_\n\n_Me conta seu gasto!_ 💸`,
-  'saude':     `💊 *Saúde*\n\nCuido dos seus remédios!\n\nExemplos:\n• _"Tomo Losartana todo dia às 8h"_\n• _"Vitamina C às 9h e às 21h"_\n\n_Qual medicamento?_ 😊`,
-  'ponto':     `📍 *Ponto Digital*\n\nRegistro sua jornada!\n\nExemplos:\n• _"Entrei às 8:15"_\n• _"Saí pra almoçar às 12:30"_\n\n_Pode me dizer!_ 📍`,
-  'pesquisar': `🔍 *Pesquisar*\n\nBusco qualquer coisa na internet!\n\n_O que quer pesquisar?_ ✨`,
-  'conversar': `💬 *Conversar*\n\nAdoro uma boa conversa! Pode falar à vontade 😄`,
+// Memorias 3.0
+var CATS_MEM_DATA={
+  relacionamento:{label:'Relacionamento',e:'&#x2764;&#xFE0F;',cor:'rgba(239,68,68,.12)',txt:'#FCA5A5',ac:'#EF4444'},
+  filhos:{label:'Filhos',e:'&#x1F476;',cor:'rgba(251,191,36,.12)',txt:'#FCD34D',ac:'#F59E0B'},
+  familia:{label:'Fam\u00edlia',e:'&#x1F46A;',cor:'rgba(245,158,11,.12)',txt:'#FCD34D',ac:'#F59E0B'},
+  trabalho:{label:'Trabalho',e:'&#x1F4BC;',cor:'rgba(59,130,246,.12)',txt:'#93C5FD',ac:'#3B82F6'},
+  hobbies:{label:'Hobbies',e:'&#x1F3AF;',cor:'rgba(16,185,129,.12)',txt:'#6EE7B7',ac:'#10B981'},
+  entretenimento:{label:'Entretenimento',e:'&#x1F3AC;',cor:'rgba(168,85,247,.12)',txt:'#D8B4FE',ac:'#A855F7'},
+  alimentacao:{label:'Alimenta\u00e7\u00e3o',e:'&#x1F354;',cor:'rgba(234,88,12,.12)',txt:'#FDBA74',ac:'#EA580C'},
+  metas:{label:'Metas',e:'&#x1F680;',cor:'rgba(99,102,241,.12)',txt:'#A5B4FC',ac:'#6366F1'},
+  personalidade:{label:'Personalidade',e:'&#x2728;',cor:'rgba(236,72,153,.12)',txt:'#F9A8D4',ac:'#EC4899'},
+  saude:{label:'Sa\u00fade',e:'&#x1F48A;',cor:'rgba(239,68,68,.12)',txt:'#FCA5A5',ac:'#EF4444'},
+  datas:{label:'Datas importantes',e:'&#x1F4C5;',cor:'rgba(245,158,11,.12)',txt:'#FCD34D',ac:'#F59E0B'},
+  rotina:{label:'Rotina',e:'&#x23F0;',cor:'rgba(139,92,246,.12)',txt:'#C4B5FD',ac:'#8B5CF6'},
+  outro:{label:'Informa\u00e7\u00f5es gerais',e:'&#x1F4CC;',cor:'rgba(107,114,128,.12)',txt:'#9CA3AF',ac:'#6B7280'}
 };
+var ORDEM_CATS_MEM=['relacionamento','filhos','familia','trabalho','hobbies','entretenimento','alimentacao','metas','personalidade','saude','datas','rotina','outro'];
+var _memDados=null,_memFiltroAtivo='todas',_memBuscaAtiva='';
 
-const LISTA_TIPOS = ['lista_compras', 'lista_buscar', 'lista_marcar', 'lista_adicionar'];
-const CONTATO_TIPOS = ['salvar_contato', 'deletar_contato', 'enviar_mensagem', 'enviar_mensagem_agendada', 'salvar_cofre'];
-
-function nowBRT() {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+async function renderMemorias(){
+  var el=document.getElementById('memorias-body');
+  if(!el)return;
+  el.innerHTML='<div class="spin"></div>';
+  try{
+    var r=await fetch('/forms/memorias/'+phone);
+    _memDados=await r.json();
+    _memBuscaAtiva='';
+    var si=document.getElementById('mem-search-input');
+    if(si)si.value='';
+    _renderMemoriasUI();
+  }catch(e){
+    el.innerHTML='<div class="mem-empty-state"><div class="mem-empty-brain">&#x1F9E0;</div><div class="mem-empty-title">Erro ao carregar</div><div class="mem-empty-sub">Tente novamente.</div></div>';
+  }
 }
 
-function dateBRT() {
-  const d = nowBRT();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function setMemFilter(cat){
+  _memFiltroAtivo=cat;
+  document.querySelectorAll('.mem-filter').forEach(function(el){el.classList.toggle('active',el.dataset.cat===cat);});
+  _renderMemoriasUI();
 }
 
-function minutesToHours(minutes) {
-  const h = Math.floor(minutes / 60), m = minutes % 60;
-  return `${h}h${m > 0 ? m + 'min' : ''}`;
+function filtrarMemorias(){
+  var inp=document.getElementById('mem-search-input');
+  _memBuscaAtiva=inp?inp.value.trim().toLowerCase():'';
+  _renderMemoriasUI();
 }
 
-function horaStr(date) {
-  if (!date) return '—';
-  const d = new Date(date);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
+function _renderMemoriasUI(){
+  var el=document.getElementById('memorias-body');
+  if(!el||!_memDados)return;
+  var cats=_memDados.categorias||{};
+  var pends=_memDados.pendenciasAbertas||[];
+  var total=0;
+  ORDEM_CATS_MEM.forEach(function(cat){total+=(cats[cat]?cats[cat].length:0);});
+  var numEl=document.getElementById('mem-total-num');
+  if(numEl)numEl.textContent=total;
+  var busca=_memBuscaAtiva,filtro=_memFiltroAtivo;
+  var html='',temConteudo=false;
 
-function formatarDataBR(date) {
-  if (!date) return '—';
-  const d = new Date(date);
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-}
+  if(filtro==='todas'||filtro==='pendencias'){
+    var pendsF=pends.filter(function(p){
+      return !busca||(p.assunto||'').toLowerCase().indexOf(busca)>=0||(p.contexto||'').toLowerCase().indexOf(busca)>=0;
+    });
+    if(pendsF.length){
+      temConteudo=true;
+      html+='<div class="mem-group"><div class="mem-group-header"><span class="mem-group-emoji">&#x1F7E1;</span><span class="mem-group-label">Assuntos em aberto</span><span class="mem-group-count">'+pendsF.length+'</span></div>';
+      pendsF.forEach(function(p){
+        html+='<div class="mem-pendencia-card"><div class="mem-pendencia-icon">&#x1F4AC;</div>'
+          +'<div class="mem-pendencia-body">'
+          +'<div class="mem-pendencia-assunto">'+(p.assunto||'')+'</div>'
+          +'<div class="mem-pendencia-ctx">'+(p.contexto||'')+'</div>'
+          +(p.como_retomar?'<div class="mem-pendencia-retomar">'+p.como_retomar+'</div>':'')
+          +'</div>'
+          +'<button class="mem-pendencia-del" data-pend-id="'+String(p.id||'')+'" title="Encerrar">'
+          +'<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+          +'</button></div>';
+      });
+      html+='</div>';
+    }
+  }
 
-function formatarDataHoraBR(date) {
-  if (!date) return '—';
-  const d = new Date(date);
-  const hoje = nowBRT();
-  const amanha = new Date(hoje); amanha.setDate(amanha.getDate() + 1);
-  const hStr = horaStr(d);
-  if (d.toDateString() === hoje.toDateString()) return `Hoje às ${hStr}`;
-  if (d.toDateString() === amanha.toDateString()) return `Amanhã às ${hStr}`;
-  const dias = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  return `${dias[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1} às ${hStr}`;
-}
+  var catsRender=filtro==='todas'?ORDEM_CATS_MEM:filtro==='pendencias'?[]:ORDEM_CATS_MEM.filter(function(c){return c===filtro;});
+  catsRender.forEach(function(cat){
+    var items=cats[cat]||[];
+    if(busca)items=items.filter(function(i){return (i.valor||'').toLowerCase().indexOf(busca)>=0||(i.chave||'').toLowerCase().indexOf(busca)>=0;});
+    if(!items.length)return;
+    temConteudo=true;
+    var m=CATS_MEM_DATA[cat]||{label:cat,e:'&#x1F4CC;',cor:'rgba(107,114,128,.12)',txt:'#9CA3AF',ac:'#6B7280'};
+    html+='<div class="mem-group"><div class="mem-group-header"><span class="mem-group-emoji">'+m.e+'</span><span class="mem-group-label">'+m.label+'</span><span class="mem-group-count">'+items.length+'</span></div>';
+    items.forEach(function(item){
+      var chave=item.chave?item.chave.replace(/_/g,' '):'';
+      html+='<div class="mem-card" style="border-left-color:'+m.ac+'">'
+        +'<div class="mem-card-icon" style="background:'+m.cor+';color:'+m.txt+'">'+m.e+'</div>'
+        +'<div class="mem-card-body">'
+        +'<div class="mem-card-valor">'+item.valor+'</div>'
+        +(chave?'<div class="mem-card-meta">'+chave+'</div>':'')
+        +'</div>'
+        +'<button class="mem-card-del" data-mem-id="'+String(item.id||'')+'" title="Esquecer">'
+        +'<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>'
+        +'</button></div>';
+    });
+    html+='</div>';
+  });
 
-function calcularHorarioRelativo(texto) {
-  const t = (texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  // IMPORTANTE: usar Date.now() (epoch UTC real) + delta em ms, e NUNCA
-  // nowBRT() + setMinutes/setHours. nowBRT() retorna um Date cujo valor
-  // interno (epoch) está deslocado pelo offset entre o timezone do
-  // servidor e America/Sao_Paulo — somar minutos/horas em cima dele
-  // preserva (e propaga) esse deslocamento, gerando horários errados
-  // (ex: "daqui 30 minutos" às 14:09 virando 11:39).
-  const minMatch = t.match(/daqui\s+(\d+)\s*(min|minuto|minutos)/);
-  if (minMatch) return new Date(Date.now() + parseInt(minMatch[1]) * 60 * 1000);
-  const hrMatch = t.match(/daqui\s+(\d+)\s*(h|hora|horas)/);
-  if (hrMatch) return new Date(Date.now() + parseInt(hrMatch[1]) * 60 * 60 * 1000);
-  const emMinMatch = t.match(/em\s+(\d+)\s*(min|minuto|minutos)/);
-  if (emMinMatch) return new Date(Date.now() + parseInt(emMinMatch[1]) * 60 * 1000);
-  const emHrMatch = t.match(/em\s+(\d+)\s*(h|hora|horas)/);
-  if (emHrMatch) return new Date(Date.now() + parseInt(emHrMatch[1]) * 60 * 60 * 1000);
-  return null;
-}
-
-async function getModoAtual(userId) {
-  const mems = await memory.getRecentMemories(userId, 10);
-  return mems.find(m => m.type === 'modo_atual')?.content || null;
-}
-
-function normalizar(text) {
-  return (text || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-}
-
-// Extrai um código curto de lembrete do texto do usuário (ex: "#1", "feito 2",
-// "concluí o 1", "número 3"). Retorna o número (1-indexed) ou null se não
-// encontrar. Usado para desambiguar quando múltiplos lembretes foram
-// disparados juntos e o usuário confirma um específico por número.
-function extrairCodigoLembrete(texto) {
-  const t = normalizar(texto);
-  // "#1", "# 1"
-  let m = t.match(/#\s*(\d{1,2})\b/);
-  if (m) return parseInt(m[1]);
-  // "numero 1", "número 2", "item 3"
-  m = t.match(/(?:numero|número|item)\s*(\d{1,2})\b/);
-  if (m) return parseInt(m[1]);
-  // texto é só um número isolado (ex: "1", "2")
-  m = t.match(/^(\d{1,2})$/);
-  if (m) return parseInt(m[1]);
-  // "feito o 1", "feito 2", "concluí o 1", "fiz o 2", "marca o 1"
-  m = t.match(/(?:feito|conclui|concluido|concluí|fiz|marca|marquei|pronto)\s*(?:o|a)?\s*(\d{1,2})\b/);
-  if (m) return parseInt(m[1]);
-  return null;
-}
-
-// Busca os lembretes "recém-disparados" aguardando confirmação (sent=true,
-// confirmed=false), ordenados por scheduledAt asc — mesma ordem usada pelo
-// scheduler ao numerá-los (#1, #2...) na mensagem de disparo múltiplo.
-async function getLembretesPendentesConfirmacao(userId) {
-  return prisma.reminder.findMany({
-    where: { userId, sent: true, confirmed: false },
-    orderBy: { scheduledAt: 'asc' }
+  if(!temConteudo){
+    html=busca
+      ?'<div class="mem-empty-state"><div class="mem-empty-brain">&#x1F50D;</div><div class="mem-empty-title">Nenhum resultado</div><div class="mem-empty-sub">Nenhuma mem\u00f3ria para "'+busca+'".</div></div>'
+      :'<div class="mem-empty-state"><div class="mem-empty-brain">&#x1F9E0;</div><div class="mem-empty-title">A Clara ainda est\u00e1 te conhecendo</div><div class="mem-empty-sub">Conforme voc\u00eas conversam, ela vai salvando o que aprende sobre voc\u00ea aqui.</div></div>';
+  }
+  el.innerHTML=html;
+  el.querySelectorAll('[data-mem-id]').forEach(function(btn){
+    btn.addEventListener('click',function(){deletarMemoria(this.dataset.memId);});
+  });
+  el.querySelectorAll('[data-pend-id]').forEach(function(btn){
+    btn.addEventListener('click',function(){encerrarPendencia(this.dataset.pendId);});
   });
 }
 
-async function enviarMenu(phone) {
-  return sendButtons(phone, MENU, MENU_BUTTONS);
+async function deletarMemoria(id){
+  if(!confirm('Quer que eu esque\u00e7a isso? A Clara n\u00e3o vai mais trazer esse assunto por 30 dias.'))return;
+  try{
+    var r=await fetch('/forms/memoria/'+id+'/'+phone,{method:'DELETE'});
+    if(r.ok){showToast('Mem\u00f3ria removida');await renderMemorias();}
+    else showToast('Erro ao remover');
+  }catch(e){showToast('Erro');}
 }
 
-async function executeListaAction(user, phone, classified) {
-  try {
-    const tipo = classified.tipo;
-    if ((tipo === 'lista_compras') && classified.itens && classified.itens.length > 0) {
-      const itemsJson = classified.itens.map((nome, i) => ({ id: i + 1, nome, done: false }));
-      const lista = await prisma.groceryList.create({
-        data: { userId: user.id, name: classified.nome || '🛒 Lista de compras', items: JSON.stringify(itemsJson), done: false }
-      });
-      await memory.saveMemory(user.id, 'ultima_lista', lista.id);
-      return { acao: 'criada', listaNome: lista.name, listaItems: itemsJson };
-    }
-    if (tipo === 'lista_buscar' || (tipo === 'lista_compras' && (!classified.itens || classified.itens.length === 0))) {
-      const mems = await memory.getRecentMemories(user.id, 20);
-      const listaRef = mems.find(m => m.type === 'ultima_lista');
-      if (listaRef) {
-        const lista = await prisma.groceryList.findUnique({ where: { id: listaRef.content } });
-        if (lista && !lista.done) {
-          let items = []; try { items = JSON.parse(lista.items); } catch {}
-          return { acao: 'encontrada', listaNome: lista.name, listaItems: items };
-        }
-      }
-      const listaRecente = await prisma.groceryList.findFirst({ where: { userId: user.id, done: false }, orderBy: { createdAt: 'desc' } });
-      if (listaRecente) {
-        let items = []; try { items = JSON.parse(listaRecente.items); } catch {}
-        await memory.saveMemory(user.id, 'ultima_lista', listaRecente.id);
-        return { acao: 'encontrada', listaNome: listaRecente.name, listaItems: items };
-      }
-      return { acao: 'nenhuma', listaNome: null, listaItems: [] };
-    }
-    if (tipo === 'lista_marcar') {
-      const temNumeros = classified.numeros && classified.numeros.length > 0;
-      const temNomes = classified.nomes && classified.nomes.length > 0;
-      if (!temNumeros && !temNomes) return null;
-      let lista = null;
-      if (classified.lista) {
-        const nomeLista = classified.lista.toLowerCase();
-        const todasListas = await prisma.groceryList.findMany({ where: { userId: user.id, done: false } });
-        lista = todasListas.find(l => l.name.toLowerCase().includes(nomeLista));
-      }
-      if (!lista) {
-        const mems = await memory.getRecentMemories(user.id, 20);
-        const listaRef = mems.find(m => m.type === 'ultima_lista');
-        if (listaRef) lista = await prisma.groceryList.findUnique({ where: { id: listaRef.content } });
-      }
-      if (!lista) lista = await prisma.groceryList.findFirst({ where: { userId: user.id, done: false }, orderBy: { createdAt: 'desc' } });
-      if (!lista) return null;
-      let items = []; try { items = JSON.parse(lista.items); } catch {}
-      if (temNumeros) items = items.map(i => classified.numeros.includes(i.id) ? { ...i, done: true } : i);
-      if (temNomes) {
-        items = items.map(i => {
-          const nomeItem = i.nome.toLowerCase();
-          const match = classified.nomes.some(n => nomeItem.includes(n.toLowerCase()) || n.toLowerCase().includes(nomeItem.split(' ')[0]));
-          return match ? { ...i, done: true } : i;
+async function encerrarPendencia(id){
+  try{
+    var r=await fetch('/forms/pendencia/'+id+'/'+phone,{method:'DELETE'});
+    if(r.ok){showToast('Assunto encerrado');await renderMemorias();}
+  }catch(e){showToast('Erro');}
+}
+
+async function renderCofre(){const el=document.getElementById('cofre-body');el.innerHTML='<div class="spin"></div>';try{const r=await fetch(`/forms/cofre/${phone}`);const items=await r.json();displayCofre(items);}catch{el.innerHTML='<div class="empty"><span class="empty-icon">🔐</span>Nenhum segredo salvo</div>';}}
+function displayCofre(items){
+  const el=document.getElementById('cofre-body');
+  if(!items.length){el.innerHTML='<div class="empty"><span class="empty-icon">🔐</span>Nenhum segredo salvo ainda</div>';return;}
+  const icons={senha:'🔑',cartao:'💳',nota:'📝',outro:'📦'};
+  el.innerHTML=items.map(item=>{
+    let d={};try{d=JSON.parse(item.content);}catch{}
+    let fields='';
+    if(d.tipo==='senha'){
+      if(d.email)fields+=`<div class="cofre-field"><span style="min-width:50px">Email:</span><span class="cofre-val">${d.email}</span></div>`;
+      if(d.senha)fields+=`<div class="cofre-field"><span style="min-width:50px">Senha:</span><span class="cofre-hidden" id="pw-${item.id}">••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.senha)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;
+    }else if(d.tipo==='cartao'){
+      if(d.num)fields+=`<div class="cofre-field"><span style="min-width:50px">Número:</span><span class="cofre-hidden" id="pw-${item.id}">•••• •••• •••• ••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(d.num)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;
+    }else{
+      const txt=d.nota||d.outro||'';
+      // Detecta se o conteúdo parece uma LISTA de credenciais (um ou mais
+      // pares "email senha/código") e formata cada par em linha separada,
+      // em vez de um bloco de texto corrido.
+      const regexPar=/(\S+@\S+\.\S+)\s+(\S+)/g;
+      const pares=[];
+      let m;
+      while((m=regexPar.exec(txt))!==null) pares.push({ usuario:m[1], senha:m[2] });
+      const pareceLista=pares.length>=2;
+
+      if(pareceLista){
+        fields+=`<div class="cofre-field" style="flex-direction:column;align-items:stretch;gap:4px">`;
+        pares.forEach((par,i)=>{
+          const idLinha=`${item.id}-${i}`;
+          fields+=`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border)">`+
+            `<span class="cofre-val" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${par.usuario}</span>`+
+            `<span class="cofre-hidden" id="pw-${idLinha}" style="flex-shrink:0">••••••••</span>`+
+            `<button class="cofre-eye" onclick="togglePw('${idLinha}','${btoa(unescape(encodeURIComponent(par.senha)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>`+
+          `</div>`;
         });
+        fields+=`</div>`;
+      }else if(txt){
+        fields+=`<div class="cofre-field"><span class="cofre-hidden" id="pw-${item.id}">••••••••••</span><button class="cofre-eye" onclick="togglePw('${item.id}','${btoa(unescape(encodeURIComponent(txt)))}')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`;
       }
-      const allDone = items.every(i => i.done);
-      await prisma.groceryList.update({ where: { id: lista.id }, data: { items: JSON.stringify(items), done: allDone } });
-      await memory.saveMemory(user.id, 'ultima_lista', lista.id);
-      return { acao: 'marcada', listaNome: lista.name, listaItems: items, allDone };
     }
-    if (tipo === 'lista_adicionar' && classified.item) {
-      const mems2 = await memory.getRecentMemories(user.id, 20);
-      const listaRef2 = mems2.find(m => m.type === 'ultima_lista');
-      if (listaRef2) {
-        const lista2 = await prisma.groceryList.findUnique({ where: { id: listaRef2.content } });
-        if (lista2) {
-          let items2 = []; try { items2 = JSON.parse(lista2.items); } catch {}
-          const newId = items2.length > 0 ? Math.max(...items2.map(i => i.id)) + 1 : 1;
-          items2.push({ id: newId, nome: classified.item, done: false });
-          await prisma.groceryList.update({ where: { id: lista2.id }, data: { items: JSON.stringify(items2) } });
-          return { acao: 'adicionado', listaNome: lista2.name, listaItems: items2, itemAdicionado: classified.item };
-        }
-      }
-      return null;
+    return `<div class="cofre-card"><div class="cofre-card-body"><div class="cofre-top"><div class="cofre-name"><span class="cofre-lock" id="lock-${item.id}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path class="lock-shackle" d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span> ${d.nome||'Sem nome'}</div></div>${fields}<div class="cofre-date">Salvo em ${fmtD(item.createdAt)}</div></div><button class="med2-del" onclick="delCofre('${item.id}')" title="Excluir" style="flex-shrink:0;align-self:center"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button></div>`;
+  }).join('');
+}
+function togglePw(id,b64){
+  const el=document.getElementById('pw-'+id);
+  const lock=document.getElementById('lock-'+id);
+  if(!el)return;
+  const decoded=decodeURIComponent(escape(atob(b64)));
+  if(el.classList.contains('cofre-hidden')){
+    el.textContent=decoded;
+    el.classList.remove('cofre-hidden');
+    el.classList.add('cofre-val');
+    if(lock)lock.classList.add('unlocked');
+  }else{
+    el.textContent='••••••••';
+    el.classList.add('cofre-hidden');
+    el.classList.remove('cofre-val');
+    if(lock)lock.classList.remove('unlocked');
+  }
+}
+function copyCofre(id,ds){try{const d=JSON.parse(ds);navigator.clipboard.writeText(d.senha||d.num||d.nota||d.outro||'');showToast('Copiado! 📋');}catch{showToast('Erro ao copiar');}}
+async function delCofre(id){if(!confirm('Excluir?'))return;try{await fetch(`/forms/cofre/${id}`,{method:'DELETE'});showToast('Excluído ✅');renderCofre();}catch{showToast('Erro ⚠️');}}
+function updateCofreFields(){const t=document.getElementById('ct').value;['senha','cartao','nota','outro'].forEach(x=>document.getElementById('cf-'+x).style.display=x===t?'block':'none');}
+async function saveCofre(){const tipo=document.getElementById('ct').value,nome=document.getElementById('cn').value.trim();if(!nome){showToast('Informe o nome ⚠️');return;}let data={tipo,nome};if(tipo==='senha'){data.email=document.getElementById('ce').value;data.senha=document.getElementById('cs-pw').value;data.url=document.getElementById('cu').value;}else if(tipo==='cartao'){data.num=document.getElementById('cc-num').value;data.val=document.getElementById('cc-val').value;data.cvv=document.getElementById('cc-cvv').value;}else if(tipo==='nota'){data.nota=document.getElementById('cn-txt').value;}else{data.outro=document.getElementById('co-txt').value;}const btn=document.getElementById('sc-btn');btn.textContent='Salvando...';btn.disabled=true;try{const r=await fetch(`/forms/cofre/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conteudo:JSON.stringify(data)})});if(r.ok){closeModal('m-cofre');showToast('Salvo! 🔐');renderCofre();}else showToast('Erro ⚠️');}catch{showToast('Erro ⚠️');}btn.textContent='Salvar';btn.disabled=false;}
+async function loadPrefs(){
+  try{
+    const r=await fetch(`/forms/preferencia/${phone}`);
+    const d=await r.json();
+    if(d.tom){applyMood(d.tom);selectMood(d.tom);}
+    if(d.name){
+      document.getElementById('pref-nome').value=d.name;
+      const disp=document.getElementById('cfg-nome-display');
+      if(disp)disp.textContent=d.name;
     }
-    return null;
-  } catch (e) {
-    console.error(`[${phone}] Erro executeListaAction:`, e.message);
-    return null;
+    if(d.saldo!==undefined&&d.saldo!==null){
+      document.getElementById('pref-saldo').value=d.saldo;
+      currentSaldo=d.saldo;
+      const disp=document.getElementById('cfg-saldo-display');
+      if(disp)disp.textContent='R$ '+Number(d.saldo).toLocaleString('pt-BR',{minimumFractionDigits:2});
+    }
+  }catch{}
+  const pf=document.getElementById('pref-phone');
+  if(pf)pf.value='';
+  const phoneDisp=document.getElementById('cfg-wa-phone-display');
+  if(phoneDisp)phoneDisp.textContent='+55 '+phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
+  renderAdminUsuarios();
+}
+async function savePrefs(){const tom=currentMood,nome=document.getElementById('pref-nome').value.trim();const saldoInput=document.getElementById('pref-saldo').value;const saldoNum=saldoInput!==''&&saldoInput!==undefined?parseFloat(saldoInput):null;let newPhone=document.getElementById('pref-phone').value.trim().replace(/\D/g,'');if(newPhone&&newPhone.length>=10){if(!newPhone.startsWith('55'))newPhone='55'+newPhone;phone=newPhone;const user=window._currentUser;if(user)localStorage.setItem(`clara_phone_${user.uid}`,newPhone);const sp=document.getElementById('sidebar-phone');if(sp)sp.textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');document.getElementById('drawer-phone').textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');}try{await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tom,nome,saldo:saldoNum})});if(saldoNum!==null)currentSaldo=saldoNum;showToast('Preferências salvas! ✅');
+    if(saldoNum!==null){const disp=document.getElementById('cfg-saldo-display');if(disp)disp.textContent='R$ '+Number(saldoNum).toLocaleString('pt-BR',{minimumFractionDigits:2});}
+    if(currentNav==='financeiro')renderFin();}catch{showToast('Erro ⚠️');}}
+
+// ── Gerenciar usuários (admin) ──
+async function renderAdminUsuarios(){
+  const el=document.getElementById('admin-usuarios-body');
+  if(!el)return;
+  try{
+    const r=await fetch('/forms/admin/usuarios');
+    const usuarios=await r.json();
+    const totais=usuarios.map(u=>u.lembretes+u.medicamentos+u.gastos+u.listas);
+    const maxTotal=Math.max(...totais);
+    el.innerHTML=usuarios.map((u,i)=>{
+      // O usuário com mais dados é tratado como "o seu" e protegido por
+      // padrão — ações destrutivas exigem destravar primeiro, evitando
+      // exclusão/bloqueio acidental da própria conta principal.
+      const isProtegido=totais[i]===maxTotal&&maxTotal>0;
+      const isBlocked=u.blocked;
+      const corBorda=isProtegido?'border:1px solid rgba(34,197,94,.3);':'';
+      return `<div id="admin-card-${u.id}" style="background:var(--s3);border-radius:10px;padding:12px;margin-bottom:8px;${corBorda}${isBlocked?'opacity:.5':''}">
+        <div style="display:flex;align-items:center;gap:6px">
+          ${isProtegido?'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>':''}
+          <div style="font-size:13px;font-weight:600;color:var(--text)">${u.phone}</div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${u.name||'(sem nome)'} · ${u.lembretes} lembretes · ${u.medicamentos} medicamentos · ${u.gastos} gastos · ${u.listas} listas</div>
+        ${isBlocked?'<div style="font-size:11px;color:var(--text3);margin-top:6px">🚫 Bloqueado</div>':
+          isProtegido?`<div style="font-size:11px;color:var(--text3);margin-top:8px">Protegido — provavelmente sua conta principal. <a href="#" onclick="event.preventDefault();adminDestravar('${u.id}')" style="color:#C4B5FD">Destravar ações</a></div>
+          <div id="admin-actions-${u.id}" style="display:none;gap:8px;margin-top:8px">
+            <button onclick="adminBloquear('${u.id}')" id="admin-bloq-${u.id}" style="flex:1;padding:7px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.25);color:#FCD34D;border-radius:8px;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Bloquear</button>
+            <button onclick="adminExcluir('${u.id}','${u.phone}')" id="admin-del-${u.id}" style="flex:1;padding:7px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#FCA5A5;border-radius:8px;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Excluir</button>
+          </div>`
+          :`<div style="display:flex;gap:8px;margin-top:8px">
+            <button onclick="adminBloquear('${u.id}')" id="admin-bloq-${u.id}" style="flex:1;padding:7px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.25);color:#FCD34D;border-radius:8px;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Bloquear</button>
+            <button onclick="adminExcluir('${u.id}','${u.phone}')" id="admin-del-${u.id}" style="flex:1;padding:7px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#FCA5A5;border-radius:8px;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Excluir</button>
+          </div>`}
+        <div id="admin-status-${u.id}" style="font-size:11px;margin-top:6px"></div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    el.innerHTML='<div style="font-size:12px;color:var(--red)">Erro ao carregar usuários</div>';
+  }
+}
+function adminDestravar(id){
+  const div=document.getElementById('admin-actions-'+id);
+  if(div)div.style.display='flex';
+}
+async function adminBloquear(id){
+  const btn=document.getElementById('admin-bloq-'+id);
+  const status=document.getElementById('admin-status-'+id);
+  if(!confirm('Bloquear esse número? Ele para de receber bom dia/boa noite/lembretes automáticos, mas os dados continuam salvos (reversível).'))return;
+  btn.disabled=true;btn.textContent='...';
+  try{
+    const r=await fetch('/forms/admin/bloquear/'+id,{method:'POST'});
+    if(r.ok){showToast('Usuário bloqueado ✅');renderAdminUsuarios();}
+    else throw new Error('falha');
+  }catch{
+    if(status){status.textContent='Erro ao bloquear';status.style.color='var(--red)';}
+    btn.disabled=false;btn.textContent='Bloquear';
+  }
+}
+async function adminExcluir(id,phoneNum){
+  if(!confirm(`Excluir DEFINITIVAMENTE o número ${phoneNum}? Isso remove todos os lembretes, medicamentos, gastos e listas dele. Não pode ser desfeito.`))return;
+  if(!confirm('Tem certeza mesmo? Essa ação é irreversível.'))return;
+  const btn=document.getElementById('admin-del-'+id);
+  const status=document.getElementById('admin-status-'+id);
+  btn.disabled=true;btn.textContent='...';
+  try{
+    const r=await fetch('/forms/admin/usuario/'+id,{method:'DELETE'});
+    if(r.ok){showToast('Usuário excluído ✅');renderAdminUsuarios();}
+    else throw new Error('falha');
+  }catch{
+    if(status){status.textContent='Erro ao excluir';status.style.color='var(--red)';}
+    btn.disabled=false;btn.textContent='Excluir';
   }
 }
 
-function formatarListaWhatsApp(listaResult) {
-  if (!listaResult || !listaResult.listaItems) return '';
-  const { listaNome, listaItems } = listaResult;
-  const itens = listaItems.map(i => `${i.done ? '✅' : '⬜'} ${i.id}. ${i.nome}`).join('\n');
-  const done = listaItems.filter(i => i.done).length;
-  return `🛒 *${listaNome}*\n\n${itens}\n\n_${done}/${listaItems.length} itens marcados_`;
-}
-
-async function responderLivre(user, phone, text, contextoExtra = '', skipContext = false, acaoConfirmacao = null) {
-  try {
-    const history = await memory.getConversationHistory(user.id, 10);
-    const preferences = await memory.getUserPreference(user.id);
-    preferences._phone = phone;
-
-    if (acaoConfirmacao) preferences._acaoConfirmacao = acaoConfirmacao;
-
-    if (skipContext) {
-      preferences._contexto = '';
-      const resp = await freeResponse(text, history, preferences);
-      if (resp === null) return;
-      if (resp && resp.includes('__BUSCAR:')) {
-        // improvável em saudações, mas tratamos igual
-        await sendMessage(phone, 'Deixa eu pesquisar isso! 🔍');
-        return;
-      }
-      await memory.saveConversationMessage(user.id, 'user', text);
-      await memory.saveConversationMessage(user.id, 'assistant', resp);
-      await sendMessage(phone, resp);
-      return;
-    }
-
-    let contexto = '';
-    try {
-      const now = nowBRT();
-      const pad = n => String(n).padStart(2,'0');
-      const hm = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-      const toDateStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-      const hoje = toDateStr(now);
-      const amanha = new Date(now); amanha.setDate(amanha.getDate()+1);
-      const amanhaStr = toDateStr(amanha);
-      const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
-      const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
-      const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
-
-      const [lembretes, meds, gastos, perfilPessoal, relMemoria, pendenciaSaude] = await Promise.all([
-        prisma.reminder.findMany({
-          where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: inicioHoje, lte: fimAmanha } },
-          orderBy: { scheduledAt: 'asc' }, take: 20
-        }),
-        prisma.medication.findMany({ where: { userId: user.id, active: true, remaining: { gt: 0 } } }),
-        preferences.saldo != null ? prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } } }) : Promise.resolve([]),
-        buildPersonalContext(user.id).catch(() => ''),
-        prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null),
-        // ── Pendência de saúde ainda não cobrada ──
-        // Se o usuário chamar a Clara DEPOIS do horário de check-in
-        // calculado (checkInAt, normalmente 3-5h após a menção original),
-        // ela já traz o assunto à tona na conversa em vez de esperar o
-        // cron disparar sozinho — fica mais natural ("ela lembrou porque
-        // você apareceu"). AJUSTE: antes essa busca não checava checkInAt,
-        // só perguntado/resolvido — isso fazia ela puxar o assunto segundos
-        // depois de você ter mencionado, mesmo sem nenhum tempo ter
-        // passado, colidindo de forma estranha com outras perguntas feitas
-        // logo em seguida (ex: pergunta sobre agenda virando também
-        // pergunta sobre dor de cabeça na mesma resposta). Agora só
-        // considera pendências cujo prazo de check-in já venceu — mesmo
-        // timing que o cron usa, só que com chance de aparecer organicamente
-        // na conversa em vez de só por iniciativa própria da Clara.
-        prisma.pendencia.findFirst({
-          where: { userId: user.id, categoria: 'saude', perguntado: false, resolvido: false, checkInAt: { lte: new Date() } },
-          orderBy: { createdAt: 'desc' }
-        }).catch(() => null)
-      ]);
-
-      if (lembretes.length > 0) {
-        const fmtLemb = (r) => {
-          const d = new Date(r.scheduledAt);
-          const dStr = toDateStr(d) === hoje ? 'Hoje' : 'Amanhã';
-          const horaBRT = d.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo', hour:'2-digit', minute:'2-digit'});
-          return `• ${dStr} às ${horaBRT} — ${r.message}`;
-        };
-        contexto += `\n\n[AGENDA]\n${lembretes.map(fmtLemb).join('\n')}`;
-      } else {
-        contexto += `\n\n[AGENDA]\nNenhum lembrete para hoje ou amanhã.`;
-      }
-
-      try {
-        const textLower = (text||'').toLowerCase();
-        if (/envi|mand|recado|contato|mostr|lista/.test(textLower)) {
-          const contatos = await getContacts(user.id);
-          if (contatos.length > 0) {
-            const listaCtx = contatos.map((c,i) => `${i+1}. ${c.name}${c.relation?` (${c.relation})`:''} — ${c.phone}`).join('\n');
-            contexto += `\n\n[CONTATOS SALVOS]\n${listaCtx}`;
-          }
-        }
-      } catch(e) {}
-
-      if (meds.length > 0) {
-        const fmtMed = (m) => {
-          let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
-          const proxima = times.find(t => t >= hm) || times[0] || '—';
-          const quando = times.find(t => t >= hm) ? 'hoje' : 'amanhã';
-          return `• ${m.name} — próxima dose: ${proxima} (${quando}), ${m.remaining} doses restantes`;
-        };
-        contexto += `\n\n[MEDICAMENTOS]\n${meds.map(fmtMed).join('\n')}`;
-      }
-
-      if (preferences.saldo != null) {
-        const saidas = gastos.filter(g => g.value > 0);
-        const entradas = gastos.filter(g => g.value < 0);
-        const totalGasto = saidas.reduce((a, g) => a + g.value, 0);
-        const totalEntradas = entradas.reduce((a, g) => a + Math.abs(g.value), 0);
-        const restante = preferences.saldo - totalGasto + totalEntradas;
-        contexto += `\n\n[FINANCEIRO]\nOrçamento: R$ ${preferences.saldo.toFixed(2)}\nGasto: R$ ${totalGasto.toFixed(2)}\nEntradas: R$ ${totalEntradas.toFixed(2)}\nSaldo: R$ ${restante.toFixed(2)}`;
-      }
-
-      // Listas ativas — evita Clara inventar listas
-      try {
-        const listas = await prisma.groceryList.findMany({
-          where: { userId: user.id, done: false },
-          orderBy: { createdAt: 'desc' }, take: 5
-        });
-        if (listas.length > 0) {
-          const listaCtx = listas.map(l => {
-            let items = []; try { items = JSON.parse(l.items); } catch {}
-            const pendentes = items.filter(i => !i.done).map(i => i.nome).join(', ');
-            const done = items.filter(i => i.done).length;
-            return `• "${l.name}" — ${done}/${items.length} concluídos${pendentes ? ` | Pendentes: ${pendentes}` : ' ✅'}`;
-          }).join('\n');
-          contexto += `\n\n[LISTAS ATIVAS]\n${listaCtx}`;
-        } else {
-          contexto += `\n\n[LISTAS ATIVAS]\nNenhuma lista ativa.`;
-        }
-      } catch(e) {}
-
-      if (relMemoria?.content) contexto += `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoria.content}`;
-
-      // ── Pendência de saúde: traz à tona se fizer sentido na conversa ──
-      // ── Pendência de saúde: só aparece no contexto se fizer sentido ──
-      // REGRAS DE PRIORIDADE E TIMING:
-      // 1. Se já existe assunto em aberto de CONVERSA (pendencia_conversa, ex:
-      //    hospital), ele já aparece via buildPersonalContext → [ASSUNTOS EM ABERTO].
-      //    Adicionar pendenciaSaude por cima causaria dois assuntos competindo,
-      //    tornando a resposta sobrecarregada. Nesse caso, pendenciaSaude é omitida.
-      // 2. Para remédios: só inclui se o horário da dose estiver dentro de 2h
-      //    (antes ou depois). Perguntar sobre remédio das 22h às 15h é fora de
-      //    contexto e perturbador — bug real observado em produção.
-      // 3. Para outros tipos (saúde geral, dor de cabeça etc.): mantém o
-      //    comportamento anterior — aparece quando checkInAt já venceu.
-      const temAssuntoAberto = (perfilPessoal || '').includes('[ASSUNTOS EM ABERTO');
-      let mostrarPendenciaSaude = false;
-      if (pendenciaSaude && !temAssuntoAberto) {
-        const resumoLower = (pendenciaSaude.resumo || '').toLowerCase();
-        const ehRemedio = /rem[eé]dio|medicamento|comp|dose|tomar/.test(resumoLower);
-        if (ehRemedio) {
-          // Só mostra se algum remédio ativo tem horário dentro de 2h
-          const now2 = nowBRT();
-          const hm2 = `${String(now2.getHours()).padStart(2,'0')}:${String(now2.getMinutes()).padStart(2,'0')}`;
-          const dentroJanela = meds.some(m => {
-            let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
-            return times.some(t => {
-              const [th, tm] = t.split(':').map(Number);
-              const [nh, nm] = hm2.split(':').map(Number);
-              const diffMin = Math.abs((th * 60 + tm) - (nh * 60 + nm));
-              return diffMin <= 120; // dentro de 2h
-            });
-          });
-          mostrarPendenciaSaude = dentroJanela;
-        } else {
-          mostrarPendenciaSaude = true; // saúde geral — comportamento anterior
-        }
-      }
-      if (mostrarPendenciaSaude) {
-        contexto += `\n\n[SAÚDE EM ABERTO] Mais cedo a pessoa mencionou: "${pendenciaSaude.resumo}". Se fizer sentido natural na conversa, pergunte com carinho genuíno como está se sentindo agora — sem forçar se a mensagem atual for sobre outro assunto completamente diferente, e sem repetir isso em toda resposta.`;
-      }
-
-      if (contexto) contexto = `\n\nUse as informações abaixo para responder com precisão:${contexto}`;
-      if (perfilPessoal) contexto += perfilPessoal;
-      if (contextoExtra) contexto += contextoExtra;
-      preferences._contexto = contexto;
-    } catch (e) {
-      console.error(`[${phone}] Erro contexto:`, e.message);
-    }
-
-    const resp = await freeResponse(text, history, preferences);
-    if (resp === null) return; // modo direto: já avisado, não responde
-
-    // Garante que resp é string — o Gemini pode retornar objeto em casos de erro
-    const respStr = typeof resp === 'string' ? resp : String(resp || '');
-    if (!respStr) return;
-
-    // ── Busca proativa: Clara sinalizou que quer pesquisar ──
-    const buscaMatch = respStr.match(/__BUSCAR:(.+?)(__|\n|$)/);
-    if (buscaMatch) {
-      const query = buscaMatch[1].trim();
-      // Avisa que vai pesquisar, no estilo da Clara
-      const tom = preferences?.tom || 'carinhoso';
-      const avisos = {
-        carinhoso: `✨ Buscando pra gente…`,
-        direto: `🔍 Buscando.`,
-        divertido: `✨ Um segundinho, deixa eu dar uma garimpada!`,
-        sarcastico: `Tá bom, vou pesquisar porque obviamente você não vai fazer isso sozinho. 🙄`,
-      };
-      await sendMessage(phone, avisos[tom] || avisos.carinhoso);
-
-      try {
-        const resultado = await searchWeb(query, '');
-        if (resultado) {
-          await memory.saveConversationMessage(user.id, 'user', text);
-          await memory.saveConversationMessage(user.id, 'assistant', resultado);
-          await sendMessage(phone, resultado);
-          updateRelationshipSummary(user.id, history, resultado).catch(() => {});
-        } else {
-          await sendMessage(phone, 'Pesquisei mas não encontrei nada útil sobre isso agora 😕');
-        }
-      } catch (eBusca) {
-        console.error(`[BuscaProativa] Erro:`, eBusca.message);
-        await sendMessage(phone, 'Não consegui pesquisar isso agora 😕 Tenta de novo?');
-      }
-      return;
-    }
-
-    await memory.saveConversationMessage(user.id, 'user', text);
-    await memory.saveConversationMessage(user.id, 'assistant', respStr);
-    await sendMessage(phone, respStr);
-    updateRelationshipSummary(user.id, history, respStr).catch(() => {});
-
-    // ── Detecção de assunto em aberto (fire-and-forget) ──────────────
-    // Roda após a resposta, sem adicionar latência. Se a conversa gerou
-    // um assunto relevante não resolvido (saúde, trabalho, evento esperado),
-    // salva como pendencia_conversa pra Clara retomar naturalmente depois.
-    // Também detecta quando o usuário fecha um assunto aberto.
-    ;(async () => {
-      try {
-        await memory.fecharPendenciasPorResolucao(user.id, text);
-        const histAtual = [...history, { role: 'user', content: text }, { role: 'assistant', content: respStr }];
-        // Só roda se for conversa com substância (não saudação curta)
-        if (histAtual.length >= 2 && text.length > 15) {
-          const pendencia = await detectarAssuntoEmAberto(histAtual);
-          if (pendencia) await memory.salvarOuAtualizarPendencia(user.id, pendencia);
-        }
-      } catch { /* silencioso — nunca bloqueia a resposta */ }
-    })();
-  } catch (e) {
-    console.error(`[${phone}] Erro responderLivre:`, e.message);
-    await sendMessage(phone, 'Ops, tive um probleminha. Pode repetir?');
+function openModal(id){
+  if(id==='m-lembrete'){
+    const navDate=remViewDate||new Date();
+    const d=navDate.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+    const{hora}=nowLocal();
+    document.getElementById('ml-data').value=d;
+    document.getElementById('ml-hora').value=hora;
+    document.getElementById('ml-titulo').value='';
   }
-}
-
-async function handleMessage(phone, text, location = null) {
-  try {
-    const user = await memory.getOrCreateUser(phone);
-
-    if (location && location.latitude) {
-      await memory.saveMemory(user.id, 'localizacao', JSON.stringify({ latitude: location.latitude, longitude: location.longitude, updatedAt: new Date().toISOString() }));
-      return await sendMessage(phone, '✅ Localização recebida! Agora posso te ajudar melhor com clima, farmácias e lojas próximas.');
+  if(id==='m-remedio'){const{hora}=nowLocal();document.getElementById('mr-inicio').value=hora;document.getElementById('mr-nome').value='';}
+  if(id==='m-gasto'||id==='m-entrada'){
+    // Preenche com o dia de hoje, mas no mês/ano que está sendo visualizado
+    const hoje=new Date(new Date().toLocaleString('en-US',{timeZone:'America/Sao_Paulo'}));
+    const diaHoje=hoje.getDate();
+    // Se o mês visualizado é o atual, usa hoje; senão usa dia 1 do mês visualizado
+    const mesAtual=hoje.getMonth(),anoAtual=hoje.getFullYear();
+    let dataDefault;
+    if(finMes===mesAtual&&finAno===anoAtual){
+      dataDefault=hoje.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+    }else{
+      // Usa último dia do mês visualizado se dia atual não existe lá
+      const ultimoDia=new Date(finAno,finMes+1,0).getDate();
+      const dia=Math.min(diaHoje,ultimoDia);
+      dataDefault=`${finAno}-${String(finMes+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
     }
-
-    if (!text) return;
-
-    const textLower = normalizar(text);
-
-    // ── Comando interno: ativa/desativa modo comparação (Gemini manual) ──
-    const comandoComparacao = detectarComandoComparacao(text);
-    if (comandoComparacao === 'on') {
-      ativarModoComparacao(phone);
-      return await sendMessage(phone, '🔄 Modo comparação ativado — vou responder usando o Gemini agora. Diga "volta pro Groq" quando quiser voltar ao normal.');
-    }
-    if (comandoComparacao === 'off') {
-      const estava = emModoComparacao(phone);
-      desativarModoComparacao(phone);
-      if (estava) return await sendMessage(phone, '✅ Voltei pro Groq — fluxo normal (com os fallbacks de sempre).');
-      // já não estava em modo comparação — segue o fluxo normal sem responder isso
-    }
-
-    const foiConfirmacao = await checkConfirmacaoPendente(user, phone, text);
-    if (foiConfirmacao) return;
-
-    // ── Consulta direta (sem LLM) ──
-    // Para perguntas de leitura pura sobre dados já existentes no banco
-    // (agenda de hoje/amanhã, lembretes pendentes, saldo), responde
-    // direto sem passar por classify/freeResponse — instantâneo e sempre
-    // consistente entre WhatsApp e Dashboard (mesmo módulo compartilhado
-    // consultaDireta.js). Corrige também o bug em que fallbacks diferentes
-    // da cascata formatavam horários de forma inconsistente (fuso horário).
-    const respostaDireta = await tentarConsultaDireta(text, { prisma, memory, userId: user.id });
-    if (respostaDireta) {
-      await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
-      await memory.saveConversationMessage(user.id, 'assistant', respostaDireta).catch(() => {});
-      return await sendMessage(phone, respostaDireta);
-    }
-
-    // ── Resposta "ele"/"ela" à pergunta de gênero ──
-    // Detecção leve e determinística (sem custo de IA): só verifica o
-    // histórico se a mensagem for exatamente "ele" ou "ela" isolada, e
-    // confirma que a última mensagem da Clara realmente perguntou sobre
-    // isso, antes de salvar — evita falso positivo em "ele" sem contexto.
-    if (/^(ele|ela)[.!]?$/i.test(text.trim())) {
-      const ultimasMsgs = await memory.getConversationHistory(user.id, 2).catch(() => []);
-      const ultimaDaClara = [...ultimasMsgs].reverse().find(m => m.role === 'assistant');
-      if (ultimaDaClara && /direcionar.*voc[eê]|ele ou ela|prefere.*ele.*ela/i.test(ultimaDaClara.content || '')) {
-        const genero = text.trim().toLowerCase().replace(/[.!]/g, '');
-        await memory.savePersonalInfo(user.id, 'genero', genero, 'outro').catch(() => {});
-        return await sendMessage(phone, genero === 'ela' ? 'Combinado! 💜' : 'Combinado! 👍');
-      }
-    }
-
-    // ── Desativar "Meu Dia" permanentemente ──
-    if (/para de criar (o\s+)?meu dia|n[aã]o (quero|preciso) (mais )?(o\s+)?meu dia|remove (o\s+)?meu dia|cancela (o\s+)?meu dia/i.test(text)) {
-      await upsertMemoryPorTipo(user.id, 'meu_dia_desativado', new Date().toISOString()).catch(() => {});
-      return await sendMessage(phone, 'Ok! Não crio mais o "Meu Dia" automaticamente. Se quiser ativar de novo, é só me pedir 😊');
-    }
-
-    // ── Reativar "Meu Dia" ──
-    if (/ativa (o\s+)?meu dia|quero (o\s+)?meu dia (de volta|novamente)|volta (com |a criar )?(o\s+)?meu dia/i.test(text)) {
-      await prisma.memory.deleteMany({
-        where: { userId: user.id, type: 'meu_dia_desativado' }
-      }).catch(() => {});
-      return await sendMessage(phone, '✅ "Meu Dia" ativado! A partir de amanhã de manhã já crio a lista automaticamente pra você 📅');
-    }
-
-
-    // Intercepta ANTES do classify (LLM): se o usuário citou um código e há
-    // lembretes recém-disparados aguardando confirmação, marca direto o
-    // correspondente como concluído — evita depender do LLM classificar
-    // corretamente uma resposta curta e ambígua, e evita o problema de
-    // "arrastei a conversa e ela confirmou o último" quando há vários.
-    {
-      const codigoRapido = extrairCodigoLembrete(text);
-      if (codigoRapido) {
-        const pendentes = await getLembretesPendentesConfirmacao(user.id);
-        if (pendentes.length > 0) {
-          const escolhido = pendentes[codigoRapido - 1];
-          if (escolhido) {
-            await prisma.reminder.update({ where: { id: escolhido.id }, data: { confirmed: true } });
-            await sendMessage(phone, `✅ Marquei como feito: "${escolhido.message}" 📌`);
-            return;
-          } else {
-            await sendMessage(phone, `Não achei o lembrete #${codigoRapido} 😕 Você tem ${pendentes.length} pendente${pendentes.length > 1 ? 's' : ''} (#1 a #${pendentes.length}).`);
-            return;
-          }
-        }
-      }
-    }
-
-    if (['menu','inicio','voltar','comeco','ajuda','opcoes'].includes(textLower)) {
-      await memory.saveMemory(user.id, 'modo_atual', '');
-      return await enviarMenu(phone);
-    }
-
-    if (['ver lembretes','ver_lembretes'].includes(textLower)) return await listarLembretes(user, phone);
-    if (['ver anotacoes','ver_anotacoes'].includes(textLower)) return await listarAnotacoes(user, phone);
-    if (['ver gastos','ver_gastos','resumo_mes','relatorio','relatorio do mes','relatorio financeiro'].includes(textLower)) return await listarGastos(user, phone);
-    if (['ver horas hoje','ver_horas_hoje'].includes(textLower)) return await listarPontoHoje(user, phone);
-    if (['ver medicamentos','ver_medicamentos'].includes(textLower)) return await listarMedicamentos(user, phone);
-
-    const modoMap = {
-      'lembretes':'lembrete','lembrete':'lembrete','criar_lembrete':'lembrete','novo_lembrete':'lembrete',
-      'anotacoes':'anotacao','anotacao':'anotacao','nova_anotacao':'anotacao',
-      'gastos':'gasto','gasto':'gasto','novo_gasto':'gasto',
-      'saude':'saude','novo_remedio':'saude',
-      'ponto digital':'ponto','ponto':'ponto','bater_ponto':'ponto',
-      'pesquisar algo':'pesquisar','pesquisar':'pesquisar','pesquisa':'pesquisar',
-      'conversar':'conversar','bater papo':'conversar',
-    };
-
-    if (modoMap[textLower]) {
-      const modo = modoMap[textLower];
-      await memory.saveMemory(user.id, 'modo_atual', modo);
-      return await sendMessage(phone, BOAS_VINDAS_MODO[modo]);
-    }
-
-    const modoAtual = await getModoAtual(user.id);
-
-    if (modoAtual === 'anotacao') {
-      await memory.saveMemory(user.id, 'anotacao', text, { titulo: text.substring(0, 50) });
-      return await sendButtons(phone,
-        `📝 *Anotação salva!*\n\n_"${text}"_\n\nGuardei isso aqui com segurança 💜`,
-        [{ id: 'ver_anotacoes', label: '📋 Ver anotações' }, { id: 'menu', label: '🏠 Menu' }]
-      );
-    }
-
-    if (modoAtual === 'conversar') return await responderLivre(user, phone, text);
-
-    // ── Passa contexto da conversa para o classify resolver referências vagas ──
-    let contextoClassify = '';
-    try {
-      const history = await memory.getConversationHistory(user.id, 4);
-      if (history.length > 0) {
-        contextoClassify = history.map(m => `${m.role === 'user' ? 'Usuário' : 'Clara'}: ${m.content}`).join('\n');
-      }
-    } catch(e) {}
-
-    const classified = await classify(text, phone, contextoClassify);
-    console.log(`[${phone}] Tipo: ${classified.tipo}`);
-
-    // ── Intercepta: lista_marcar com hora → editar_lembrete ──
-    if (classified.tipo === 'lista_marcar' && (classified.nova_hora || classified.nova_data)) {
-      classified.tipo = 'editar_lembrete';
-    }
-
-    if (LISTA_TIPOS.includes(classified.tipo)) {
-      const listaResult = await executeListaAction(user, phone, classified);
-      let contextoExtra = '';
-      if (listaResult) {
-        const { acao, listaNome, listaItems, allDone, itemAdicionado } = listaResult;
-        if (acao === 'criada') contextoExtra = `\n\n[AÇÃO REALIZADA] Acabei de criar a lista "${listaNome}" com os itens: ${listaItems.map(i=>i.nome).join(', ')}. Confirme de forma animada. Não liste os itens pois aparecem separadamente.`;
-        else if (acao === 'encontrada') contextoExtra = `\n\n[LISTA ENCONTRADA] Lista "${listaNome}" com: ${listaItems.map(i=>`${i.done?'✅':'⬜'} ${i.nome}`).join(', ')}. Apresente naturalmente.`;
-        else if (acao === 'nenhuma') contextoExtra = `\n\n[SEM LISTA] Usuário não tem lista ativa. Informe e ofereça criar uma.`;
-        else if (acao === 'marcada') contextoExtra = `\n\n[AÇÃO REALIZADA] Marquei itens na lista "${listaNome}".${allDone?' Todos concluídos! 🎉':''} Confirme.`;
-        else if (acao === 'adicionado') contextoExtra = `\n\n[AÇÃO REALIZADA] Adicionei "${itemAdicionado}" à lista "${listaNome}". Confirme.`;
-        await responderLivre(user, phone, text, contextoExtra);
-        if (['criada','encontrada','adicionado','marcada'].includes(acao) && listaItems.length > 0) {
-          await sendMessage(phone, formatarListaWhatsApp(listaResult));
-        }
-      } else {
-        await responderLivre(user, phone, text, `\n\n[SEM LISTA] Não foi possível encontrar/criar lista. Informe o usuário.`);
-      }
-      extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract lista]', e.message));
-      return;
-    }
-
-    if (CONTATO_TIPOS.includes(classified.tipo)) {
-      await handleContatoAction(user, phone, classified);
-      extractAndSavePersonalInfo(user.id, text).catch(() => {});
-      return;
-    }
-
-    if (classified.tipo === 'busca' && classified.query) {
-      const cidade = await memory.getRecentMemories(user.id, 5)
-        .then(mems => mems.find(m => m.type === 'cidade')?.content || '')
-        .catch(() => '');
-      const resultadoBusca = await searchWeb(classified.query, cidade);
-      if (resultadoBusca) {
-        await memory.saveConversationMessage(user.id, 'user', text);
-        await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca);
-        await sendMessage(phone, resultadoBusca);
-        extractAndSavePersonalInfo(user.id, text).catch(() => {});
-        return;
-      }
-      await responderLivre(user, phone, text, `\n\n[BUSCA] Não encontrei resultados para "${classified.query}". Informe de forma curta que não encontrou nada.`, false);
-      return;
-    }
-
-    if (classified.tipo === 'relatorio_financeiro' || classified.tipo === 'consulta_saldo') {
-      await gerarRelatorioFinanceiroWhatsApp(user, phone);
-      return;
-    }
-
-    // ── Consulta de agenda por DATA(S) ESPECÍFICA(S) (ex: "o que tenho pro
-    // dia 24?", "e dia 24 e dia 27?") ──
-    // O bloco [AGENDA] usado no fluxo normal só cobre hoje/amanhã (ver
-    // construção do contexto em responderLivre) — perguntas sobre datas
-    // mais distantes nunca tinham acesso aos dados reais, fazendo a Clara
-    // dizer "não encontrei nada" mesmo quando existia um compromisso real
-    // (bug observado: consulta com nutricionista dia 24 cadastrada, mas
-    // invisível pra ela porque estava fora da janela hoje/amanhã). Esse
-    // branch busca DIRETO no banco pela(s) data(s) perguntada(s), cobrindo
-    // Reminder (lembretes/horários) e Task (compromissos sem lembrete).
-    // Aceita um ARRAY de datas porque o usuário pode perguntar por mais de
-    // uma de uma vez (ex: "dia 24 e dia 27") — com campo único anterior,
-    // isso ficava ambíguo pro classify e a busca nunca disparava.
-    if (classified.tipo === 'consulta' && Array.isArray(classified.datas) && classified.datas.length > 0) {
-      try {
-        const blocos = [];
-        for (const dataStr of classified.datas.slice(0, 5)) { // limite de segurança
-          const dataAlvo = new Date(`${dataStr}T00:00:00-03:00`);
-          if (isNaN(dataAlvo.getTime())) continue;
-          const fimDia = new Date(`${dataStr}T23:59:59-03:00`);
-          const [lembretesData, tarefasData] = await Promise.all([
-            prisma.reminder.findMany({ where: { userId: user.id, scheduledAt: { gte: dataAlvo, lte: fimDia } }, orderBy: { scheduledAt: 'asc' } }),
-            prisma.task.findMany({ where: { userId: user.id, dueDate: { gte: dataAlvo, lte: fimDia } }, orderBy: { dueDate: 'asc' } })
-          ]);
-          const dataFmt = dataAlvo.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-          const ehPassado = fimDia < nowBRT();
-          if (!lembretesData.length && !tarefasData.length) {
-            // Para datas PASSADAS, não dá pra afirmar com certeza que "não
-            // teve nada" — lembretes não confirmados com mais de 48h são
-            // apagados automaticamente (ver cron de limpeza em
-            // reminders.js), então a ausência pode significar "realmente
-            // não teve nada" OU "teve algo mas já foi limpo por não ter
-            // sido confirmado". Para datas futuras essa ambiguidade não
-            // existe — vazio é só vazio mesmo.
-            blocos.push(ehPassado
-              ? `[${dataFmt}, data passada] Nada encontrado no banco para essa data. IMPORTANTE: isso pode significar que realmente não havia nada, OU que havia algo não confirmado que já foi removido automaticamente (lembretes não confirmados somem após 48h). Avise essa incerteza ao usuário em vez de afirmar com certeza que não teve nada.`
-              : `[${dataFmt}] Nada agendado para essa data no banco de dados — confirmado pela busca real.`);
-          } else {
-            const itens = [
-              ...lembretesData.map(r => `${new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })} — ${r.message}`),
-              ...tarefasData.map(t => `${t.dueTime || '(sem horário)'} — ${t.title}`)
-            ];
-            blocos.push(`[${dataFmt}]\n${itens.map(i => `• ${i}`).join('\n')}`);
-          }
-        }
-        const contextoData = `\n\n[CONSULTA DATA] Resultado da busca real no banco de dados:\n${blocos.join('\n\n')}`;
-        await responderLivre(user, phone, text, contextoData, false);
-        return;
-      } catch (e) {
-        console.error('[consulta data específica]', e.message);
-        // Em caso de erro, cai no fluxo padrão abaixo em vez de travar.
-      }
-    }
-
-    // ── editar_lembrete e deletar_lembrete: executa sem responderLivre depois ──
-    if (classified.tipo === 'editar_lembrete') {
-      await editarLembrete(user, phone, classified, contextoClassify, text);
-      return;
-    }
-    if (classified.tipo === 'deletar_lembrete') {
-      await deletarLembretePorTitulo(user, phone, classified);
-      return;
-    }
-
-    // ── tarefa com DATA mas SEM HORA: pergunta o horário ao usuário ──
-    // em vez de criar o lembrete silenciosamente ou responder "Anotado"
-    // sem que nada tenha sido salvo de fato.
-    if (classified.tipo === 'tarefa' && classified.data && !classified.hora && !calcularHorarioRelativo(text)) {
-      const expira = Date.now() + 10 * 60 * 1000;
-      await prisma.memory.create({
-        data: {
-          userId: user.id, type: 'confirmacao_pendente',
-          content: JSON.stringify({ tipo: 'hora_lembrete', titulo: classified.titulo, data: classified.data, expira })
-        }
-      }).catch(() => {});
-      const dataFmt = new Date(`${classified.data}T12:00:00-03:00`).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-      await sendMessage(phone, `Anotado: "${classified.titulo}" no dia ${dataFmt} 📌\n\nQue horas devo colocar esse lembrete? Se não souber, me diz que eu deixo às 09:00 provisoriamente 😊`);
-      await memory.saveMemory(user.id, 'tarefa', classified.titulo, { data: classified.data, hora: null });
-      extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
-      return;
-    }
-
-    // ajustar_remedio precisa rodar de forma síncrona (não fire-and-forget)
-    // para sabermos o número real de doses resultante antes de confirmar —
-    // evita a Clara "inventar" ou ficar vaga sobre a quantidade.
-    let confirmacaoAjusteRemedio = null;
-    if (classified.tipo === 'ajustar_remedio') {
-      confirmacaoAjusteRemedio = await executeAjustarRemedio(user, classified).catch(e => {
-        console.error('Erro ajustar_remedio:', e.message);
-        return null;
-      });
-    } else {
-      // ── AWAIT em vez de fire-and-forget ──
-      // Bug corrigido: antes essa chamada não era esperada (.catch() sem
-      // await) — a Clara já respondia "Anotado!" pro usuário enquanto a
-      // gravação real no banco (ex: criação do Reminder) ainda rodava em
-      // segundo plano. Na maioria das vezes isso não dava problema (a
-      // gravação é rápida), mas em dias com muitos deploys em sequência
-      // (como hoje), se o processo fosse reiniciado bem nesse instante, a
-      // gravação podia ser interrompida no meio — o usuário recebia a
-      // confirmação, mas o lembrete nunca chegava a existir de verdade no
-      // banco (bug observado: lembrete confirmado por mensagem mas que
-      // nunca disparou). Agora esperamos a gravação terminar de verdade
-      // antes de seguir pra mensagem de confirmação.
-      await executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
-    }
-    const isSaudacao = classified.tipo === 'saudacao';
-
-    // Tipos estruturados que executam uma ação concreta (criar lembrete, gasto, etc) —
-    // usados para dar confirmação fixa caso o bate-papo livre esteja em modo direto
-    let confirmacaoTarefa = '✅ Anotado! Vou te lembrar.';
-    if (classified.tipo === 'tarefa' && classified.hora) {
-      // Calcula o mesmo scheduledAt que salvarTarefaSilenciosa vai gravar,
-      // para dar uma confirmação com data/hora reais — igual ao formato
-      // "Pronto! '...' agendado pra DD/MM às HH:MM 📌" usado em outros fluxos
-      // (ex: checkConfirmacaoPendente, tipo hora_lembrete).
-      try {
-        let scheduledAt = calcularHorarioRelativo(text);
-        if (!scheduledAt) {
-          const hoje = dateBRT();
-          let dataUsada = hoje;
-          if (classified.data) {
-            const dataObj = new Date(classified.data + 'T12:00:00-03:00');
-            const anoClassify = dataObj.getFullYear();
-            const anoAtual = new Date().getFullYear();
-            if (anoClassify >= anoAtual && anoClassify <= anoAtual + 1) dataUsada = classified.data;
-          }
-          const [h, m] = classified.hora.split(':').map(Number);
-          scheduledAt = new Date(`${dataUsada}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
-          if (!classified.data && scheduledAt < nowBRT()) { scheduledAt.setDate(scheduledAt.getDate() + 1); }
-        }
-        const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-        const horaFmt = scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-        confirmacaoTarefa = `✅ Pronto! "${classified.titulo}" agendado pra ${dataFmt} às ${horaFmt} 📌`;
-      } catch (e) {
-        // mantém fallback genérico em caso de erro de parsing
-      }
-    }
-
-    const CONFIRMACOES_ACAO = {
-      tarefa: confirmacaoTarefa,
-      gasto: '✅ Gasto registrado!',
-      entrada_financeira: '✅ Entrada registrada!',
-      medicamento: '✅ Medicamento cadastrado!',
-      anotacao: '✅ Anotado!',
-      ajustar_remedio: confirmacaoAjusteRemedio || '😕 Não encontrei esse remédio. Me diz o nome certinho?',
-    };
-    const acaoConfirmacao = CONFIRMACOES_ACAO[classified.tipo] || null;
-
-    await responderLivre(user, phone, text, '', isSaudacao, acaoConfirmacao);
-    extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
-  } catch (error) {
-    console.error('Erro handleMessage:', error.message);
-    try {
-      await sendMessage(phone, 'Ops, tive um probleminha. Pode repetir?');
-    } catch (e2) {
-      console.error('Erro ao enviar mensagem de erro:', e2.message);
+    if(id==='m-gasto'){
+      document.getElementById('mg-val').value='';
+      document.getElementById('mg-desc').value='';
+      document.getElementById('mg-data').value=dataDefault;
+    }else{
+      document.getElementById('me-val').value='';
+      document.getElementById('me-desc').value='';
+      document.getElementById('me-data').value=dataDefault;
     }
   }
+  document.getElementById(id).classList.add('open');
+}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
+async function saveLembrete(){const titulo=document.getElementById('ml-titulo').value.trim(),data=document.getElementById('ml-data').value,hora=document.getElementById('ml-hora').value;if(!titulo){showToast('Descreva o lembrete ⚠️');return;}const btn=document.getElementById('sl-btn');btn.textContent='...';btn.disabled=true;closeModal('m-lembrete');showThinking('Criando lembrete...','anotando pra você');try{const r=await fetch(`/forms/lembrete/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titulo,data,hora})});await loadAll();hideThinking();if(r.ok){renderRem();showToast('Lembrete criado! ✅');}else showToast('Erro ⚠️');}catch{hideThinking();showToast('Erro ⚠️');}btn.textContent='Criar';btn.disabled=false;}
+async function saveRemedio(){const nome=document.getElementById('mr-nome').value.trim(),dose=document.getElementById('mr-dose').value,intervalo=parseInt(document.getElementById('mr-int').value),dias=parseInt(document.getElementById('mr-dias').value)||0,horarioInicio=document.getElementById('mr-inicio').value;if(!nome){showToast('Informe o medicamento ⚠️');return;}const btn=document.getElementById('sr-btn');btn.textContent='...';btn.disabled=true;try{const r=await fetch(`/forms/remedio/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome,dose,intervalo,dias,horarioInicio})});if(r.ok){closeModal('m-remedio');showToast('Remédio cadastrado! ✅');await loadAll();renderSaude();}else showToast('Erro ⚠️');}catch{showToast('Erro ⚠️');}btn.textContent='Cadastrar';btn.disabled=false;}
+async function saveEntrada(){
+  const valor=parseFloat(document.getElementById('me-val').value);
+  const descricao=document.getElementById('me-desc').value||'Entrada';
+  const dataInput=document.getElementById('me-data').value;
+  if(!valor||valor<=0){showToast('Informe o valor ⚠️');return;}
+  const btn=document.getElementById('se-btn');btn.textContent='...';btn.disabled=true;
+  try{
+    const body={valor:-valor,categoria:'entrada',descricao};
+    if(dataInput)body.data=dataInput;
+    const r=await fetch(`/forms/gasto/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(r.ok){closeModal('m-entrada');showToast('Entrada registrada! 💰');await loadAll();renderFin();}
+    else showToast('Erro ⚠️');
+  }catch{showToast('Erro ⚠️');}
+  btn.textContent='Registrar';btn.disabled=false;
+}
+async function saveGasto(){
+  const valor=parseFloat(document.getElementById('mg-val').value);
+  const categoria=document.getElementById('mg-cat').value;
+  const descricao=document.getElementById('mg-desc').value||categoria;
+  const dataInput=document.getElementById('mg-data').value;
+  if(!valor||valor<=0){showToast('Informe o valor ⚠️');return;}
+  const btn=document.getElementById('sg-btn');btn.textContent='...';btn.disabled=true;
+  try{
+    const body={valor,categoria,descricao};
+    if(dataInput)body.data=dataInput;
+    const r=await fetch(`/forms/gasto/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(r.ok){closeModal('m-gasto');showToast('Gasto registrado! ✅');await loadAll();renderFin();}
+    else showToast('Erro ⚠️');
+  }catch{showToast('Erro ⚠️');}
+  btn.textContent='Registrar';btn.disabled=false;
+}
+let swReg=null,vapidPublicKey='';
+async function initPWA(){if(!('serviceWorker' in navigator))return;try{swReg=await navigator.serviceWorker.register('/sw.js?v=3');}catch(e){}}
+function urlBase64ToUint8Array(b){const p='='.repeat((4-b.length%4)%4);const s=(b+p).replace(/-/g,'+').replace(/_/g,'/');const r=atob(s);return Uint8Array.from([...r].map(c=>c.charCodeAt(0)));}
+async function renderListas(){const el=document.getElementById('listas-body');el.innerHTML='<div class="spin"></div>';try{const r=await fetch(`/forms/listas/${phone}`);allListas=await r.json();displayListas();const cnt=allListas.filter(l=>!l.done).length;['d-badge-list','d-badge-list2'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display=cnt?'':'none';if(cnt)el.textContent=cnt;}});}catch{document.getElementById('listas-body').innerHTML='<div class="empty"><span class="empty-icon">🛒</span>Nenhuma lista criada ainda</div>';}}
+function displayListas(){const el=document.getElementById('listas-body');if(!allListas.length){el.innerHTML='<div class="empty"><span class="empty-icon">🛒</span>Nenhuma lista ainda<br><span style="font-size:12px;margin-top:8px;display:block">Diga para a Clara: "preciso comprar arroz, feijão..."</span></div>';return;}el.innerHTML=allListas.map(lista=>{const items=Array.isArray(lista.items)?lista.items:[];const done=items.filter(i=>i.done).length;const total=items.length;const pct=total>0?Math.round((done/total)*100):0;const itemsHtml=items.map(item=>`<div class="lista-item${item.done?' done':''}" data-item-id="${item.id}" onclick="toggleItem('${lista.id}',${item.id})"><div class="lista-check"></div><span class="lista-item-nome" ondblclick="event.stopPropagation();editarItemLista('${lista.id}',${item.id})" title="Clique duplo para editar">${item.nome}</span><div class="lista-item-arrows" onclick="event.stopPropagation()"><button class="lista-arrow-btn" onclick="moveItem('${lista.id}',${item.id},-1)" title="Subir">↑</button><button class="lista-arrow-btn" onclick="moveItem('${lista.id}',${item.id},1)" title="Descer">↓</button></div><button class="lista-item-del" onclick="event.stopPropagation();removeItem('${lista.id}',${item.id})">✕</button></div>`).join('');return`<div class="lista-card" id="lista-${lista.id}"><div class="lista-header"><div class="lista-titulo" ondblclick="editarTituloLista('${lista.id}')" title="Clique duplo para renomear" style="cursor:pointer">${lista.name}</div><div class="lista-contador">${done}/${total} itens</div></div>${itemsHtml}<div class="lista-add-row"><input class="lista-add-input" id="add-${lista.id}" placeholder="Adicionar item..." onkeydown="if(event.key==='Enter')addItem('${lista.id}')"/><button class="lista-add-btn" onclick="addItem('${lista.id}')">+</button></div><div class="lista-footer"><div class="lista-progress"><div class="lista-progress-bar" style="width:${pct}%"></div></div><button class="lista-arquivar" style="color:var(--red)" onclick="deletarLista('${lista.id}')">Excluir lista</button></div></div>`;}).join('');}
+async function moveItem(listaId, itemId, dir){
+  const lista=allListas.find(l=>l.id===listaId);
+  if(!lista)return;
+  const arr=[...lista.items];
+  const idx=arr.findIndex(i=>i.id===itemId);
+  if(idx<0)return;
+  const newIdx=idx+dir;
+  if(newIdx<0||newIdx>=arr.length)return;
+  const[moved]=arr.splice(idx,1);
+  arr.splice(newIdx,0,moved);
+  lista.items=arr;
+  displayListas();
+  try{await fetch('/forms/lista-reorder/'+listaId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:arr.map(i=>i.id)})});}catch{}
 }
 
-async function gerarRelatorioFinanceiroWhatsApp(user, phone) {
-  try {
-    const now = nowBRT();
-    const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
-    const preferences = await memory.getUserPreference(user.id);
-    const gastos = await prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } }, orderBy: { createdAt: 'desc' } });
-    const saidas = gastos.filter(g => g.value > 0);
-    const entradas = gastos.filter(g => g.value < 0);
-    const totalGasto = saidas.reduce((a, g) => a + g.value, 0);
-    const totalEntradas = entradas.reduce((a, g) => a + Math.abs(g.value), 0);
-    const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-    const nomeMes = meses[now.getMonth()];
-    const catIcones = { alimentacao:'🍔', mercado:'🛒', transporte:'🚗', saude:'💊', lazer:'🎮', moradia:'🏠', educacao:'📚', entrada:'💰', outro:'📦' };
-    const porCategoria = {};
-    saidas.forEach(g => { const cat = g.category || 'outro'; if (!porCategoria[cat]) porCategoria[cat] = 0; porCategoria[cat] += g.value; });
-    let texto = `📊 *Relatório de ${nomeMes}*\n\n`;
-    if (entradas.length > 0) texto += `💰 *Entradas:* R$ ${totalEntradas.toFixed(2)}\n`;
-    texto += `💸 *Total gasto:* R$ ${totalGasto.toFixed(2)}\n`;
-    if (preferences.saldo != null) { const saldo = preferences.saldo - totalGasto + totalEntradas; texto += `💵 *Saldo restante:* R$ ${saldo.toFixed(2)}\n`; }
-    texto += `\n`;
-    if (Object.keys(porCategoria).length > 0) {
-      texto += `*Por categoria:*\n`;
-      Object.entries(porCategoria).sort((a, b) => b[1] - a[1]).forEach(([cat, val]) => { texto += `${catIcones[cat] || '📦'} ${cat.charAt(0).toUpperCase() + cat.slice(1)}: R$ ${val.toFixed(2)}\n`; });
-      texto += `\n`;
-    }
-    const ultimos = saidas.slice(0, 5);
-    if (ultimos.length > 0) { texto += `*Últimos lançamentos:*\n`; ultimos.forEach(g => { const nome = g.description && g.description !== g.category ? g.description : g.category; texto += `• ${catIcones[g.category]||'📦'} ${nome} — R$ ${g.value.toFixed(2)}\n`; }); }
-    if (gastos.length === 0) texto = `📊 *Relatório de ${nomeMes}*\n\nNenhum lançamento este mês ainda 😊`;
-    await sendButtons(phone, texto, [{ id: 'novo_gasto', label: '➕ Registrar gasto' }, { id: 'menu', label: '🏠 Menu' }]);
-  } catch (e) {
-    console.error('[gerarRelatorioFinanceiro]', e.message);
-    await sendMessage(phone, 'Não consegui gerar o relatório agora. Tenta de novo?');
-  }
+async function toggleItem(listaId,itemId){try{const r=await fetch(`/forms/lista-item/${listaId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({itemId})});const d=await r.json();const lista=allListas.find(l=>l.id===listaId);if(lista)lista.items=d.items;displayListas();if(d.allDone)showToast('🎉 Lista concluída!',3000);}catch{showToast('Erro ⚠️');}}
+async function addItem(listaId){const inp=document.getElementById('add-'+listaId);const nome=inp?.value.trim();if(!nome)return;try{const r=await fetch(`/forms/lista-add-item/${listaId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome})});const d=await r.json();const lista=allListas.find(l=>l.id===listaId);if(lista)lista.items=d.items;if(inp)inp.value='';displayListas();}catch{showToast('Erro ⚠️');}}
+async function removeItem(listaId,itemId){try{const r=await fetch(`/forms/lista-item/${listaId}/${itemId}`,{method:'DELETE'});const d=await r.json();const lista=allListas.find(l=>l.id===listaId);if(lista)lista.items=d.items;displayListas();}catch{showToast('Erro ⚠️');}}
+let _undoTimer=null,_undoListaId=null,_undoListaData=null;
+
+let _undoCountInterval=null;
+async function deletarLista(listaId){
+  const lista=allListas.find(l=>l.id===listaId);
+  if(!lista)return;
+  _undoListaId=listaId;
+  _undoListaData=lista;
+  allListas=allListas.filter(l=>l.id!==listaId);
+  displayListas();
+  const toastEl=document.getElementById('toast-undo');
+  const countEl=document.getElementById('toast-undo-count');
+  document.getElementById('toast-undo-msg').textContent=`"${lista.name}" excluída`;
+  toastEl.classList.add('show');
+  // Countdown
+  let secs=5;
+  if(countEl)countEl.textContent=secs;
+  if(_undoCountInterval)clearInterval(_undoCountInterval);
+  _undoCountInterval=setInterval(()=>{
+    secs--;
+    if(countEl)countEl.textContent=secs;
+    if(secs<=0)clearInterval(_undoCountInterval);
+  },1000);
+  if(_undoTimer)clearTimeout(_undoTimer);
+  _undoTimer=setTimeout(async()=>{
+    toastEl.classList.remove('show');
+    clearInterval(_undoCountInterval);
+    try{await fetch(`/forms/lista/${listaId}`,{method:'DELETE'});}catch{}
+    _undoListaId=null;_undoListaData=null;
+  },5000);
 }
 
-function convertToDateWithTime(horaStr) {
-  const [hora, min] = horaStr.split(':').map(Number);
-  const date = nowBRT();
-  date.setHours(hora, min || 0, 0, 0);
-  return date;
+function undoDelete(){
+  if(!_undoListaData)return;
+  clearTimeout(_undoTimer);
+  clearInterval(_undoCountInterval);
+  allListas.unshift(_undoListaData);
+  displayListas();
+  document.getElementById('toast-undo').classList.remove('show');
+  showToast('Desfeito ✅');
+  _undoListaId=null;_undoListaData=null;_undoTimer=null;
 }
 
-async function gerarResumoDoBanco(pontos, userId) {
-  const get = (tipo) => pontos.find(p => p.type === tipo);
-  const entrada = get('entrada'), saidaAlmoco = get('saida_almoco'), voltaAlmoco = get('volta_almoco'), saida = get('saida');
-  const jornada = await memory.getJornada(userId);
-  let tempoManha = null, tempoTarde = null, totalTrabalhado = null, horasExtras = null;
-  if (entrada && saidaAlmoco) tempoManha = (new Date(saidaAlmoco.timestamp) - new Date(entrada.timestamp)) / 60000;
-  if (voltaAlmoco && saida) tempoTarde = (new Date(saida.timestamp) - new Date(voltaAlmoco.timestamp)) / 60000;
-  if (tempoManha !== null && tempoTarde !== null) { totalTrabalhado = tempoManha + tempoTarde; horasExtras = totalTrabalhado - jornada; }
-  let texto = entrada && !saida
-    ? `📍 *Entrada registrada!*\n\n🕘 Você iniciou seu expediente às *${horaStr(entrada.timestamp)}*.\n\nTenha um ótimo trabalho hoje 💜\n\n`
-    : `✨ *Resumo do seu dia*\n\n`;
-  texto += `🟢 Entrada: *${horaStr(entrada?.timestamp)}*\n`;
-  texto += `🍽️ Saída almoço: *${horaStr(saidaAlmoco?.timestamp)}*\n`;
-  if (tempoManha !== null) texto += `⏱️ Manhã: *${minutesToHours(tempoManha)}*\n`;
-  texto += `🔄 Volta almoço: *${horaStr(voltaAlmoco?.timestamp)}*\n`;
-  if (saida) texto += `🔴 Saída: *${horaStr(saida.timestamp)}*\n`;
-  if (tempoTarde !== null) texto += `⏱️ Tarde: *${minutesToHours(tempoTarde)}*\n`;
-  if (totalTrabalhado !== null) {
-    texto += `\n📊 Total: *${minutesToHours(totalTrabalhado)}*\n`;
-    if (horasExtras > 0) texto += `⭐ Horas extras: *${minutesToHours(horasExtras)}*\n`;
-    else if (horasExtras < 0) texto += `⚠️ Faltam: *${minutesToHours(Math.abs(horasExtras))}*\n`;
-    else texto += `✅ Jornada completa!\n`;
-  }
-  if (!saida) texto += `\n💡 Me avisa quando sair!`;
-  return texto;
+async function arquivarLista(listaId){try{await fetch(`/forms/lista-arquivar/${listaId}`,{method:'POST'});allListas=allListas.filter(l=>l.id!==listaId);displayListas();showToast('Lista arquivada ✅');}catch{showToast('Erro ⚠️');}}
+async function saveLista(){const nome=document.getElementById('ml-nome').value.trim();const itensRaw=document.getElementById('ml-itens').value.trim();if(!itensRaw){showToast('Adicione pelo menos um item ⚠️');return;}const btn=document.getElementById('slista-btn');btn.textContent='...';btn.disabled=true;try{const r=await fetch(`/forms/lista/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:nome||'🛒 Lista de compras',itens:itensRaw})});if(r.ok){closeModal('m-lista');showToast('Lista criada! 🛒');document.getElementById('ml-nome').value='';document.getElementById('ml-itens').value='';await renderListas();}else showToast('Erro ⚠️');}catch{showToast('Erro ⚠️');}btn.textContent='Criar lista';btn.disabled=false;}
+let voiceMode=false,recognition=null,isListening=false;
+const synth=window.speechSynthesis;let claraVoice=null;
+function loadVoice(){const voices=synth?.getVoices();if(!voices)return;claraVoice=voices.find(v=>v.lang==='pt-BR'&&v.name.match(/female|feminina|francisca|vit|leticia|luciana/i))||voices.find(v=>v.lang==='pt-BR')||voices.find(v=>v.lang.startsWith('pt'))||voices[0]||null;}
+if(synth){loadVoice();synth.onvoiceschanged=loadVoice;}
+function speakText(text){if(!synth||!voiceMode)return;synth.cancel();const clean=text.replace(/[\u{1F300}-\u{1FFFF}]/gu,'').replace(/[*_`#]/g,'').trim();const utt=new SpeechSynthesisUtterance(clean);if(claraVoice)utt.voice=claraVoice;utt.lang='pt-BR';utt.rate=1.05;utt.pitch=1.1;utt.volume=1;synth.speak(utt);}
+function toggleVoiceMode(){voiceMode=!voiceMode;const chip=document.getElementById('voice-toggle-chip');if(voiceMode){chip.textContent='🔊 Voz ativa';chip.classList.add('voice-mode-on');showToast('🔊 Clara vai responder em voz',2000);}else{chip.textContent='🔇 Voz';chip.classList.remove('voice-mode-on');synth?.cancel();showToast('🔇 Respostas em texto',2000);}}
+function toggleMic(){if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){showToast('Microfone não suportado neste navegador ⚠️',3000);return;}if(isListening){stopMic();}else{startMic();}}
+function startMic(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;recognition=new SR();recognition.lang='pt-BR';recognition.continuous=false;recognition.interimResults=true;const btn=document.getElementById('mic-btn'),inp=document.getElementById('chat-msg');recognition.onstart=()=>{isListening=true;btn.classList.add('listening');inp.placeholder='🎤 Ouvindo...';};recognition.onresult=(e)=>{let t='';for(let i=e.resultIndex;i<e.results.length;i++){t+=e.results[i][0].transcript;}inp.value=t;inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,100)+'px';};recognition.onend=()=>{isListening=false;btn.classList.remove('listening');inp.placeholder='Pergunte ou peça algo para a Clara...';const text=inp.value.trim();if(text){if(!voiceMode){voiceMode=true;const chip=document.getElementById('voice-toggle-chip');chip.textContent='🔊 Voz ativa';chip.classList.add('voice-mode-on');}setTimeout(()=>sendChat(),300);}};recognition.onerror=(e)=>{isListening=false;btn.classList.remove('listening');inp.placeholder='Pergunte ou peça algo para a Clara...';if(e.error!=='no-speech')showToast('Erro no microfone: '+e.error,3000);};recognition.start();}
+function stopMic(){recognition?.stop();}
+
+// ── Remarcar lembrete ──
+var _remarcarId=null;
+function abrirRemarcar(id,titulo){
+  _remarcarId=id;
+  document.getElementById('remarcar-titulo').textContent=titulo;
+  var d=nowLocal();
+  document.getElementById('remarcar-data').value=d.data;
+  document.getElementById('remarcar-hora').value=d.hora;
+  openModal('m-remarcar');
+}
+async function salvarRemarcar(){
+  var data=document.getElementById('remarcar-data').value;
+  var hora=document.getElementById('remarcar-hora').value;
+  if(!data||!hora){showToast('Preencha data e hora ⚠️');return;}
+  var btn=document.getElementById('remarcar-btn');
+  btn.textContent='Salvando...';btn.disabled=true;
+  closeModal('m-remarcar');
+  showThinking('Remarcando...','atualizando sua agenda');
+  try{
+    var r=await fetch('/forms/lembrete-remarcar/'+_remarcarId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:data,hora:hora})});
+    await loadAll();
+    hideThinking();
+    if(r.ok){renderRem();showToast('Remarcado! 📅');}
+    else showToast('Erro ao remarcar ⚠️');
+  }catch(e){hideThinking();showToast('Erro ⚠️');}
+  btn.textContent='Salvar';btn.disabled=false;
+}
+// ── Concluir / Excluir lembrete ──
+async function doneRemCheck(id,checkEl,rowEl){
+  if(checkEl)checkEl.classList.add('done');
+  const title=rowEl?.querySelector('.rem-row-title');
+  if(title)title.classList.add('done');
+  showThinking('Confirmando...','marcando como feito');
+  try{
+    await fetch('/forms/lembrete-concluir/'+id,{method:'POST'});
+    await loadAll();
+    hideThinking();
+    renderRem();
+    showToast('Confirmado ✅');
+  }catch{hideThinking();showToast('Erro ⚠️');}
+}
+function doneRemVencido(el){const id=el.dataset.id;doneRemCheck(id,null,null);}
+function delRemVencido(el){const id=el.closest('.vencido-row').dataset.id;delRem(id);}
+async function delRem(id){
+  if(!confirm('Excluir este lembrete?'))return;
+  try{
+    await fetch(`/forms/lembrete/${id}`,{method:'DELETE'});
+    allRem=allRem.filter(x=>x.id!==id);
+    renderRem();
+    loadAll();
+    showToast('Lembrete excluído ✅');
+  }catch{showToast('Erro ⚠️');}
 }
 
-async function listarLembretes(user, phone) {
-  const agora = new Date();
-  const reminders = await prisma.reminder.findMany({ where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: agora } }, orderBy: { scheduledAt: 'asc' }, take: 10 });
-  if (reminders.length === 0) return await sendButtons(phone, `📋 *Seus lembretes*\n\nVocê não tem lembretes ativos no momento 😊`, [{ id: 'lembrete', label: '➕ Criar lembrete' }, { id: 'menu', label: '🏠 Menu' }]);
-  const numeros = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
-  let texto = `📋 *Seus lembretes ativos*\n\n`;
-  reminders.forEach((r, i) => { texto += `${numeros[i] || `${i+1}.`} 📌 ${r.message}\n`; texto += `    🗓️ ${formatarDataHoraBR(r.scheduledAt)}\n\n`; });
-  texto += `_${reminders.length} lembrete${reminders.length > 1 ? 's' : ''} ativo${reminders.length > 1 ? 's' : ''}_ ✨`;
-  await sendButtons(phone, texto, [{ id: 'criar_lembrete', label: '➕ Criar lembrete' }, { id: 'menu', label: '🏠 Menu' }]);
+// ── Editar título da lista ──
+async function editarTituloLista(listaId){
+  const lista=allListas.find(l=>l.id===listaId);
+  const nomeAtual=lista?lista.name:'';
+  const novo=prompt('Novo nome da lista:',nomeAtual);
+  if(!novo||novo.trim()===nomeAtual)return;
+  try{
+    const r=await fetch(`/forms/lista-titulo/${listaId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:novo.trim()})});
+    if(r.ok){if(lista)lista.name=novo.trim();showToast('Nome atualizado ✅');await renderListas();}
+    else showToast('Erro ao atualizar ⚠️');
+  }catch{showToast('Erro ⚠️');}
 }
 
-async function listarAnotacoes(user, phone) {
-  const mems = await memory.getRecentMemories(user.id, 50);
-  const anotacoes = mems.filter(m => m.type === 'anotacao').slice(0, 10);
-  if (anotacoes.length === 0) return await sendButtons(phone, `📝 *Suas anotações*\n\nVocê ainda não tem anotações salvas 😊`, [{ id: 'anotacao', label: '➕ Nova anotação' }, { id: 'menu', label: '🏠 Menu' }]);
-  let texto = `📝 *Suas anotações*\n\n`;
-  anotacoes.forEach((a) => { texto += `📌 _"${a.content}"_\n🗓️ ${formatarDataBR(a.createdAt)}\n\n`; });
-  texto += `_${anotacoes.length} anotaç${anotacoes.length > 1 ? 'ões' : 'ão'} salva${anotacoes.length > 1 ? 's' : ''}_ 💜`;
-  await sendButtons(phone, texto, [{ id: 'nova_anotacao', label: '➕ Nova anotação' }, { id: 'menu', label: '🏠 Menu' }]);
+// ── Editar item da lista ──
+async function editarItemLista(listaId, itemId){
+  const lista=allListas.find(l=>l.id===listaId);
+  const item=lista?.items?.find(i=>i.id===itemId);
+  if(!item)return;
+  const nomeEl=document.querySelector(`#lista-${listaId} [data-item-id="${itemId}"] .lista-item-nome`);
+  if(!nomeEl)return;
+  const nomeAtual=item.nome;
+  const inp=document.createElement('input');
+  inp.value=nomeAtual;
+  inp.className='lista-add-input';
+  inp.style.cssText='flex:1;font-size:13px;padding:2px 6px';
+  nomeEl.replaceWith(inp);
+  inp.focus();inp.select();
+  const salvar=async()=>{
+    const novo=inp.value.trim();
+    if(!novo||novo===nomeAtual){displayListas();return;}
+    try{
+      const r=await fetch(`/forms/lista-item-editar/${listaId}/${itemId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:novo})});
+      const d=await r.json();
+      if(d.items){const l=allListas.find(x=>x.id===listaId);if(l)l.items=d.items;displayListas();showToast('Item atualizado ✅');}
+      else{showToast('Erro ⚠️');displayListas();}
+    }catch{showToast('Erro ⚠️');displayListas();}
+  };
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();salvar();}if(e.key==='Escape'){displayListas();}});
+  inp.addEventListener('blur',salvar);
 }
 
-async function listarGastos(user, phone) {
-  try {
-    const now = nowBRT();
-    const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
-    const preferences = await memory.getUserPreference(user.id);
-    const gastos = await prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } }, orderBy: { createdAt: 'desc' }, take: 20 });
-    if (gastos.length === 0) return await sendButtons(phone, `💰 *Seus gastos*\n\nNenhum lançamento registrado este mês 😊`, [{ id: 'novo_gasto', label: '➕ Registrar gasto' }, { id: 'menu', label: '🏠 Menu' }]);
-    const saidas = gastos.filter(g => g.value > 0);
-    const entradas = gastos.filter(g => g.value < 0);
-    const totalGasto = saidas.reduce((acc, g) => acc + g.value, 0);
-    const totalEntradas = entradas.reduce((acc, g) => acc + Math.abs(g.value), 0);
-    const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-    const catIcones = { alimentacao:'🍔', mercado:'🛒', transporte:'🚗', saude:'💊', lazer:'🎮', moradia:'🏠', educacao:'📚', entrada:'💰', outro:'📦' };
-    let texto = `💰 *${meses[now.getMonth()]} — Resumo*\n\n`;
-    if (entradas.length > 0) texto += `💰 Entradas: *R$ ${totalEntradas.toFixed(2)}*\n`;
-    texto += `💸 Gastos: *R$ ${totalGasto.toFixed(2)}*\n`;
-    if (preferences.saldo != null) { const saldo = preferences.saldo - totalGasto + totalEntradas; texto += `💵 Saldo: *R$ ${saldo.toFixed(2)}*\n`; }
-    texto += `\n`;
-    gastos.slice(0, 8).forEach(g => { const isEntrada = g.value < 0; const absVal = Math.abs(g.value); const nome = g.description && g.description !== g.category ? g.description : g.category; const sinal = isEntrada ? '+' : '-'; const icon = isEntrada ? '💰' : (catIcones[g.category] || '📦'); texto += `${icon} ${nome} — *${sinal}R$ ${absVal.toFixed(2)}*\n`; });
-    texto += `\n_${gastos.length} lançamento${gastos.length !== 1 ? 's' : ''} este mês_`;
-    await sendButtons(phone, texto, [{ id: 'novo_gasto', label: '➕ Novo gasto' }, { id: 'menu', label: '🏠 Menu' }]);
-  } catch (e) { console.error('[listarGastos]', e.message); await sendMessage(phone, 'Não consegui buscar os gastos agora. Tenta de novo?'); }
+// ── Excluir remédio ──
+async function delMed(id){
+  if(!confirm('Excluir este medicamento?'))return;
+  try{
+    await fetch(`/forms/remedio/${id}`,{method:'DELETE'});
+    await loadAll();
+    renderSaude();
+    showToast('Medicamento excluído ✅');
+  }catch{showToast('Erro ⚠️');}
 }
+// Swipe da esquerda pra direita abre o drawer (mobile)
+(function(){
+  let startX=0,startY=0;
+  document.addEventListener('touchstart',e=>{startX=e.touches[0].clientX;startY=e.touches[0].clientY;},{passive:true});
+  document.addEventListener('touchend',e=>{
+    const dx=e.changedTouches[0].clientX-startX;
+    const dy=Math.abs(e.changedTouches[0].clientY-startY);
+    if(dx>60&&dy<40&&startX<30){toggleDrawer();}
+  },{passive:true});
+})();
 
-async function listarPontoHoje(user, phone) {
-  const hoje = dateBRT();
-  const pontos = await prisma.workLog.findMany({ where: { userId: user.id, date: hoje }, orderBy: { timestamp: 'asc' } });
-  if (pontos.length === 0) return await sendButtons(phone, `📍 *Ponto de hoje*\n\nNenhum registro de ponto hoje ainda 😊`, [{ id: 'ponto', label: '📍 Bater ponto' }, { id: 'menu', label: '🏠 Menu' }]);
-  const resumo = await gerarResumoDoBanco(pontos, user.id);
-  await sendButtons(phone, resumo, [{ id: 'bater_ponto', label: '📍 Bater ponto' }, { id: 'menu', label: '🏠 Menu' }]);
-}
-
-async function listarMedicamentos(user, phone) {
-  const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true }, orderBy: { createdAt: 'desc' } });
-  if (meds.length === 0) return await sendButtons(phone, `💊 *Seus medicamentos*\n\nNenhum medicamento cadastrado ainda 😊`, [{ id: 'saude', label: '➕ Cadastrar remédio' }, { id: 'menu', label: '🏠 Menu' }]);
-  let texto = `💊 *Seus medicamentos ativos*\n\n`;
-  meds.forEach((m) => { const horarios = JSON.parse(m.times || '[]').join(', '); texto += `💊 *${m.name}*\n⏰ ${horarios} — ${m.frequency}x por dia\n💊 Restam: ${m.remaining}\n\n`; });
-  await sendButtons(phone, texto, [{ id: 'novo_remedio', label: '➕ Novo remédio' }, { id: 'menu', label: '🏠 Menu' }]);
-}
-
-// Ajusta o estoque (doses restantes) e/ou os horários de um medicamento —
-// usado para correções manuais via texto (ex: "ajusta pra 31 doses",
-// "remarca a tiroide pra 7h", "muda de 7:30 pra 7:00").
-// Roda de forma síncrona (não fire-and-forget) para podermos confirmar
-// com os valores reais resultantes, em vez de uma mensagem genérica/vaga.
-// Retorna a mensagem de confirmação, ou null se não encontrou o remédio.
-async function executeAjustarRemedio(user, classified) {
-  const medicamentos = await prisma.medication.findMany({ where: { userId: user.id, active: true } });
-  if (!medicamentos.length) return null;
-
-  let med = null;
-  if (classified.nome) {
-    const termo = classified.nome.toLowerCase();
-    med = medicamentos.find(m => m.name.toLowerCase().includes(termo) || termo.includes(m.name.toLowerCase().split(' ')[0]));
-  }
-  // Sem nome citado: se só há 1 remédio ativo, usa ele. Se houver vários,
-  // usa o mais recentemente atualizado/criado — evita perguntar o nome
-  // sempre quando há um contexto óbvio (ex: resposta ao "hora do remédio").
-  if (!med) {
-    med = medicamentos.length === 1
-      ? medicamentos[0]
-      : medicamentos.sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt))[0];
-  }
-  if (!med) return null;
-
-  const dataUpdate = {};
-  const partesConfirmacao = [];
-
-  // ── Ajuste de doses/estoque ──
-  if (classified.doses !== undefined && classified.doses !== null) {
-    let novoRemaining = med.remaining;
-    if (classified.operacao === 'decrementar') {
-      novoRemaining = Math.max(0, med.remaining - (classified.doses || 1));
-    } else {
-      novoRemaining = Math.max(0, classified.doses);
-    }
-    dataUpdate.remaining = novoRemaining;
-    partesConfirmacao.push(`${novoRemaining} dose${novoRemaining === 1 ? '' : 's'} em estoque`);
-  }
-
-  // ── Ajuste de horário(s) ──
-  if (classified.novos_horarios && Array.isArray(classified.novos_horarios) && classified.novos_horarios.length) {
-    // Redefine a lista completa de horários
-    dataUpdate.times = JSON.stringify(classified.novos_horarios);
-    dataUpdate.frequency = classified.novos_horarios.length;
-    partesConfirmacao.push(`horários: ${classified.novos_horarios.join(', ')}`);
-  } else if (classified.horario_novo) {
-    // Troca um horário específico (ou o único, se não houver antigo citado)
-    let horarios = [];
-    try { horarios = JSON.parse(med.times || '[]'); } catch {}
-
-    if (classified.horario_antigo) {
-      const idx = horarios.indexOf(classified.horario_antigo);
-      if (idx >= 0) horarios[idx] = classified.horario_novo;
-      else horarios.push(classified.horario_novo); // horário antigo não encontrado, adiciona o novo
-    } else if (horarios.length === 1) {
-      horarios = [classified.horario_novo];
-    } else if (horarios.length > 1) {
-      // Múltiplos horários sem especificar qual trocar — substitui o mais próximo do horário antigo citado, ou o primeiro
-      horarios[0] = classified.horario_novo;
-    } else {
-      horarios = [classified.horario_novo];
-    }
-
-    horarios.sort();
-    dataUpdate.times = JSON.stringify(horarios);
-    dataUpdate.frequency = horarios.length;
-    partesConfirmacao.push(`horário${horarios.length > 1 ? 's' : ''}: ${horarios.join(', ')}`);
-  }
-
-  if (Object.keys(dataUpdate).length === 0) return null;
-
-  await prisma.medication.update({ where: { id: med.id }, data: dataUpdate });
-  console.log(`[ajustar_remedio] ${med.name}: ${partesConfirmacao.join(' | ')}`);
-
-  return `✅ Ajustado! "${med.name}" agora tem ${partesConfirmacao.join(' e ')}.`;
-}
-
-async function executeAction(user, phone, classified, originalText) {
-  switch (classified.tipo) {
-    case 'ponto_multiplo':
-      await salvarPontoSilencioso(user, classified.acoes);
-      break;
-    case 'cidade':
-      await memory.saveMemory(user.id, 'cidade', classified.cidade);
-      break;
-    case 'anotacao':
-      await memory.saveMemory(user.id, 'anotacao', classified.conteudo || classified.titulo || originalText, { titulo: classified.titulo });
-      break;
-    case 'tarefa':
-      await salvarTarefaSilenciosa(user, phone, classified, originalText);
-      break;
-    case 'deletar_remedio':
-      if (classified.nome) {
-        const nomeRemedio = classified.nome.toLowerCase();
-        const remedios = await prisma.medication.findMany({ where: { userId: user.id } });
-        const encontrados = remedios.filter(m => m.name.toLowerCase().includes(nomeRemedio) || nomeRemedio.includes(m.name.toLowerCase().split(' ')[0]));
-        if (encontrados.length > 0) await prisma.medication.deleteMany({ where: { id: { in: encontrados.map(m => m.id) } } });
-      }
-      break;
-    case 'gasto':
-      await memory.saveExpense(user.id, { valor: classified.valor, categoria: classified.categoria || 'outro', descricao: classified.descricao || classified.categoria });
-      break;
-    case 'entrada_financeira':
-      if (classified.valor) await memory.saveExpense(user.id, { valor: -Math.abs(classified.valor), categoria: 'entrada', descricao: classified.descricao || 'Entrada' });
-      break;
-    case 'deletar_gasto':
-      if (classified.descricao || classified.id) {
-        try {
-          if (classified.id) {
-            await prisma.expense.delete({ where: { id: classified.id } });
-          } else {
-            const descBusca = (classified.descricao || '').toLowerCase();
-            const inicioMes = new Date(nowBRT().getFullYear(), nowBRT().getMonth(), 1);
-            const gastos = await prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } }, orderBy: { createdAt: 'desc' } });
-            const encontrado = gastos.find(g => (g.description || '').toLowerCase().includes(descBusca) || (g.category || '').toLowerCase().includes(descBusca));
-            if (encontrado) await prisma.expense.delete({ where: { id: encontrado.id } });
-          }
-        } catch(e) { console.error('[deletar_gasto]', e.message); }
-      }
-      break;
-    case 'medicamento':
-      if (classified.nome) await memory.saveMedication(user.id, { nome: classified.nome, quantidade: classified.quantidade || 0, frequencia: classified.frequencia || 1, horarios: classified.horarios || ['08:00'] });
-      break;
-    case 'preferencia':
-      if (classified.tom && typeof classified.tom === 'string' && classified.tom.trim()) {
-        await memory.saveUserPreference(user.id, null, classified.tom, null);
-      }
-      if (classified.nome && typeof classified.nome === 'string' && classified.nome.trim()) {
-        await memory.saveUserPreference(user.id, classified.nome, null, null);
-      }
-      break;
-    case 'concluir_lembrete': {
-      const pendentes = await getLembretesPendentesConfirmacao(user.id);
-      if (!pendentes.length) break;
-
-      // Se o usuário citou um código curto (#1, #2, "feito o 2"...), usa
-      // o índice diretamente — evita ambiguidade quando vários lembretes
-      // foram disparados juntos.
-      const codigo = extrairCodigoLembrete(originalText || '');
-      let match = null;
-      if (codigo && pendentes[codigo - 1]) {
-        match = pendentes[codigo - 1];
-      } else if (classified.titulo) {
-        const titulo = classified.titulo.toLowerCase();
-        match = pendentes.find(r => r.message.toLowerCase().includes(titulo) || titulo.includes(r.message.toLowerCase().substring(0, 10)));
-      }
-      // Sem título e sem código: se só há 1 pendente, assume ele.
-      if (!match && !classified.titulo && !codigo && pendentes.length === 1) {
-        match = pendentes[0];
-      }
-
-      if (match) await prisma.reminder.update({ where: { id: match.id }, data: { confirmed: true } });
-      break;
-    }
-    case 'saldo':
-      if (classified.valor !== undefined && classified.valor !== null) await memory.saveUserPreference(user.id, null, null, parseFloat(classified.valor));
-      break;
-  }
-}
-
-async function salvarPontoSilencioso(user, acoes) {
-  const hoje = dateBRT();
-  for (const acao of acoes) {
-    let subtipo = (acao.subtipo || '').toLowerCase().trim();
-    if (subtipo.includes('entrada') || subtipo.includes('cheg')) subtipo = 'entrada';
-    else if (subtipo.includes('saida_almoco') || (subtipo.includes('almo') && subtipo.includes('sai'))) subtipo = 'saida_almoco';
-    else if (subtipo.includes('volta_almoco') || (subtipo.includes('almo') && subtipo.includes('volt'))) subtipo = 'volta_almoco';
-    else if (subtipo.includes('saida') || subtipo.includes('sai')) subtipo = 'saida';
-    const timestamp = acao.hora ? convertToDateWithTime(acao.hora) : nowBRT();
-    const existing = await prisma.workLog.findFirst({ where: { userId: user.id, type: subtipo, date: hoje } });
-    if (existing) await prisma.workLog.update({ where: { id: existing.id }, data: { timestamp } });
-    else await prisma.workLog.create({ data: { userId: user.id, type: subtipo, timestamp, date: hoje } });
-  }
-}
-
-function detectarUrgencia(titulo) {
-  const t = (titulo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  // ── "farmacia", "remedio" e "medicamento" removidos desta lista ──
-  // Antes, um lembrete criado via chat com essas palavras (ex: "tomar
-  // remédio da gripe às 14h") caía no fluxo "urgente" (aviso 15min antes +
-  // cobrança 15min depois + pergunta "como foi?" 2h depois) — pesado
-  // demais pra remédio do dia a dia, e DUPLICADO com o sistema dedicado
-  // de medicamentos (cadastro via "+ remédio"), que já tem seu próprio
-  // alarme + follow-up de 20min. "vacina" continua na lista pois é um
-  // evento pontual (não recorrente), mais parecido com consulta.
-  const palavras = ['medico','medica','consulta','dentista','cirurgia','exame','laboratorio','vacina','hospital','clinica','psico','terapia','fisio','upa','documento','cartorio','contrato','assinar','entregar','protocolar','prazo','vencimento','vence','renovar','passaporte','rg','cnh','voo','aeroporto','embarque','onibus','trem','reuniao','apresentacao','entrevista','prova','concurso','buscar','pegar','retirar','entregar','entrega','cabelereiro','barbearia','manicure','cabeleireiro','marmita','almoco','janta','jantar','escola','creche'];
-  return palavras.some(p => t.includes(p));
-}
-
-async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
-  await memory.saveMemory(user.id, 'tarefa', classified.titulo, { data: classified.data, hora: classified.hora });
-  let scheduledAt = null;
-  if (originalText) { const relativo = calcularHorarioRelativo(originalText); if (relativo) { scheduledAt = relativo; } }
-  if (!scheduledAt && classified.hora) {
-    const hoje = dateBRT();
-    let dataUsada = hoje;
-    if (classified.data) {
-      const dataObj = new Date(classified.data + 'T12:00:00-03:00');
-      const anoClassify = dataObj.getFullYear();
-      const anoAtual = new Date().getFullYear();
-      if (anoClassify >= anoAtual && anoClassify <= anoAtual + 1) dataUsada = classified.data;
-      else console.warn(`[DATA_INVALIDA] phone=${phone} titulo="${classified.titulo}" data_groq="${classified.data}" — ignorada, usando hoje`);
-    }
-    const [h, m] = classified.hora.split(':').map(Number);
-    scheduledAt = new Date(`${dataUsada}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
-    if (!classified.data && scheduledAt < nowBRT()) { scheduledAt.setDate(scheduledAt.getDate() + 1); }
-  }
-  // ── Tem DATA mas SEM HORA (ex: "no dia 24 tenho consulta") ──
-  // Sinaliza para o chamador perguntar o horário ao usuário, em vez de
-  // criar o lembrete silenciosamente com um horário arbitrário.
-  if (!scheduledAt && !classified.hora && classified.data) {
-    const dataObj = new Date(classified.data + 'T12:00:00-03:00');
-    const anoClassify = dataObj.getFullYear();
-    const anoAtual = new Date().getFullYear();
-    if (anoClassify >= anoAtual && anoClassify <= anoAtual + 1) {
-      return { perguntarHora: true, lembreteTitulo: classified.titulo, lembreteData: classified.data };
-    } else {
-      console.warn(`[DATA_INVALIDA] phone=${phone} titulo="${classified.titulo}" data_groq="${classified.data}" — ignorada, lembrete não criado`);
-      return null;
-    }
-  }
-  if (scheduledAt) {
-    const novoLembrete = await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
-    if (detectarUrgencia(classified.titulo)) {
-      await prisma.memory.create({ data: { userId: user.id, type: 'lembrete_urgente', content: novoLembrete.id } }).catch(() => {});
-      const expira = Date.now() + 5 * 60 * 1000;
-      await prisma.memory.create({ data: { userId: user.id, type: 'confirmacao_pendente', content: JSON.stringify({ tipo: 'urgente_confirmacao', lembreteId: novoLembrete.id, expira }) } }).catch(() => {});
-      return { lembreteUrgente: true, lembreteTitulo: classified.titulo };
-    }
-    const antecedencia = classified.antecedencia;
-    if (antecedencia && antecedencia > 0) {
-      const scheduledAntes = new Date(scheduledAt.getTime() - antecedencia * 60 * 1000);
-      if (scheduledAntes > new Date()) await prisma.reminder.create({ data: { userId: user.id, phone, message: `⏰ Em ${antecedencia} minutos: ${classified.titulo}`, scheduledAt: scheduledAntes } });
-    }
-  }
-}
-
-async function editarLembrete(user, phone, classified, contextoClassify = '', originalText = '') {
-  try {
-    let titulo = (classified.titulo || '').toLowerCase().trim();
-
-    // Busca todos os lembretes não confirmados
-    const todosLembretes = await prisma.reminder.findMany({
-      where: { userId: user.id, confirmed: false },
-      orderBy: { scheduledAt: 'asc' }
-    });
-
-    let encontrado = null;
-
-    // ── Código curto (#1, #2, "o 1"...) ──
-    // Quando múltiplos lembretes foram disparados juntos (numerados pelo
-    // scheduler como #1, #2...), o usuário pode citar o número para
-    // desambiguar — tem prioridade sobre o fallback "último disparado",
-    // que era a causa de confirmar o lembrete errado ao arrastar a conversa.
-    const codigo = extrairCodigoLembrete(originalText || '');
-    if (codigo) {
-      const pendentes = await getLembretesPendentesConfirmacao(user.id);
-      if (pendentes[codigo - 1]) encontrado = pendentes[codigo - 1];
-    }
-
-    if (!encontrado && !titulo) {
-      // Sem título: pega o lembrete mais recentemente disparado — ou seja,
-      // o "sent" cujo scheduledAt está mais próximo do agora (não o mais
-      // distante no futuro, que era o bug: scheduledAt desc pegava
-      // lembretes antigos com data "maior" por engano, mesmo já passados
-      // há mais tempo no relógio real).
-      const agora = Date.now();
-      const enviados = todosLembretes
-        .filter(r => r.sent)
-        .sort((a, b) => Math.abs(new Date(a.scheduledAt) - agora) - Math.abs(new Date(b.scheduledAt) - agora));
-      encontrado = enviados[0] || null;
-
-      // Se não tem nenhum sent, pega o próximo a vencer
-      if (!encontrado) {
-        encontrado = todosLembretes[0] || null;
-      }
-    } else if (!encontrado) {
-      // Com título: busca por correspondência
-      encontrado = todosLembretes.find(r => r.message.toLowerCase().includes(titulo));
-
-      // Fallback: palavras-chave com mais de 3 chars
-      if (!encontrado) {
-        const palavras = titulo.split(' ').filter(p => p.length > 3);
-        encontrado = todosLembretes.find(r =>
-          palavras.some(p => r.message.toLowerCase().includes(p))
-        );
-      }
-
-      // Fallback: usa contexto da conversa para inferir
-      if (!encontrado && contextoClassify) {
-        const linhasCtx = contextoClassify.split('\n');
-        for (const linha of linhasCtx) {
-          const match = todosLembretes.find(r =>
-            linha.toLowerCase().includes(r.message.toLowerCase().substring(0, 15))
-          );
-          if (match) { encontrado = match; break; }
-        }
-      }
-
-      if (!encontrado) {
-        await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕\n\nMe diz o nome certinho!`);
-        return;
-      }
-    }
-
-    if (!encontrado) {
-      await sendMessage(phone, 'Não encontrei nenhum lembrete pra remarcar 😕');
-      return;
-    }
-
-    let novoScheduledAt = new Date(encontrado.scheduledAt);
-    if (classified.nova_hora) {
-      const [h, m] = classified.nova_hora.split(':').map(Number);
-      const dataBase = classified.nova_data || new Date(encontrado.scheduledAt).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-      novoScheduledAt = new Date(`${dataBase}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
-    } else if (classified.nova_data) {
-      const horaAtual = new Date(encontrado.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-      const [h, m] = horaAtual.split(':').map(Number);
-      novoScheduledAt = new Date(`${classified.nova_data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
-    }
-
-    await prisma.reminder.update({ where: { id: encontrado.id }, data: { scheduledAt: novoScheduledAt, sent: false } });
-
-    const horaFormatada = novoScheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-    const dataFormatada = novoScheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short' });
-    await sendMessage(phone, `✅ Remarcado!\n\n📌 ${encontrado.message}\n🕒 ${dataFormatada} às ${horaFormatada}`);
-
-  } catch(e) {
-    console.error('[editarLembrete]', e.message);
-    await sendMessage(phone, 'Ops, erro ao remarcar 😕');
-  }
-}
-
-async function deletarLembretePorTitulo(user, phone, classified) {
-  try {
-    const titulo = classified.titulo?.toLowerCase();
-    if (!titulo) { await sendMessage(phone, 'Qual lembrete quer cancelar? Me diz o nome 😊'); return; }
-    const lembretes = await prisma.reminder.findMany({ where: { userId: user.id, sent: false, confirmed: false } });
-    const encontrados = lembretes.filter(r => r.message.toLowerCase().includes(titulo));
-    if (!encontrados.length) { await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕`); return; }
-    await prisma.reminder.deleteMany({ where: { id: { in: encontrados.map(r => r.id) } } });
-    await sendMessage(phone, `✅ Lembrete cancelado: "${encontrados[0].message}"`);
-  } catch(e) { console.error('[deletarLembrete]', e.message); }
-}
-
-async function handleContatoAction(user, phone, classified) {
-  try {
-    if (classified.tipo === 'listar_contatos') {
-      const contatos = await getContacts(user.id);
-      if (!contatos.length) { await sendMessage(phone, 'Você ainda não tem contatos salvos. Me diz o número de alguém: "o número do João é 43999998888" 😊'); return; }
-      const lista = contatos.map((c, i) => `${i+1}. *${c.name}*${c.relation?` (${c.relation})`:''} — ${c.phone}`).join('\n');
-      await sendMessage(phone, `📋 *Seus contatos:*\n\n${lista}\n\nPode dizer "envia mensagem pro contato 2" ou "lembra o contato 1 de tal coisa" 😊`);
-      await upsertMemoryPorTipo(user.id, 'contatos_listados', JSON.stringify(contatos)).catch(() => {});
-      return;
-    }
-    if (classified.tipo === 'deletar_contato') {
-      const nome = classified.nome;
-      if (!nome) { await sendMessage(phone, 'Qual contato quer apagar? Me diz o nome 😊'); return; }
-      const pareceNumero = /^\d{8,}$/.test(nome.replace(/\D/g,'')) && nome.replace(/\D/g,'').length >= 8;
-      let encontrados = [];
-      if (pareceNumero) { const tel = nome.replace(/\D/g,''); const todos = await prisma.contact.findMany({ where: { userId: user.id } }); encontrados = todos.filter(c => c.phone && c.phone.replace(/\D/g,'').endsWith(tel) || tel.endsWith(c.phone.replace(/\D/g,''))); }
-      if (!encontrados.length) {
-        const numLista = parseInt(nome);
-        if (!isNaN(numLista) && numLista >= 1) {
-          try { const mem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'contatos_listados' } }); if (mem) { const lista = JSON.parse(mem.content); const c = lista[numLista - 1]; if (c) { const found = await prisma.contact.findMany({ where: { userId: user.id, phone: c.phone } }); encontrados = found; } } } catch(e) {}
-        }
-      }
-      if (!encontrados.length) encontrados = await findContactByName(user.id, nome);
-      if (encontrados.length === 0) { await sendMessage(phone, `Não encontrei nenhum contato com "${nome}" 😕`); return; }
-      for (const c of encontrados) await prisma.contact.delete({ where: { id: c.id } });
-      await sendMessage(phone, `✅ Contato${encontrados.length>1?'s':''} removido${encontrados.length>1?'s':''}: *${encontrados.map(c=>c.name).join(', ')}* 🗑️`);
-      return;
-    }
-    if (classified.tipo === 'salvar_cofre') {
-      if (!classified.conteudo) { await sendMessage(phone, 'O que você quer guardar no cofre? 😊'); return; }
-      // Mesmo formato usado pelo dashboard (forms.js POST /cofre/:phone):
-      // content é um JSON com tipo+nome+dados, pra exibir certinho na tela Cofre.
-      const dadosCofre = { tipo: 'nota', nome: classified.nome || 'Sem nome', nota: classified.conteudo };
-      await prisma.memory.create({ data: { userId: user.id, type: 'cofre', content: JSON.stringify(dadosCofre) } });
-      await sendMessage(phone, `🔐 Salvo no cofre! "${classified.nome || 'Item'}" protegido 💜`);
-      return;
-    }
-    if (classified.tipo === 'salvar_contato') {
-      if (!classified.nome || !classified.phone) { await sendMessage(phone, 'Preciso do nome e do número para salvar o contato 😊'); return; }
-      await saveContact(user.id, { nome: classified.nome, phone: classified.phone, relation: classified.relation || null, notes: classified.notes || null });
-      await sendMessage(phone, `✅ Contato salvo! ${classified.nome}${classified.relation?` (${classified.relation})`:''} 📱`);
-      return;
-    }
-    if (classified.tipo === 'enviar_mensagem_agendada') {
-      let destinatarioPhone = classified.phone || null;
-      let destinatarioNome = classified.destinatario || null;
-      if (!destinatarioPhone && destinatarioNome) {
-        const encontrados = await findContactByName(user.id, destinatarioNome);
-        if (encontrados.length === 0) { await sendMessage(phone, `Não encontrei "${destinatarioNome}" 😕 Me diz o número!`); return; }
-        if (encontrados.length > 1) {
-          const lista = encontrados.map((c, i) => `${i+1}. ${c.name}${c.relation?` (${c.relation})`:''} — ${c.phone}`).join('\n');
-          await memory.saveMemory(user.id, 'confirmacao_pendente', JSON.stringify({ tipo:'selecao_contato', opcoes:encontrados.map(c=>({nome:c.name,phone:c.phone,relation:c.relation})), mensagem:classified.mensagem||'', expira:Date.now()+3*60*1000 }));
-          await sendMessage(phone, `Encontrei mais de um contato:\n\n${lista}\n\nQual você quer? Responde com o número (1, 2...)`);
-          return;
-        }
-        destinatarioPhone = encontrados[0].phone; destinatarioNome = encontrados[0].name;
-      }
-      if (!destinatarioPhone) { await sendMessage(phone, 'Para quem quer enviar? Me diz o nome ou número 😊'); return; }
-      let phoneClean = destinatarioPhone.replace(/\D/g, '');
-      if (!phoneClean.startsWith('55') && phoneClean.length <= 11) phoneClean = '55' + phoneClean;
-      const mensagem = classified.mensagem || '';
-      if (!mensagem) { await sendMessage(phone, 'O que quer que eu escreva? 😊'); return; }
-      const nowLocal = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      const now = nowLocal();
-      let scheduledAt = null;
-      if (classified.data && classified.hora) scheduledAt = new Date(`${classified.data}T${classified.hora}:00-03:00`);
-      else if (classified.hora) { const [h,m] = classified.hora.split(':').map(Number); scheduledAt = new Date(now); scheduledAt.setHours(h,m||0,0,0); if (scheduledAt<=now) scheduledAt.setDate(scheduledAt.getDate()+1); }
-      if (!scheduledAt || scheduledAt <= new Date()) { await sendMessage(phone, 'Não entendi quando quer enviar 😕 Me diz a hora, ex: "amanhã às 10h"'); return; }
-      const horaPrev = scheduledAt.toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
-      const dataPrev = scheduledAt.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo',weekday:'long',day:'numeric',month:'long'});
-      await memory.saveMemory(user.id,'confirmacao_pendente',JSON.stringify({tipo:'mensagem_agendada',toPhone:phoneClean,toName:destinatarioNome,mensagem,scheduledAt:scheduledAt.toISOString(),expira:Date.now()+2*60*1000}));
-      await sendMessage(phone,`📤 Vou enviar para *${destinatarioNome}*:\n\n_"${mensagem}"_\n\n📅 ${dataPrev} às ${horaPrev}\n\nConfirma? (sim/não)`);
-      return;
-    }
-    if (classified.tipo === 'enviar_mensagem') {
-      let destinatarioPhone = classified.phone || null;
-      let destinatarioNome = classified.destinatario || null;
-      if (classified.contato_numero) {
-        try { const mem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'contatos_listados' } }); if (mem) { const lista = JSON.parse(mem.content); const c = lista[classified.contato_numero-1]; if (c) { destinatarioNome = c.name; destinatarioPhone = c.phone; } } } catch(e) {}
-      }
-      if (!destinatarioPhone && destinatarioNome) {
-        const encontrados = await findContactByName(user.id, destinatarioNome);
-        if (encontrados.length === 0) { await sendMessage(phone, `Não encontrei "${destinatarioNome}" 😕 Me diz o número!`); return; }
-        if (encontrados.length > 1) {
-          const lista = encontrados.map((c,i)=>`${i+1}. ${c.name}${c.relation?` (${c.relation})`:''} — ${c.phone}`).join('\n');
-          await memory.saveMemory(user.id,'confirmacao_pendente',JSON.stringify({tipo:'selecao_contato',opcoes:encontrados.map(c=>({nome:c.name,phone:c.phone,relation:c.relation})),mensagem:classified.mensagem||'',expira:Date.now()+3*60*1000}));
-          await sendMessage(phone,`Encontrei mais de um contato:\n\n${lista}\n\nQual você quer? Responde com o número (1, 2...)`);
-          return;
-        }
-        destinatarioPhone = encontrados[0].phone; destinatarioNome = encontrados[0].name;
-      }
-      if (!destinatarioPhone) { await sendMessage(phone, 'Para quem quer enviar? 😊'); return; }
-      let phoneClean = destinatarioPhone.replace(/\D/g, '');
-      if (!phoneClean.startsWith('55') && phoneClean.length <= 11) phoneClean = '55' + phoneClean;
-      if (destinatarioNome && classified.phone) await saveContact(user.id, { nome: destinatarioNome, phone: phoneClean }).catch(() => {});
-      const mensagem = classified.mensagem || '';
-      if (!mensagem) { await sendMessage(phone, 'O que quer que eu escreva? 😊'); return; }
-      await memory.saveMemory(user.id,'confirmacao_pendente',JSON.stringify({tipo:'enviar_mensagem',destinatarioPhone:phoneClean,destinatarioNome:destinatarioNome||phoneClean,mensagem,expira:Date.now()+2*60*1000}));
-      await sendMessage(phone,`📤 Vou enviar para *${destinatarioNome||phoneClean}*:\n\n_"${mensagem}"_\n\nConfirma? (sim/não)`);
-      return;
-    }
-  } catch (e) {
-    console.error('[handleContatoAction] Erro:', e.message);
-    await sendMessage(phone, 'Ops, tive um problema com isso. Pode tentar de novo?');
-  }
-}
-
-async function checkConfirmacaoPendente(user, phone, text) {
-  try {
-    const mems = await memory.getRecentMemories(user.id, 10);
-    const pendente = mems.find(m => m.type === 'confirmacao_pendente');
-    if (!pendente) return false;
-    let dados; try { dados = JSON.parse(pendente.content); } catch { return false; }
-    if (Date.now() > dados.expira) { await prisma.memory.delete({ where: { id: pendente.id } }); return false; }
-    // ── BUG CORRIGIDO: strip do prefixo de citação antes de normalizar ──
-    // Quando o usuário responde arrastando (swipe-reply) uma notificação,
-    // webhook.js monta o texto como `[Mensagem citada: "..."]\n${text real}`
-    // antes de chamar handleMessage → checkConfirmacaoPendente. Todas as
-    // regexes aqui (ex: /^(sim|pode|isso|...)/i) são ANCORADAS no início
-    // da string (^) — com o prefixo de citação colado na frente, o ^ nunca
-    // batia com a resposta real do usuário, fazendo TODA confirmação via
-    // swipe-reply (fechamento_pendentes, hora_lembrete, remarcar_negacao,
-    // selecao_contato, sim/não de envio de mensagem, urgente_confirmacao)
-    // cair silenciosamente no fluxo normal de classify — que não sabe lidar
-    // com essas pendências e responde algo desconexo. Removendo o prefixo
-    // aqui, a checagem volta a enxergar só a resposta real ("Pode concluir
-    // tudo fedo"), independente de ter sido enviada com ou sem citação.
-    const textSemCitacao = text.replace(/^\[Mensagem citada:\s*"[^"]*"\]\s*\n?/i, '');
-    const textNorm = textSemCitacao.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-    if (dados.tipo === 'fechamento_pendentes') {
-      // Resposta ao cron de Fechamento (18h, reminders.js) que perguntou
-      // "posso concluir todos, ou quer remarcar algum?" — diferente da
-      // pendência de saúde, aqui a resposta precisa de uma AÇÃO real no
-      // banco, não só uma reação em texto.
-      const afirmativo = /^(sim|pode|isso|s|ok|beleza|confirma|confirmado|concluir? tudo|pode concluir|todos?)\b/i.test(textNorm);
-      if (afirmativo) {
-        await prisma.reminder.updateMany({
-          where: { id: { in: dados.reminderIds } },
-          data: { confirmed: true }
-        });
-        await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
-        const contextoExtra = `\n\n[AÇÃO] Todos os ${dados.reminderIds.length} lembrete(s) pendentes foram marcados como concluídos agora, conforme pedido. Confirme isso brevemente e com naturalidade.`;
-        await responderLivre(user, phone, text, contextoExtra);
-        return true;
-      }
-      // Resposta não é uma confirmação clara de "tudo" — provavelmente o
-      // usuário quer remarcar algo específico ou listar o que falta.
-      // Deixa a pendência expirar sozinha (não força decisão binária aqui)
-      // e segue pro fluxo normal, que já sabe lidar com "remarcar X" via
-      // classify/editar_lembrete.
-      await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
-      return false;
-    }
-
-    if (dados.tipo === 'pendencia_emocional') {
-      // A Clara puxou de volta um assunto sozinha (cron "PENDÊNCIAS
-      // EMOCIONAIS" em reminders.js) — isso aqui é a resposta do usuário.
-      // Não usamos texto fixo: deixamos o freeResponse reagir de forma
-      // genuína (cobrança leve se ainda não resolveu, comemoração se sim),
-      // mantendo o tom escolhido, em vez de uma confirmação robótica.
-      await prisma.pendencia.update({ where: { id: dados.pendenciaId }, data: { resolvido: true } }).catch(() => {});
-      await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
-      const instrucao = dados.categoria === 'saude'
-        ? 'Se a resposta indicar que ainda não melhorou ou não cuidou disso, dê uma cobrança leve e genuína, do jeito do seu tom. Se já melhorou, comemore brevemente.'
-        : 'Reaja ao resultado contado — comemore se foi bom, console se foi ruim — com curiosidade genuína de amiga, não como assistente.';
-      const contextoExtra = `\n\n[PENDÊNCIA RESPONDIDA] Você tinha perguntado de volta sobre "${dados.resumo}". O usuário acabou de te contar o resultado/detalhes na mensagem atual. ${instrucao} NÃO repita a pergunta. NÃO reformule os fatos que ele contou como uma pergunta de confirmação (ex: NUNCA faça algo como "Foi assim: X. Confirma?") — ele já te contou, é informação dada, não precisa de checagem. Reaja com uma frase genuína (torça, comemore, brinque, console — o que couber), sem repetir os detalhes de volta para ele.`;
-      await responderLivre(user, phone, text, contextoExtra);
-      return true;
-    }
-
-    if (dados.tipo === 'hora_lembrete') {
-      // Tenta extrair um horário do texto (ex: "10h", "14:30", "10 da manhã", "2 da tarde")
-      let horaEscolhida = null;
-      const matchHM = textNorm.match(/(\d{1,2})[:h](\d{2})/);
-      const matchH = textNorm.match(/(\d{1,2})\s*h(?:oras)?\b/);
-      const matchNum = !matchHM && !matchH ? textNorm.match(/^(\d{1,2})$/) : null;
-      if (matchHM) {
-        horaEscolhida = `${String(parseInt(matchHM[1])).padStart(2,'0')}:${matchHM[2]}`;
-      } else if (matchH || matchNum) {
-        let h = parseInt((matchH || matchNum)[1]);
-        if (/tarde/.test(textNorm) && h < 12) h += 12;
-        else if (/noite/.test(textNorm) && h < 12) h += 12;
-        horaEscolhida = `${String(h).padStart(2,'0')}:00`;
-      }
-
-      // Se não souber / não informou hora → usa 09:00 provisório
-      const naoSabe = /nao sei|não sei|qualquer|tanto faz|vc escolhe|voce escolhe|decide voce|sei nao/.test(textNorm);
-
-      if (!horaEscolhida && !naoSabe) {
-        // Não entendeu a resposta — pede de novo, mantendo o pendente
-        await sendMessage(phone, 'Não entendi o horário 😅 Pode me dizer assim: "10h" ou "14:30"? Ou diga "não sei" que eu deixo às 09:00.');
-        return true;
-      }
-
-      const horaFinal = horaEscolhida || '09:00';
-      const [h, m] = horaFinal.split(':').map(Number);
-      const scheduledAt = new Date(`${dados.data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
-
-      const novoLembrete = await prisma.reminder.create({ data: { userId: user.id, phone, message: dados.titulo, scheduledAt } });
-      await prisma.memory.delete({ where: { id: pendente.id } });
-
-      if (detectarUrgencia(dados.titulo)) {
-        await prisma.memory.create({ data: { userId: user.id, type: 'lembrete_urgente', content: novoLembrete.id } }).catch(() => {});
-      }
-
-      const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-      if (!horaEscolhida) {
-        await sendMessage(phone, `✅ Combinado! Deixei "${dados.titulo}" pra ${dataFmt} às 09:00 (provisório) — se descobrir o horário certo depois, me avisa que eu remarco 😊`);
-      } else {
-        await sendMessage(phone, `✅ Pronto! "${dados.titulo}" agendado pra ${dataFmt} às ${horaFinal} 📌`);
-      }
-      return true;
-    }
-
-    if (dados.tipo === 'remarcar_negacao') {
-      // Usuário respondeu "não" à pergunta "já concluiu?" do disparo do
-      // lembrete, e a Clara perguntou pra que horas remarcar. Extrai o
-      // horário da resposta (mesmo parser usado em hora_lembrete).
-      let horaEscolhida = null;
-      const matchHM = textNorm.match(/(\d{1,2})[:h](\d{2})/);
-      const matchH = textNorm.match(/(\d{1,2})\s*h(?:oras)?\b/);
-      const matchNum = !matchHM && !matchH ? textNorm.match(/^(\d{1,2})$/) : null;
-      if (matchHM) {
-        horaEscolhida = `${String(parseInt(matchHM[1])).padStart(2,'0')}:${matchHM[2]}`;
-      } else if (matchH || matchNum) {
-        let h = parseInt((matchH || matchNum)[1]);
-        if (/tarde/.test(textNorm) && h < 12) h += 12;
-        else if (/noite/.test(textNorm) && h < 12) h += 12;
-        horaEscolhida = `${String(h).padStart(2,'0')}:00`;
-      }
-
-      // Também aceita "daqui X minutos/horas" como resposta
-      const relativo = calcularHorarioRelativo(text);
-
-      const naoSabe = /nao sei|não sei|qualquer|tanto faz|vc escolhe|voce escolhe|decide voce|sei nao|mais tarde/.test(textNorm);
-
-      if (!horaEscolhida && !relativo && !naoSabe) {
-        await sendMessage(phone, 'Não entendi o horário 😅 Pode me dizer assim: "14h", "daqui 30 minutos", ou "não sei" que eu deixo em 30 minutos.');
-        return true;
-      }
-
-      let novoScheduledAt;
-      if (relativo) {
-        novoScheduledAt = relativo;
-      } else if (horaEscolhida) {
-        const [h, m] = horaEscolhida.split(':').map(Number);
-        novoScheduledAt = new Date(`${dateBRT()}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
-        if (novoScheduledAt < nowBRT()) novoScheduledAt.setDate(novoScheduledAt.getDate() + 1);
-      } else {
-        // não sabe — fallback de 30 minutos
-        novoScheduledAt = new Date(Date.now() + 30 * 60 * 1000);
-      }
-
-      await prisma.reminder.update({ where: { id: dados.lembreteId }, data: { scheduledAt: novoScheduledAt, sent: false, confirmed: false } });
-      await prisma.memory.delete({ where: { id: pendente.id } });
-
-      const horaFmt = novoScheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-      const dataFmt = novoScheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-      await sendMessage(phone, `✅ Remarcado! "${dados.lembreteTitulo}" pra ${dataFmt} às ${horaFmt} 📌`);
-      return true;
-    }
-
-    if (dados.tipo === 'selecao_contato') {
-      const num = parseInt(textNorm);
-      if (!isNaN(num) && num >= 1 && num <= dados.opcoes.length) {
-        const escolhido = dados.opcoes[num-1];
-        await prisma.memory.delete({ where: { id: pendente.id } });
-        let phoneClean = escolhido.phone.replace(/\D/g, '');
-        if (!phoneClean.startsWith('55') && phoneClean.length <= 11) phoneClean = '55' + phoneClean;
-        if (dados.mensagem) { await memory.saveMemory(user.id,'confirmacao_pendente',JSON.stringify({tipo:'enviar_mensagem',destinatarioPhone:phoneClean,destinatarioNome:escolhido.nome,mensagem:dados.mensagem,expira:Date.now()+2*60*1000})); await sendMessage(phone,`📤 Vou enviar para *${escolhido.nome}*:\n\n_"${dados.mensagem}"_\n\nConfirma? (sim/não)`); }
-        else { await sendMessage(phone, `Ok! ${escolhido.nome} selecionado. O que quer enviar?`); }
-        return true;
-      }
-      if (!isNaN(num)) { await sendMessage(phone, `Número inválido. Escolha entre 1 e ${dados.opcoes.length}.`); return true; }
-      if (['nao','n','não','cancelar','cancela'].includes(textNorm)) { await prisma.memory.delete({ where: { id: pendente.id } }); await sendMessage(phone, 'Ok, cancelei 😊'); return true; }
-      return false;
-    }
-    if (['sim','s','ok','confirma','envia','manda','pode','yes'].includes(textNorm)) {
-      const remetente = await memory.getUserPreference(user.id);
-      const nomeRemetente = remetente.name || 'seu contato';
-      const foneFormatado = phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
-      const msgFormatada = `Oi! Sou a Clara, assistente inteligente do ${nomeRemetente}.\n\n📌 Passando um lembrete:\n\n${dados.mensagem}\n\nNão precisa me responder! Se precisar de algo, é só chamar no WhatsApp: ${foneFormatado} 😊`;
-      await sendMessage(dados.destinatarioPhone, msgFormatada);
-      await prisma.memory.delete({ where: { id: pendente.id } });
-      await sendMessage(phone, `✅ Mensagem enviada para *${dados.destinatarioNome}*! 📤`);
-      return true;
-    }
-    if (['nao','n','não','cancelar','cancela','para'].includes(textNorm)) {
-      await prisma.memory.delete({ where: { id: pendente.id } });
-      await sendMessage(phone, 'Ok, cancelei o envio 😊');
-      return true;
-    }
-    if (dados.tipo === 'urgente_confirmacao') {
-      const sim = /^(sim|s|claro|pode|quero|yes|ok|manda|ativa|coloca)/.test(textNorm);
-      const nao = /^(n[aã]o|nao|n|não precisa|dispenso|deixa|tá bom|ta bom)/.test(textNorm);
-      if (sim || nao) {
-        await prisma.memory.delete({ where: { id: pendente.id } });
-        if (sim) {
-          const rem = await prisma.reminder.findUnique({ where: { id: dados.lembreteId } }).catch(() => null);
-          if (rem) {
-            const quinzeAntes = new Date(rem.scheduledAt.getTime() - 15 * 60 * 1000);
-            if (quinzeAntes > new Date()) {
-              await prisma.reminder.create({ data: { userId: user.id, phone, message: `⚡ Em 15 minutos: ${rem.message}`, scheduledAt: quinzeAntes } });
-              await prisma.memory.create({ data: { userId: user.id, type: 'urgente_antes_lock', content: rem.id } });
-            }
-          }
-          await sendMessage(phone, 'Feito! Vou te avisar 15 minutos antes 🔔');
-        } else {
-          await sendMessage(phone, 'Ok, te aviso só na hora 😊');
-        }
-        return true;
-      }
-    }
-    return false;
-  } catch (e) {
-    console.error('[checkConfirmacaoPendente] Erro:', e.message);
-    return false;
-  }
-}
-
-async function extractAndSavePersonalInfo(userId, text) {
-  const infos = await extractPersonalInfo(text);
-  if (infos && infos.length > 0) {
-    for (const { chave, valor, categoria } of infos) {
-      if (!chave || !valor) continue;
-      await savePersonalInfo(userId, chave, valor, categoria || 'outro');
-      console.log(`[memória pessoal] salvo: ${chave} = "${valor}"`);
-    }
-  }
-
-  // ── Pendência emocional: mal-estar passageiro ou evento com resultado
-  // incerto, pra Clara voltar a perguntar depois sozinha (ver cron
-  // "PENDÊNCIAS EMOCIONAIS" em reminders.js) ──
-  try {
-    const pendencia = await extractPendenciaEmocional(text);
-    if (pendencia) {
-      await savePendencia(userId, pendencia);
-      console.log(`[pendência emocional] salva: ${pendencia.categoria} — "${pendencia.resumo}" (check-in em ${pendencia.horas}h)`);
-    }
-  } catch (e) {
-    console.error('[extractPendenciaEmocional]', e.message);
-  }
-
-  // ── Resolução de pendência aberta ──
-  // Cobre o caso em que a Clara trouxe o assunto à tona sozinha NA
-  // CONVERSA (via bloco [SAÚDE EM ABERTO] em responderLivre), não pelo
-  // cron — esse caminho não gera um registro de confirmacao_pendente, então
-  // sem essa checagem aqui a pendência nunca seria marcada como resolvida
-  // e voltaria a ser perguntada para sempre, mesmo já confirmada.
-  try {
-    const pendenciaAberta = await prisma.pendencia.findFirst({
-      where: { userId, resolvido: false },
-      orderBy: { createdAt: 'desc' }
-    });
-    if (pendenciaAberta) {
-      const resolvida = await checkResolucaoPendencia(text, pendenciaAberta.resumo);
-      if (resolvida) {
-        await prisma.pendencia.update({ where: { id: pendenciaAberta.id }, data: { resolvido: true } });
-        console.log(`[pendência emocional] resolvida via conversa: "${pendenciaAberta.resumo}"`);
-      }
-    }
-  } catch (e) {
-    console.error('[checkResolucaoPendencia]', e.message);
-  }
-}
-
-async function updateRelationshipSummary(userId, history, lastReply) {
-  try {
-    const count = await prisma.memory.count({ where: { userId, type: 'conversation_message' } });
-    if (count % 3 !== 0) return;
-    const current = await prisma.memory.findFirst({ where: { userId, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } });
-    const msgs = [...history.slice(-10), { role: 'assistant', content: lastReply }];
-    const novoResumo = await generateRelationshipSummary(msgs, current?.content || '');
-    if (novoResumo) {
-      await upsertMemoryPorTipo(userId, 'relationship_summary', novoResumo).catch(() => {});
-    }
-  } catch(e) {}
-}
-
-module.exports = { handleMessage };
+const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+if(isIOS&&!window.navigator.standalone)setTimeout(()=>showToast('Instale: compartilhar → Adicionar à tela de início 📱',5000),4000);
+</script>
+</body>
+</html>
