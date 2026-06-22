@@ -254,12 +254,19 @@ async function buildPersonalContext(userId) {
   }
 
   // ── Assuntos em aberto ──
+  // Prioridade: mostra o MAIS RECENTE em destaque para manter o assunto
+  // vivo. Se houver outros abertos, aparecem como contexto secundário
+  // (menor peso) para não sobrecarregar a resposta.
   const pendencias = await getPendenciasAbertas(userId);
   if (pendencias.length > 0) {
-    const linhas = pendencias.slice(0, 3).map(p =>
-      `• ${p.assunto}: ${p.contexto} → ${p.como_retomar}`
-    ).join('\n');
-    texto += `\n\n[ASSUNTOS EM ABERTO — retome naturalmente quando fizer sentido, sem forçar]\n${linhas}`;
+    // [0] = mais recente (orderBy createdAt desc em getPendenciasAbertas)
+    const principal = pendencias[0];
+    texto += `\n\n[ASSUNTO EM ABERTO — prioridade máxima, retome quando houver abertura natural]\n• ${principal.assunto}: ${principal.contexto} → ${principal.como_retomar}`;
+    // Demais assuntos: mencionados de forma mais leve, sem forçar
+    if (pendencias.length > 1) {
+      const outros = pendencias.slice(1, 3).map(p => `• ${p.assunto}: ${p.contexto}`).join('\n');
+      texto += `\n\n[OUTROS ASSUNTOS EM ABERTO — só retome se surgir oportunidade muito natural]\n${outros}`;
+    }
   }
 
   // ── Campos que a Clara ainda não conhece (para curiosidade orgânica) ──
@@ -497,7 +504,25 @@ async function fecharPendenciasPorResolucao(userId, textoUsuario) {
   if (!SINAIS.test(textoUsuario)) return;
   const pendencias = await getPendenciasAbertas(userId);
   if (!pendencias.length) return;
-  await fecharPendencia(userId, pendencias[0].id);
+
+  const textoLower = textoUsuario.toLowerCase();
+
+  // Tenta casar o texto de resolução com o assunto mais provável —
+  // evita fechar a pendência errada quando há mais de uma aberta.
+  // Estratégia: verifica se alguma palavra do assunto aparece no texto.
+  // Ex: "deu certo no hospital" → fecha a pendência de "hospital",
+  // não necessariamente a mais recente se houver outras abertas.
+  let alvoId = pendencias[0].id; // fallback: mais recente
+  for (const p of pendencias) {
+    const palavrasAssunto = (p.assunto || '').toLowerCase().split(' ').filter(w => w.length > 3);
+    const palavrasContexto = (p.contexto || '').toLowerCase().split(' ').filter(w => w.length > 4);
+    const palavras = [...palavrasAssunto, ...palavrasContexto.slice(0, 3)];
+    if (palavras.some(w => textoLower.includes(w))) {
+      alvoId = p.id;
+      break; // encontrou correspondência — usa essa
+    }
+  }
+  await fecharPendencia(userId, alvoId);
 }
 
 // ====================== EXPORTS ======================
