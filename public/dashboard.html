@@ -1383,38 +1383,38 @@ async function delGasto(id,wrapEl){
 }
 
 
-// Memórias 3.0
-const CATS_MEM={
-  relacionamento:{label:'Relacionamento',emoji:'❤️',cor:'rgba(239,68,68,.12)',texto:'#FCA5A5',ac:'#EF4444'},
-  filhos:{label:'Filhos',emoji:'👶',cor:'rgba(251,191,36,.12)',texto:'#FCD34D',ac:'#F59E0B'},
-  familia:{label:'Família',emoji:'👪',cor:'rgba(245,158,11,.12)',texto:'#FCD34D',ac:'#F59E0B'},
-  trabalho:{label:'Trabalho',emoji:'💼',cor:'rgba(59,130,246,.12)',texto:'#93C5FD',ac:'#3B82F6'},
-  hobbies:{label:'Hobbies',emoji:'🎯',cor:'rgba(16,185,129,.12)',texto:'#6EE7B7',ac:'#10B981'},
-  entretenimento:{label:'Entretenimento',emoji:'🎬',cor:'rgba(168,85,247,.12)',texto:'#D8B4FE',ac:'#A855F7'},
-  alimentacao:{label:'Alimentação',emoji:'🍔',cor:'rgba(234,88,12,.12)',texto:'#FDBA74',ac:'#EA580C'},
-  metas:{label:'Metas',emoji:'🚀',cor:'rgba(99,102,241,.12)',texto:'#A5B4FC',ac:'#6366F1'},
-  personalidade:{label:'Personalidade',emoji:'✨',cor:'rgba(236,72,153,.12)',texto:'#F9A8D4',ac:'#EC4899'},
-  saude:{label:'Saúde',emoji:'💊',cor:'rgba(239,68,68,.12)',texto:'#FCA5A5',ac:'#EF4444'},
-  datas:{label:'Datas importantes',emoji:'📅',cor:'rgba(245,158,11,.12)',texto:'#FCD34D',ac:'#F59E0B'},
-  rotina:{label:'Rotina',emoji:'⏰',cor:'rgba(139,92,246,.12)',texto:'#C4B5FD',ac:'#8B5CF6'},
-  outro:{label:'Informações gerais',emoji:'📌',cor:'rgba(107,114,128,.12)',texto:'#9CA3AF',ac:'#6B7280'}
+// Memorias 3.0
+var CATS_MEM_DATA={
+  relacionamento:{label:'Relacionamento',e:'&#x2764;&#xFE0F;',cor:'rgba(239,68,68,.12)',txt:'#FCA5A5',ac:'#EF4444'},
+  filhos:{label:'Filhos',e:'&#x1F476;',cor:'rgba(251,191,36,.12)',txt:'#FCD34D',ac:'#F59E0B'},
+  familia:{label:'Fam\u00edlia',e:'&#x1F46A;',cor:'rgba(245,158,11,.12)',txt:'#FCD34D',ac:'#F59E0B'},
+  trabalho:{label:'Trabalho',e:'&#x1F4BC;',cor:'rgba(59,130,246,.12)',txt:'#93C5FD',ac:'#3B82F6'},
+  hobbies:{label:'Hobbies',e:'&#x1F3AF;',cor:'rgba(16,185,129,.12)',txt:'#6EE7B7',ac:'#10B981'},
+  entretenimento:{label:'Entretenimento',e:'&#x1F3AC;',cor:'rgba(168,85,247,.12)',txt:'#D8B4FE',ac:'#A855F7'},
+  alimentacao:{label:'Alimenta\u00e7\u00e3o',e:'&#x1F354;',cor:'rgba(234,88,12,.12)',txt:'#FDBA74',ac:'#EA580C'},
+  metas:{label:'Metas',e:'&#x1F680;',cor:'rgba(99,102,241,.12)',txt:'#A5B4FC',ac:'#6366F1'},
+  personalidade:{label:'Personalidade',e:'&#x2728;',cor:'rgba(236,72,153,.12)',txt:'#F9A8D4',ac:'#EC4899'},
+  saude:{label:'Sa\u00fade',e:'&#x1F48A;',cor:'rgba(239,68,68,.12)',txt:'#FCA5A5',ac:'#EF4444'},
+  datas:{label:'Datas importantes',e:'&#x1F4C5;',cor:'rgba(245,158,11,.12)',txt:'#FCD34D',ac:'#F59E0B'},
+  rotina:{label:'Rotina',e:'&#x23F0;',cor:'rgba(139,92,246,.12)',txt:'#C4B5FD',ac:'#8B5CF6'},
+  outro:{label:'Informa\u00e7\u00f5es gerais',e:'&#x1F4CC;',cor:'rgba(107,114,128,.12)',txt:'#9CA3AF',ac:'#6B7280'}
 };
-const ORDEM_CATS_MEM=['relacionamento','filhos','familia','trabalho','hobbies','entretenimento','alimentacao','metas','personalidade','saude','datas','rotina','outro'];
-let _memDados=null,_memFiltroAtivo='todas',_memBuscaAtiva='';
+var ORDEM_CATS_MEM=['relacionamento','filhos','familia','trabalho','hobbies','entretenimento','alimentacao','metas','personalidade','saude','datas','rotina','outro'];
+var _memDados=null,_memFiltroAtivo='todas',_memBuscaAtiva='';
 
 async function renderMemorias(){
-  const el=document.getElementById('memorias-body');
+  var el=document.getElementById('memorias-body');
   if(!el)return;
   el.innerHTML='<div class="spin"></div>';
   try{
-    const r=await fetch('/forms/memorias/'+phone);
+    var r=await fetch('/forms/memorias/'+phone);
     _memDados=await r.json();
     _memBuscaAtiva='';
-    const si=document.getElementById('mem-search-input');
+    var si=document.getElementById('mem-search-input');
     if(si)si.value='';
     _renderMemoriasUI();
   }catch(e){
-    el.innerHTML='<div class="mem-empty-state"><div class="mem-empty-brain">🧠</div><div class="mem-empty-title">Erro ao carregar</div><div class="mem-empty-sub">Tente novamente.</div></div>';
+    el.innerHTML='<div class="mem-empty-state"><div class="mem-empty-brain">&#x1F9E0;</div><div class="mem-empty-title">Erro ao carregar</div><div class="mem-empty-sub">Tente novamente.</div></div>';
   }
 }
 
@@ -1426,7 +1426,7 @@ function setMemFilter(cat){
 
 function filtrarMemorias(){
   var inp=document.getElementById('mem-search-input');
-  _memBuscaAtiva=(inp?inp.value:'').trim().toLowerCase();
+  _memBuscaAtiva=inp?inp.value.trim().toLowerCase():'';
   _renderMemoriasUI();
 }
 
@@ -1442,59 +1442,79 @@ function _renderMemoriasUI(){
   var busca=_memBuscaAtiva,filtro=_memFiltroAtivo;
   var html='',temConteudo=false;
 
-  // Assuntos em aberto
   if(filtro==='todas'||filtro==='pendencias'){
-    var pendsF=pends.filter(function(p){return !busca||(p.assunto||'').toLowerCase().indexOf(busca)>=0||(p.contexto||'').toLowerCase().indexOf(busca)>=0;});
+    var pendsF=pends.filter(function(p){
+      return !busca||(p.assunto||'').toLowerCase().indexOf(busca)>=0||(p.contexto||'').toLowerCase().indexOf(busca)>=0;
+    });
     if(pendsF.length){
       temConteudo=true;
-      html+='<div class="mem-group"><div class="mem-group-header"><span class="mem-group-emoji">🟡</span><span class="mem-group-label">Assuntos em aberto</span><span class="mem-group-count">'+pendsF.length+'</span></div>';
+      html+='<div class="mem-group"><div class="mem-group-header"><span class="mem-group-emoji">&#x1F7E1;</span><span class="mem-group-label">Assuntos em aberto</span><span class="mem-group-count">'+pendsF.length+'</span></div>';
       pendsF.forEach(function(p){
-        var idStr=String(p.id||'').replace(/['"]/g,'');
-        html+='<div class="mem-pendencia-card"><div class="mem-pendencia-icon">💬</div><div class="mem-pendencia-body"><div class="mem-pendencia-assunto">'+(p.assunto||'')+'</div><div class="mem-pendencia-ctx">'+(p.contexto||'')+'</div>'+(p.como_retomar?'<div class="mem-pendencia-retomar">'+p.como_retomar+'</div>':'')+'</div><button class="mem-pendencia-del" onclick="encerrarPendencia(''+idStr+'')" title="Encerrar"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>';
+        html+='<div class="mem-pendencia-card"><div class="mem-pendencia-icon">&#x1F4AC;</div>'
+          +'<div class="mem-pendencia-body">'
+          +'<div class="mem-pendencia-assunto">'+(p.assunto||'')+'</div>'
+          +'<div class="mem-pendencia-ctx">'+(p.contexto||'')+'</div>'
+          +(p.como_retomar?'<div class="mem-pendencia-retomar">'+p.como_retomar+'</div>':'')
+          +'</div>'
+          +'<button class="mem-pendencia-del" data-pend-id="'+String(p.id||'')+'" title="Encerrar">'
+          +'<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+          +'</button></div>';
       });
       html+='</div>';
     }
   }
 
-  // Categorias
   var catsRender=filtro==='todas'?ORDEM_CATS_MEM:filtro==='pendencias'?[]:ORDEM_CATS_MEM.filter(function(c){return c===filtro;});
   catsRender.forEach(function(cat){
     var items=cats[cat]||[];
     if(busca)items=items.filter(function(i){return (i.valor||'').toLowerCase().indexOf(busca)>=0||(i.chave||'').toLowerCase().indexOf(busca)>=0;});
     if(!items.length)return;
     temConteudo=true;
-    var m=CATS_MEM[cat]||{label:cat,emoji:'📌',cor:'rgba(107,114,128,.12)',texto:'#9CA3AF',ac:'#6B7280'};
-    html+='<div class="mem-group"><div class="mem-group-header"><span class="mem-group-emoji">'+m.emoji+'</span><span class="mem-group-label">'+m.label+'</span><span class="mem-group-count">'+items.length+'</span></div>';
+    var m=CATS_MEM_DATA[cat]||{label:cat,e:'&#x1F4CC;',cor:'rgba(107,114,128,.12)',txt:'#9CA3AF',ac:'#6B7280'};
+    html+='<div class="mem-group"><div class="mem-group-header"><span class="mem-group-emoji">'+m.e+'</span><span class="mem-group-label">'+m.label+'</span><span class="mem-group-count">'+items.length+'</span></div>';
     items.forEach(function(item){
       var chave=item.chave?item.chave.replace(/_/g,' '):'';
-      var idStr=String(item.id||'').replace(/['"]/g,'');
-      html+='<div class="mem-card" style="border-left-color:'+m.ac+'"><div class="mem-card-icon" style="background:'+m.cor+';color:'+m.texto+'">'+m.emoji+'</div><div class="mem-card-body"><div class="mem-card-valor">'+item.valor+'</div>'+(chave?'<div class="mem-card-meta">'+chave+'</div>':'')+'</div><button class="mem-card-del" onclick="deletarMemoria(''+idStr+'')" title="Esquecer"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button></div>';
+      html+='<div class="mem-card" style="border-left-color:'+m.ac+'">'
+        +'<div class="mem-card-icon" style="background:'+m.cor+';color:'+m.txt+'">'+m.e+'</div>'
+        +'<div class="mem-card-body">'
+        +'<div class="mem-card-valor">'+item.valor+'</div>'
+        +(chave?'<div class="mem-card-meta">'+chave+'</div>':'')
+        +'</div>'
+        +'<button class="mem-card-del" data-mem-id="'+String(item.id||'')+'" title="Esquecer">'
+        +'<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>'
+        +'</button></div>';
     });
     html+='</div>';
   });
 
   if(!temConteudo){
     html=busca
-      ?'<div class="mem-empty-state"><div class="mem-empty-brain">🔍</div><div class="mem-empty-title">Nenhum resultado</div><div class="mem-empty-sub">Nenhuma memória para "'+busca+'".</div></div>'
-      :'<div class="mem-empty-state"><div class="mem-empty-brain">🧠</div><div class="mem-empty-title">A Clara ainda está te conhecendo</div><div class="mem-empty-sub">Conforme vocês conversam, ela vai salvando o que aprende sobre você aqui.</div></div>';
+      ?'<div class="mem-empty-state"><div class="mem-empty-brain">&#x1F50D;</div><div class="mem-empty-title">Nenhum resultado</div><div class="mem-empty-sub">Nenhuma mem\u00f3ria para "'+busca+'".</div></div>'
+      :'<div class="mem-empty-state"><div class="mem-empty-brain">&#x1F9E0;</div><div class="mem-empty-title">A Clara ainda est\u00e1 te conhecendo</div><div class="mem-empty-sub">Conforme voc\u00eas conversam, ela vai salvando o que aprende sobre voc\u00ea aqui.</div></div>';
   }
   el.innerHTML=html;
+  el.querySelectorAll('[data-mem-id]').forEach(function(btn){
+    btn.addEventListener('click',function(){deletarMemoria(this.dataset.memId);});
+  });
+  el.querySelectorAll('[data-pend-id]').forEach(function(btn){
+    btn.addEventListener('click',function(){encerrarPendencia(this.dataset.pendId);});
+  });
 }
 
 async function deletarMemoria(id){
-  if(!confirm('Quer que eu esqueça isso? A Clara não vai mais trazer esse assunto por 30 dias.'))return;
+  if(!confirm('Quer que eu esque\u00e7a isso? A Clara n\u00e3o vai mais trazer esse assunto por 30 dias.'))return;
   try{
     var r=await fetch('/forms/memoria/'+id+'/'+phone,{method:'DELETE'});
-    if(r.ok){showToast('Memória removida 🗑️');await renderMemorias();}
-    else showToast('Erro ao remover ⚠️');
-  }catch(e){showToast('Erro ⚠️');}
+    if(r.ok){showToast('Mem\u00f3ria removida');await renderMemorias();}
+    else showToast('Erro ao remover');
+  }catch(e){showToast('Erro');}
 }
 
 async function encerrarPendencia(id){
   try{
     var r=await fetch('/forms/pendencia/'+id+'/'+phone,{method:'DELETE'});
-    if(r.ok){showToast('Assunto encerrado ✅');await renderMemorias();}
-  }catch(e){showToast('Erro ⚠️');}
+    if(r.ok){showToast('Assunto encerrado');await renderMemorias();}
+  }catch(e){showToast('Erro');}
 }
 
 async function renderCofre(){const el=document.getElementById('cofre-body');el.innerHTML='<div class="spin"></div>';try{const r=await fetch(`/forms/cofre/${phone}`);const items=await r.json();displayCofre(items);}catch{el.innerHTML='<div class="empty"><span class="empty-icon">🔐</span>Nenhum segredo salvo</div>';}}
