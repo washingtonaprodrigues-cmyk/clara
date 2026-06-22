@@ -386,6 +386,30 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .fin-del-btn{flex-shrink:0;margin-left:8px}
 .fin-empty{text-align:center;padding:40px 16px;color:var(--text3)}
 .cofre-card{background:var(--s2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r);padding:14px 14px 14px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px}
+.mem-categoria{margin-bottom:18px}
+.mem-cat-header{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.mem-cat-emoji{font-size:16px;line-height:1}
+.mem-cat-label{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em}
+.mem-cat-count{font-size:10px;color:var(--text3);background:var(--s3);padding:1px 6px;border-radius:20px}
+.mem-item{background:var(--s2);border:1px solid var(--border);border-radius:var(--r-sm);padding:11px 12px;margin-bottom:6px;display:flex;align-items:center;gap:10px;transition:border-color .15s}
+.mem-item:hover{border-color:var(--border2)}
+.mem-item-body{flex:1;min-width:0}
+.mem-item-valor{font-size:13px;color:var(--text);line-height:1.4}
+.mem-item-chave{font-size:11px;color:var(--text3);margin-top:2px}
+.mem-del-btn{width:28px;height:28px;background:none;border:none;cursor:pointer;color:var(--text3);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;opacity:0}
+.mem-item:hover .mem-del-btn{opacity:1}
+.mem-del-btn:hover{background:rgba(239,68,68,.1);color:#EF4444}
+.mem-del-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round}
+.mem-pendencia{background:var(--s2);border:1px solid var(--border);border-left:3px solid #F59E0B;border-radius:var(--r-sm);padding:11px 12px;margin-bottom:6px;display:flex;align-items:flex-start;gap:10px}
+.mem-pendencia-body{flex:1;min-width:0}
+.mem-pendencia-assunto{font-size:12px;font-weight:600;color:#FCD34D;margin-bottom:3px}
+.mem-pendencia-ctx{font-size:12px;color:var(--text2);line-height:1.4}
+.mem-pendencia-retomar{font-size:11px;color:var(--text3);margin-top:3px;font-style:italic}
+.mem-section-title{font-size:12px;font-weight:600;color:var(--text2);margin:20px 0 10px;display:flex;align-items:center;gap:6px}
+.mem-empty{text-align:center;padding:32px 20px;color:var(--text3);font-size:13px}
+.mem-empty-icon{font-size:32px;display:block;margin-bottom:8px}
+.mem-add-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:10px;background:none;border:1px dashed var(--border2);border-radius:var(--r-sm);color:var(--text3);font-size:12px;cursor:pointer;transition:all .15s;margin-top:4px}
+.mem-add-btn:hover{border-color:var(--accent);color:#C4B5FD;background:rgba(139,92,246,.05)}
 .cofre-card-body{flex:1;min-width:0}
 .cofre-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px}
 .cofre-name{font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px}
@@ -571,6 +595,7 @@ select option{background:var(--s2)}
       <div class="s-item" onclick="navTo('financeiro')" data-nav="financeiro"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg><span class="s-item-label">Financeiro</span></div>
       <div class="s-item" onclick="navTo('listas')" data-nav="listas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span class="s-item-label">Listas</span><span class="s-badge" id="d-badge-list" style="display:none">0</span></div>
       <div class="s-item" onclick="navTo('cofre')" data-nav="cofre"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span class="s-item-label">Cofre</span></div>
+      <div class="s-item" onclick="navTo('memorias')" data-nav="memorias"><svg viewBox="0 0 24 24"><path d="M9.5 2C6.46 2 4 4.46 4 7.5c0 1.74.8 3.29 2.05 4.33C4.2 12.66 3 14.7 3 17c0 2.76 2.24 5 5 5h8c2.76 0 5-2.24 5-5 0-2.3-1.2-4.34-3.05-5.17C19.2 10.79 20 9.24 20 7.5 20 4.46 17.54 2 14.5 2c-1.33 0-2.54.47-3.49 1.24A5.47 5.47 0 0 0 9.5 2zm0 2c.95 0 1.82.31 2.53.83L9.7 7.16A1 1 0 0 0 10 8h4a1 1 0 0 0 .3-.84L12 4.83A3.5 3.5 0 0 1 14.5 4 3.5 3.5 0 0 1 18 7.5 3.5 3.5 0 0 1 14.5 11H9.5A3.5 3.5 0 0 1 6 7.5 3.5 3.5 0 0 1 9.5 4zM9 9h6v1H9V9zm-1 4h8c1.65 0 3 1.35 3 3s-1.35 3-3 3H8c-1.65 0-3-1.35-3-3s1.35-3 3-3z"/></svg><span class="s-item-label">Memórias</span></div>
       <div class="sidebar-divider"></div>
       <div class="s-item" onclick="navTo('preferencias')" data-nav="preferencias"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="s-item-label">Configurações</span></div>
     </nav>
@@ -671,6 +696,11 @@ select option{background:var(--s2)}
         <div class="ph"><button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><div class="ph-icon" style="background:rgba(139,92,246,.1);color:#C4B5FD"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><div><div class="ph-title">Cofre</div><div class="ph-sub">Senhas e segredos protegidos</div></div><div class="ph-actions"><button class="btn-p" onclick="openModal('m-cofre')">+ Novo</button></div></div>
         <div class="scroll-body" style="padding:14px 20px" id="cofre-body"><div class="spin"></div></div>
       </div>
+      <div class="page" id="page-memorias">
+        <div class="ph"><button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><div class="ph-icon" style="background:rgba(139,92,246,.1);color:#C4B5FD"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A5.5 5.5 0 0 0 4 7.5c0 1.8.85 3.4 2.18 4.43A6 6 0 0 0 3 17c0 3.31 2.69 6 6 6h6c3.31 0 6-2.69 6-6a6 6 0 0 0-3.18-5.27A5.49 5.49 0 0 0 20 7.5 5.5 5.5 0 0 0 14.5 2c-1.4 0-2.68.53-3.64 1.39A5.47 5.47 0 0 0 9.5 2z"/><circle cx="12" cy="11" r="2"/><line x1="12" y1="13" x2="12" y2="17"/></svg></div><div><div class="ph-title">Memórias</div><div class="ph-sub">O que a Clara sabe sobre você</div></div></div>
+        <div class="scroll-body" style="padding:14px 20px" id="memorias-body"><div class="spin"></div></div>
+      </div>
+
       <div class="page" id="page-preferencias" style="display:flex;flex-direction:column">
         <div class="ph" style="flex-shrink:0">
           <button class="ph-back" onclick="toggleDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
@@ -861,6 +891,7 @@ select option{background:var(--s2)}
     <div class="d-item" onclick="navTo('financeiro')" data-nav="financeiro"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> Financeiro</div>
     <div class="d-item" onclick="navTo('listas')" data-nav="listas"><svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Listas <span class="d-badge" id="d-badge-list2" style="display:none">0</span></div>
     <div class="d-item" onclick="navTo('cofre')" data-nav="cofre"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Cofre</div>
+    <div class="d-item" onclick="navTo('memorias')" data-nav="memorias"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A5.5 5.5 0 0 0 4 7.5c0 1.8.85 3.4 2.18 4.43A6 6 0 0 0 3 17c0 3.31 2.69 6 6 6h6c3.31 0 6-2.69 6-6a6 6 0 0 0-3.18-5.27A5.49 5.49 0 0 0 20 7.5 5.5 5.5 0 0 0 14.5 2c-1.4 0-2.68.53-3.64 1.39A5.47 5.47 0 0 0 9.5 2z"/><circle cx="12" cy="11" r="2"/><line x1="12" y1="13" x2="12" y2="17"/></svg> Memórias</div>
     
     <div class="d-item" onclick="navTo('preferencias')" data-nav="preferencias"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Configurações</div>
   </div>
@@ -952,7 +983,7 @@ function showMainApp(user,savedPhone){
   document.getElementById('welcome-name').textContent=name.split(' ')[0];
   loadAll().then(()=>{if(currentNav==='lembretes')renderRem();if(currentNav==='saude')renderSaude();});loadMood();loadSaldo();initPWA();
   if(pollInterval)clearInterval(pollInterval);
-  pollInterval=setInterval(async()=>{await Promise.all([loadAll(),loadSaldo()]);if(currentNav==='lembretes')renderRem();if(currentNav==='saude')renderSaude();if(currentNav==='financeiro')renderFin();if(currentNav==='cofre')renderCofre();},30000);
+  pollInterval=setInterval(async()=>{await Promise.all([loadAll(),loadSaldo()]);if(currentNav==='lembretes')renderRem();if(currentNav==='saude')renderSaude();if(currentNav==='financeiro')renderFin();if(currentNav==='cofre')renderCofre();if(currentNav==='memorias')renderMemorias();},30000);
 }
 function setAuthTab(tab){authTab=tab;document.getElementById('tab-login').classList.toggle('active',tab==='login');document.getElementById('tab-register').classList.toggle('active',tab==='register');document.getElementById('auth-email-btn').textContent=tab==='login'?'Entrar':'Criar conta';document.getElementById('auth-name-field').style.display=tab==='register'?'block':'none';document.getElementById('auth-error').textContent='';}
 async function authWithEmail(){const email=document.getElementById('auth-email').value.trim(),password=document.getElementById('auth-password').value;const errEl=document.getElementById('auth-error'),btn=document.getElementById('auth-email-btn');if(!email||!password){errEl.textContent='Preencha email e senha';return;}btn.disabled=true;btn.textContent='Aguarde...';try{if(authTab==='login'){await window._signInWithEmailAndPassword(window._firebaseAuth,email,password);}else{const name=document.getElementById('auth-name').value.trim();const cred=await window._createUserWithEmailAndPassword(window._firebaseAuth,email,password);if(name)await window._updateProfile(cred.user,{displayName:name});}}catch(e){const msgs={'auth/user-not-found':'Usuário não encontrado','auth/wrong-password':'Senha incorreta','auth/email-already-in-use':'Email já cadastrado','auth/weak-password':'Senha fraca (mín. 6 caracteres)','auth/invalid-email':'Email inválido','auth/invalid-credential':'Email ou senha incorretos'};errEl.textContent=msgs[e.code]||'Erro ao autenticar';btn.disabled=false;btn.textContent=authTab==='login'?'Entrar':'Criar conta';}}
@@ -961,7 +992,7 @@ async function savePhone(){let v=document.getElementById('phone-setup-input').va
 async function doLogout(){closeDrawer();if(pollInterval){clearInterval(pollInterval);pollInterval=null;}await window._signOut(window._firebaseAuth);phone='';allRem=[];allMeds=[];allGastos=[];}
 function toggleDrawer(){document.getElementById('drawer').classList.toggle('open');document.getElementById('drawer-overlay').classList.toggle('open');}
 function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('drawer-overlay').classList.remove('open');}
-async function navTo(p){closeDrawer();document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.s-item,.d-item').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll(`[data-nav="${p}"]`).forEach(x=>x.classList.add('active'));currentNav=p;if(!phone)return;if(p==='lembretes'){await loadAll();renderRem();}if(p==='saude')renderSaude();if(p==='financeiro'){await loadSaldo();renderFin();}if(p==='listas')renderListas();if(p==='cofre')renderCofre();if(p==='preferencias')loadPrefs();}
+async function navTo(p){closeDrawer();document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.s-item,.d-item').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll(`[data-nav="${p}"]`).forEach(x=>x.classList.add('active'));currentNav=p;if(!phone)return;if(p==='lembretes'){await loadAll();renderRem();}if(p==='saude')renderSaude();if(p==='financeiro'){await loadSaldo();renderFin();}if(p==='listas')renderListas();if(p==='cofre')renderCofre();if(p==='memorias')renderMemorias();if(p==='preferencias')loadPrefs();}
 function togglePrivate(){privateMode=!privateMode;const btn=document.getElementById('private-btn');btn.textContent=privateMode?'🔒':'🔓';document.getElementById('priv-banner').classList.toggle('on',privateMode);showToast(privateMode?'🔒 Modo privado ativado':'🔓 Modo público ativado');}
 async function loadAll(){if(!phone)return;try{const[l,r,g]=await Promise.all([fetch(`/forms/lembretes/${phone}`).then(x=>x.json()).catch(()=>[]),fetch(`/forms/remedios/${phone}`).then(x=>x.json()).catch(()=>[]),fetch(`/forms/gastos/${phone}`).then(x=>x.json()).catch(()=>[])]);allRem=l;allMeds=r;allGastos=g;const todayBRT=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});const now=new Date();const hm=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;const todayCnt=l.filter(x=>!x.confirmed&&!x.sent&&new Date(x.scheduledAt).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'})===todayBRT).length;['d-badge-rem','d-badge-rem2'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display=todayCnt?'':'none';if(todayCnt)el.textContent=todayCnt;}});const medCnt=r.filter(m=>{let times=[];try{times=JSON.parse(m.times||'[]');}catch{}return times.some(t=>t>=hm);}).length;const listCnt=await fetch(`/forms/listas/${phone}`).then(x=>x.json()).then(d=>d.filter(l=>!l.done).length).catch(()=>0);['d-badge-list','d-badge-list2'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display=listCnt?'':'none';if(listCnt)el.textContent=listCnt;}});['d-badge-med','d-badge-med2'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display=medCnt?'':'none';if(medCnt)el.textContent=medCnt;}});}catch{}}
 async function loadSaldo(){if(!phone)return;try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();currentSaldo=(d.saldo!==undefined&&d.saldo!==null)?d.saldo:null;}catch{}}
@@ -1304,6 +1335,104 @@ async function delGasto(id,wrapEl){
       setTimeout(()=>{allGastos=allGastos.filter(g=>g.id!==id);renderFin();},200);
       showToast('Lançamento excluído ✅');
     }else showToast('Erro ao excluir ⚠️');
+  }catch{showToast('Erro ⚠️');}
+}
+
+async function renderMemorias(){
+  const el=document.getElementById('memorias-body');
+  if(!el)return;
+  el.innerHTML='<div class="spin"></div>';
+  try{
+    const r=await fetch(`/forms/memorias/${phone}`);
+    const {categorias,pendenciasAbertas}=await r.json();
+
+    const CATS={
+      relacionamento:{label:'Relacionamento',emoji:'❤️'},
+      filhos:{label:'Filhos',emoji:'👶'},
+      familia:{label:'Família',emoji:'👨‍👩‍👧'},
+      trabalho:{label:'Trabalho',emoji:'💼'},
+      hobbies:{label:'Hobbies',emoji:'🎯'},
+      entretenimento:{label:'Entretenimento',emoji:'🎬'},
+      alimentacao:{label:'Alimentação',emoji:'🍔'},
+      metas:{label:'Metas',emoji:'🚀'},
+      personalidade:{label:'Personalidade',emoji:'✨'},
+      saude:{label:'Saúde',emoji:'💊'},
+      datas:{label:'Datas importantes',emoji:'📅'},
+      rotina:{label:'Rotina',emoji:'⏰'},
+      outro:{label:'Informações gerais',emoji:'📌'},
+    };
+
+    let html='';
+    let totalItems=0;
+
+    // Assuntos em aberto
+    if(pendenciasAbertas&&pendenciasAbertas.length>0){
+      html+=`<div class="mem-section-title"><span>🟡</span> Assuntos em aberto</div>`;
+      for(const p of pendenciasAbertas){
+        html+=`<div class="mem-pendencia">
+          <div class="mem-pendencia-body">
+            <div class="mem-pendencia-assunto">${p.assunto||''}</div>
+            <div class="mem-pendencia-ctx">${p.contexto||''}</div>
+            <div class="mem-pendencia-retomar">${p.como_retomar||''}</div>
+          </div>
+          <button class="mem-del-btn" onclick="encerrarPendencia('${p.id}')" title="Encerrar assunto">
+            <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>`;
+      }
+    }
+
+    // Categorias do perfil
+    const ordemCats=['relacionamento','filhos','familia','trabalho','hobbies','entretenimento','alimentacao','metas','personalidade','saude','datas','rotina','outro'];
+    for(const cat of ordemCats){
+      const items=categorias[cat];
+      if(!items||!items.length)continue;
+      const {label,emoji}=CATS[cat]||{label:cat,emoji:'📌'};
+      totalItems+=items.length;
+      html+=`<div class="mem-categoria">
+        <div class="mem-cat-header">
+          <span class="mem-cat-emoji">${emoji}</span>
+          <span class="mem-cat-label">${label}</span>
+          <span class="mem-cat-count">${items.length}</span>
+        </div>`;
+      for(const item of items){
+        const chaveLabel=item.chave?item.chave.replace(/_/g,' '):'';
+        html+=`<div class="mem-item">
+          <div class="mem-item-body">
+            <div class="mem-item-valor">${item.valor}</div>
+            ${chaveLabel?`<div class="mem-item-chave">${chaveLabel}</div>`:''}
+          </div>
+          <button class="mem-del-btn" onclick="deletarMemoria('${item.id}')" title="Esquecer isso">
+            <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          </button>
+        </div>`;
+      }
+      html+='</div>';
+    }
+
+    if(totalItems===0&&(!pendenciasAbertas||pendenciasAbertas.length===0)){
+      html=`<div class="mem-empty"><span class="mem-empty-icon">🧠</span>A Clara ainda não conhece muito sobre você.<br>Converse com ela e ela vai aprendendo naturalmente!</div>`;
+    }
+
+    el.innerHTML=html;
+  }catch(e){
+    el.innerHTML='<div class="empty"><span class="empty-icon">🧠</span>Erro ao carregar memórias</div>';
+  }
+}
+
+async function deletarMemoria(id){
+  if(!confirm('Quer que eu esqueça isso? A Clara não vai mais trazer esse assunto por 30 dias.'))return;
+  try{
+    const r=await fetch(`/forms/memoria/${id}/${phone}`,{method:'DELETE'});
+    if(r.ok){showToast('Memória removida 🗑️');renderMemorias();}
+    else showToast('Erro ao remover ⚠️');
+  }catch{showToast('Erro ⚠️');}
+}
+
+async function encerrarPendencia(id){
+  try{
+    const r=await fetch(`/forms/pendencia/${id}/${phone}`,{method:'DELETE'});
+    if(r.ok){showToast('Assunto encerrado ✅');renderMemorias();}
   }catch{showToast('Erro ⚠️');}
 }
 
