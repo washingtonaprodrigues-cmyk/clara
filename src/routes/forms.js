@@ -300,18 +300,6 @@ router.delete('/cofre/:id', async (req, res) => {
 });
 
 // ====================== LISTAGEM: MEMÓRIAS ======================
-router.get('/memorias/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const user = await memory.getOrCreateUser(phone);
-    const mems = await memory.getRecentMemories(user.id, 50);
-    res.json(mems);
-  } catch (e) {
-    console.error('Erro GET memorias:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
 // ====================== REMÉDIO TOMADO ======================
 router.post('/remedio-tomado/:id', async (req, res) => {
   try {
