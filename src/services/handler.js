@@ -1,5 +1,5 @@
 // v2 - consulta direta sem LLM
-const { classify, extractPersonalInfo, extractPendenciaEmocional, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao } = require('./groq');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto } = require('./groq');
 
 // Importa whatsapp de forma segura com fallback direto via axios
 let _whatsappModule = null;
@@ -477,6 +477,23 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     await memory.saveConversationMessage(user.id, 'assistant', respStr);
     await sendMessage(phone, respStr);
     updateRelationshipSummary(user.id, history, respStr).catch(() => {});
+
+    // ── Detecção de assunto em aberto (fire-and-forget) ──────────────
+    // Roda após a resposta, sem adicionar latência. Se a conversa gerou
+    // um assunto relevante não resolvido (saúde, trabalho, evento esperado),
+    // salva como pendencia_conversa pra Clara retomar naturalmente depois.
+    // Também detecta quando o usuário fecha um assunto aberto.
+    ;(async () => {
+      try {
+        await memory.fecharPendenciasPorResolucao(user.id, text);
+        const histAtual = [...history, { role: 'user', content: text }, { role: 'assistant', content: respStr }];
+        // Só roda se for conversa com substância (não saudação curta)
+        if (histAtual.length >= 2 && text.length > 15) {
+          const pendencia = await detectarAssuntoEmAberto(histAtual);
+          if (pendencia) await memory.salvarOuAtualizarPendencia(user.id, pendencia);
+        }
+      } catch { /* silencioso — nunca bloqueia a resposta */ }
+    })();
   } catch (e) {
     console.error(`[${phone}] Erro responderLivre:`, e.message);
     await sendMessage(phone, 'Ops, tive um probleminha. Pode repetir?');
