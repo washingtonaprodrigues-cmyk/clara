@@ -7,32 +7,31 @@ const headers = {
 };
 
 // ── Dedup de SAÍDA (idempotência de entrega) ──────────────────────────
-// Diagnóstico (sessão de debug): o backend comprovadamente envia cada
-// lembrete UMA vez só (log mostra um único "📤 Enviando" + "[Reminder] →
-// 1 lembrete(s)", e o claim atômico grava sent:true ANTES do envio, então
-// o registro não volta pra fila). Mesmo assim a mensagem chegava 2-3x no
-// WhatsApp — e só em momentos de estresse (timeout do Gemini, modo direto
-// por rate limit), nunca quando o sistema estava tranquilo (ex: o lembrete
-// de remédio das 22:00 chegou 1x). Causa: quando a UazAPI demora a
-// devolver o ACK do POST /send/text (mensagem JÁ entregue), a camada de
-// entrega reenvia o POST por timeout — duplicando no destino sem que o
-// nosso código saiba.
+// Bloqueia reenvio do MESMO texto pro MESMO número dentro de 90s.
+// Protege contra retries da UazAPI quando o ACK demora.
 //
-// Esta trava bloqueia, no NOSSO lado, qualquer reenvio do MESMO texto pro
-// MESMO número dentro de uma janela curta. Usa um cache em memória (rápido,
-// cobre o caso comum dentro do mesmo processo) — não precisa de banco nem
-// de FK, e a janela é curta o suficiente pra nunca barrar uma repetição
-// legítima do usuário (ex: pedir "manda oi" duas vezes de propósito teria
-// textos/horários diferentes no corpo do lembrete).
-const JANELA_DEDUP_MS = 90 * 1000; // 90s cobre a janela de retry por timeout
-const _enviosRecentes = new Map(); // hash(phone+texto) -> timestamp
-function _hashEnvio(phone, message) {
-  return `${phone}::${String(message).trim()}`;
+// CORREÇÃO (sessão 7.1): o hash agora inclui o quotedText (mensagem
+// citada via swipe-reply). Sem isso, dois "Feito" em resposta a remédios
+// diferentes (ex: pressão e tireóide no mesmo horário) geravam o mesmo
+// hash phone+texto → o segundo era bloqueado → a confirmação do segundo
+// remédio nunca chegava ao handler.
+//
+// Com quotedText no hash:
+//   "Feito" citando "Remédio de pressão"   → hash A → passa
+//   "Feito" citando "Remédio de Toróide"   → hash B → passa
+//   "Feito" citando "Remédio de pressão"   → hash A novamente → bloqueado (retry real)
+const JANELA_DEDUP_MS = 90 * 1000;
+const _enviosRecentes = new Map();
+
+function _hashEnvio(phone, message, quotedText) {
+  // quotedText é opcional — quando ausente, comportamento idêntico ao anterior
+  const quoted = quotedText ? String(quotedText).trim().slice(0, 100) : '';
+  return `${phone}::${String(message).trim()}::${quoted}`;
 }
-function _jaEnviadoRecentemente(phone, message) {
-  const chave = _hashEnvio(phone, message);
+
+function _jaEnviadoRecentemente(phone, message, quotedText) {
+  const chave = _hashEnvio(phone, message, quotedText);
   const agora = Date.now();
-  // limpeza preguiçosa de entradas expiradas
   if (_enviosRecentes.size > 2000) {
     for (const [k, t] of _enviosRecentes) {
       if (agora - t > JANELA_DEDUP_MS) _enviosRecentes.delete(k);
@@ -44,11 +43,11 @@ function _jaEnviadoRecentemente(phone, message) {
   return false;
 }
 
-async function sendMessage(phone, message, delay = 400) {
+// quotedText é opcional — passado pelo webhook.js quando disponível,
+// ignorado em todos os outros lugares que chamam sendMessage normalmente.
+async function sendMessage(phone, message, delay = 400, quotedText = '') {
   try {
-    // Trava de idempotência: se o MESMO texto já foi enviado pro MESMO
-    // número nos últimos 90s, é reenvio (retry de entrega) — ignora.
-    if (_jaEnviadoRecentemente(phone, message)) {
+    if (_jaEnviadoRecentemente(phone, message, quotedText)) {
       console.log(`🔁 Ignorando reenvio duplicado para ${phone}: ${String(message).slice(0, 40)}`);
       return { status: 'deduped' };
     }
@@ -61,14 +60,11 @@ async function sendMessage(phone, message, delay = 400) {
     console.log(`✅ Enviado OK para ${phone}:`, response.data?.status || 'sem status');
     return response.data;
   } catch (error) {
-    // Se falhou (ex: timeout do ACK), libera a chave pra permitir um reenvio
-    // MANUAL/legítimo depois — mas só se realmente não entregou. Como não
-    // dá pra ter certeza se entregou, mantemos a trava pela janela (melhor
-    // perder um reenvio incerto do que duplicar). Não removemos a chave.
     console.error(`❌ Erro sendMessage para ${phone}:`, error.response?.data || error.message);
     throw error;
   }
 }
+
 async function sendButtons(phone, message, buttons) {
   return sendMessage(phone, message);
 }
@@ -104,32 +100,21 @@ async function sendLocationRequest(phone) {
 }
 
 // ════════════════════════════════════════════════════════════
-// TTS (Text-to-Speech) via ElevenLabs — mantido como extra, caso a
-// ideia da Clara falar em áudio volte no futuro. Não é chamado por
-// nenhum lugar do handler.js no momento desta correção — só fica
-// disponível pra reconectar quando quiserem.
+// TTS (Text-to-Speech) via ElevenLabs
 // ════════════════════════════════════════════════════════════
 const ELEVENLABS_API_KEY  = process.env.ELEVENLABS_API_KEY;
 const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'hpp4J3VqNfWAUOO0d1Us';
 const ELEVENLABS_URL = `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`;
-
-// Limite de caracteres por áudio — ElevenLabs processa bem até ~500 chars.
 const MAX_CHARS_AUDIO = 500;
 
-function ttsDisponivel() {
-  return !!ELEVENLABS_API_KEY;
-}
+function ttsDisponivel() { return !!ELEVENLABS_API_KEY; }
 
 function limparParaAudio(texto) {
   return texto
-    .replace(/\*\*(.*?)\*\*/g, '$1')
-    .replace(/\*(.*?)\*/g, '$1')
-    .replace(/_(.*?)_/g, '$1')
-    .replace(/`(.*?)`/g, '$1')
-    .replace(/^[•\-\*]\s+/gm, '')
-    .replace(/#{1,6}\s+/g, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+    .replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1')
+    .replace(/_(.*?)_/g, '$1').replace(/`(.*?)`/g, '$1')
+    .replace(/^[•\-\*]\s+/gm, '').replace(/#{1,6}\s+/g, '')
+    .replace(/\n{3,}/g, '\n\n').trim();
 }
 
 async function gerarAudio(texto) {
@@ -137,16 +122,8 @@ async function gerarAudio(texto) {
   const textoLimpo = limparParaAudio(texto);
   const response = await axios.post(
     ELEVENLABS_URL,
-    {
-      text: textoLimpo,
-      model_id: 'eleven_multilingual_v2',
-      voice_settings: { stability: 0.45, similarity_boost: 0.80, style: 0.35, use_speaker_boost: true },
-    },
-    {
-      headers: { 'xi-api-key': ELEVENLABS_API_KEY, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' },
-      responseType: 'arraybuffer',
-      timeout: 30000,
-    }
+    { text: textoLimpo, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.45, similarity_boost: 0.80, style: 0.35, use_speaker_boost: true } },
+    { headers: { 'xi-api-key': ELEVENLABS_API_KEY, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' }, responseType: 'arraybuffer', timeout: 30000 }
   );
   return Buffer.from(response.data);
 }
