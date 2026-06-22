@@ -131,7 +131,6 @@ async function getPersonalInfo(userId, categoria = null) {
 
 async function buildPersonalContext(userId) {
   const infos = await getPersonalInfo(userId);
-  if (Object.keys(infos).length === 0) return '';
 
   const grupos = {
     familia: [],
@@ -162,6 +161,17 @@ async function buildPersonalContext(userId) {
   for (const [cat, items] of Object.entries(grupos)) {
     if (items.length === 0) continue;
     texto += `\n[${labels[cat]}]\n${items.map(i => `• ${i}`).join('\n')}`;
+  }
+
+  // ── Assuntos em aberto — contexto conversacional contínuo ──
+  // A Clara vê esses assuntos em TODO contexto (bom dia, lembretes,
+  // conversa) e pode retomá-los naturalmente quando fizer sentido.
+  const pendencias = await getPendenciasAbertas(userId);
+  if (pendencias.length > 0) {
+    const linhas = pendencias.slice(0, 3).map(p =>
+      `• ${p.assunto}: ${p.contexto} → ${p.como_retomar}`
+    ).join('\n');
+    texto += `\n\n[ASSUNTOS EM ABERTO — retome naturalmente quando fizer sentido, sem forçar]\n${linhas}`;
   }
 
   return texto ? `\n\n[PERFIL DO USUÁRIO — use para personalizar respostas e ser proativa]${texto}` : '';
@@ -362,6 +372,69 @@ async function findContactByName(userId, nome) {
   });
 }
 
+// ====================== ASSUNTOS EM ABERTO (contexto conversacional) ======================
+// Detecta automaticamente quando uma conversa gerou um assunto não resolvido
+// (hospital, reunião, resultado esperado, conflito, plano futuro) e o salva
+// pra Clara retomar naturalmente nas próximas interações — como uma amiga
+// que genuinamente lembra do que ficou pendente entre vocês.
+
+async function getPendenciasAbertas(userId) {
+  const mems = await prisma.memory.findMany({
+    where: { userId, type: 'pendencia_conversa' },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+  }).catch(() => []);
+  const agora = Date.now();
+  const EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias
+  return mems
+    .map(m => { try { return { id: m.id, criadoEm: m.createdAt, ...JSON.parse(m.content) }; } catch { return null; } })
+    .filter(Boolean)
+    .filter(p => !p.encerrado && (agora - new Date(p.criadoEm).getTime()) < EXPIRY_MS);
+}
+
+async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_retomar }) {
+  // Evita duplicatas: se já existe pendência aberta com o mesmo assunto, atualiza
+  const existentes = await getPendenciasAbertas(userId);
+  const mesmoAssunto = existentes.find(p =>
+    p.assunto?.toLowerCase().includes(assunto?.toLowerCase()?.split(' ')[0]) ||
+    assunto?.toLowerCase().includes(p.assunto?.toLowerCase()?.split(' ')[0])
+  );
+  if (mesmoAssunto) {
+    await prisma.memory.update({
+      where: { id: mesmoAssunto.id },
+      data: { content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false }) }
+    }).catch(() => {});
+    return;
+  }
+  await prisma.memory.create({
+    data: { userId, type: 'pendencia_conversa', content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false }) }
+  }).catch(() => {});
+  console.log(`[Pendência] Salva: "${assunto}"`);
+}
+
+async function fecharPendencia(userId, pendenciaId) {
+  const mem = await prisma.memory.findUnique({ where: { id: pendenciaId } }).catch(() => null);
+  if (!mem || mem.userId !== userId) return;
+  try {
+    const dados = JSON.parse(mem.content);
+    await prisma.memory.update({
+      where: { id: pendenciaId },
+      data: { content: JSON.stringify({ ...dados, encerrado: true }) }
+    });
+    console.log(`[Pendência] Fechada: "${dados.assunto}"`);
+  } catch {}
+}
+
+async function fecharPendenciasPorResolucao(userId, textoUsuario) {
+  // Detecta sinais de que o usuário está encerrando um assunto em aberto
+  const SINAIS = /\b(estou bem|tá bem|já passou|passou|deu certo|foi ótimo|foi bem|resolvido|resolveu|já fiz|normal|tranquilo|melhorei|melhor|alta|cheguei em casa|chegou|saiu|terminou|acabou|tudo certo|tudo bem|sem problema|não foi nada|era nada|nada grave|liberado)\b/i;
+  if (!SINAIS.test(textoUsuario)) return;
+  const pendencias = await getPendenciasAbertas(userId);
+  if (!pendencias.length) return;
+  // Fecha a pendência mais recente (última aberta = mais provável de ser o assunto atual)
+  await fecharPendencia(userId, pendencias[0].id);
+}
+
 // ====================== EXPORTS ======================
 
 module.exports = {
@@ -377,4 +450,5 @@ module.exports = {
   saveExpense, getMonthExpenses,
   saveContact, getContacts, findContactByName,
   savePendencia,
+  getPendenciasAbertas, salvarOuAtualizarPendencia, fecharPendencia, fecharPendenciasPorResolucao,
 };
