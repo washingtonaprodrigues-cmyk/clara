@@ -179,11 +179,17 @@ async function saveMemory(userId, type, content, metadata = null) {
 }
 
 async function getRecentMemories(userId, limit = 30) {
-  return prisma.memory.findMany({
+  const mems = await prisma.memory.findMany({
     where: { userId, type: { not: 'conversa' } },
     orderBy: { createdAt: 'desc' },
-    take: limit,
+    take: limit + 10, // folga pra compensar os locks internos filtrados abaixo
   });
+  // Memórias internas de controle (locks de cron, dedup de webhook) usam
+  // tipos com prefixo/sufixo "__" ou nomes técnicos — nunca devem entrar no
+  // contexto que a Clara lê pra conversar. Filtra e respeita o limite real.
+  return mems
+    .filter(m => !/^__.*__$/.test(m.type) && !m.type.startsWith('lock_') && m.type !== 'webhook_msgid')
+    .slice(0, limit);
 }
 
 // ====================== CONTEXTO TEMPORÁRIO ======================
