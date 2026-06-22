@@ -159,6 +159,86 @@ async function tentarLockDiario(userId, tipo) {
 
   return false;
 }
+// ── Lock atômico POR MINUTO para o cron de disparo de lembretes ──
+// Diferente de tentarLockDiario (1 lock por usuário/dia), este é um lock
+// GLOBAL por minuto para o cron '* * * * *' que dispara os lembretes da
+// fila. Motivo: mesmo com o claim atômico por reminder.id (que impede o
+// MESMO registro de ser enviado 2x), observamos duplicação quando DOIS
+// processos Node ficam vivos ao mesmo tempo — cenário real no Railway
+// durante a sobreposição de deploy (o container novo sobe e começa a
+// rodar os crons ANTES do container antigo ser derrubado pelo health
+// check). Nesse intervalo, os dois processos rodam o cron no mesmo minuto;
+// como cada um tem seu próprio scheduler em memória e o claim por id é uma
+// corrida, os dois podiam reivindicar reminders diferentes do MESMO grupo,
+// OU (no caso de 1 só registro) um processo claimava e o outro, no tick
+// seguinte/anterior, pegava o registro antes do sent:true persistir — e a
+// pergunta de follow-up (random(finais)) saía diferente em cada um, dando
+// a impressão de "2 lembretes" com textos levemente distintos.
+//
+// Este lock fecha essa janela: só UM processo consegue, atomicamente,
+// transicionar o registro de lock do tipo 'lock_cron_lembretes' para o
+// minuto atual. O outro vê count:0 e pula o minuto inteiro. Usa a mesma
+// técnica de updateMany condicional do tentarLockDiario, mas com a chave
+// sendo YYYY-MM-DD-HH:MM (minuto corrente em BRT) em vez do dia.
+const _locksMinutoMemoria = new Map(); // `${tipo}_${minuto}` -> true
+// O model Memory tem FK obrigatória (userId → User.id). Não dá pra usar
+// userId:'system' (não existe esse User) — o create falharia por FK e o
+// catch engoliria o erro, fazendo o lock NUNCA travar. Então ancoramos os
+// locks num User REAL: pegamos o primeiro User do banco (no uso real, é o
+// Washington) uma única vez e cacheamos. O lock continua sendo GLOBAL —
+// quem garante unicidade é o par (type, content=minuto), não o userId.
+let _ancoraUserId = null;
+async function getAncoraUserId() {
+  if (_ancoraUserId) return _ancoraUserId;
+  const u = await prisma.user.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } }).catch(() => null);
+  if (u) _ancoraUserId = u.id;
+  return _ancoraUserId;
+}
+async function tentarLockMinuto(tipo) {
+  const n = nowBRT();
+  const minutoChave = `${dateBRT(n)}-${pad(n.getHours())}:${pad(n.getMinutes())}`;
+  const chaveMemoria = `${tipo}_${minutoChave}`;
+
+  // 1ª camada: memória do processo (cobre 2 ticks no mesmo processo)
+  if (_locksMinutoMemoria.has(chaveMemoria)) return false;
+  _locksMinutoMemoria.set(chaveMemoria, true);
+  if (_locksMinutoMemoria.size > 5000) {
+    for (const k of _locksMinutoMemoria.keys()) {
+      if (!k.endsWith(minutoChave)) _locksMinutoMemoria.delete(k);
+    }
+  }
+
+  // 2ª camada: claim atômico no banco (à prova de corrida ENTRE processos).
+  // Ancorado num User real para satisfazer a FK do model Memory.
+  const ancoraId = await getAncoraUserId();
+  if (!ancoraId) {
+    // Sem nenhum User no banco (cenário só de instalação vazia) — não há
+    // o que duplicar mesmo, então libera (a 1ª camada em memória já cobre
+    // o caso de 2 ticks no mesmo processo).
+    return true;
+  }
+  const lockType = `__${tipo}__`; // prefixo distinto pra não colidir com memórias reais do usuário
+  const claim = await prisma.memory.updateMany({
+    where: { userId: ancoraId, type: lockType, NOT: { content: minutoChave } },
+    data: { content: minutoChave },
+  }).catch(() => ({ count: 0 }));
+
+  if (claim.count >= 1) return true;
+
+  const existente = await prisma.memory.findFirst({
+    where: { userId: ancoraId, type: lockType },
+    orderBy: { createdAt: 'desc' },
+  }).catch(() => null);
+
+  if (existente && existente.content === minutoChave) return false; // outro processo venceu
+  if (!existente) {
+    await prisma.memory.create({
+      data: { userId: ancoraId, type: lockType, content: minutoChave },
+    }).catch(() => {});
+    return true;
+  }
+  return false;
+}
 async function getUserContext(user) {
   const prefs = await memory.getUserPreference(user.id);
   const perfilTexto = await memory.buildPersonalContext(user.id);
@@ -892,6 +972,12 @@ Tom: ${prefs?.tom || 'carinhoso'}.`;
 // LEMBRETES (a cada minuto)
 cron.schedule('* * * * *', async () => {
   try {
+    // ── Trava por minuto contra processos sobrepostos (deploy do Railway) ──
+    // Se dois containers estiverem vivos no mesmo minuto, só o primeiro a
+    // ganhar este lock processa a fila; o outro pula. Sem isso, a corrida
+    // entre os dois schedulers gerava lembretes duplicados com finais
+    // (random) diferentes, mesmo havendo só 1 registro no banco.
+    if (!(await tentarLockMinuto('lock_cron_lembretes'))) return;
     const now = new Date();
     const reminders = await prisma.reminder.findMany({
       where: { sent: false, confirmed: false, scheduledAt: { lte: now } },
@@ -1078,6 +1164,7 @@ Respeite o tom — sarcástica não pergunta com fofice.`;
 // MEDICAMENTOS (a cada minuto)
 cron.schedule('* * * * *', async () => {
   try {
+    if (!(await tentarLockMinuto('lock_cron_medicamentos'))) return;
     const nowLocal = nowBRT();
     const minutoChave = `${pad(nowLocal.getHours())}:${pad(nowLocal.getMinutes())}`;
     const meds = await prisma.medication.findMany({ where: { active: true, remaining: { gt: 0 } }, include: { user: true } });
@@ -1156,6 +1243,7 @@ cron.schedule('* * * * *', async () => {
 // MENSAGENS AGENDADAS PARA CONTATOS (a cada minuto)
 cron.schedule('* * * * *', async () => {
   try {
+    if (!(await tentarLockMinuto('lock_cron_msgs_agendadas'))) return;
     const now = nowBRT();
     const msgs = await prisma.scheduledMessage.findMany({
       where: { sent: false, scheduledAt: { lte: now } },
@@ -1182,6 +1270,7 @@ cron.schedule('* * * * *', async () => {
 // lembrete com horário provisório 09:00 e avisa que pode ser alterado.
 cron.schedule('* * * * *', async () => {
   try {
+    if (!(await tentarLockMinuto('lock_cron_pendencias'))) return;
     const pendentes = await prisma.memory.findMany({
       where: { type: 'confirmacao_pendente' }
     });
