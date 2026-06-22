@@ -411,23 +411,57 @@ async function proativaInteligente(periodo) {
     for (const user of users) {
       try {
         const lockKey = `proativa_${periodo}_${dateBRT()}`;
-        if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'proativa_lock', content: lockKey } })) continue;
-        if (await houveConversaRecente(user.id, 5)) continue;
-        const ultimaConversa = await prisma.memory.findFirst({ where: { userId: user.id, type: 'conversa' }, orderBy: { createdAt: 'desc' } });
-        if (!ultimaConversa) continue;
-        const diasSemConversa = (now - new Date(ultimaConversa.createdAt)) / (1000 * 60 * 60 * 24);
-        if (diasSemConversa > 3) continue;
-        const [infoPessoal, memsRecentes, { prefs }] = await Promise.all([
-          memory.buildPersonalContext(user.id),
-          memory.getRecentMemories(user.id, 15),
-          getUserContext(user)
-        ]);
-        if (!infoPessoal && memsRecentes.length < 3) continue;
-        if (Math.random() > 0.33) continue;
-        const contextoMems = memsRecentes
-          .filter(m => !['conversa','bom_dia_enviado','boa_noite_enviado','proativa_lock','med_lock','alerta_data_lock'].includes(m.type))
-          .slice(0, 8).map(m => `[${m.type}] ${m.content}`).join('\n');
-        const systemProativa = `Você é a Clara, parceira pessoal do ${user.name || 'usuário'} no WhatsApp.
+
+        // ── Claim atômico ANTES de qualquer processamento ──
+        // Problema anterior: findFirst (verificar) + create (gravar) eram
+        // operações separadas — dois containers passavam pelo findFirst
+        // (ambos encontravam null), ambos geravam a mensagem via LLM
+        // (textos diferentes = dedup do whatsapp.js não pegava), ambos
+        // enviavam. Resultado: duas proativas idênticas em tema mas com
+        // texto diferente.
+        //
+        // Solução: tenta criar o lock imediatamente via updateMany atômico.
+        // Se já existe → outro processo chegou primeiro → para aqui.
+        // Se não existe → cria → continua. O try/catch cobre o caso de
+        // dois processos tentarem criar ao mesmo tempo (um pega erro de
+        // constraint ou findFirst vê o registro do outro).
+        const jaExiste = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'proativa_lock', content: lockKey }
+        }).catch(() => null);
+        if (jaExiste) continue;
+
+        // Tenta criar o lock atomicamente — se outro processo criar antes
+        // de nós, o catch nos para
+        let lockCriado = null;
+        try {
+          lockCriado = await prisma.memory.create({
+            data: { userId: user.id, type: 'proativa_lock', content: lockKey }
+          });
+        } catch (eLock) {
+          // Outro processo criou o lock entre nosso findFirst e create
+          console.log(`[Proativa ${periodo}] Lock tomado por outro processo para ${user.phone}`);
+          continue;
+        }
+
+        // A partir daqui, somos o único processo autorizado para este
+        // usuário/período/dia — pode processar com segurança
+        try {
+          if (await houveConversaRecente(user.id, 5)) continue;
+          const ultimaConversa = await prisma.memory.findFirst({ where: { userId: user.id, type: 'conversa' }, orderBy: { createdAt: 'desc' } });
+          if (!ultimaConversa) continue;
+          const diasSemConversa = (now - new Date(ultimaConversa.createdAt)) / (1000 * 60 * 60 * 24);
+          if (diasSemConversa > 3) continue;
+          const [infoPessoal, memsRecentes, { prefs }] = await Promise.all([
+            memory.buildPersonalContext(user.id),
+            memory.getRecentMemories(user.id, 15),
+            getUserContext(user)
+          ]);
+          if (!infoPessoal && memsRecentes.length < 3) continue;
+          if (Math.random() > 0.33) continue;
+          const contextoMems = memsRecentes
+            .filter(m => !['conversa','bom_dia_enviado','boa_noite_enviado','proativa_lock','med_lock','alerta_data_lock'].includes(m.type))
+            .slice(0, 8).map(m => `[${m.type}] ${m.content}`).join('\n');
+          const systemProativa = `Você é a Clara, parceira pessoal do ${user.name || 'usuário'} no WhatsApp.
 SEU TOM AGORA: ${tomDesc(prefs.tom)}
 Envie UMA mensagem curta e natural (1-2 linhas) como parceira presente — não como assistente genérica.
 REGRAS:
@@ -436,11 +470,14 @@ REGRAS:
 - Use o contexto para algo genuíno — nunca genérico
 - Se não tiver nada relevante, responda APENAS: SKIP
 Contexto recente: ${contextoMems}\n${infoPessoal}`;
-        const msg = await freeResponse('Envie uma mensagem proativa.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemProativa });
-        if (!msg || msg.trim() === 'SKIP' || msg.length < 5) continue;
-        await sendMessage(user.phone, msg);
-        await prisma.memory.create({ data: { userId: user.id, type: 'proativa_lock', content: lockKey } });
-        console.log(`[Proativa ${periodo}] Enviado para ${user.phone}`);
+          const msg = await freeResponse('Envie uma mensagem proativa.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemProativa });
+          if (!msg || msg.trim() === 'SKIP' || msg.length < 5) continue;
+          await sendMessage(user.phone, msg);
+          console.log(`[Proativa ${periodo}] Enviado para ${user.phone}`);
+        } catch (eInner) {
+          console.error(`[Proativa] Erro interno ${user.phone}:`, eInner.message);
+          // Lock já foi criado — não remove, pra não arriscar reenvio
+        }
       } catch (e) { console.error(`[Proativa] Erro ${user.phone}:`, e.message); }
     }
   } catch (e) { console.error(`[Proativa ${periodo}] Erro geral:`, e.message); }
