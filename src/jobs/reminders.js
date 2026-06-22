@@ -35,11 +35,15 @@ function tomDesc(tom) {
   }[tom || 'carinhoso'] || 'calorosa e próxima, como uma amiga que genuinamente se importa.';
 }
 
+// Finais conversacionais — SEM "(sim/não)".
+// O swipe-reply já basta para confirmar. Sem variação de texto,
+// o dedup de 90s do whatsapp.js funciona como barreira extra:
+// se dois containers enviarem o mesmo lembrete, o segundo é bloqueado.
 const finais = [
-  '😊 Já concluiu? (sim/não)',
-  '✨ Já deu conta? (sim/não)',
-  '🔔 Conseguiu fazer? (sim/não)',
-  '😊 Já fez isso? (sim/não)',
+  'E aí, conseguiu fazer? 😊',
+  'Me conta, deu certo? 🙂',
+  'Me avisa quando fizer! 👋',
+  'Já deu conta disso? ✨',
 ];
 
 // ── Final DETERMINÍSTICO por ID do lembrete ──────────────────────────────
@@ -699,7 +703,32 @@ cron.schedule('* * * * *', async () => {
       if (!reminderesParaEnviar.length) continue;
       grupo.reminders = reminderesParaEnviar;
 
-      // ── Camada 2: Claim atômico — barreira REAL anti-duplicação ──
+      // ── Camada 2a: Lock por ID no banco (pré-claim) ──
+      // Cria um registro de lock ANTES do updateMany. Se dois containers
+      // chegarem ao mesmo tempo, o segundo encontra o lock já existente
+      // via findFirst e descarta o grupo sem nem tentar o claim.
+      // Isso fecha a janela de race condition do updateMany em cenários
+      // de alta concorrência (ex: Railway subindo container novo enquanto
+      // o antigo ainda respira).
+      const lockLembreteKey = `reminder_sending_${grupo.reminders.map(r => r.id).sort().join('_')}`;
+      const lockExistente = await prisma.memory.findFirst({
+        where: { type: 'reminder_lock', content: lockLembreteKey }
+      }).catch(() => null);
+      if (lockExistente) {
+        console.log(`[Reminder] Lock já existe para grupo ${grupo.hora} ${grupo.phone} — outro processo enviando`);
+        continue;
+      }
+      try {
+        await prisma.memory.create({
+          data: { userId: grupo.reminders[0].userId, type: 'reminder_lock', content: lockLembreteKey }
+        });
+      } catch (eLock) {
+        // Outro processo criou o lock entre nosso findFirst e create
+        console.log(`[Reminder] Corrida no lock para grupo ${grupo.hora} ${grupo.phone} — descartando`);
+        continue;
+      }
+
+      // ── Camada 2b: Claim atômico — barreira REAL anti-duplicação ──
       // Marca sent:true ANTES de enviar. Se dois processos chegarem aqui
       // ao mesmo tempo, só o primeiro que conseguir mudar sent:false → true
       // prossegue. O segundo recebe count:0 e é descartado.
@@ -921,7 +950,7 @@ cron.schedule('0 3 * * *', async () => {
     const ontem = new Date(nowBRT()); ontem.setDate(ontem.getDate() - 2);
     await prisma.memory.deleteMany({
       where: {
-        type: { in: ['med_lock','alerta_data_lock','proativa_lock','sumico_lock','bom_dia_lock','boa_noite_lock','meu_dia_criado','radar_lock','parceira_lock'] },
+        type: { in: ['med_lock','alerta_data_lock','proativa_lock','sumico_lock','bom_dia_lock','boa_noite_lock','meu_dia_criado','radar_lock','parceira_lock','reminder_lock'] },
         createdAt: { lt: ontem }
       }
     });
