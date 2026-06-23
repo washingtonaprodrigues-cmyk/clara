@@ -511,29 +511,80 @@ async function fecharPendencia(userId, pendenciaId) {
 }
 
 async function fecharPendenciasPorResolucao(userId, textoUsuario) {
-  const SINAIS = /\b(estou bem|tá bem|já passou|passou|deu certo|foi ótimo|foi bem|resolvido|resolveu|já fiz|normal|tranquilo|melhorei|melhor|alta|cheguei em casa|chegou|saiu|terminou|acabou|tudo certo|tudo bem|sem problema|não foi nada|era nada|nada grave|liberado)\b/i;
-  if (!SINAIS.test(textoUsuario)) return;
   const pendencias = await getPendenciasAbertas(userId);
   if (!pendencias.length) return;
 
   const textoLower = textoUsuario.toLowerCase();
 
-  // Tenta casar o texto de resolução com o assunto mais provável —
-  // evita fechar a pendência errada quando há mais de uma aberta.
-  // Estratégia: verifica se alguma palavra do assunto aparece no texto.
-  // Ex: "deu certo no hospital" → fecha a pendência de "hospital",
-  // não necessariamente a mais recente se houver outras abertas.
-  let alvoId = pendencias[0].id; // fallback: mais recente
+  // ── Sinais explícitos de resolução ──
+  const SINAIS_GERAIS = /\b(estou bem|tá bem|já passou|passou|deu certo|foi ótimo|foi bem|resolvido|resolveu|já fiz|normal|tranquilo|melhorei|melhor|alta|cheguei em casa|chegou|saiu|terminou|acabou|tudo certo|tudo bem|sem problema|não foi nada|era nada|nada grave|liberado|já bebi|já tomei|já fiz|já foi|feito|concluído|concluido|pronto|ok feito|fiz isso)\b/i;
+
+  // ── Verifica cada pendência individualmente ──
+  // Uma pendência é fechada se:
+  // 1. O texto menciona palavras do assunto E tem sinal de resolução
+  // 2. O texto menciona palavras do assunto E verbo no passado ("já X", "fiz X", "tomei X")
+  // 3. Tem sinal geral E a pendência é a mais recente (fallback)
+  const VERBOS_PASSADO = /\b(já |fiz |tomei |bebi |fui |foi |terminei |acabei |resolvi |concluí |fez |foram )\b/i;
+
+  const fechadas = [];
   for (const p of pendencias) {
-    const palavrasAssunto = (p.assunto || '').toLowerCase().split(' ').filter(w => w.length > 3);
-    const palavrasContexto = (p.contexto || '').toLowerCase().split(' ').filter(w => w.length > 4);
-    const palavras = [...palavrasAssunto, ...palavrasContexto.slice(0, 3)];
-    if (palavras.some(w => textoLower.includes(w))) {
-      alvoId = p.id;
-      break; // encontrou correspondência — usa essa
+    const palavrasAssunto = (p.assunto || '').toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const palavrasContexto = (p.contexto || '').toLowerCase().split(/\s+/).filter(w => w.length > 4);
+    const palavras = [...palavrasAssunto, ...palavrasContexto.slice(0, 4)];
+    const mencionaAssunto = palavras.some(w => textoLower.includes(w));
+
+    if (mencionaAssunto && (SINAIS_GERAIS.test(textoUsuario) || VERBOS_PASSADO.test(textoUsuario))) {
+      fechadas.push(p.id);
     }
   }
-  await fecharPendencia(userId, alvoId);
+
+  // Se não casou nenhum assunto específico mas tem sinal geral → fecha a mais recente
+  if (!fechadas.length && SINAIS_GERAIS.test(textoUsuario)) {
+    fechadas.push(pendencias[0].id);
+  }
+
+  for (const id of fechadas) {
+    await fecharPendencia(userId, id);
+  }
+
+  // ── Limpeza automática de pendências velhas (> 7 dias) ──
+  // Assunto de mais de uma semana sem resolução provavelmente já não é relevante.
+  // Remove silenciosamente para não acumular lixo.
+  const seteDiasAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const velhas = pendencias.filter(p =>
+    !fechadas.includes(p.id) &&
+    p.criadoEm && new Date(p.criadoEm) < seteDiasAtras
+  );
+  for (const p of velhas) {
+    await fecharPendencia(userId, p.id);
+    console.log(`[Pendência] Expirada por idade (>7 dias): "${p.assunto}"`);
+  }
+}
+
+// ── fecharPendenciaLembrete ──
+// Chamada quando o usuário confirma um lembrete — fecha automaticamente
+// qualquer pendência com assunto relacionado ao título do lembrete.
+// Ex: lembrete "beber água" confirmado → fecha pendência "beber água"
+async function fecharPendenciaLembrete(userId, tituloLembrete) {
+  if (!tituloLembrete) return;
+  const pendencias = await getPendenciasAbertas(userId);
+  if (!pendencias.length) return;
+
+  const tituloLower = tituloLembrete.toLowerCase();
+  const palavrasTitulo = tituloLower.split(/\s+/).filter(w => w.length > 3);
+
+  for (const p of pendencias) {
+    const palavrasAssunto = (p.assunto || '').toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const palavrasContexto = (p.contexto || '').toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const todasPalavras = [...palavrasAssunto, ...palavrasContexto.slice(0, 3)];
+
+    const temRelacao = palavrasTitulo.some(w => todasPalavras.includes(w)) ||
+                       todasPalavras.some(w => tituloLower.includes(w));
+    if (temRelacao) {
+      await fecharPendencia(userId, p.id);
+      console.log(`[Pendência] Fechada por lembrete confirmado: "${p.assunto}" ← "${tituloLembrete}"`);
+    }
+  }
 }
 
 // ====================== EXPORTS ======================
@@ -552,5 +603,5 @@ module.exports = {
   saveExpense, getMonthExpenses,
   saveContact, getContacts, findContactByName,
   savePendencia,
-  getPendenciasAbertas, salvarOuAtualizarPendencia, fecharPendencia, fecharPendenciasPorResolucao,
+  getPendenciasAbertas, salvarOuAtualizarPendencia, fecharPendencia, fecharPendenciasPorResolucao, fecharPendenciaLembrete,
 };
