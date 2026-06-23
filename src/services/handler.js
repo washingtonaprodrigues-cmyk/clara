@@ -45,7 +45,7 @@ const memory = require('./memory');
 const { tentarConsultaDireta } = require('./consultaDireta');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName, savePendencia } = memory;
+const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName, savePendencia, fecharPendenciaLembrete } = memory;
 
 // Substitui prisma.memory.upsert({ where: { userId_type: {...} } }) — esse
 // nome de campo composto só existe quando o model Memory tem
@@ -515,10 +515,21 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       try {
         await memory.fecharPendenciasPorResolucao(user.id, text);
         const histAtual = [...history, { role: 'user', content: text }, { role: 'assistant', content: respStr }];
-        // Só roda se for conversa com substância (não saudação curta)
         if (histAtual.length >= 2 && text.length > 15) {
           const pendencia = await detectarAssuntoEmAberto(histAtual);
-          if (pendencia) await memory.salvarOuAtualizarPendencia(user.id, pendencia);
+          if (pendencia) {
+            // ── Guarda no lugar certo ──
+            // Informações permanentes (filhos, aniversários, trabalho, gostos)
+            // são fatos de vida — vão pro perfil, não viram pendência temporária.
+            // Pendências são só eventos com resultado incerto e prazo curto.
+            const TEMAS_PERMANENTES = /\b(filho|filha|esposa|marido|aniversário|aniversario|namorad|família|familia|trabalho|empresa|cargo|mora|nasceu|nascimento|signo|time de|serie favorita|comida favorita|alergi|gosta de|adora|hobby)\b/i;
+            if (TEMAS_PERMANENTES.test(pendencia.assunto) || TEMAS_PERMANENTES.test(pendencia.contexto)) {
+              extractAndSavePersonalInfo(user.id, pendencia.contexto, respStr).catch(() => {});
+              console.log(`[Pendência→Perfil] "${pendencia.assunto}" redirecionado pro perfil`);
+            } else {
+              await memory.salvarOuAtualizarPendencia(user.id, pendencia);
+            }
+          }
         }
       } catch { /* silencioso — nunca bloqueia a resposta */ }
     })();
@@ -614,6 +625,7 @@ async function handleMessage(phone, text, location = null) {
           const escolhido = pendentes[codigoRapido - 1];
           if (escolhido) {
             await prisma.reminder.update({ where: { id: escolhido.id }, data: { confirmed: true } });
+            fecharPendenciaLembrete(user.id, escolhido.message).catch(() => {});
             await sendMessage(phone, `✅ Marquei como feito: "${escolhido.message}" 📌`);
             return;
           } else {
@@ -1171,7 +1183,10 @@ async function executeAction(user, phone, classified, originalText) {
         match = pendentes[0];
       }
 
-      if (match) await prisma.reminder.update({ where: { id: match.id }, data: { confirmed: true } });
+      if (match) {
+        await prisma.reminder.update({ where: { id: match.id }, data: { confirmed: true } });
+        fecharPendenciaLembrete(user.id, match.message).catch(() => {});
+      }
       break;
     }
     case 'saldo':
