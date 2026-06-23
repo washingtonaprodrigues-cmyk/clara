@@ -7,29 +7,21 @@ const headers = {
 };
 
 // ── Dedup de SAÍDA (idempotência de entrega) ──────────────────────────
-// Bloqueia reenvio do MESMO texto pro MESMO número dentro de 90s.
-// Protege contra retries da UazAPI quando o ACK demora.
-//
-// CORREÇÃO (sessão 7.1): o hash agora inclui o quotedText (mensagem
-// citada via swipe-reply). Sem isso, dois "Feito" em resposta a remédios
-// diferentes (ex: pressão e tireóide no mesmo horário) geravam o mesmo
-// hash phone+texto → o segundo era bloqueado → a confirmação do segundo
-// remédio nunca chegava ao handler.
-//
-// Com quotedText no hash:
-//   "Feito" citando "Remédio de pressão"   → hash A → passa
-//   "Feito" citando "Remédio de Toróide"   → hash B → passa
-//   "Feito" citando "Remédio de pressão"   → hash A novamente → bloqueado (retry real)
-const JANELA_DEDUP_MS = 90 * 1000;
+// CAMADA 1 — memória local (rápida, falha se dois containers simultâneos)
+// CAMADA 2 — banco de dados via arquivo de lock (sobrevive a overlap)
+// Janela: 120s. Bloqueia mesmo texto pro mesmo número nessa janela.
+const { PrismaClient } = require('@prisma/client');
+const _prismaDedup = new PrismaClient();
+const JANELA_DEDUP_MS = 120 * 1000;
 const _enviosRecentes = new Map();
 
 function _hashEnvio(phone, message, quotedText) {
-  // quotedText é opcional — quando ausente, comportamento idêntico ao anterior
   const quoted = quotedText ? String(quotedText).trim().slice(0, 100) : '';
-  return `${phone}::${String(message).trim()}::${quoted}`;
+  // Usa só os primeiros 80 chars da msg para o hash (remédios têm texto longo mas idêntico)
+  return `${phone}::${String(message).trim().slice(0, 80)}::${quoted}`;
 }
 
-function _jaEnviadoRecentemente(phone, message, quotedText) {
+function _jaEnviadoMemoria(phone, message, quotedText) {
   const chave = _hashEnvio(phone, message, quotedText);
   const agora = Date.now();
   if (_enviosRecentes.size > 2000) {
@@ -43,12 +35,46 @@ function _jaEnviadoRecentemente(phone, message, quotedText) {
   return false;
 }
 
+async function _jaEnviadoBanco(phone, message, quotedText) {
+  // Dedup persistente no banco — sobrevive a múltiplos containers
+  const chave = _hashEnvio(phone, message, quotedText);
+  const agora = new Date();
+  const limite = new Date(agora.getTime() - JANELA_DEDUP_MS);
+  try {
+    // Tenta criar o lock — se já existe (unique violation), outro container enviou
+    const existente = await _prismaDedup.memory.findFirst({
+      where: { type: 'msg_dedup_lock', content: chave, createdAt: { gte: limite } }
+    });
+    if (existente) return true; // já foi enviado
+    // Busca userId pelo phone para satisfazer FK, com fallback gracioso
+    let uid = null;
+    try {
+      const u = await _prismaDedup.user.findFirst({ where: { phone } });
+      uid = u?.id || null;
+    } catch {}
+    if (!uid) return false; // sem userId não persiste, mas camada 1 já protege
+    await _prismaDedup.memory.create({
+      data: { userId: uid, type: 'msg_dedup_lock', content: chave }
+    });
+    return false; // pode enviar
+  } catch (e) {
+    // Se userId 'dedup_global' não existir, usa só a camada de memória
+    return false;
+  }
+}
+
 // quotedText é opcional — passado pelo webhook.js quando disponível,
 // ignorado em todos os outros lugares que chamam sendMessage normalmente.
 async function sendMessage(phone, message, delay = 400, quotedText = '') {
   try {
-    if (_jaEnviadoRecentemente(phone, message, quotedText)) {
-      console.log(`🔁 Ignorando reenvio duplicado para ${phone}: ${String(message).slice(0, 40)}`);
+    // Camada 1: memória local (ms)
+    if (_jaEnviadoMemoria(phone, message, quotedText)) {
+      console.log(`🔁 [Dedup-Mem] Ignorando duplicado para ${phone}: ${String(message).slice(0, 40)}`);
+      return { status: 'deduped' };
+    }
+    // Camada 2: banco (sobrevive a overlap de containers)
+    if (await _jaEnviadoBanco(phone, message, quotedText)) {
+      console.log(`🔁 [Dedup-DB] Ignorando duplicado para ${phone}: ${String(message).slice(0, 40)}`);
       return { status: 'deduped' };
     }
     console.log(`📤 Enviando para ${phone}: ${String(message).slice(0, 60)}`);
