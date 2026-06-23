@@ -1125,6 +1125,17 @@ function renderRem(){
   const avencer=dayRems.filter(r=>!r.sent).sort((a,b)=>new Date(a.scheduledAt)-new Date(b.scheduledAt));
 
   if(!dayRems.length){
+    // Debug: mostra o que está em allRem
+    console.log('[DEBUG] allRem='+allRem.length+' phone='+phone);
+    if(allRem.length===0){
+      // Tenta recarregar explicitamente
+      try{
+        const resp=await fetch('/forms/lembretes/'+phone);
+        const data=await resp.json();
+        console.log('[DEBUG] fetch direto retornou '+data.length+' itens');
+        if(data.length>0){allRem=data;renderRem();return;}
+      }catch(e){console.log('[DEBUG] fetch direto erro:'+e.message);}
+    }
     // Verifica se há lembretes em dias futuros e sugere navegar
     const proximoComLembrete = allRem
       .filter(r=>!r.confirmed && dateBRTStr(r.scheduledAt) > viewStr)
