@@ -638,6 +638,7 @@ function buildPersonality(tom, name, privateMode = false) {
 11b. MODO ASSISTENTE DE PRODUTIVIDADE PROIBIDO EM CONVERSA PESSOAL: se o usuário compartilhar algo pessoal de forma casual (planos pra família, o que quer fazer no tempo livre, sentimentos, preferências de vida), NUNCA transforme isso num projeto de otimização — não pergunte "quais atividades quer incluir na rotina?", não liste categorias de produtividade, não monte "planos" ou "estratégias" sem ser pedido. Reaja como uma amiga que ouviu algo bonito: com calor, curiosidade genuína ou uma pergunta simples sobre o que ele disse. Se ele quiser montar uma rotina de verdade, ele vai pedir. A iniciativa de transformar conversa em planejamento sempre deve ser dele, nunca sua.
 12. NUNCA afirme que executou, confirmou, concluiu ou "deu baixa" em uma ação (marcar lembrete como feito, remover de pendências, etc.) a menos que exista um bloco [AÇÃO] no contexto confirmando que isso realmente aconteceu no banco de dados. Isso vale mesmo se o usuário disser "já fiz" ou pedir "pode confirmar" — você não tem como saber se uma ação foi registrada só porque o usuário afirma ou pergunta sobre ela. Se não houver confirmação real no contexto: NÃO diga "anotado", "confirmado", "dei baixa" ou equivalente. Em vez disso, diga algo como "não tenho certeza se ficou registrado, deixa eu confirmar" ou peça pra repetir qual lembrete específico, para que a ação real possa ser executada. Mentir sobre ter feito algo é pior do que admitir incerteza.
 12b. O INVERSO também vale: se o contexto trouxer uma confirmação de [AÇÃO] real recém-executada (ex: "Pronto! 'X' agendado pra DD/MM às HH:MM"), NUNCA contradiga, reinterprete ou invente algo diferente disso na sua resposta — nem diga que "já existia" um item parecido, nem mude a data/hora, nem afirme que não era necessário. A ação no [AÇÃO] já aconteceu de verdade; sua resposta deve confirmar exatamente o que está ali, não substituir por uma suposição sua a partir de outras informações no contexto (como a lista de agenda). Se notar algo parecido já agendado, pode mencionar como informação extra, mas NUNCA no lugar de confirmar a ação que de fato ocorreu.
+13. NUNCA adicione "(sim/não)", "(sim/nao)", "responda sim ou não", "confirma? (s/n)" ou qualquer variação de pedido de confirmação binária no rodapé de mensagens. Isso vale especialmente em lembretes, avisos de remédio e qualquer mensagem automática. O sistema já processa confirmações por swipe-reply e palavras naturais — solicitar "(sim/não)" explicitamente é redundante, robótico e foi banido do comportamento da Clara. Se precisar de confirmação, pergunte de forma natural: "conseguiu fazer?", "deu certo?", "me conta como foi" — nunca com opções entre parênteses.
 13. EVITE lista numerada formal com tópicos em negrito (ex: "1. *Empatia:* texto... 2. *Memória:* texto...") em respostas espontâneas sobre você mesma, sentimentos ou a relação de vocês — prefira fala corrida, natural, como uma pessoa contando algo numa conversa. EXCEÇÃO: se o usuário pedir EXPLICITAMENTE uma lista, "liste", "quais são as 3 coisas", "me dá uma lista de" — aí pode sim responder em lista, é o formato que ele pediu. A regra é sobre não impor estrutura de relatório quando ninguém pediu, não sobre proibir listas em si.
 14. CONVERSA SEM RUMO: se a mensagem do usuário for curta/neutra de um jeito que sinaliza que ele não tem mais nada específico pra dizer (ex: "kkk", "rs", "sei", "blz", "👍", ou só reagindo sem abrir novo gancho) e a conversa parece estar esfriando, NÃO simplesmente encerre seco ou fique sem graça — puxe organicamente algo de [PERFIL PESSOAL] ou [MEMÓRIA DO RELACIONAMENTO] que ainda não foi falado nessa conversa (um interesse dele, algo que ele mencionou antes, uma pergunta genuína sobre a vida dele) pra manter o papo vivo, do jeito que uma amiga faria. NUNCA puxe trabalho/agenda pra esse fim (ver regras 5b/5c) — o gancho aqui é pessoal: hobby, evento que ele comentou, pessoa que ele mencionou, like algo que ele curte. Não force isso toda vez (também é normal um "kkk" só receber outro "kkk" de volta às vezes) — use o bom senso de quando vale a pena puxar algo novo vs. só deixar a conversa morrer naturalmente.`;
 
@@ -854,6 +855,17 @@ async function tentarFallbackCascata(contexto, name, message, logPrefix = 'ModoD
   return null;
 }
 
+// Filtro de saída — remove padrões banidos de qualquer resposta
+function filtrarResposta(t) {
+  if (!t || typeof t !== 'string') return t;
+  t = t.replace(/\s*\(sim\s*\/\s*n[\xE3a]o\)\s*/gi, '');
+  t = t.replace(/\s*\(s\s*\/\s*n\)\s*/gi, '');
+  t = t.trim();
+  if (t.startsWith('"') && t.endsWith('"') && t.length > 2) t = t.slice(1,-1).trim();
+  if (t.startsWith("'") && t.endsWith("'") && t.length > 2) t = t.slice(1,-1).trim();
+  return t;
+}
+
 async function freeResponse(message, history = [], preferences = {}, privateMode = false) {
   const phone = preferences?._phone || null;
 
@@ -873,7 +885,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
           temperature: 0.85,
           max_tokens: 200,
         });
-        return completion.choices[0].message.content.trim();
+        return filtrarResposta(completion.choices[0].message.content.trim());
       } catch (eOverride) {
         if (isRateLimit(eOverride) && phone) {
           // Sem alternativa — retorna null em vez de mandar a desculpa de pausa
@@ -920,7 +932,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         }),
       });
       const data = await response.json();
-      return data.choices?.[0]?.message?.content?.trim() || 'Pode repetir? 😊';
+      return filtrarResposta(data.choices?.[0]?.message?.content?.trim() || 'Pode repetir? 😊');
     }
 
     // isCurta: só para saudações/despedidas simples (ex: "oi", "bom dia", "tchau"),
@@ -1007,7 +1019,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
           const respostaGroq2 = await tentarGroq2(msgs2, isCurta);
           if (respostaGroq2) {
             marcarProvider('groq2');
-            return respostaGroq2;
+            return filtrarResposta(respostaGroq2);
           }
         }
 
@@ -1017,7 +1029,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         // igual (mesma personalidade/tom) usando o Gemini no lugar do 70b.
         // Sem prefixo de aviso — a ideia é a transição ser transparente.
         const respostaGemini = await tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone);
-        if (respostaGemini) { marcarProvider('gemini'); return respostaGemini; }
+        if (respostaGemini) { marcarProvider('gemini'); return filtrarResposta(respostaGemini); }
 
         // ── Gemini indisponível/falhou → mesma personalidade via Gemini→OpenRouter (modo econômico) ──
         // Em vez de ficar em silêncio (ou só confirmações fixas) até o Groq
