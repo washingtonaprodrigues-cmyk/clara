@@ -10,9 +10,7 @@ const headers = {
 // CAMADA 1 — memória local (rápida, falha se dois containers simultâneos)
 // CAMADA 2 — banco de dados via arquivo de lock (sobrevive a overlap)
 // Janela: 120s. Bloqueia mesmo texto pro mesmo número nessa janela.
-const { PrismaClient } = require('@prisma/client');
-const _prismaDedup = new PrismaClient();
-const JANELA_DEDUP_MS = 120 * 1000;
+const JANELA_DEDUP_MS = 5 * 60 * 1000;
 const _enviosRecentes = new Map();
 
 function _hashEnvio(phone, message, quotedText) {
@@ -36,30 +34,32 @@ function _jaEnviadoMemoria(phone, message, quotedText) {
 }
 
 async function _jaEnviadoBanco(phone, message, quotedText) {
-  // Dedup persistente no banco — sobrevive a múltiplos containers
+  // Dedup persistente no banco usando o phone como chave no content
+  // Funciona entre containers diferentes (Railway overlap durante deploy)
+  const { PrismaClient } = require('@prisma/client');
+  const prisma = new PrismaClient();
   const chave = _hashEnvio(phone, message, quotedText);
-  const agora = new Date();
-  const limite = new Date(agora.getTime() - JANELA_DEDUP_MS);
+  const limite = new Date(Date.now() - JANELA_DEDUP_MS);
   try {
-    // Tenta criar o lock — se já existe (unique violation), outro container enviou
-    const existente = await _prismaDedup.memory.findFirst({
-      where: { type: 'msg_dedup_lock', content: chave, createdAt: { gte: limite } }
-    });
-    if (existente) return true; // já foi enviado
-    // Busca userId pelo phone para satisfazer FK, com fallback gracioso
-    let uid = null;
-    try {
-      const u = await _prismaDedup.user.findFirst({ where: { phone } });
-      uid = u?.id || null;
-    } catch {}
-    if (!uid) return false; // sem userId não persiste, mas camada 1 já protege
-    await _prismaDedup.memory.create({
-      data: { userId: uid, type: 'msg_dedup_lock', content: chave }
-    });
-    return false; // pode enviar
-  } catch (e) {
-    // Se userId 'dedup_global' não existir, usa só a camada de memória
+    // Busca userId pelo phone
+    const user = await prisma.user.findFirst({ where: { phone } }).catch(() => null);
+    if (!user) return false; // sem user, deixa passar (camada 1 já protege)
+
+    // Verifica se já existe lock recente
+    const existente = await prisma.memory.findFirst({
+      where: { userId: user.id, type: 'msg_dedup_lock', content: { startsWith: chave.slice(0, 50) }, createdAt: { gte: limite } }
+    }).catch(() => null);
+    if (existente) return true;
+
+    // Cria o lock
+    await prisma.memory.create({
+      data: { userId: user.id, type: 'msg_dedup_lock', content: chave }
+    }).catch(() => {});
     return false;
+  } catch {
+    return false;
+  } finally {
+    await prisma.$disconnect().catch(() => {});
   }
 }
 
