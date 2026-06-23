@@ -79,7 +79,7 @@ router.get('/lembretes/:phone', async (req, res) => {
     const lembretes = await prisma.reminder.findMany({
       where: { userId: user.id },
       orderBy: { scheduledAt: 'asc' },
-      take: 100,
+      take: 500, // aumentado pra não perder lembretes futuros
     });
     res.json(lembretes);
   } catch (e) {
