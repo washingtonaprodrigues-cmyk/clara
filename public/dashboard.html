@@ -1109,9 +1109,6 @@ function goRemToday(){remViewDate=new Date();renderRem();}
 function renderRem(){
   const el=document.getElementById('rem-timeline');
   const now=new Date(),todayStr=dateBRTStr(now),viewStr=dateBRTStr(remViewDate),isToday=viewStr===todayStr;
-  // Debug temporário — mostra quantos lembretes chegaram do servidor
-  console.log('[Lembretes] allRem.length='+allRem.length+' phone='+phone+' viewStr='+viewStr);
-  if(allRem.length>0)console.log('[Lembretes] primeiro='+JSON.stringify(allRem[0]).slice(0,100));
 
   const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'],meses=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
   const offset=-3*60,utc=remViewDate.getTime()+remViewDate.getTimezoneOffset()*60000,vd=new Date(utc+offset*60000);
@@ -1125,17 +1122,6 @@ function renderRem(){
   const avencer=dayRems.filter(r=>!r.sent).sort((a,b)=>new Date(a.scheduledAt)-new Date(b.scheduledAt));
 
   if(!dayRems.length){
-    // Debug: mostra o que está em allRem
-    console.log('[DEBUG] allRem='+allRem.length+' phone='+phone);
-    if(allRem.length===0){
-      // Tenta recarregar explicitamente
-      try{
-        const resp=await fetch('/forms/lembretes/'+phone);
-        const data=await resp.json();
-        console.log('[DEBUG] fetch direto retornou '+data.length+' itens');
-        if(data.length>0){allRem=data;renderRem();return;}
-      }catch(e){console.log('[DEBUG] fetch direto erro:'+e.message);}
-    }
     // Verifica se há lembretes em dias futuros e sugere navegar
     const proximoComLembrete = allRem
       .filter(r=>!r.confirmed && dateBRTStr(r.scheduledAt) > viewStr)
