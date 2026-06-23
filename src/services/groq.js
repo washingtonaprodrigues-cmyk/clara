@@ -1112,15 +1112,27 @@ async function detectarAssuntoEmAberto(history) {
       model: MODEL_LEVE,
       messages: [{
         role: 'user',
-        content: `Analisa essa conversa e verifica se ficou algum assunto relevante em aberto que merece acompanhamento posterior: saúde, trabalho, relações, evento com resultado esperado, plano futuro, situação emocional.
+        content: `Analisa essa conversa. Verifica se ficou UM assunto PESSOAL relevante em aberto que merece acompanhamento real — ou seja, algo que a pessoa VIVEU ou VAI VIVER e que tem resultado incerto.
+
+CRITÉRIOS PARA SALVAR (todos devem ser verdadeiros):
+- É algo pessoal e emocional: saúde, consulta médica, resultado de exame, situação familiar, relacionamento, evento importante que vai acontecer, decisão difícil
+- O resultado ainda é desconhecido — não sabemos se deu certo, se a pessoa foi, como terminou
+- Merece um follow-up genuíno de amiga (não de assistente)
+
+NÃO SALVAR se for:
+- Lembrete ou tarefa criada (beber água, reunião, agenda, compromisso)
+- Algo que já foi resolvido na conversa
+- Conversa trivial, saudação, bate-papo sem substância
+- Plano abstrato sem data/evento concreto ("quer criar rotina", "quer priorizar tarefas")
+- Pergunta respondida, pedido de informação atendido
 
 CONVERSA:
 ${resumo}
 
-Se houver algo relevante e ainda não resolvido, retorna APENAS JSON sem markdown:
-{"assunto":"nome curto (2-4 palavras)","contexto":"o que aconteceu em 1 linha","como_retomar":"como perguntar naturalmente depois"}
+Se houver algo que passa nesses critérios, retorna APENAS JSON sem markdown:
+{"assunto":"nome curto (2-4 palavras)","contexto":"o que aconteceu em 1 linha","como_retomar":"uma pergunta natural de amiga sobre isso"}
 
-Se for conversa trivial (saudação, lembrete simples, tarefa rotineira, pergunta rápida) ou o assunto já foi resolvido na própria conversa, retorna APENAS: null`
+Se não houver nada que passe nos critérios, retorna APENAS: null`
       }],
       temperature: 0,
       max_tokens: 120,
