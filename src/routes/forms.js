@@ -1459,6 +1459,26 @@ router.post('/memoria/:phone', async (req, res) => {
   }
 });
 
+// Limpeza de pendências — mantém só as 3 mais recentes e válidas
+// Útil para limpar acúmulo histórico de pendências triviais
+router.post('/pendencias-limpar/:phone', async (req, res) => {
+  try {
+    const user = await memory.getOrCreateUser(req.params.phone);
+    const todas = await prisma.memory.findMany({
+      where: { userId: user.id, type: 'pendencia_conversa' },
+      orderBy: { createdAt: 'desc' }
+    });
+    // Mantém as 3 mais recentes, deleta o resto
+    const paraApagar = todas.slice(3);
+    if (paraApagar.length > 0) {
+      await prisma.memory.deleteMany({ where: { id: { in: paraApagar.map(p => p.id) } } });
+    }
+    res.json({ removidas: paraApagar.length, restantes: Math.min(todas.length, 3) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.delete('/pendencia/:id/:phone', async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { phone: req.params.phone } });
