@@ -469,6 +469,8 @@ async function getPendenciasAbertas(userId) {
 
 async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_retomar }) {
   const existentes = await getPendenciasAbertas(userId);
+
+  // Atualiza se já existe assunto parecido
   const mesmoAssunto = existentes.find(p =>
     p.assunto?.toLowerCase().includes(assunto?.toLowerCase()?.split(' ')[0]) ||
     assunto?.toLowerCase().includes(p.assunto?.toLowerCase()?.split(' ')[0])
@@ -480,6 +482,15 @@ async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_reto
     }).catch(() => {});
     return;
   }
+
+  // Limite de 3 pendências ativas — remove a mais antiga se estourar
+  // Evita acúmulo de assuntos irrelevantes que nunca são resolvidos
+  if (existentes.length >= 3) {
+    const maisAntiga = existentes[existentes.length - 1]; // já vem desc, então [last] é a mais antiga
+    await prisma.memory.delete({ where: { id: maisAntiga.id } }).catch(() => {});
+    console.log(`[Pendência] Removida antiga: "${maisAntiga.assunto}" (limite 3)`);
+  }
+
   await prisma.memory.create({
     data: { userId, type: 'pendencia_conversa', content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false }) }
   }).catch(() => {});
