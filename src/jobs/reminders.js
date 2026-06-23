@@ -296,8 +296,83 @@ Tom: ${prefs.tom || 'carinhoso'}.`;
   } catch (e) { console.error('[Bom dia] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
+
 // ═══════════════════════════════════════════════════════════════════════
-// BOA NOITE + FECHAMENTO DO DIA (21:30)
+// FECHAMENTO DO DIA — 18:00
+// Resume o dia de trabalho: concluídos, pendentes e opção de remarcar.
+// Separado do boa noite para que a noite seja só descanso.
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('0 18 * * *', async () => {
+  try {
+    const now = nowBRT();
+    const hoje = dateBRT(now);
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    for (const user of users) {
+      try {
+        const lockKey = `fechamento_dia_${hoje}`;
+        if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'fechamento_dia_lock', content: lockKey } })) continue;
+
+        const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
+        const fimHoje = new Date(`${hoje}T23:59:59-03:00`);
+        const todosHoje = await prisma.reminder.findMany({
+          where: { userId: user.id, scheduledAt: { gte: inicioHoje, lte: fimHoje } }
+        });
+
+        const concluidos = todosHoje.filter(r => r.confirmed);
+        const pendentes = todosHoje.filter(r => r.sent && !r.confirmed);
+
+        // Só envia se teve atividade hoje
+        if (todosHoje.length === 0) continue;
+
+        const { prefs } = await getUserContext(user);
+        const nome = prefs.name ? ` ${prefs.name.split(' ')[0]}` : '';
+
+        let msg = '';
+        if (concluidos.length > 0 && pendentes.length === 0) {
+          msg = `Hoje foram ${concluidos.length} item${concluidos.length > 1 ? 's' : ''} da agenda concluído${concluidos.length > 1 ? 's' : ''} 💪${nome} — dia bem aproveitado!`;
+        } else if (concluidos.length > 0 && pendentes.length > 0) {
+          const ids = pendentes.map(r => r.id);
+          // Salva confirmação pendente pra remarcar
+          await prisma.memory.create({
+            data: {
+              userId: user.id,
+              type: 'confirmacao_pendente',
+              content: JSON.stringify({
+                tipo: 'fechamento_pendentes',
+                reminderIds: ids,
+                expira: Date.now() + 3 * 60 * 60 * 1000 // 3h pra responder
+              })
+            }
+          }).catch(() => {});
+          msg = `Hoje foram ${concluidos.length} item${concluidos.length > 1 ? 's' : ''} concluído${concluidos.length > 1 ? 's' : ''} 👏 Ficaram ${pendentes.length} pendente${pendentes.length > 1 ? 's' : ''} — posso remarcar tudo pro mesmo horário amanhã ou você prefere concluir agora?`;
+        } else if (concluidos.length === 0 && pendentes.length > 0) {
+          const ids = pendentes.map(r => r.id);
+          await prisma.memory.create({
+            data: {
+              userId: user.id,
+              type: 'confirmacao_pendente',
+              content: JSON.stringify({
+                tipo: 'fechamento_pendentes',
+                reminderIds: ids,
+                expira: Date.now() + 3 * 60 * 60 * 1000
+              })
+            }
+          }).catch(() => {});
+          msg = `Ficaram ${pendentes.length} item${pendentes.length > 1 ? 's' : ''} pendente${pendentes.length > 1 ? 's' : ''} hoje — remarco tudo pro mesmo horário amanhã ou prefere concluir agora?`;
+        }
+
+        if (msg) {
+          await prisma.memory.create({ data: { userId: user.id, type: 'fechamento_dia_lock', content: lockKey } });
+          await sendMessage(user.phone, msg);
+          console.log(`[Fechamento] ${user.phone} — ${concluidos.length} concluídos, ${pendentes.length} pendentes`);
+        }
+      } catch (e) { console.error(`[Fechamento] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error('[Fechamento] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
+// BOA NOITE (21:30) — curta, calorosa, só preview de amanhã
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('30 21 * * *', async () => {
   try {
@@ -334,16 +409,17 @@ cron.schedule('30 21 * * *', async () => {
           });
         }
         if (infoPessoal) ctx += infoPessoal;
+        // Boa noite simples — o fechamento do dia já foi feito às 18h.
+        // Aqui é só descanso: preview rápido de amanhã (se houver) + boa noite.
         const systemBoaNoite = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Escreva uma mensagem de boa noite que também é o fechamento natural do dia — tudo em uma mensagem só, 2-4 linhas.
+Escreva uma mensagem de BOA NOITE curta e calorosa — máximo 2 linhas.
 CONTEXTO:
 ${ctx}
 REGRAS:
-- Se concluiu tarefas hoje (${concluidosHoje}), parabenize brevemente por isso
-- Se ficou algo pendente (${pendentesHoje.length}), toque de forma leve e natural — sem cobrar, sem listar formalmente. Basta mencionar que ficou algo e que pode remarcar
-- Se tiver compromisso amanhã (${lembretesAmanha.length}), mencione de forma breve
-- Encerre com boa noite calorosa
-- Varie sempre a abertura. Máximo 1 emoji. NÃO seja sentimental ou poética.
+- Se tiver compromisso amanhã, mencione UM no máximo, de forma breve e natural
+- NÃO liste tarefas, NÃO faça resumo do dia, NÃO cobre pendências (isso já foi feito às 18h)
+- Seja como uma amiga que deseja boa noite — leve, genuína, sem relatório
+- Varie sempre. Máximo 1 emoji. Máximo 2 linhas.
 Tom: ${prefs.tom || 'carinhoso'}.`;
         const msg = await freeResponse('Boa noite e fechamento do dia.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBoaNoite });
         if (!msg) { console.log(`[Boa noite] Rate limit, pulado para ${user.phone}`); continue; }
@@ -984,7 +1060,7 @@ cron.schedule('0 3 * * *', async () => {
     const ontem = new Date(nowBRT()); ontem.setDate(ontem.getDate() - 2);
     await prisma.memory.deleteMany({
       where: {
-        type: { in: ['med_lock','alerta_data_lock','proativa_lock','sumico_lock','bom_dia_lock','boa_noite_lock','meu_dia_criado','radar_lock','parceira_lock','reminder_lock','alerta_perfil_lock','hora_extra_lock','ponto_proativa_lock','msg_dedup_lock'] },
+        type: { in: ['med_lock','alerta_data_lock','proativa_lock','sumico_lock','bom_dia_lock','boa_noite_lock','meu_dia_criado','radar_lock','parceira_lock','reminder_lock','alerta_perfil_lock','hora_extra_lock','ponto_proativa_lock','msg_dedup_lock','fechamento_dia_lock'] },
         createdAt: { lt: ontem }
       }
     });
