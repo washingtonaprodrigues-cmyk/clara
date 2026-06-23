@@ -51,22 +51,10 @@ function tomDesc(tom) {
   }[tom || 'carinhoso'] || 'calorosa e próxima, como uma amiga que genuinamente se importa.';
 }
 
-// Finais conversacionais — SEM "(sim/não)".
-// O swipe-reply já basta para confirmar. Sem variação de texto,
-// o dedup de 90s do whatsapp.js funciona como barreira extra:
-// se dois containers enviarem o mesmo lembrete, o segundo é bloqueado.
-const finais = [
-  'E aí, conseguiu fazer? 😊',
-  'Me conta, deu certo? 🙂',
-  'Me avisa quando fizer! 👋',
-  'Já deu conta disso? ✨',
-];
-
-// ── Final DETERMINÍSTICO por ID do lembrete ──────────────────────────────
+// Final fixo — sem variação garante que o dedup do whatsapp.js
+// bloqueie qualquer duplicata, independente da versão do código.
 function finalParaLembrete(r) {
-  if (!r?.id) return finais[0];
-  const code = r.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  return finais[code % finais.length];
+  return 'Me avisa quando fizer! 👋';
 }
 
 // ═══════════════════════════════════════════════════════════════════════
