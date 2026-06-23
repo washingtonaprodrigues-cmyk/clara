@@ -573,20 +573,47 @@ async function proativaInteligente(periodo) {
             .filter(m => !['conversa','bom_dia_enviado','boa_noite_enviado','proativa_lock','med_lock','alerta_data_lock','fechamento_dia_lock'].includes(m.type))
             .slice(0, 10).map(m => `[${m.type}] ${m.content}`).join('\n');
 
-          // Horário do remédio mais cedo — Clara infere quando a pessoa acorda
+          // ── Infere quando o usuário acordou hoje ──
+          // Ordem de confiabilidade:
+          // 1. Primeira mensagem do usuário hoje (sinal real — ele escreveu)
+          // 2. Remédio mais cedo (estimativa quando não tem sinal real)
           let horaAcorda = null;
+          let jaAcordouConfirmado = false;
           try {
-            const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true } });
-            const horarios = meds.flatMap(m => { try { return JSON.parse(m.times || '[]'); } catch { return []; } });
-            if (horarios.length) horaAcorda = horarios.sort()[0]; // mais cedo
+            const hoje = dateBRT(now);
+            const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
+
+            // Sinal 1: primeira conversa do usuário hoje
+            const primeiraConversa = await prisma.memory.findFirst({
+              where: { userId: user.id, type: 'conversa', createdAt: { gte: inicioHoje } },
+              orderBy: { createdAt: 'asc' }
+            }).catch(() => null);
+
+            if (primeiraConversa) {
+              const d = new Date(primeiraConversa.createdAt);
+              horaAcorda = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+              jaAcordouConfirmado = true;
+            }
+
+            // Sinal 2: remédio mais cedo (fallback)
+            if (!horaAcorda) {
+              const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true } });
+              const horarios = meds.flatMap(m => { try { return JSON.parse(m.times || '[]'); } catch { return []; } });
+              if (horarios.length) horaAcorda = horarios.sort()[0];
+            }
           } catch {}
 
-          // Proativa da manhã: só dispara se passou pelo menos 30min desde que acordou
-          if (periodo === 'manha' && horaAcorda) {
-            const [hAc, mAc] = horaAcorda.split(':').map(Number);
-            const [hNow, mNow] = [now.getHours(), now.getMinutes()];
-            const diffMin = (hNow * 60 + mNow) - (hAc * 60 + mAc);
-            if (diffMin < 30) continue; // muito cedo ainda
+          // Proativa da manhã: só dispara se já acordou de fato
+          // (confirmado por mensagem) ou passou 45min do remédio estimado
+          if (periodo === 'manha') {
+            if (!horaAcorda) continue; // sem nenhum sinal, não dispara
+            if (!jaAcordouConfirmado) {
+              // Só estimativa do remédio — espera 45min pra ter certeza
+              const [hAc, mAc] = horaAcorda.split(':').map(Number);
+              const diffMin = (now.getHours() * 60 + now.getMinutes()) - (hAc * 60 + mAc);
+              if (diffMin < 45) continue;
+            }
+            // Se já mandou mensagem hoje → já acordou, pode disparar
           }
 
           // Chancela aleatória — mas se tem assunto em aberto, sempre dispara
