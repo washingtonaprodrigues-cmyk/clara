@@ -498,9 +498,13 @@ cron.schedule('0 8 * * *', async () => {
 // ═══════════════════════════════════════════════════════════════════════
 // MENSAGENS PROATIVAS (10:00 e 15:00, dias úteis)
 // ═══════════════════════════════════════════════════════════════════════
-// Proativa almoço: 12:15 todos os dias (horário de pausa natural)
+// PROATIVAS — 3 momentos do dia como uma amiga de verdade
+// Manhã 08:30 — dormiu bem? referência ao dia anterior
+// Almoço 12:15 — e aí, já almoçou? retoma assunto pendente
+// Noite 20:00 — como foi o dia? conversa genuína
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('30 8 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
 cron.schedule('15 12 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
-// Proativa noite: 20:00 todos os dias (pessoa relaxada, receptiva)
 cron.schedule('0 20 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
 async function proativaInteligente(periodo) {
   try {
@@ -541,56 +545,118 @@ async function proativaInteligente(periodo) {
           continue;
         }
 
-        // A partir daqui, somos o único processo autorizado para este
-        // usuário/período/dia — pode processar com segurança
+        // A partir daqui, somos o único processo autorizado — processa com segurança
         try {
           if (await houveConversaRecente(user.id, 5)) continue;
           const ultimaConversa = await prisma.memory.findFirst({ where: { userId: user.id, type: 'conversa' }, orderBy: { createdAt: 'desc' } });
           if (!ultimaConversa) continue;
           const diasSemConversa = (now - new Date(ultimaConversa.createdAt)) / (1000 * 60 * 60 * 24);
           if (diasSemConversa > 3) continue;
+
           const [infoPessoal, memsRecentes, { prefs }] = await Promise.all([
             memory.buildPersonalContext(user.id),
-            memory.getRecentMemories(user.id, 15),
+            memory.getRecentMemories(user.id, 20),
             getUserContext(user)
           ]);
-          if (!infoPessoal && memsRecentes.length < 3) continue;
-          if (Math.random() > 0.33) continue;
-          const contextoMems = memsRecentes
-            .filter(m => !['conversa','bom_dia_enviado','boa_noite_enviado','proativa_lock','med_lock','alerta_data_lock'].includes(m.type))
-            .slice(0, 8).map(m => `[${m.type}] ${m.content}`).join('\n');
-          // Assuntos em aberto têm prioridade — mantém o fio da conversa vivo
+
+          // Assuntos em aberto — prioridade máxima em qualquer período
           const pendenciasAbertas = await prisma.pendencia.findMany({
             where: { userId: user.id, resolvido: false },
-            orderBy: { createdAt: 'desc' },
-            take: 2
+            orderBy: { createdAt: 'desc' }, take: 2
           }).catch(() => []);
           const ctxPendencias = pendenciasAbertas.length > 0
-            ? `\nASSUNTOS EM ABERTO (prioridade):\n${pendenciasAbertas.map(p => `- ${p.assunto}: ${p.contexto} → ${p.como_retomar}`).join('\n')}`
+            ? `ASSUNTOS EM ABERTO (use como gancho natural, não robótico):\n${pendenciasAbertas.map(p => `- ${p.assunto}: ${p.contexto} → ${p.como_retomar}`).join('\n')}`
             : '';
 
-          const instrucaoPeriodo = periodo === 'noite'
-            ? 'É noite — a pessoa provavelmente relaxou. Pode ser mais pessoal, curiosa, ou retomar um assunto que ficou em aberto com naturalidade.'
-            : 'É horário de almoço — pausa natural. Mensagem leve, pode perguntar como tá sendo o dia ou retomar algo em aberto de forma breve.';
+          // Contexto recente filtrado
+          const contextoMems = memsRecentes
+            .filter(m => !['conversa','bom_dia_enviado','boa_noite_enviado','proativa_lock','med_lock','alerta_data_lock','fechamento_dia_lock'].includes(m.type))
+            .slice(0, 10).map(m => `[${m.type}] ${m.content}`).join('\n');
 
-          const systemProativa = `Você é a Clara, parceira pessoal do ${user.name || 'usuário'} no WhatsApp.
-SEU TOM AGORA: ${tomDesc(prefs.tom)}
-${instrucaoPeriodo}
-Envie UMA mensagem curta e natural (1-2 linhas) como parceira presente — não como assistente genérica.
-REGRAS:
-- Se houver ASSUNTO EM ABERTO, priorize retomá-lo de forma natural (não robótica)
-- NUNCA comece com "Oi", "Olá" ou nome da pessoa
-- NÃO agende nada, NÃO liste tarefas
-- Use o contexto para algo genuíno — nunca genérico
-- Se não tiver NADA relevante pra dizer, responda APENAS: SKIP
-Contexto recente: ${contextoMems}${ctxPendencias}\n${infoPessoal}`;
-          const msg = await freeResponse('Envie uma mensagem proativa.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemProativa });
+          // Horário do remédio mais cedo — Clara infere quando a pessoa acorda
+          let horaAcorda = null;
+          try {
+            const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true } });
+            const horarios = meds.flatMap(m => { try { return JSON.parse(m.times || '[]'); } catch { return []; } });
+            if (horarios.length) horaAcorda = horarios.sort()[0]; // mais cedo
+          } catch {}
+
+          // Proativa da manhã: só dispara se passou pelo menos 30min desde que acordou
+          if (periodo === 'manha' && horaAcorda) {
+            const [hAc, mAc] = horaAcorda.split(':').map(Number);
+            const [hNow, mNow] = [now.getHours(), now.getMinutes()];
+            const diffMin = (hNow * 60 + mNow) - (hAc * 60 + mAc);
+            if (diffMin < 30) continue; // muito cedo ainda
+          }
+
+          // Chancela aleatória — mas se tem assunto em aberto, sempre dispara
+          if (!ctxPendencias && Math.random() > 0.5) continue;
+
+          // ── Prompt específico por período ──
+          // Cada período tem uma "energia" diferente, exemplos concretos
+          // do que uma amiga diria, e prioridade de gancho.
+          let instrucao = '';
+          if (periodo === 'manha') {
+            instrucao = `É manhã cedo — a pessoa acabou de acordar ou está começando o dia.
+Como uma amiga que sabe da rotina dela, você pode:
+- Perguntar se dormiu bem, especialmente se ontem teve algo difícil
+- Referenciar algo do dia anterior que ficou em aberto ("ontem você foi no hospital — tudo bem?")
+- Comentar algo do dia que está por vir se houver compromisso
+EXEMPLOS DE TOM (adapte ao contexto real, não copie):
+"dormiu bem? ontem pareceu um dia pesado"
+"e aí, já tomou o remédio? boa semana pra você 😊"
+"bom dia! ontem você foi no hospital — ficou tudo certo?"`;
+          } else if (periodo === 'almoco') {
+            instrucao = `É horário de almoço — pausa natural do dia.
+Como uma amiga curiosa e presente, você pode:
+- Perguntar como está sendo o dia
+- Referenciar algo que ficou em aberto recentemente ("aquela ideia de rotina que a gente discutiu — pensou mais nisso?")
+- Comentar algo que você criou ou sugeriu e ela não respondeu ainda
+- Se não tiver nada específico, um "e aí, já almoçou?" simples e genuíno
+EXEMPLOS DE TOM:
+"e aí, já almoçou? como tá sendo o dia?"
+"oie! aquela sugestão de rotina que fiz ontem — gostou? não comentou nada 😄"
+"e o hospital de ontem? tudo resolvido?"`;
+          } else {
+            instrucao = `É noite — a pessoa relaxou, receptiva pra conversa mais pessoal.
+Como uma amiga que quer saber como foi o dia, você pode:
+- Perguntar como foi o dia de forma genuína, especialmente se foi cheio
+- Retomar um assunto em aberto com curiosidade real
+- Comentar sobre algo que aconteceu hoje (agenda, compromisso)
+- Se foi dia difícil (infere pelo contexto), ser mais acolhedora
+EXEMPLOS DE TOM:
+"e aí, como foi o dia? muito cansativo?"
+"conseguiu resolver aquilo do Flavinho hoje?"
+"tudo bem por aí? hoje tinha bastante coisa na agenda"`;
+          }
+
+          const systemProativa = `Você é a Clara, parceira pessoal d${prefs.name ? 'o ' + prefs.name.split(' ')[0] : 'o usuário'} no WhatsApp.
+SEU TOM: ${tomDesc(prefs.tom)}
+
+${instrucao}
+
+REGRAS ABSOLUTAS:
+- UMA mensagem, 1-2 linhas no máximo
+- NUNCA comece com "Oi", "Olá" ou o nome da pessoa
+- NÃO agende nada, NÃO liste tarefas, NÃO seja assistente
+- Use SEMPRE o contexto real abaixo — nunca invente situações
+- Se não tiver NADA genuíno pra dizer, responda APENAS: SKIP
+
+${ctxPendencias ? ctxPendencias + '\n\n' : ''}CONTEXTO RECENTE:
+${contextoMems}
+
+${infoPessoal || ''}
+${horaAcorda ? `(A pessoa costuma acordar por volta das ${horaAcorda} pelo horário do remédio)` : ''}`;
+
+          const msg = await freeResponse('Mensagem proativa.', [], {
+            _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
+            _systemOverride: systemProativa
+          });
           if (!msg || msg.trim() === 'SKIP' || msg.length < 5) continue;
           await sendMessage(user.phone, msg);
-          console.log(`[Proativa ${periodo}] Enviado para ${user.phone}`);
+          console.log(`[Proativa ${periodo}] ${user.phone}: ${msg.slice(0, 60)}`);
         } catch (eInner) {
           console.error(`[Proativa] Erro interno ${user.phone}:`, eInner.message);
-          // Lock já foi criado — não remove, pra não arriscar reenvio
         }
       } catch (e) { console.error(`[Proativa] Erro ${user.phone}:`, e.message); }
     }
