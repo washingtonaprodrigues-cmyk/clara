@@ -1112,7 +1112,7 @@ async function executeAjustarRemedio(user, classified) {
 async function executeAction(user, phone, classified, originalText) {
   switch (classified.tipo) {
     case 'ponto_multiplo':
-      await salvarPontoSilencioso(user, classified.acoes, phone);
+      await salvarPontoSilencioso(user, classified.acoes);
       break;
     case 'cidade':
       await memory.saveMemory(user.id, 'cidade', classified.cidade);
@@ -1195,96 +1195,18 @@ async function executeAction(user, phone, classified, originalText) {
   }
 }
 
-async function salvarPontoSilencioso(user, acoes, phone) {
+async function salvarPontoSilencioso(user, acoes) {
   const hoje = dateBRT();
-  const prefs = await memory.getUserPreference(user.id).catch(() => ({}));
-  const nome = prefs.name ? prefs.name.split(' ')[0] : null;
-
   for (const acao of acoes) {
     let subtipo = (acao.subtipo || '').toLowerCase().trim();
     if (subtipo.includes('entrada') || subtipo.includes('cheg')) subtipo = 'entrada';
     else if (subtipo.includes('saida_almoco') || (subtipo.includes('almo') && subtipo.includes('sai'))) subtipo = 'saida_almoco';
     else if (subtipo.includes('volta_almoco') || (subtipo.includes('almo') && subtipo.includes('volt'))) subtipo = 'volta_almoco';
     else if (subtipo.includes('saida') || subtipo.includes('sai')) subtipo = 'saida';
-
     const timestamp = acao.hora ? convertToDateWithTime(acao.hora) : nowBRT();
     const existing = await prisma.workLog.findFirst({ where: { userId: user.id, type: subtipo, date: hoje } });
     if (existing) await prisma.workLog.update({ where: { id: existing.id }, data: { timestamp } });
     else await prisma.workLog.create({ data: { userId: user.id, type: subtipo, timestamp, date: hoje } });
-
-    const hm = timestamp.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-
-    // ── Comportamentos imediatos por tipo de ponto ──
-
-    if (subtipo === 'entrada') {
-      // Confirma entrada com boa energia + salva horário habitual de entrada
-      const cumps = [
-        `Registrei sua entrada às ${hm} 📍 Bom trabalho hoje${nome ? ', ' + nome : ''}! 💪`,
-        `Entrada registrada: ${hm} ✅ Vai com tudo${nome ? ', ' + nome : ''}! 🚀`,
-        `Marcado! Você chegou às ${hm} 📍 Bom trabalho hoje${nome ? ', ' + nome : ''}! ☀️`,
-      ];
-      await sendMessage(phone, cumps[Math.floor(Math.random() * cumps.length)]);
-
-      // Aprende horário habitual de entrada (salva se ainda não tem ou é diferente)
-      const horaEntradaMemoria = await prisma.memory.findFirst({
-        where: { userId: user.id, type: 'horario_entrada_trabalho' }
-      }).catch(() => null);
-      if (!horaEntradaMemoria) {
-        await prisma.memory.create({ data: { userId: user.id, type: 'horario_entrada_trabalho', content: hm } }).catch(() => {});
-      }
-
-    } else if (subtipo === 'saida_almoco') {
-      // Agenda proativa de 20min: "como foi o almoço?"
-      const voltarEm20 = new Date(timestamp.getTime() + 20 * 60 * 1000);
-      await prisma.reminder.create({
-        data: {
-          userId: user.id,
-          phone: phone,
-          message: `__PONTO_ALMOCO_FOLLOWUP__`,
-          scheduledAt: voltarEm20,
-        }
-      }).catch(() => {});
-
-      // Salva horário habitual de almoço
-      await prisma.memory.upsert({
-        where: { id: (await prisma.memory.findFirst({ where: { userId: user.id, type: 'horario_almoco' } }).catch(() => null))?.id || 'noop' },
-        update: { content: hm },
-        create: { userId: user.id, type: 'horario_almoco', content: hm }
-      }).catch(async () => {
-        const ex = await prisma.memory.findFirst({ where: { userId: user.id, type: 'horario_almoco' } }).catch(() => null);
-        if (!ex) await prisma.memory.create({ data: { userId: user.id, type: 'horario_almoco', content: hm } }).catch(() => {});
-      });
-
-    } else if (subtipo === 'saida') {
-      // Salva horário habitual de saída — usado pelo cron de hora extra
-      const horaSaidaMemoria = await prisma.memory.findFirst({
-        where: { userId: user.id, type: 'horario_saida_trabalho' }
-      }).catch(() => null);
-      if (!horaSaidaMemoria) {
-        await prisma.memory.create({ data: { userId: user.id, type: 'horario_saida_trabalho', content: hm } }).catch(() => {});
-      } else {
-        // Atualiza se mudou mais de 30min do habitual (evita sobreescrever por exceção)
-        const [hh, mm] = hm.split(':').map(Number);
-        const [hhabitual, mmhabitual] = horaSaidaMemoria.content.split(':').map(Number);
-        const diffMin = Math.abs((hh * 60 + mm) - (hhabitual * 60 + mmhabitual));
-        if (diffMin > 30) {
-          // Verifica se isso virou padrão (3+ dias com essa hora)
-          const ultimasSaidas = await prisma.workLog.findMany({
-            where: { userId: user.id, type: 'saida' },
-            orderBy: { timestamp: 'desc' },
-            take: 3
-          }).catch(() => []);
-          const saidasNoMesmoHorario = ultimasSaidas.filter(s => {
-            const [sh, sm] = s.timestamp.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).split(':').map(Number);
-            return Math.abs((sh * 60 + sm) - (hh * 60 + mm)) <= 30;
-          });
-          if (saidasNoMesmoHorario.length >= 2) {
-            await prisma.memory.update({ where: { id: horaSaidaMemoria.id }, data: { content: hm } }).catch(() => {});
-            console.log(`[Ponto] Horário habitual de saída atualizado: ${hm} para ${user.id}`);
-          }
-        }
-      }
-    }
   }
 }
 
