@@ -1459,9 +1459,10 @@ function _renderMemoriasUI(){
   var pends=_memDados.pendenciasAbertas||[];
   var busca=_memBuscaAtiva,filtro=_memFiltroAtivo;
 
-  // Contador total
+  // Contador total: memórias de categoria + assuntos em aberto
   var totalTodos=0;
   ORDEM_CATS_MEM.forEach(function(cat){totalTodos+=(cats[cat]?cats[cat].length:0);});
+  totalTodos+=(pends?pends.length:0);
   var numEl=document.getElementById('mem-total-num');
   if(numEl)numEl.textContent=totalTodos;
 
@@ -1507,7 +1508,7 @@ function _renderMemoriasUI(){
     var grupos={};
     var ordemLabels=[];
     todosItens.forEach(function(entry){
-      var label=entry.item.createdAt?_fmtDataMem(entry.item.createdAt):'Recente';
+      var label=(entry.item.criadoEm||entry.item.createdAt)?_fmtDataMem(entry.item.criadoEm||entry.item.createdAt):'Recente';
       if(!grupos[label]){grupos[label]=[];ordemLabels.push(label);}
       grupos[label].push(entry);
     });
@@ -1522,7 +1523,7 @@ function _renderMemoriasUI(){
       html+='<div class="mem-timeline-group"><div class="mem-timeline-label"><span class="mem-timeline-dot"></span>'+label+'</div>';
       grupos[label].forEach(function(entry){
         var item=entry.item,m=entry.m;
-        var hora=item.createdAt?new Date(item.createdAt).toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'}):'';
+        var hora=(item.criadoEm||item.createdAt)?new Date(item.criadoEm||item.createdAt).toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'}):'';
         html+='<div class="mem-card" style="border-left-color:'+m.ac+'">'
           +'<div class="mem-card-icon" style="background:'+m.cor+';color:'+m.txt+'">'+m.e+'</div>'
           +'<div class="mem-card-body">'
