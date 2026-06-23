@@ -403,10 +403,15 @@ router.post('/conversa-limpar/:phone', async (req, res) => {
 router.post('/lembrete-concluir/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    const rem = await prisma.reminder.findUnique({ where: { id } }).catch(() => null);
     await prisma.reminder.update({
       where: { id },
       data: { sent: true, confirmed: true }
     });
+    // Fecha pendência relacionada ao título do lembrete (fire-and-forget)
+    if (rem?.userId && rem?.message) {
+      memory.fecharPendenciaLembrete(rem.userId, rem.message).catch(() => {});
+    }
     res.json({ ok: true });
   } catch (e) {
     console.error('Erro concluir lembrete:', e.message);
