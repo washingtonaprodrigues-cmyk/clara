@@ -808,7 +808,7 @@ async function tentarGeminiComPersonalidade(message, history, tom, name, context
     ];
     const resposta = await geminiFreeResponse(msgs, {
       temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-      maxTokens: 2000,
+      maxTokens: 400,
     });
     console.log(`[GeminiSubstituto] Gemini respondeu para ${phone || '?'}`);
     return apararRespostaCortada(resposta);
@@ -864,6 +864,12 @@ function filtrarResposta(t) {
   t = t.trim();
   if (t.startsWith('"') && t.endsWith('"') && t.length > 2) t = t.slice(1,-1).trim();
   if (t.startsWith("'") && t.endsWith("'") && t.length > 2) t = t.slice(1,-1).trim();
+  // Limita tamanho — mensagens longas ficam cortadas pelo WhatsApp
+  if (t.length > 1000) {
+    const cortado = t.slice(0, 950);
+    const ultimoPonto = Math.max(cortado.lastIndexOf('. '), cortado.lastIndexOf('! '), cortado.lastIndexOf('? '));
+    t = ultimoPonto > 700 ? cortado.slice(0, ultimoPonto + 1) : cortado + '...';
+  }
   return t;
 }
 
