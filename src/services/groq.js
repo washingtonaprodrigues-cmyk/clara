@@ -105,12 +105,9 @@ const AVISOS_MODO_DIRETO = [
   'Entrando no modo direto por um tempo — vou ficar mais objetiva, sem emojis.',
 ];
 
-const AVISOS_RETORNO_COMPLETO = [
-  'Voltei com tudo! Pode falar 💜',
-  'Tô de volta no modo completo! Me conta o que você queria 😊',
-  'De volta inteira! Pode continuar ✨',
-  'Recarregada! O que você precisava? 😄',
-];
+// Aviso de retorno ao modo completo removido — o usuário não precisa saber
+// que a Clara entrou/saiu de modo direto. A transição deve ser invisível.
+const AVISOS_RETORNO_COMPLETO = [];
 
 // _modoDirecto[phone] = true enquanto o modelo forte estiver em cooldown
 const _modoDireto = {};
