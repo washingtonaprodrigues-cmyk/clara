@@ -882,6 +882,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     const contexto = preferences?._contexto || '';
 
     if (preferences?._systemOverride) {
+      const _overrideMaxTokens = preferences?._maxTokens || 200;
       try {
         const completion = await groq.chat.completions.create({
           model: MODEL_LEVE,
