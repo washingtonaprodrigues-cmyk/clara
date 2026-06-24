@@ -45,7 +45,7 @@ const memory = require('./memory');
 const { tentarConsultaDireta } = require('./consultaDireta');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName, savePendencia, fecharPendenciaLembrete } = memory;
+const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName, savePendencia, fecharPendenciaLembrete, salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao } = memory;
 
 // Substitui prisma.memory.upsert({ where: { userId_type: {...} } }) — esse
 // nome de campo composto só existe quando o model Memory tem
@@ -514,6 +514,8 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     ;(async () => {
       try {
         await memory.fecharPendenciasPorResolucao(user.id, text);
+        // Detecta humor do usuário na mensagem atual
+        detectarEsalvarHumor(user.id, text, respStr).catch(() => {});
         const histAtual = [...history, { role: 'user', content: text }, { role: 'assistant', content: respStr }];
         if (histAtual.length >= 2 && text.length > 15) {
           const pendencia = await detectarAssuntoEmAberto(histAtual);
@@ -1203,6 +1205,53 @@ async function executeAction(user, phone, classified, originalText) {
   }
 }
 
+// ── Detector de humor ──────────────────────────────────────────────────
+// Analisa texto do usuário e detecta estado emocional.
+// Leve e rápido — usa regras simples sem chamar LLM.
+async function detectarEsalvarHumor(userId, textoUsuario, respostaClara) {
+  const t = (textoUsuario || '').toLowerCase();
+
+  // Sinais de estados negativos
+  const DOENTE = /hospital|médico|medico|fui pro ps|passando mal|internado|operação|cirurgia|exame|consultório|consultor|enjoado|febre|dor de cabeça|pressão alta|remédio novo/i;
+  const CANSADO = /cansad[oa]|exaust[oa]|sem energia|morto de cansaço|destruído|destruido|esgotad[oa]|não aguento|nao aguento|pesado demais|foi pesado/i;
+  const ESTRESSADO = /estressad[oa]|nervos[oa]|irritad[oa]|raiva|bravo|brava|ódio|odio|dia horrível|horrivel|péssimo|pessimo|terrível|terrivel|foi uma merda|tá uma merda/i;
+  const PREOCUPADO = /preocupad[oa]|ansios[oa]|com medo|nervoso com|não sei o que|nao sei o que|incerto|complicado|difícil|difícil demais/i;
+  const TRISTE = /triste|deprimid[oa]|choran|chorei|mal hoje|muito mal|não tô bem|tô mal|tô ruim/i;
+
+  // Sinais de estados positivos
+  const ANIMADO = /animad[oa]|feliz|alegr[eo]|ótim[oa]|otim[oa]|maravilhos[oa]|incrível|incrivel|arrasand[oa]|deu tudo certo|foi incrível|foi ótimo|que dia/i;
+
+  let estado = null;
+  let intensidade = 'leve';
+  let motivo = null;
+
+  if (DOENTE.test(t)) {
+    estado = 'doente';
+    intensidade = 'intenso';
+    const matchMotivo = t.match(/hospital|médico|ps|internado|operação|exame/i);
+    if (matchMotivo) motivo = matchMotivo[0];
+  } else if (ESTRESSADO.test(t)) {
+    estado = 'estressado';
+    intensidade = t.includes('muito') || t.includes('demais') ? 'intenso' : 'moderado';
+  } else if (CANSADO.test(t)) {
+    estado = 'cansado';
+    intensidade = t.includes('muito') || t.includes('morto') || t.includes('destruído') ? 'intenso' : 'leve';
+  } else if (PREOCUPADO.test(t)) {
+    estado = 'preocupado';
+  } else if (TRISTE.test(t)) {
+    estado = 'triste';
+    intensidade = 'moderado';
+  } else if (ANIMADO.test(t)) {
+    estado = 'animado';
+    intensidade = 'leve';
+  }
+
+  if (estado) {
+    await salvarHumorDia(userId, { estado, intensidade, motivo });
+    console.log(`[Humor] ${userId}: ${estado} (${intensidade})${motivo ? ' — ' + motivo : ''}`);
+  }
+}
+
 async function salvarPontoSilencioso(user, acoes) {
   const hoje = dateBRT();
   for (const acao of acoes) {
@@ -1517,6 +1566,28 @@ async function checkConfirmacaoPendente(user, phone, text) {
     // tudo fedo"), independente de ter sido enviada com ou sem citação.
     const textSemCitacao = text.replace(/^\[Mensagem citada:\s*"[^"]*"\]\s*\n?/i, '');
     const textNorm = textSemCitacao.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    // ── Aprende endereço de casa ou trabalho ──
+    if (dados.tipo === 'aprender_endereco') {
+      await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
+      const ehCasa = /\bcasa\b|minha casa|é casa|em casa/i.test(text);
+      const ehTrabalho = /\btrabalho\b|serviço|escritório|empresa|loja|é trabalho/i.test(text);
+      if (ehCasa || ehTrabalho) {
+        const chave = ehCasa ? 'endereco_casa' : 'endereco_trabalho';
+        const chaveNome = ehCasa ? 'bairro_casa' : 'bairro_trabalho';
+        const label = ehCasa ? 'casa' : 'trabalho';
+        const emoji = ehCasa ? '🏠' : '💼';
+        const locTexto = dados.bairro ? `${dados.bairro}, ${dados.cidade || ''}`.trim() : dados.cidade || 'esse local';
+        await memory.savePersonalInfo(user.id, chave, JSON.stringify({ lat: dados.lat, lng: dados.lng }), 'localizacao').catch(() => {});
+        await memory.savePersonalInfo(user.id, chaveNome, locTexto, 'localizacao').catch(() => {});
+        await sendMessage(phone, `${emoji} Anotei! Agora sei onde fica seu ${label} — ${locTexto}. Da próxima vez que compartilhar localização de lá, vou reconhecer 😊`);
+        console.log(`[Geo] Endereço de ${label} aprendido: ${locTexto}`);
+      } else {
+        await sendMessage(phone, 'Esse local é sua casa ou seu trabalho? 😊');
+        await prisma.memory.create({ data: { userId: user.id, type: 'confirmacao_pendente', content: JSON.stringify({ ...dados, expira: Date.now() + 5 * 60 * 1000 }) } }).catch(() => {});
+      }
+      return;
+    }
 
     if (dados.tipo === 'fechamento_pendentes') {
       // Resposta ao cron de Fechamento (18h, reminders.js) que perguntou
