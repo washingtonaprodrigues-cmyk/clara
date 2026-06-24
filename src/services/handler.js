@@ -418,6 +418,8 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
       // ── Pendência de saúde: traz à tona se fizer sentido na conversa ──
       // ── Pendência de saúde: só aparece no contexto se fizer sentido ──
+      // IMPORTANTE: quando há pendência de saúde/evento, injeta agenda relacionada
+      // para que a Clara referencie lembretes reais em vez de remédios/doses
       // REGRAS DE PRIORIDADE E TIMING:
       // 1. Se já existe assunto em aberto de CONVERSA (pendencia_conversa, ex:
       //    hospital), ele já aparece via buildPersonalContext → [ASSUNTOS EM ABERTO].
@@ -452,7 +454,18 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         }
       }
       if (mostrarPendenciaSaude) {
-        contexto += `\n\n[SAÚDE EM ABERTO] Mais cedo a pessoa mencionou: "${pendenciaSaude.resumo}". Se fizer sentido natural na conversa, pergunte com carinho genuíno como está se sentindo agora — sem forçar se a mensagem atual for sobre outro assunto completamente diferente, e sem repetir isso em toda resposta.`;
+        // Busca lembretes futuros relacionados para dar contexto real à pergunta
+        const lembretesRelac = await prisma.reminder.findMany({
+          where: { userId: user.id, confirmed: false, scheduledAt: { gte: new Date() } },
+          orderBy: { scheduledAt: 'asc' }, take: 3
+        }).catch(() => []);
+        const agendaRelac = lembretesRelac.length > 0
+          ? ` Lembretes relacionados na agenda: ${lembretesRelac.map(r => {
+              const h = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+              return `"${r.message}" às ${h}`;
+            }).join(', ')}.`
+          : '';
+        contexto += `\n\n[SAÚDE EM ABERTO] Mais cedo a pessoa mencionou: "${pendenciaSaude.resumo}".${agendaRelac} Se fizer sentido natural na conversa, pergunte com carinho genuíno como está — referencie a agenda acima se relevante. NUNCA cite remédios, doses ou medicamentos aqui. Não force se a mensagem for sobre outro assunto.`;
       }
 
       if (contexto) contexto = `\n\nUse as informações abaixo para responder com precisão:${contexto}`;
