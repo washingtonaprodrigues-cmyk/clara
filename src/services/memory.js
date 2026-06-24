@@ -235,6 +235,9 @@ async function getProximaCuriosidade(userId, contextoAtual = 'qualquer') {
 
 async function buildPersonalContext(userId) {
   const infos = await getPersonalInfo(userId);
+  
+  // Resumo evolutivo — contexto mais importante, nunca some
+  const resumo = await getResumoRelacionamento(userId).catch(() => null);
 
   const grupos = {};
   for (const cat of Object.keys(CATEGORIAS_PERFIL)) grupos[cat] = [];
@@ -249,6 +252,14 @@ async function buildPersonalContext(userId) {
   );
 
   let texto = '';
+  
+  // Resumo do relacionamento vem primeiro — é o contexto mais valioso
+  if (resumo) {
+    texto += `
+[RESUMO DO RELACIONAMENTO — leia antes de tudo, define quem é essa pessoa pra você]
+${resumo}`;
+  }
+
   for (const [cat, items] of Object.entries(grupos)) {
     if (items.length === 0) continue;
     texto += `\n[${labels[cat]}]\n${items.map(i => `• ${i}`).join('\n')}`;
@@ -723,6 +734,38 @@ async function getMemoriaAfetiva(userId) {
   } catch { return {}; }
 }
 
+// ====================== RESUMO EVOLUTIVO DO RELACIONAMENTO ======================
+// Cresce com o tempo, nunca é apagado — só atualizado.
+// Contém: o que a Clara já sabe sobre a pessoa, momentos marcantes,
+// assuntos recorrentes, como a relação evoluiu.
+
+async function salvarResumoRelacionamento(userId, novoResumo) {
+  try {
+    const existente = await prisma.memory.findFirst({
+      where: { userId, type: 'resumo_relacionamento' }
+    }).catch(() => null);
+    if (existente) {
+      await prisma.memory.update({
+        where: { id: existente.id },
+        data: { content: novoResumo }
+      }).catch(() => {});
+    } else {
+      await prisma.memory.create({
+        data: { userId, type: 'resumo_relacionamento', content: novoResumo }
+      }).catch(() => {});
+    }
+  } catch {}
+}
+
+async function getResumoRelacionamento(userId) {
+  try {
+    const m = await prisma.memory.findFirst({
+      where: { userId, type: 'resumo_relacionamento' }
+    }).catch(() => null);
+    return m?.content || null;
+  } catch { return null; }
+}
+
 // ====================== EXPORTS ======================
 
 module.exports = {
@@ -742,4 +785,5 @@ module.exports = {
   getPendenciasAbertas, salvarOuAtualizarPendencia, fecharPendencia, fecharPendenciasPorResolucao, fecharPendenciaLembrete,
   salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao,
   salvarMemoriaAfetiva, getMemoriaAfetiva,
+  salvarResumoRelacionamento, getResumoRelacionamento,
 };
