@@ -260,24 +260,7 @@ Tom: ${prefs.tom || 'carinhoso'}.`;
         const msg = await freeResponse('Envie uma mensagem de bom dia.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBomDia });
         if (!msg) { console.log(`[Bom dia] Rate limit, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
-        // Meu Dia
-        try {
-          const desativado = await prisma.memory.findFirst({ where: { userId: user.id, type: 'meu_dia_desativado' } });
-          if (!desativado) {
-            const jaTemHoje = await prisma.memory.findFirst({ where: { userId: user.id, type: 'meu_dia_criado', content: dateBRT() } });
-            if (!jaTemHoje) {
-              const tarefasPendentes = await prisma.reminder.findMany({
-                where: { userId: user.id, confirmed: false, sent: false, scheduledAt: { gte: new Date(`${dateBRT()}T00:00:00-03:00`), lte: new Date(`${dateBRT()}T23:59:59-03:00`) } },
-                orderBy: { scheduledAt: 'asc' }, take: 10
-              });
-              const itens = tarefasPendentes.map((t, i) => ({ id: i + 1, nome: t.message, done: false, lembreteId: t.id }));
-              if (itens.length === 0) itens.push({ id: 1, nome: 'Adicione tarefas do seu dia aqui 📝', done: false });
-              await prisma.groceryList.create({ data: { userId: user.id, name: '📅 Meu Dia', items: JSON.stringify(itens), done: false } });
-              await prisma.memory.create({ data: { userId: user.id, type: 'meu_dia_criado', content: dateBRT() } });
-              console.log(`[Meu Dia] Criado para ${user.phone}`);
-            }
-          }
-        } catch (eMeuDia) { console.error(`[Meu Dia] Erro ${user.phone}:`, eMeuDia.message); }
+        // Meu Dia removido — redundante com aba Lembretes
         console.log(`[Bom dia] Enviado para ${user.phone}`);
       } catch (e) { console.error(`[Bom dia] Erro ${user.phone}:`, e.message); }
     }
