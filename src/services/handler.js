@@ -889,6 +889,14 @@ async function handleMessage(phone, text, location = null) {
     };
     const acaoConfirmacao = CONFIRMACOES_ACAO[classified.tipo] || null;
 
+    // Confirmação de dose tomada — resposta fixa, sem LLM.
+    // O LLM não sabe quais remédios foram tomados hoje e especula
+    // sobre outros remédios, causando confusão (ex: "e o de pressão?").
+    if (classified.tipo === 'ajustar_remedio' && classified.operacao === 'decrementar' && confirmacaoAjusteRemedio) {
+      await sendMessage(phone, confirmacaoAjusteRemedio);
+      return;
+    }
+
     await responderLivre(user, phone, text, '', isSaudacao, acaoConfirmacao);
     extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
   } catch (error) {
