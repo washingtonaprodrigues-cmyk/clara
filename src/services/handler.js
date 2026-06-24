@@ -1385,8 +1385,24 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
     }
     const antecedencia = classified.antecedencia;
     if (antecedencia && antecedencia > 0) {
-      const scheduledAntes = new Date(scheduledAt.getTime() - antecedencia * 60 * 1000);
-      if (scheduledAntes > new Date()) await prisma.reminder.create({ data: { userId: user.id, phone, message: `⏰ Em ${antecedencia} minutos: ${classified.titulo}`, scheduledAt: scheduledAntes } });
+      let scheduledBase = scheduledAt;
+      // Se não tem horário definido (hora:null), busca o lembrete existente pelo título
+      if (!classified.hora && classified.titulo) {
+        const lembreteExistente = await prisma.reminder.findFirst({
+          where: {
+            userId: user.id,
+            confirmed: false,
+            message: { contains: classified.titulo.split(' ').filter(w => w.length > 3)[0] || classified.titulo, mode: 'insensitive' }
+          },
+          orderBy: { scheduledAt: 'asc' }
+        }).catch(() => null);
+        if (lembreteExistente) scheduledBase = new Date(lembreteExistente.scheduledAt);
+      }
+      const scheduledAntes = new Date(scheduledBase.getTime() - antecedencia * 60 * 1000);
+      if (scheduledAntes > new Date()) {
+        await prisma.reminder.create({ data: { userId: user.id, phone, message: `⏰ Em ${antecedencia} minutos: ${classified.titulo}`, scheduledAt: scheduledAntes } });
+        acaoConfirmacao = `Anotado! Vou te lembrar às ${scheduledAntes.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })} sobre ${classified.titulo} 🔔`;
+      }
     }
   }
 }
