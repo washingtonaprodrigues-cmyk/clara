@@ -35,7 +35,7 @@ async function tentarGroq2(msgs, isCurta) {
       timeout2
     ]);
     console.log('[Groq2] Respondeu com chave 2');
-    return filtrarResposta(completion.choices[0].message.content.trim());
+    return filtrarResposta(apararRespostaCortada(completion.choices[0].message.content.trim()));
   } catch (e2) {
     if (isTPD(e2)) marcarGroq2TPD();
     else console.error('[Groq2] Erro:', e2.message);
@@ -772,7 +772,9 @@ function apararRespostaCortada(texto) {
   const t = texto.trimEnd();
 
   // Termina com pontuação final ou emoji — provavelmente está completo.
-  if (/[.!?…💜😊✅🎉👍😉😅😄]$/.test(t)) return t;
+  if (/[.!?…💜😊✅🎉👍😉😅😄🇧🇷⚽😂🙄😆kkk]$/.test(t)) return t;
+  // "kkk" no final também é frase completa
+  if (/kkk+$/.test(t)) return t;
 
   // Procura o último ponto/exclamação/interrogação seguido de espaço/quebra
   // (fim de frase completa) e corta ali.
@@ -1024,7 +1026,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         timeoutPromise
       ]);
       marcarProvider('groq');
-      return filtrarResposta(completion.choices[0].message.content.trim());
+      return filtrarResposta(apararRespostaCortada(completion.choices[0].message.content.trim()));
     } catch (e1) {
       if (isRateLimit(e1) && phone) {
         const tipo = isTPD(e1) ? 'tpd' : 'rpm';
