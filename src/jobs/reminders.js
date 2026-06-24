@@ -121,60 +121,39 @@ async function tentarLockMinuto(tipo) {
   const minutoChave = `${dateBRT(n)}-${pad(n.getHours())}:${pad(n.getMinutes())}`;
   const chaveMemoria = `${tipo}_${minutoChave}`;
 
-  // Cache em memória: rápido, cobre o caso mais comum (mesmo processo
-  // tentando rodar o cron duas vezes no mesmo minuto — não deveria
-  // acontecer, mas é uma defesa barata).
+  // Camada 1: cache em memória (mesmo processo)
   if (_locksMinutoMemoria.has(chaveMemoria)) return false;
+  _locksMinutoMemoria.set(chaveMemoria, true);
 
   const ancoraId = await getAncoraUserId();
-  if (!ancoraId) return true; // sem usuários = nada a duplicar
+  if (!ancoraId) return true;
 
   const lockType = `__${tipo}__`;
+  const lockContent = minutoChave;
 
   try {
-    // Passo 1: verifica se já existe lock para este minuto
+    // Camada 2: banco — verifica se já existe pra este minuto
     const existente = await prisma.memory.findFirst({
-      where: { userId: ancoraId, type: lockType },
-      orderBy: { createdAt: 'desc' }
+      where: { userId: ancoraId, type: lockType, content: lockContent }
     }).catch(() => null);
 
-    if (existente && existente.content === minutoChave) {
-      // Lock já existe para este minuto — outro processo chegou primeiro
-      _locksMinutoMemoria.set(chaveMemoria, true);
+    if (existente) {
+      // Já existe — outro processo chegou primeiro
       return false;
     }
 
-    if (existente) {
-      // Existe mas é de minuto anterior — tenta atualizar atomicamente.
-      // Se dois processos chegarem aqui ao mesmo tempo, apenas um consegue
-      // atualizar (o WHERE garante que o conteúdo ainda é o minuto anterior).
-      const res = await prisma.memory.updateMany({
-        where: {
-          userId: ancoraId,
-          type: lockType,
-          content: existente.content // só atualiza se ainda tem o valor antigo
-        },
-        data: { content: minutoChave }
-      }).catch(() => ({ count: 0 }));
+    // Tenta criar atomicamente
+    // Apaga locks de minutos anteriores primeiro (limpeza)
+    await prisma.memory.deleteMany({
+      where: { userId: ancoraId, type: lockType }
+    }).catch(() => {});
 
-      if (res.count === 0) {
-        // Outro processo atualizou antes de nós neste milissegundo
-        _locksMinutoMemoria.set(chaveMemoria, true);
-        return false;
-      }
-    } else {
-      // Não existe registro de lock ainda — cria.
-      // Se dois processos chegarem aqui ao mesmo tempo, um vai dar erro
-      // de criação (ou criar dois — não há unique constraint). Por isso
-      // usamos try/catch: quem pegar erro assume que perdeu a corrida.
-      await prisma.memory.create({
-        data: { userId: ancoraId, type: lockType, content: minutoChave }
-      });
-    }
+    // Cria o lock para este minuto
+    await prisma.memory.create({
+      data: { userId: ancoraId, type: lockType, content: lockContent }
+    });
 
-    _locksMinutoMemoria.set(chaveMemoria, true);
-
-    // Limpeza periódica do cache em memória
+    // Limpeza do cache em memória
     if (_locksMinutoMemoria.size > 5000) {
       for (const [k] of _locksMinutoMemoria) {
         if (!k.endsWith(minutoChave)) _locksMinutoMemoria.delete(k);
@@ -183,10 +162,8 @@ async function tentarLockMinuto(tipo) {
 
     return true;
   } catch (e) {
-    // Erro indica corrida detectada (outro processo criou o registro
-    // entre nosso findFirst e create). Assume que perdemos — não processa.
-    console.log(`[LockMinuto] Corrida detectada em ${tipo}, pulando este tick: ${e.message}`);
-    _locksMinutoMemoria.set(chaveMemoria, true);
+    // Race condition — outro processo criou entre nosso delete e create
+    console.log(`[LockMinuto] Race condition em ${tipo}: ${e.message}`);
     return false;
   }
 }
@@ -554,7 +531,8 @@ async function proativaInteligente(periodo) {
 
           // Contexto recente filtrado
           const contextoMems = memsRecentes
-            .filter(m => !['conversa','bom_dia_enviado','boa_noite_enviado','proativa_lock','med_lock','alerta_data_lock','fechamento_dia_lock'].includes(m.type))
+            .filter(m => !['conversa','bom_dia_enviado','boa_noite_enviado','proativa_lock','med_lock','alerta_data_lock','fechamento_dia_lock','ultima_localizacao'].includes(m.type))
+            .filter(m => !/dose|rem[eé]dio|medica[cç]|tiroide|toroide|colesterol|pressao|pressão/i.test(m.content || ''))
             .slice(0, 10).map(m => `[${m.type}] ${m.content}`).join('\n');
 
           // ── Infere quando o usuário acordou hoje ──
@@ -644,6 +622,11 @@ TOM: acolhedor, curioso, como quem pergunta do dia de verdade — sem ser protoc
             ? `LOCALIZAÇÃO RECENTE: ${localizacao.bairro ? localizacao.bairro + ', ' : ''}${localizacao.cidade}. Pode referenciar isso se for natural (ex: "já chegou em casa?", "como foi a volta?").`
             : '';
 
+          // Filtra remédios do perfil — proativa não deve cobrar remédios
+          const infoPessoalFiltrado = (infoPessoal || '').split('\n')
+            .filter(l => !/dose|rem[eé]dio|medica[cç]|tiroide|toroide|colesterol|pressao|pressão|estoque/i.test(l))
+            .join('\n');
+
           const systemProativa = `Você é a Clara, parceira pessoal d${prefs.name ? 'o ' + prefs.name.split(' ')[0] : 'o usuário'} no WhatsApp.
 SEU TOM: ${tomDesc(prefs.tom)}
 
@@ -665,7 +648,7 @@ REGRAS ABSOLUTAS:
 ${ctxPendencias ? ctxPendencias + '\n\n' : ''}CONTEXTO RECENTE:
 ${contextoMems}
 
-${infoPessoal || ''}
+${infoPessoalFiltrado || ''}
 ${horaAcorda ? `(Acordou por volta das ${horaAcorda})` : ''}`;
 
           const msg = await freeResponse('Mensagem proativa.', [], {
