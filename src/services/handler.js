@@ -541,6 +541,15 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
   }
 }
 
+
+// ── WebSocket — notifica dashboard em tempo real ───────────────────────
+function emitirAtualizacao(phone, tipo) {
+  try {
+    const io = global.__claraIO;
+    if (io) io.to('user_' + phone).emit('atualizar', { tipo });
+  } catch {}
+}
+
 async function handleMessage(phone, text, location = null) {
   try {
     const user = await memory.getOrCreateUser(phone);
@@ -896,6 +905,7 @@ async function handleMessage(phone, text, location = null) {
     // sobre outros remédios, causando confusão (ex: "e o de pressão?").
     if (classified.tipo === 'ajustar_remedio' && classified.operacao === 'decrementar' && confirmacaoAjusteRemedio) {
       await sendMessage(phone, confirmacaoAjusteRemedio);
+      emitirAtualizacao(phone, 'remedios');
       return;
     }
 
@@ -1196,6 +1206,7 @@ async function executeAction(user, phone, classified, originalText) {
       if (match) {
         await prisma.reminder.update({ where: { id: match.id }, data: { confirmed: true } });
         fecharPendenciaLembrete(user.id, match.message).catch(() => {});
+        emitirAtualizacao(phone, 'lembretes');
       }
       break;
     }
