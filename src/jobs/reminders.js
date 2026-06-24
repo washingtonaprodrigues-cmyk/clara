@@ -629,6 +629,7 @@ TOM: leve, informal, como uma mensagem rápida entre amigos no almoço`;
           } else {
             instrucao = `É noite — a pessoa relaxou, receptiva pra conversa mais pessoal.
 Como uma amiga que quer saber como foi o dia, você pode:
+- Se o contexto mencionar viagem, estrada, trânsito ou deslocamento hoje, pergunte se chegou bem — isso é mais natural que perguntar como foi o dia
 - Perguntar como foi o dia de forma genuína, especialmente se foi cheio
 - Retomar um assunto em aberto com curiosidade real
 - Comentar sobre algo concreto que aconteceu hoje (agenda, compromisso)
@@ -657,7 +658,8 @@ ${horaAcorda ? `(A pessoa costuma acordar por volta das ${horaAcorda} pelo horá
 
           const msg = await freeResponse('Mensagem proativa.', [], {
             _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
-            _systemOverride: systemProativa
+            _systemOverride: systemProativa,
+            _maxTokens: 80  // proativa deve ser curta — 1-2 linhas
           });
           if (!msg || msg.trim() === 'SKIP' || msg.length < 5) continue;
           await sendMessage(user.phone, msg);
