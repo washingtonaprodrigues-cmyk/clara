@@ -1,14 +1,38 @@
 require('dotenv').config();
 const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
 const path = require('path');
+
 const app = express();
+const httpServer = http.createServer(app);
+
+// ── Socket.io ──────────────────────────────────────────────────────────
+const io = new Server(httpServer, {
+  cors: { origin: '*' },
+  transports: ['websocket', 'polling']
+});
+
+// Exporta io para outros módulos usarem
+global.__claraIO = io;
+
+io.on('connection', (socket) => {
+  const phone = socket.handshake.query.phone;
+  if (phone) {
+    socket.join(`user_${phone}`);
+    console.log(`[WS] ${phone} conectado`);
+  }
+  socket.on('disconnect', () => {
+    if (phone) console.log(`[WS] ${phone} desconectado`);
+  });
+});
+
 app.use(express.json());
 
-// Static files com cache normal (imagens, CSS, JS de libs)
+// Static files
 app.use(express.static(path.join(__dirname, '../public'), {
   etag: false,
   setHeaders: (res, filePath) => {
-    // dashboard.html nunca fica em cache
     if (filePath.endsWith('dashboard.html')) {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       res.setHeader('Pragma', 'no-cache');
@@ -44,10 +68,12 @@ app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/dashboard.html'));
 });
 app.get('/', (req, res) => {
-  res.json({ status: 'Clara online 💛', version: '1.0.0' });
+  res.json({ status: 'Clara online', version: '4.2.0' });
 });
+
 require('./jobs/reminders');
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`✅ Clara rodando na porta ${PORT}`);
 });
