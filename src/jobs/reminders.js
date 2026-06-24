@@ -34,6 +34,7 @@ async function sendMessage(phone, msg, delay) {
 
 const { freeResponse } = require('../services/groq');
 const memory = require('../services/memory');
+const { getHumorDia, getLocalizacao } = memory;
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
@@ -624,17 +625,33 @@ Como uma amiga que quer saber como foi o dia, você pode:
 TOM: acolhedor, curioso, como quem pergunta do dia de verdade — sem ser protocolar`;
           }
 
+          // Busca humor do dia e localização para enriquecer o contexto
+          const humorDia = await getHumorDia(user.id).catch(() => null);
+          const localizacao = await getLocalizacao(user.id).catch(() => null);
+
+          const ctxHumor = humorDia
+            ? `ESTADO EMOCIONAL ATUAL: ${humorDia.estado}${humorDia.intensidade === 'intenso' ? ' (intenso)' : ''}${humorDia.motivo ? ` — motivo: ${humorDia.motivo}` : ''}. Use isso com naturalidade — se está cansado, seja mais acolhedora; se está doente, seja mais cuidadosa; se está animado, celebre junto.`
+            : '';
+
+          const ctxLocal = localizacao?.cidade
+            ? `LOCALIZAÇÃO RECENTE: ${localizacao.bairro ? localizacao.bairro + ', ' : ''}${localizacao.cidade}. Pode referenciar isso se for natural (ex: "já chegou em casa?", "como foi a volta?").`
+            : '';
+
           const systemProativa = `Você é a Clara, parceira pessoal d${prefs.name ? 'o ' + prefs.name.split(' ')[0] : 'o usuário'} no WhatsApp.
 SEU TOM: ${tomDesc(prefs.tom)}
 
 ${instrucao}
 
+${ctxHumor ? ctxHumor + '\n\n' : ''}${ctxLocal ? ctxLocal + '\n\n' : ''}VOZ PRÓPRIA — USE COM CORAGEM:
+- Você tem memória real dessa pessoa. Referencie o passado de forma afetiva: "semana passada você disse...", "desde aquele dia no hospital...", "você ainda não resolveu aquilo do Flavinho né?"
+- Não seja genérica — qualquer LLM seria genérico. Você é específica porque conhece essa pessoa de verdade.
+- Se souber algo relevante sobre o dia/semana dela, use. Se não souber nada genuíno, mande SKIP.
+
 REGRAS ABSOLUTAS:
 - UMA mensagem, 1-2 linhas no máximo
 - NUNCA comece com "Oi", "Olá" ou o nome da pessoa
 - NÃO agende nada, NÃO liste tarefas, NÃO seja assistente
-- Use SEMPRE o contexto real abaixo — nunca invente situações
-- NUNCA reproduza exemplos ou frases entre aspas do prompt — crie algo original
+- NUNCA reproduza exemplos ou frases entre aspas — crie algo original
 - NUNCA coloque sua mensagem entre aspas
 - Se não tiver NADA genuíno pra dizer, responda APENAS: SKIP
 
@@ -642,7 +659,7 @@ ${ctxPendencias ? ctxPendencias + '\n\n' : ''}CONTEXTO RECENTE:
 ${contextoMems}
 
 ${infoPessoal || ''}
-${horaAcorda ? `(A pessoa costuma acordar por volta das ${horaAcorda} pelo horário do remédio)` : ''}`;
+${horaAcorda ? `(Acordou por volta das ${horaAcorda})` : ''}`;
 
           const msg = await freeResponse('Mensagem proativa.', [], {
             _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
