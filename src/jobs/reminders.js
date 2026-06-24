@@ -34,7 +34,7 @@ async function sendMessage(phone, msg, delay) {
 
 const { freeResponse } = require('../services/groq');
 const memory = require('../services/memory');
-const { getHumorDia, getLocalizacao } = memory;
+const { getHumorDia, getLocalizacao, getCamposDesconhecidos, getProximaCuriosidade } = memory;
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
@@ -619,13 +619,21 @@ Como uma amiga que sabe da rotina dela, você pode:
 - Comentar algo do dia que está por vir se houver compromisso próximo
 TOM: curto, genuíno, como quem manda mensagem de manhã pro amigo — sem formalidade${pedirGeo}`;
           } else if (periodo === 'almoco') {
+            let curiosidadeAlmocoCtx = '';
+            if (!ctxPendencias) {
+              const curiosidade = await getProximaCuriosidade(user.id, 'qualquer').catch(() => null);
+              if (curiosidade && Math.random() > 0.5) { // 50% das vezes no almoço
+                curiosidadeAlmocoCtx = `\nGANCHO OPCIONAL: Se não tiver assunto específico, pode perguntar naturalmente: "${curiosidade.pergunta}". Integre como amiga, nunca como formulário.`;
+              }
+            }
+
             instrucao = `É horário de almoço — pausa natural do dia.
 Como uma amiga curiosa e presente, você pode:
 - Perguntar como está sendo o dia
 - Referenciar algo que ficou em aberto recentemente de forma descontraída
 - Comentar algo que você sugeriu e a pessoa não respondeu ainda
 - Se não tiver nada específico, algo simples e genuíno sobre o almoço/dia
-TOM: leve, informal, como uma mensagem rápida entre amigos no almoço`;
+TOM: leve, informal, como uma mensagem rápida entre amigos no almoço${curiosidadeAlmocoCtx}`;
           } else {
             instrucao = `É noite — a pessoa relaxou, receptiva pra conversa mais pessoal.
 Como uma amiga que quer saber como foi o dia, você pode:
