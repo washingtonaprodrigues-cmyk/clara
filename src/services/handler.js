@@ -45,7 +45,7 @@ const memory = require('./memory');
 const { tentarConsultaDireta } = require('./consultaDireta');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName, savePendencia, fecharPendenciaLembrete, salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao } = memory;
+const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName, savePendencia, fecharPendenciaLembrete, salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao, salvarMemoriaAfetiva } = memory;
 
 // Substitui prisma.memory.upsert({ where: { userId_type: {...} } }) — esse
 // nome de campo composto só existe quando o model Memory tem
@@ -516,6 +516,8 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         await memory.fecharPendenciasPorResolucao(user.id, text);
         // Detecta humor do usuário na mensagem atual
         detectarEsalvarHumor(user.id, text, respStr).catch(() => {});
+        // Detecta apelidos e tom da relacao
+        detectarEsalvarAfetivo(user.id, text, respStr).catch(() => {});
         const histAtual = [...history, { role: 'user', content: text }, { role: 'assistant', content: respStr }];
         if (histAtual.length >= 2 && text.length > 15) {
           const pendencia = await detectarAssuntoEmAberto(histAtual);
@@ -1219,6 +1221,34 @@ async function executeAction(user, phone, classified, originalText) {
 // ── Detector de humor ──────────────────────────────────────────────────
 // Analisa texto do usuário e detecta estado emocional.
 // Leve e rápido — usa regras simples sem chamar LLM.
+
+// Detector de memoria afetiva
+// Detecta apelidos e tom da relacao nas conversas.
+async function detectarEsalvarAfetivo(userId, textoUsuario, respostaClara) {
+  try {
+    const t = (textoUsuario || '').toLowerCase();
+    // Detecta apelido que a Clara usa pro usuario
+    const matchApelido = (respostaClara || '').match(/\b(meu fedo|meu amor|meu bem|minha vida|fofinho|querido|querida)\b/i);
+    if (matchApelido) {
+      await salvarMemoriaAfetiva(userId, 'apelido_usuario', matchApelido[1].toLowerCase());
+    }
+    // Detecta tom da relacao
+    if (/kkkk|rsrs|haha|brincand/i.test(t)) {
+      await salvarMemoriaAfetiva(userId, 'tom_relacao', 'descontraido, com humor e brincadeiras');
+    } else if (/amor|carinho/i.test(t)) {
+      await salvarMemoriaAfetiva(userId, 'tom_relacao', 'carinhoso e proximo');
+    }
+    // Detecta como o usuario chama a Clara
+    const apelidosClara = ['clarita', 'clarinha', 'fraquinha'];
+    for (const ap of apelidosClara) {
+      if (t.includes(ap)) {
+        await salvarMemoriaAfetiva(userId, 'apelido_clara', ap);
+        break;
+      }
+    }
+  } catch {}
+}
+
 async function detectarEsalvarHumor(userId, textoUsuario, respostaClara) {
   const t = (textoUsuario || '').toLowerCase();
 
