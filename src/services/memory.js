@@ -278,6 +278,36 @@ async function buildPersonalContext(userId) {
     texto += `\n\n[AINDA NÃO SEI — posso perguntar organicamente quando a conversa permitir, MÁXIMO 1 por conversa, NUNCA force]: ${exemplos}`;
   }
 
+  // ── Humor do dia — contexto emocional ──
+  const humor = await getHumorDia(userId).catch(() => null);
+  if (humor) {
+    const estadoMap = {
+      doente: '🤒 Não está se sentindo bem',
+      cansado: '😴 Está cansado',
+      estressado: '😤 Está estressado',
+      preocupado: '😟 Está preocupado com algo',
+      triste: '😢 Está triste',
+      animado: '😊 Está animado e de bom humor',
+    };
+    const desc = estadoMap[humor.estado] || humor.estado;
+    const motivo = humor.motivo ? ` (${humor.motivo})` : '';
+    texto += `\n\n[ESTADO EMOCIONAL ATUAL${humor.intensidade === 'intenso' ? ' — INTENSO, seja especialmente cuidadosa' : ''}]: ${desc}${motivo}`;
+  }
+
+  // ── Localização: casa e trabalho permanentes + atual ──
+  for (const [chave, label] of [['bairro_casa', 'Casa'], ['bairro_trabalho', 'Trabalho']]) {
+    const info = await prisma.memory.findFirst({
+      where: { userId, type: 'info_pessoal', metadata: { contains: chave } }
+    }).catch(() => null);
+    if (info) texto += `\n• ${label}: ${info.content}`;
+  }
+
+  const loc = await getLocalizacao(userId).catch(() => null);
+  if (loc?.cidade) {
+    const locTexto = loc.bairro ? `${loc.bairro}, ${loc.cidade}` : loc.cidade;
+    texto += `\n\n[LOCALIZAÇÃO ATUAL (recente)]: ${locTexto} — pode referenciar se for natural`;
+  }
+
   return texto ? `\n\n[PERFIL DO USUÁRIO — use para personalizar respostas e ser proativa]${texto}` : '';
 }
 
@@ -604,4 +634,5 @@ module.exports = {
   saveContact, getContacts, findContactByName,
   savePendencia,
   getPendenciasAbertas, salvarOuAtualizarPendencia, fecharPendencia, fecharPendenciasPorResolucao, fecharPendenciaLembrete,
+  salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao,
 };
