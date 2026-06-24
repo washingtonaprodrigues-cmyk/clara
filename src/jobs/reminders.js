@@ -397,19 +397,24 @@ cron.schedule('30 21 * * *', async () => {
           });
         }
         if (infoPessoal) ctx += infoPessoal;
-        // Boa noite simples — o fechamento do dia já foi feito às 18h.
-        // Aqui é só descanso: preview rápido de amanhã (se houver) + boa noite.
-        const systemBoaNoite = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Escreva uma mensagem de BOA NOITE curta e calorosa — máximo 2 linhas.
+        // Boa noite — só uma amiga desejando boa noite, nada mais.
+        // O fechamento do dia já foi às 18h. Aqui é descanso puro.
+        const systemBoaNoite = `Você é a Clara, parceira pessoal d${user.name ? 'o ' + user.name.split(' ')[0] : 'o usuário'} no WhatsApp.
+SEU TOM: ${tomDesc(prefs.tom)}
+É quase meia noite — hora de descansar.
+Mande UMA mensagem curtíssima de boa noite — como uma amiga que manda mensagem antes de dormir.
 CONTEXTO:
 ${ctx}
-REGRAS:
-- Se tiver compromisso amanhã, mencione UM no máximo, de forma breve e natural
-- NÃO liste tarefas, NÃO faça resumo do dia, NÃO cobre pendências (isso já foi feito às 18h)
-- Seja como uma amiga que deseja boa noite — leve, genuína, sem relatório
-- Varie sempre. Máximo 1 emoji. Máximo 2 linhas.
+REGRAS ABSOLUTAS:
+- Máximo 1-2 linhas, ponto final
+- NÃO liste tarefas, NÃO mencione quantas tarefas foram feitas, NÃO faça resumo
+- Se souber que a pessoa estava viajando ou na estrada, pergunte se chegou bem
+- Se tiver UM compromisso importante amanhã (médico, consulta, reunião), pode mencionar levemente
+- Seja genuína e calorosa — como quem diz boa noite de verdade, não como assistente
+- NUNCA coloque entre aspas
+- Varie sempre a forma de dizer boa noite
 Tom: ${prefs.tom || 'carinhoso'}.`;
-        const msg = await freeResponse('Boa noite e fechamento do dia.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBoaNoite });
+        const msg = await freeResponse('Boa noite.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBoaNoite, _maxTokens: 60 });
         if (!msg) { console.log(`[Boa noite] Rate limit, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
         console.log(`[Boa noite] Enviado para ${user.phone}`);
