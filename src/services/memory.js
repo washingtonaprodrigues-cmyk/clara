@@ -617,6 +617,61 @@ async function fecharPendenciaLembrete(userId, tituloLembrete) {
   }
 }
 
+// ── Humor do dia ────────────────────────────────────────────────────────
+async function salvarHumorDia(userId, humor) {
+  if (!humor || !humor.estado) return;
+  try {
+    const existente = await prisma.memory.findFirst({ where: { userId, type: 'humor_dia' } }).catch(() => null);
+    const content = JSON.stringify({
+      estado: humor.estado,
+      intensidade: humor.intensidade || 'leve',
+      motivo: humor.motivo || null,
+      expira: Date.now() + 48 * 60 * 60 * 1000
+    });
+    if (existente) {
+      await prisma.memory.update({ where: { id: existente.id }, data: { content } }).catch(() => {});
+    } else {
+      await prisma.memory.create({ data: { userId, type: 'humor_dia', content } }).catch(() => {});
+    }
+  } catch {}
+}
+
+async function getHumorDia(userId) {
+  try {
+    const m = await prisma.memory.findFirst({ where: { userId, type: 'humor_dia' } }).catch(() => null);
+    if (!m) return null;
+    const d = JSON.parse(m.content);
+    if (Date.now() > d.expira) {
+      await prisma.memory.delete({ where: { id: m.id } }).catch(() => {});
+      return null;
+    }
+    return d;
+  } catch { return null; }
+}
+
+async function salvarLocalizacao(userId, dados) {
+  try {
+    const existente = await prisma.memory.findFirst({ where: { userId, type: 'ultima_localizacao' } }).catch(() => null);
+    const content = JSON.stringify({ ...dados, ts: Date.now() });
+    if (existente) {
+      await prisma.memory.update({ where: { id: existente.id }, data: { content } }).catch(() => {});
+    } else {
+      await prisma.memory.create({ data: { userId, type: 'ultima_localizacao', content } }).catch(() => {});
+    }
+  } catch {}
+}
+
+async function getLocalizacao(userId) {
+  try {
+    const m = await prisma.memory.findFirst({ where: { userId, type: 'ultima_localizacao' } }).catch(() => null);
+    if (!m) return null;
+    const d = JSON.parse(m.content);
+    if (Date.now() - d.ts > 4 * 60 * 60 * 1000) return null;
+    return d;
+  } catch { return null; }
+}
+
+
 // ====================== EXPORTS ======================
 
 module.exports = {
