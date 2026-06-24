@@ -285,7 +285,13 @@ cron.schedule('0 18 * * *', async () => {
 
         let msg = '';
         if (concluidos.length > 0 && pendentes.length === 0) {
-          msg = `Hoje foram ${concluidos.length} item${concluidos.length > 1 ? 's' : ''} da agenda concluído${concluidos.length > 1 ? 's' : ''} 💪${nome} — dia bem aproveitado!`;
+          // Gera mensagem de fechamento com personalidade — sem LLM pra não virar coach
+          const variacoesFechamento = [
+            `${concluidos.length} item${concluidos.length > 1 ? 's' : ''} na conta hoje${nome} 💪`,
+            `Tudo fechado hoje${nome}! Mereceu descansar 😊`,
+            `Dia produtivo${nome} — ${concluidos.length} item${concluidos.length > 1 ? 's' : ''} concluído${concluidos.length > 1 ? 's' : ''} ✅`,
+          ];
+          msg = variacoesFechamento[Math.floor(Math.random() * variacoesFechamento.length)];
         } else if (concluidos.length > 0 && pendentes.length > 0) {
           const ids = pendentes.map(r => r.id);
           // Salva confirmação pendente pra remarcar
