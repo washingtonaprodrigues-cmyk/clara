@@ -237,7 +237,14 @@ cron.schedule('0 7 * * *', async () => {
           });
         }
         if (eventos.length > 0) { ctx += `\nEventos:\n`; eventos.forEach(e => { ctx += `• ${e.title}${e.personName ? ` (${e.personName})` : ''}\n`; }); }
-        if (infoPessoal) ctx += infoPessoal;
+        // Remove linhas de remédio/doses do contexto do bom dia
+        // Bom dia é sobre compromissos do dia, não sobre saúde/remédios
+        if (infoPessoal) {
+          const linhasFiltradas = infoPessoal.split('\n').filter(l =>
+            !/dose|rem[eé]dio|medica[cç]|toroide|tir[oó]ide|colesterol|pressao|pressão|estoque/i.test(l)
+          );
+          ctx += linhasFiltradas.join('\n');
+        }
         let systemBomDia;
         if (totalLembretes > 0) {
           const horaPrimeira = new Date(lembretes[0].scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
@@ -991,19 +998,7 @@ cron.schedule('* * * * *', async () => {
       const phone = med.user?.phone || (await prisma.user.findUnique({ where: { id: med.userId } }))?.phone;
       if (!phone) continue;
 
-      // Verifica lock individual por remédio (evita duplicar em caso de
-      // container duplo — mesmo mecanismo anterior, mantido aqui)
-      const lockKey = `med_${med.id}_${minutoChave}`;
-      const lockExistente = await prisma.memory.findFirst({
-        where: { type: 'med_lock', content: lockKey },
-        orderBy: { createdAt: 'desc' }
-      });
-      if (lockExistente) {
-        const ageMs = Date.now() - new Date(lockExistente.createdAt).getTime();
-        if (ageMs < 120000) continue;
-        await prisma.memory.delete({ where: { id: lockExistente.id } }).catch(() => {});
-      }
-
+      // Adiciona ao grupo — lock é verificado depois, por grupo completo
       if (!gruposPorPhone[phone]) gruposPorPhone[phone] = { meds: [], userId: med.userId };
       gruposPorPhone[phone].meds.push(med);
     }
@@ -1011,31 +1006,33 @@ cron.schedule('* * * * *', async () => {
     // Processa cada grupo (um envio por usuário por horário)
     for (const [phone, grupo] of Object.entries(gruposPorPhone)) {
       try {
-        // Cria locks para todos antes de enviar
-        for (const med of grupo.meds) {
-          const lockKey = `med_${med.id}_${minutoChave}`;
-          await prisma.memory.create({ data: { userId: med.userId, type: 'med_lock', content: lockKey } });
+        // Lock por grupo — usa IDs ordenados como chave única do grupo
+        // Garante que o grupo inteiro só é enviado uma vez
+        const grupoLockKey = `med_grupo_${grupo.meds.map(m=>m.id).sort().join('_')}_${minutoChave}`;
+        const grupoLockExistente = await prisma.memory.findFirst({
+          where: { type: 'med_lock', content: grupoLockKey }
+        }).catch(() => null);
+        if (grupoLockExistente) {
+          const ageMs = Date.now() - new Date(grupoLockExistente.createdAt).getTime();
+          if (ageMs < 120000) continue;
+          await prisma.memory.delete({ where: { id: grupoLockExistente.id } }).catch(() => {});
         }
+        await prisma.memory.create({ data: { userId: grupo.userId, type: 'med_lock', content: grupoLockKey } }).catch(() => {});
 
-        let msg;
-        if (grupo.meds.length === 1) {
-          const med = grupo.meds[0];
-          msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esqueces de tomar certinho 😊\n\n💜 Restam ${med.remaining - 1} doses.`;
-        } else {
-          // Múltiplos remédios no mesmo horário — mensagem unificada
-          const lista = grupo.meds.map(m => `• *${m.name}* — restam ${m.remaining - 1} doses`).join('\n');
-          msg = `💊 Hora dos medicamentos!\n\n${lista}\n\n⏰ ${minutoChave}\n\nNão esqueces de tomar certinho 😊`;
-        }
-
-        await sendMessage(phone, msg);
-
-        // Decrementa todos após o envio
+        // Envia UMA mensagem por remédio — mesmo quando no mesmo horário
+        // Isso permite que o swipe-reply identifique cada remédio separadamente
+        // Antes era agrupado numa mensagem só, mas aí o swipe do segundo
+        // não conseguia identificar qual remédio confirmar
         for (const med of grupo.meds) {
+          const msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esquece de tomar certinho 😊\n\n💜 Restam ${med.remaining - 1} doses.`;
+          await sendMessage(phone, msg);
           await prisma.medication.update({
             where: { id: med.id },
             data: { remaining: { decrement: 1 } }
           });
           console.log(`[Med] ${med.name} → ${phone}`);
+          // Pequeno delay entre mensagens para não chegar simultâneo
+          await new Promise(r => setTimeout(r, 1500));
         }
       } catch (e) {
         console.error(`[Med] Erro ao enviar grupo para ${phone}:`, e.message);
