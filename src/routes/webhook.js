@@ -373,6 +373,128 @@ router.post('/', async (req, res) => {
       return res.json({ ok: true });
     }
 
+    // ── GEOLOCALIZAÇÃO ──
+    const isLocation = msgType === 'locationMessage' || msgType === 'LocationMessage'
+      || body.message?.location || body.message?.latitude;
+
+    if (isLocation) {
+      try {
+        const user = await memory.getOrCreateUser(phone);
+        const lat = body.message?.location?.latitude || body.message?.latitude;
+        const lng = body.message?.location?.longitude || body.message?.longitude;
+        const enderecoOriginal = body.message?.location?.address || body.message?.address || null;
+        if (lat && lng) {
+          // Salva localização atual (temporária, 4h)
+          await memory.salvarLocalizacao(user.id, { lat, lng, endereco: enderecoOriginal });
+
+          // Geocoding reverso via Nominatim
+          let cidade = null, bairro = null, enderecoCompleto = enderecoOriginal;
+          try {
+            const axios = require('axios');
+            const resp = await axios.get(
+              `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=pt-BR`,
+              { headers: { 'User-Agent': 'ClaraIA/1.0' }, timeout: 5000 }
+            );
+            enderecoCompleto = resp.data?.display_name || enderecoOriginal;
+            cidade = resp.data?.address?.city || resp.data?.address?.town || resp.data?.address?.village || null;
+            bairro = resp.data?.address?.suburb || resp.data?.address?.neighbourhood || null;
+            await memory.salvarLocalizacao(user.id, { lat, lng, endereco: enderecoCompleto, cidade, bairro });
+            console.log(`[Geo] ${phone}: ${cidade}${bairro ? ', ' + bairro : ''}`);
+          } catch (eGeo) { console.log(`[Geo] Geocoding falhou: ${eGeo.message}`); }
+
+          // ── Aprende casa e trabalho ──
+          // Compara com endereços já conhecidos. Se for próximo (< 500m),
+          // confirma. Se for novo, pergunta se é casa ou trabalho.
+          const locTexto = bairro ? `${bairro}, ${cidade || ''}`.trim() : cidade || 'esse local';
+          const distancia = (lat1, lng1, lat2, lng2) => {
+            const R = 6371000;
+            const dLat = (lat2-lat1)*Math.PI/180;
+            const dLng = (lng2-lng1)*Math.PI/180;
+            const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          };
+
+          // Busca casa e trabalho salvos no perfil
+          const infos = await prisma.memory.findMany({
+            where: { userId: user.id, type: 'info_pessoal' }
+          }).catch(() => []);
+
+          let emCasa = false, emTrabalho = false;
+          let casaLat = null, casaLng = null, trabalhoLat = null, trabalhoLng = null;
+
+          for (const info of infos) {
+            try {
+              const meta = JSON.parse(info.metadata || '{}');
+              if (meta.chave === 'endereco_casa' && info.content) {
+                const coords = JSON.parse(info.content);
+                if (coords.lat) { casaLat = coords.lat; casaLng = coords.lng; }
+                if (casaLat && distancia(lat, lng, casaLat, casaLng) < 300) emCasa = true;
+              }
+              if (meta.chave === 'endereco_trabalho' && info.content) {
+                const coords = JSON.parse(info.content);
+                if (coords.lat) { trabalhoLat = coords.lat; trabalhoLng = coords.lng; }
+                if (trabalhoLat && distancia(lat, lng, trabalhoLat, trabalhoLng) < 300) emTrabalho = true;
+              }
+            } catch {}
+          }
+
+          const humor = await memory.getHumorDia(user.id).catch(() => null);
+          let msgGeo;
+
+          if (emCasa) {
+            // Chegou em casa
+            const extras = humor?.estado === 'cansado' ? ' Descansa que você merece! 😴' :
+                           humor?.estado === 'doente' ? ' Toma conta de você! 🙏' : '';
+            msgGeo = `🏠 Chegou em casa!${extras}`;
+          } else if (emTrabalho) {
+            msgGeo = `💼 No trabalho! Bom dia produtivo 💪`;
+          } else if (!casaLat && !trabalhoLat) {
+            // Não conhece nenhum endereço ainda — pergunta
+            msgGeo = `📍 Recebi sua localização em ${locTexto}!
+
+Isso é sua casa ou seu trabalho? Assim eu aprendo seus endereços fixos 😊`;
+            // Salva confirmação pendente pra processar resposta
+            await prisma.memory.create({
+              data: {
+                userId: user.id,
+                type: 'confirmacao_pendente',
+                content: JSON.stringify({
+                  tipo: 'aprender_endereco',
+                  lat, lng,
+                  endereco: enderecoCompleto,
+                  cidade, bairro,
+                  expira: Date.now() + 5 * 60 * 1000
+                })
+              }
+            }).catch(() => {});
+          } else {
+            // Conhece um mas não o outro, ou está em lugar diferente
+            msgGeo = `📍 ${locTexto} — ${humor?.estado === 'cansado' ? 'voltando pra casa logo?' : 'por aí!'}`;
+            // Se não conhece casa ainda, oferece aprender
+            if (!casaLat) {
+              msgGeo += '
+
+Esse é seu endereço de casa? Posso salvar pra saber quando você chegar 😊';
+              await prisma.memory.create({
+                data: {
+                  userId: user.id,
+                  type: 'confirmacao_pendente',
+                  content: JSON.stringify({
+                    tipo: 'aprender_endereco',
+                    lat, lng, endereco: enderecoCompleto, cidade, bairro,
+                    expira: Date.now() + 5 * 60 * 1000
+                  })
+                }
+              }).catch(() => {});
+            }
+          }
+
+          await sendMessage(phone, msgGeo);
+        }
+      } catch (e) { console.error('[Geo] Erro:', e.message); }
+      return res.json({ ok: true });
+    }
+
     // ── ÁUDIO ──
     const audioMsgType = body.message?.messageType || body.message?.mediaType || body.message?.type || '';
     const isAudio = ['audioMessage','audio','pttMessage','AudioMessage','media'].includes(audioMsgType)
