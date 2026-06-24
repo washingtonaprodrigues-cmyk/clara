@@ -567,6 +567,8 @@ select option{background:var(--s2)}
 .tb-clara-avatar-mobile,.tb-info-mobile{display:none}
 @media(max-width:768px){.sidebar{display:none}.tb-menu{display:flex!important}.tb-expand-btn{display:none!important}.drawer{display:flex}.drawer-overlay{display:block}.ph-back{display:flex}.tb-info-desktop{display:none!important}.tb-clara-avatar-mobile,.tb-info-mobile{display:flex!important}.tb-info-mobile{display:block!important}#topbar .ph-icon{display:none!important}}
 </style>
+  <!-- Socket.io — atualizações em tempo real -->
+  <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 <div id="loading-screen" style="position:fixed;inset:0;background:#08090D;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center">
@@ -1046,7 +1048,41 @@ async function savePhone(){let v=document.getElementById('phone-setup-input').va
 async function doLogout(){closeDrawer();if(pollInterval){clearInterval(pollInterval);pollInterval=null;}await window._signOut(window._firebaseAuth);phone='';allRem=[];allMeds=[];allGastos=[];}
 function toggleDrawer(){document.getElementById('drawer').classList.toggle('open');document.getElementById('drawer-overlay').classList.toggle('open');}
 function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('drawer-overlay').classList.remove('open');}
-async function navTo(p){closeDrawer();document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.s-item,.d-item').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll(`[data-nav="${p}"]`).forEach(x=>x.classList.add('active'));currentNav=p;if(!phone)return;if(p==='lembretes'){await loadAll();iniciarAutoRefresh();renderRem();}if(p==='saude')renderSaude();if(p==='financeiro'){await loadSaldo();renderFin();}if(p==='listas')renderListas();if(p==='cofre')renderCofre();if(p==='memorias')renderMemorias();if(p==='preferencias')loadPrefs();}
+async function navTo(p){closeDrawer();document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.s-item,.d-item').forEach(x=>x.classList.remove('active'));document.getElementById('page-'+p).classList.add('active');document.querySelectorAll(`[data-nav="${p}"]`).forEach(x=>x.classList.add('active'));currentNav=p;if(!phone)return;if(p==='lembretes'){await loadAll();iniciarAutoRefresh();
+
+  // ── WebSocket — recebe eventos do servidor em tempo real ──
+  try {
+    const wsPhone = phone;
+    const socket = io({ query: { phone: wsPhone }, transports: ['websocket','polling'] });
+    socket.on('connect', () => console.log('[WS] Conectado'));
+    socket.on('atualizar', async ({ tipo }) => {
+      console.log('[WS] Atualizar:', tipo);
+      if (tipo === 'lembretes') {
+        const novos = await fetch('/forms/lembretes/' + wsPhone).then(x=>x.json()).catch(()=>null);
+        if (!novos) return;
+        allRem = novos;
+        renderRem();
+        const futuroCnt = allRem.filter(r=>!r.confirmed).length;
+        ['d-badge-rem','d-badge-rem2'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display=futuroCnt?'':'none';if(futuroCnt)el.textContent=futuroCnt;}});
+      } else if (tipo === 'remedios') {
+        const novos = await fetch('/forms/remedios/' + wsPhone).then(x=>x.json()).catch(()=>null);
+        if (!novos) return;
+        allMeds = novos;
+        if (typeof renderRemedios === 'function') renderRemedios();
+        const now = new Date();
+        const hm = String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+        const medCnt = allMeds.filter(m=>{let t=[];try{t=JSON.parse(m.times||'[]');}catch{}return t.some(x=>x>=hm);}).length;
+        ['d-badge-med','d-badge-med2'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display=medCnt?'':'none';if(medCnt)el.textContent=medCnt;}});
+      } else if (tipo === 'financeiro') {
+        const novos = await fetch('/forms/gastos/' + wsPhone).then(x=>x.json()).catch(()=>null);
+        if (novos) { allGastos = novos; if (typeof renderFinanceiro === 'function') renderFinanceiro(); }
+      } else if (tipo === 'memorias') {
+        const novos = await fetch('/forms/memorias/' + wsPhone).then(x=>x.json()).catch(()=>null);
+        if (novos) { _memDados = novos; if (typeof _renderMemoriasUI === 'function') _renderMemoriasUI(); }
+      }
+    });
+    socket.on('disconnect', () => console.log('[WS] Desconectado'));
+  } catch(e) { console.log('[WS] Erro ao conectar:', e.message); }renderRem();}if(p==='saude')renderSaude();if(p==='financeiro'){await loadSaldo();renderFin();}if(p==='listas')renderListas();if(p==='cofre')renderCofre();if(p==='memorias')renderMemorias();if(p==='preferencias')loadPrefs();}
 function togglePrivate(){privateMode=!privateMode;const btn=document.getElementById('private-btn');btn.textContent=privateMode?'🔒':'🔓';document.getElementById('priv-banner').classList.toggle('on',privateMode);showToast(privateMode?'🔒 Modo privado ativado':'🔓 Modo público ativado');}
 async function loadAll(){if(!phone)return;try{const[l,r,g]=await Promise.all([fetch(`/forms/lembretes/${phone}`).then(x=>x.json()).catch(()=>[]),fetch(`/forms/remedios/${phone}`).then(x=>x.json()).catch(()=>[]),fetch(`/forms/gastos/${phone}`).then(x=>x.json()).catch(()=>[])]);allRem=l;allMeds=r;allGastos=g;const todayBRT=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});const now=new Date();const hm=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;const todayCnt=l.filter(x=>!x.confirmed&&!x.sent&&new Date(x.scheduledAt).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'})===todayBRT).length;
 const futuroCnt=l.filter(x=>!x.confirmed).length;
