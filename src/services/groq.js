@@ -30,7 +30,7 @@ async function tentarGroq2(msgs, isCurta) {
         model: MODEL_FORTE,
         messages: msgs,
         temperature: 0.7,
-        max_tokens: isCurta ? 60 : 600,
+        max_tokens: isCurta ? 60 : 800,
       }),
       timeout2
     ]);
@@ -783,25 +783,20 @@ function escolherModelo(message, tom, contexto) {
 function apararRespostaCortada(texto) {
   if (!texto) return texto;
   const t = texto.trimEnd();
-
-  // Termina com pontuação final ou emoji — provavelmente está completo.
-  if (/[.!?…💜😊✅🎉👍😉😅😄🇧🇷⚽😂🙄😆kkk]$/.test(t)) return t;
-  // "kkk" no final também é frase completa
-  if (/kkk+$/.test(t)) return t;
-
-  // Procura o último ponto/exclamação/interrogação seguido de espaço/quebra
-  // (fim de frase completa) e corta ali.
+  // Pontuacao final = completo
+  if (/[.!?]$/.test(t)) return t;
+  // kkk/rsrs = completo
+  if (/k{2,}$/i.test(t) || /rs{2,}$/i.test(t)) return t;
+  // Emoji no final = completo (cobre 💜😊🎉 etc)
+  const lastChar = [...t].pop();
+  if (lastChar && lastChar.codePointAt(0) > 0xFFFF) return t;
+  // Procura ultimo ponto/exclamacao/interrogacao seguido de espaco
   const matches = [...t.matchAll(/[.!?](?:\s|\n)/g)];
   if (matches.length > 0) {
     const last = matches[matches.length - 1];
     const cortado = t.slice(0, last.index + 1).trimEnd();
-    // Só usa o corte se ainda restar uma resposta minimamente substancial
-    // (evita devolver só "Ah," se o corte for muito agressivo).
-    if (cortado.length >= 10) return cortado;
+    if (cortado.length >= 15) return cortado;
   }
-
-  // Sem nenhuma frase completa identificável — retorna como está
-  // (melhor algo truncado do que nada).
   return t;
 }
 
@@ -1034,7 +1029,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
           model: MODEL_FORTE,
           messages: msgs,
           temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-          max_tokens: isCurta ? 60 : 600,
+          max_tokens: isCurta ? 60 : 800,
         }),
         timeoutPromise
       ]);
