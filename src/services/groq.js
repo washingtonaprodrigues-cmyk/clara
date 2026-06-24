@@ -873,8 +873,11 @@ function filtrarResposta(t) {
   t = t.replace(/\s*\(sim\s*\/\s*n[\xE3a]o\)\s*/gi, '');
   t = t.replace(/\s*\(s\s*\/\s*n\)\s*/gi, '');
   t = t.trim();
-  if (t.startsWith('"') && t.endsWith('"') && t.length > 2) t = t.slice(1,-1).trim();
-  if (t.startsWith("'") && t.endsWith("'") && t.length > 2) t = t.slice(1,-1).trim();
+  // Remove aspas do início E do final (mesmo que não fechem perfeitamente)
+  if (t.startsWith('"')) t = t.replace(/^"+/, '').trim();
+  if (t.endsWith('"')) t = t.replace(/"+$/, '').trim();
+  if (t.startsWith("'")) t = t.replace(/^'+/, '').trim();
+  if (t.endsWith("'")) t = t.replace(/'+$/, '').trim();
   // Limita tamanho — mensagens longas ficam cortadas pelo WhatsApp
   if (t.length > 1000) {
     const cortado = t.slice(0, 950);
