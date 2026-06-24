@@ -87,6 +87,7 @@ const CATEGORIAS_PERFIL = {
   rotina:          { label: '⏰ Rotina',              emoji: '⏰' },
   objetivos:       { label: '🚀 Objetivos',           emoji: '🚀' },
   outro:           { label: '📌 Informações gerais',  emoji: '📌' },
+  relacionamento_clara: { label: '💜 Relação com a Clara', emoji: '💜' },
 };
 
 // Campos que a Clara ainda não conhece e pode perguntar organicamente.
@@ -306,6 +307,18 @@ async function buildPersonalContext(userId) {
   if (loc?.cidade) {
     const locTexto = loc.bairro ? `${loc.bairro}, ${loc.cidade}` : loc.cidade;
     texto += `\n\n[LOCALIZAÇÃO ATUAL (recente)]: ${locTexto} — pode referenciar se for natural`;
+  }
+
+  // ── Memória afetiva — como a Clara se relaciona com essa pessoa ──
+  const afetiva = await getMemoriaAfetiva(userId).catch(() => ({}));
+  if (Object.keys(afetiva).length > 0) {
+    let textoAfetivo = '';
+    if (afetiva.apelido_usuario) textoAfetivo += `\n• Como ele gosta de ser chamado: ${afetiva.apelido_usuario}`;
+    if (afetiva.apelido_clara) textoAfetivo += `\n• Como ele chama você: ${afetiva.apelido_clara}`;
+    if (afetiva.tom_relacao) textoAfetivo += `\n• Tom da relação: ${afetiva.tom_relacao}`;
+    if (afetiva.piada_interna) textoAfetivo += `\n• Referência afetiva: ${afetiva.piada_interna}`;
+    if (afetiva.emoji_combinado) textoAfetivo += `\n• Emojis da relação: ${afetiva.emoji_combinado}`;
+    if (textoAfetivo) texto += `\n\n[MEMÓRIA DO RELACIONAMENTO — USE SEMPRE, define o tom da conversa]${textoAfetivo}`;
   }
 
   return texto ? `\n\n[PERFIL DO USUÁRIO — use para personalizar respostas e ser proativa]${texto}` : '';
@@ -672,6 +685,44 @@ async function getLocalizacao(userId) {
 }
 
 
+// ====================== MEMÓRIA AFETIVA ======================
+// Salva como a Clara se relaciona com o usuário:
+// apelidos, tom, piadas internas, jeito de falar.
+// Sobrevive a reboots — é a "personalidade da relação".
+
+async function salvarMemoriaAfetiva(userId, tipo, valor) {
+  // tipos: 'apelido_usuario', 'apelido_clara', 'tom_relacao', 'piada_interna', 'emoji_combinado'
+  try {
+    const existente = await prisma.memory.findFirst({
+      where: { userId, type: 'memoria_afetiva', metadata: { contains: `"tipo":"${tipo}"` } }
+    }).catch(() => null);
+    const metadata = JSON.stringify({ tipo, updatedAt: new Date().toISOString() });
+    if (existente) {
+      await prisma.memory.update({ where: { id: existente.id }, data: { content: valor, metadata } }).catch(() => {});
+    } else {
+      await prisma.memory.create({ data: { userId, type: 'memoria_afetiva', content: valor, metadata } }).catch(() => {});
+    }
+    console.log(`[Afetiva] ${tipo}: "${valor}"`);
+  } catch {}
+}
+
+async function getMemoriaAfetiva(userId) {
+  try {
+    const mems = await prisma.memory.findMany({
+      where: { userId, type: 'memoria_afetiva' },
+      orderBy: { createdAt: 'desc' }
+    }).catch(() => []);
+    const resultado = {};
+    for (const m of mems) {
+      try {
+        const meta = JSON.parse(m.metadata || '{}');
+        if (meta.tipo) resultado[meta.tipo] = m.content;
+      } catch {}
+    }
+    return resultado;
+  } catch { return {}; }
+}
+
 // ====================== EXPORTS ======================
 
 module.exports = {
@@ -690,4 +741,5 @@ module.exports = {
   savePendencia,
   getPendenciasAbertas, salvarOuAtualizarPendencia, fecharPendencia, fecharPendenciasPorResolucao, fecharPendenciaLembrete,
   salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao,
+  salvarMemoriaAfetiva, getMemoriaAfetiva,
 };
