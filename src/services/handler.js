@@ -1200,9 +1200,23 @@ async function executeAction(user, phone, classified, originalText) {
         const titulo = classified.titulo.toLowerCase();
         match = pendentes.find(r => r.message.toLowerCase().includes(titulo) || titulo.includes(r.message.toLowerCase().substring(0, 10)));
       }
-      // Sem título e sem código: se só há 1 pendente, assume ele.
-      if (!match && !classified.titulo && !codigo && pendentes.length === 1) {
-        match = pendentes[0];
+      // Sem título e sem código explícito: tenta inferir pelo texto da mensagem
+      if (!match && !codigo) {
+        if (pendentes.length === 1) {
+          // Só 1 pendente — assume ele
+          match = pendentes[0];
+        } else {
+          // Múltiplos pendentes — tenta casar pelo texto da mensagem ou quotedText
+          const textoParaBusca = ((originalText || '') + ' ' + (quotedText || '')).toLowerCase();
+          match = pendentes.find(r => {
+            const palavras = r.message.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+            return palavras.some(p => textoParaBusca.includes(p));
+          });
+          // Fallback: usa o mais recente que já foi disparado (sent:true)
+          if (!match) {
+            match = pendentes.find(r => r.sent) || pendentes[0];
+          }
+        }
       }
 
       if (match) {
