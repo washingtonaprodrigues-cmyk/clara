@@ -689,11 +689,18 @@ async function handleMessage(phone, text, location = null) {
     if (modoAtual === 'conversar') return await responderLivre(user, phone, text);
 
     // ── Passa contexto da conversa para o classify resolver referências vagas ──
+    // Inclui: histórico recente + lembretes pendentes (para concluir_lembrete funcionar sem swipe)
     let contextoClassify = '';
     try {
       const history = await memory.getConversationHistory(user.id, 4);
       if (history.length > 0) {
         contextoClassify = history.map(m => `${m.role === 'user' ? 'Usuário' : 'Clara'}: ${m.content}`).join('\n');
+      }
+      // Adiciona lembretes pendentes para o classify saber o que pode ser concluído
+      const lembretesPendentes = await getLembretesPendentesConfirmacao(user.id).catch(() => []);
+      if (lembretesPendentes.length > 0) {
+        const listaPendentes = lembretesPendentes.map((r, i) => `${i+1}. "${r.message}"`).join(', ');
+        contextoClassify += `\n[LEMBRETES PENDENTES DE CONFIRMAÇÃO: ${listaPendentes}] — se o usuário disser algo que soe como confirmação de qualquer um desses, classifique como concluir_lembrete com o título correspondente.`;
       }
     } catch(e) {}
 
