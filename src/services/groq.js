@@ -967,11 +967,11 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
           { role: 'user', content: message }
         ];
         const respostaGroq2 = await tentarGroq2(msgs2, isCurta);
-        if (respostaGroq2) { marcarProvider('groq2'); return respostaGroq2; }
+        if (respostaGroq2) { marcarProvider('groq2'); return filtrarResposta(respostaGroq2); }
       }
       // Groq2 indisponível/esgotado — tenta Gemini com personalidade completa
       const respostaGemini = await tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone);
-      if (respostaGemini) { marcarProvider('gemini'); return respostaGemini; }
+      if (respostaGemini) { marcarProvider('gemini'); return filtrarResposta(respostaGemini); }
 
       // Gemini indisponível/falhou — cai pro modo "Direta" seco via
       // cascata Gemini (de novo, com prompt direto) → OpenRouter.
