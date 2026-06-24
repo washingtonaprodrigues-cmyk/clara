@@ -18,7 +18,8 @@
     "groq-sdk": "^0.3.3",
     "node-cron": "^3.0.3",
     "prisma": "^5.22.0",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "socket.io": "^4.7.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
