@@ -1567,23 +1567,22 @@ async function checkConfirmacaoPendente(user, phone, text) {
     const textSemCitacao = text.replace(/^\[Mensagem citada:\s*"[^"]*"\]\s*\n?/i, '');
     const textNorm = textSemCitacao.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-    // ── Aprende endereço de casa ou trabalho ──
+    // Aprende endereco de casa ou trabalho
     if (dados.tipo === 'aprender_endereco') {
       await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
-      const ehCasa = /\bcasa\b|minha casa|é casa|em casa/i.test(text);
-      const ehTrabalho = /\btrabalho\b|serviço|escritório|empresa|loja|é trabalho/i.test(text);
+      const ehCasa = /\bcasa\b|minha casa|em casa/i.test(text);
+      const ehTrabalho = /\btrabalho\b|empresa|loja|servico|escritorio/i.test(text);
       if (ehCasa || ehTrabalho) {
         const chave = ehCasa ? 'endereco_casa' : 'endereco_trabalho';
         const chaveNome = ehCasa ? 'bairro_casa' : 'bairro_trabalho';
         const label = ehCasa ? 'casa' : 'trabalho';
-        const emoji = ehCasa ? '🏠' : '💼';
-        const locTexto = dados.bairro ? `${dados.bairro}, ${dados.cidade || ''}`.trim() : dados.cidade || 'esse local';
+        const locTexto = dados.bairro ? (dados.bairro + ', ' + (dados.cidade || '')).trim() : (dados.cidade || 'esse local');
         await memory.savePersonalInfo(user.id, chave, JSON.stringify({ lat: dados.lat, lng: dados.lng }), 'localizacao').catch(() => {});
         await memory.savePersonalInfo(user.id, chaveNome, locTexto, 'localizacao').catch(() => {});
-        await sendMessage(phone, `${emoji} Anotei! Agora sei onde fica seu ${label} — ${locTexto}. Da próxima vez que compartilhar localização de lá, vou reconhecer 😊`);
-        console.log(`[Geo] Endereço de ${label} aprendido: ${locTexto}`);
+        await sendMessage(phone, 'Anotei! Agora sei onde fica seu ' + label + ' (' + locTexto + '). Da proxima vez que compartilhar sua localizacao de la, vou reconhecer!');
+        console.log('[Geo] Endereco de ' + label + ' aprendido: ' + locTexto);
       } else {
-        await sendMessage(phone, 'Esse local é sua casa ou seu trabalho? 😊');
+        await sendMessage(phone, 'Esse local e sua casa ou seu trabalho?');
         await prisma.memory.create({ data: { userId: user.id, type: 'confirmacao_pendente', content: JSON.stringify({ ...dados, expira: Date.now() + 5 * 60 * 1000 }) } }).catch(() => {});
       }
       return;
