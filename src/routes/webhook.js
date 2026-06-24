@@ -472,9 +472,7 @@ Isso é sua casa ou seu trabalho? Assim eu aprendo seus endereços fixos 😊`;
             msgGeo = `📍 ${locTexto} — ${humor?.estado === 'cansado' ? 'voltando pra casa logo?' : 'por aí!'}`;
             // Se não conhece casa ainda, oferece aprender
             if (!casaLat) {
-              msgGeo += '
-
-Esse é seu endereço de casa? Posso salvar pra saber quando você chegar 😊';
+              msgGeo += '\n\nEsse é seu endereço de casa? Posso salvar pra saber quando você chegar 😊';
               await prisma.memory.create({
                 data: {
                   userId: user.id,
