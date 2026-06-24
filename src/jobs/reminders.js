@@ -545,14 +545,33 @@ async function proativaInteligente(periodo) {
             const hoje = dateBRT(now);
             const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
 
-            // Sinal 1: primeira conversa do usuário hoje
-            const primeiraConversa = await prisma.memory.findFirst({
-              where: { userId: user.id, type: 'conversa', createdAt: { gte: inicioHoje } },
+            // Sinal 1: qualquer interação do usuário hoje
+            // Inclui conversa E confirmação de remédio (swipe-reply)
+            const primeiraInteracao = await prisma.memory.findFirst({
+              where: {
+                userId: user.id,
+                type: { in: ['conversa', 'med_confirmado', 'lembrete_confirmado'] },
+                createdAt: { gte: inicioHoje }
+              },
               orderBy: { createdAt: 'asc' }
             }).catch(() => null);
 
-            if (primeiraConversa) {
-              const d = new Date(primeiraConversa.createdAt);
+            // Fallback: verifica se algum remédio foi confirmado hoje
+            // (swipe-reply de remédio não salva em memory, mas o medication.remaining diminuiu)
+            if (!primeiraInteracao) {
+              const medConfirmadoHoje = await prisma.medication.findFirst({
+                where: {
+                  userId: user.id,
+                  updatedAt: { gte: inicioHoje }
+                }
+              }).catch(() => null);
+              if (medConfirmadoHoje) {
+                const d = new Date(medConfirmadoHoje.updatedAt);
+                horaAcorda = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                jaAcordouConfirmado = true;
+              }
+            } else {
+              const d = new Date(primeiraInteracao.createdAt);
               horaAcorda = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
               jaAcordouConfirmado = true;
             }
@@ -585,13 +604,20 @@ async function proativaInteligente(periodo) {
           // Cada período tem uma "energia" diferente, exemplos concretos
           // do que uma amiga diria, e prioridade de gancho.
           let instrucao = '';
+          // Verifica se já tem casa/trabalho cadastrado
+          const temCasa = infoPessoal && /Casa:/i.test(infoPessoal);
+          const temTrabalho = infoPessoal && /Trabalho:/i.test(infoPessoal);
+
           if (periodo === 'manha') {
+            const pedirGeo = !temCasa ? `
+IMPORTANTE: Se não houver assunto urgente pra falar, peça a localização da pessoa de forma natural — diga que assim você consegue saber quando ela chega em casa ou no trabalho e avisar na hora certa. Algo como "me manda sua localização pra eu aprender onde é sua casa e trabalho".` : '';
+
             instrucao = `É manhã cedo — a pessoa acabou de acordar ou está começando o dia.
 Como uma amiga que sabe da rotina dela, você pode:
 - Perguntar se dormiu bem, especialmente se ontem teve algo difícil
 - Referenciar algo do dia anterior que ficou em aberto de forma natural
 - Comentar algo do dia que está por vir se houver compromisso próximo
-TOM: curto, genuíno, como quem manda mensagem de manhã pro amigo — sem formalidade`;
+TOM: curto, genuíno, como quem manda mensagem de manhã pro amigo — sem formalidade${pedirGeo}`;
           } else if (periodo === 'almoco') {
             instrucao = `É horário de almoço — pausa natural do dia.
 Como uma amiga curiosa e presente, você pode:
