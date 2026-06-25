@@ -285,6 +285,7 @@ TIPOS E FORMATOS:
 {"tipo":"busca","query":"texto"}
 {"tipo":"anotacao","titulo":"resumo","conteudo":"texto"}
 {"tipo":"tarefa","titulo":"desc","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null","antecedencia":0,"recorrente":false,"frequencia":null}
+{"tipo":"multiplas_tarefas","tarefas":[{"titulo":"desc1","data":null,"hora":"HH:MM","antecedencia":0,"recorrente":false,"frequencia":null},{"titulo":"desc2","data":null,"hora":"HH:MM","antecedencia":0,"recorrente":false,"frequencia":null}]}
 {"tipo":"editar_lembrete","titulo":"parte do título","nova_hora":"HH:MM ou null","nova_data":"YYYY-MM-DD ou null"}
 {"tipo":"deletar_lembrete","titulo":"parte do título"}
 {"tipo":"gasto","valor":0.0,"categoria":"mercado/restaurante/saude/transporte/lazer/outro","descricao":"desc"}
@@ -312,6 +313,8 @@ TIPOS E FORMATOS:
 EXEMPLOS:
 "gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
 "me lembra às 10h de fazer backup" → {"tipo":"tarefa","titulo":"fazer backup","data":null,"hora":"10:00","antecedencia":0,"recorrente":false,"frequencia":null}
+"me lembra às 14h de enviar as fotos pro pintor e às 15h de fazer a arte" → {"tipo":"multiplas_tarefas","tarefas":[{"titulo":"enviar as fotos pro pintor","data":null,"hora":"14:00","antecedencia":0,"recorrente":false,"frequencia":null},{"titulo":"fazer a arte","data":null,"hora":"15:00","antecedencia":0,"recorrente":false,"frequencia":null}]} (DOIS pedidos numa mensagem = multiplas_tarefas com array)
+"me lembra de tomar água, almoçar e ligar pro João" → {"tipo":"multiplas_tarefas","tarefas":[{"titulo":"tomar água","data":null,"hora":null,...},{"titulo":"almoçar","data":null,"hora":null,...},{"titulo":"ligar pro João","data":null,"hora":null,...}]}
 "me lembra daqui 4 minutos, só me manda um oi" → {"tipo":"tarefa","titulo":"me mandar um oi","data":null,"hora":null,"antecedencia":0,"recorrente":false,"frequencia":null} (gatilho "me lembra daqui X min" vence — é tarefa com horário relativo, NUNCA saudacao; hora=null porque o sistema calcula a partir do texto)
 "me avisa daqui meia hora pra tirar o bolo do forno" → {"tipo":"tarefa","titulo":"tirar o bolo do forno","data":null,"hora":null,"antecedencia":0,"recorrente":false,"frequencia":null}
 "me cutuca em 10 minutos" → {"tipo":"tarefa","titulo":"te cutucar","data":null,"hora":null,"antecedencia":0,"recorrente":false,"frequencia":null}
