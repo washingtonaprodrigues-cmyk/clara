@@ -1045,15 +1045,28 @@ cron.schedule('* * * * *', async () => {
         // Lock por grupo — usa IDs ordenados como chave única do grupo
         // Garante que o grupo inteiro só é enviado uma vez
         const grupoLockKey = `med_grupo_${grupo.meds.map(m=>m.id).sort().join('_')}_${minutoChave}`;
+
+        // Verificação em duas camadas:
+        // Camada 1: verifica se já existe lock pra este grupo/minuto
         const grupoLockExistente = await prisma.memory.findFirst({
           where: { type: 'med_lock', content: grupoLockKey }
         }).catch(() => null);
         if (grupoLockExistente) {
-          const ageMs = Date.now() - new Date(grupoLockExistente.createdAt).getTime();
-          if (ageMs < 120000) continue;
-          await prisma.memory.delete({ where: { id: grupoLockExistente.id } }).catch(() => {});
+          console.log(`[Med] Lock já existe para grupo ${minutoChave} ${phone}`);
+          continue;
         }
-        await prisma.memory.create({ data: { userId: grupo.userId, type: 'med_lock', content: grupoLockKey } }).catch(() => {});
+
+        // Camada 2: tenta criar atomicamente — se outro processo criar antes, pula
+        let lockCriado = false;
+        try {
+          await prisma.memory.create({ data: { userId: grupo.userId, type: 'med_lock', content: grupoLockKey } });
+          lockCriado = true;
+        } catch (eLock) {
+          // Outro processo criou entre nosso findFirst e create
+          console.log(`[Med] Race condition no lock para ${phone} — pulando`);
+          continue;
+        }
+        if (!lockCriado) continue;
 
         // Envia UMA mensagem por remédio — mesmo quando no mesmo horário
         // Isso permite que o swipe-reply identifique cada remédio separadamente
