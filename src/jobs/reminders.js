@@ -1068,23 +1068,16 @@ cron.schedule('* * * * *', async () => {
         }
         if (!lockCriado) continue;
 
-        // Remédios do mesmo horário = UMA mensagem só
-        if (grupo.meds.length === 1) {
-          const med = grupo.meds[0];
+        // Cada remédio em mensagem própria — mantém swipe-reply individual.
+        // Espaçados por 3s para não chegarem todos de uma vez.
+        for (let i = 0; i < grupo.meds.length; i++) {
+          const med = grupo.meds[i];
           const msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esquece de tomar certinho 😊\n\n💜 Restam ${med.remaining - 1} doses.`;
           await sendMessage(phone, msg);
           await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
           console.log(`[Med] ${med.name} → ${phone}`);
-        } else {
-          // Múltiplos remédios no mesmo horário — mensagem unificada
-          const listaRemedios = grupo.meds.map(m => `• *${m.name}* — restam ${m.remaining - 1} doses`).join('\n');
-          const msg = `💊 Hora dos medicamentos!\n⏰ ${minutoChave}\n\n${listaRemedios}\n\nNão esquece de tomar certinho 😊\n\nMe avisa quando tomar! 👋`;
-          await sendMessage(phone, msg);
-          // Decrementa todos
-          for (const med of grupo.meds) {
-            await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
-            console.log(`[Med] ${med.name} → ${phone} (agrupado)`);
-          }
+          // Espaça 3s entre cada (exceto o último)
+          if (i < grupo.meds.length - 1) await new Promise(r => setTimeout(r, 3000));
         }
       } catch (e) {
         console.error(`[Med] Erro ao enviar grupo para ${phone}:`, e.message);
