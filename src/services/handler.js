@@ -934,6 +934,16 @@ async function handleMessage(phone, text, location = null) {
       anotacao: '✅ Anotado!',
       ajustar_remedio: confirmacaoAjusteRemedio || '😕 Não encontrei esse remédio. Me diz o nome certinho?',
     };
+
+    // Confirmação para múltiplas tarefas — lista todas que foram criadas
+    if (classified.tipo === 'multiplas_tarefas' && Array.isArray(classified.tarefas)) {
+      const linhas = classified.tarefas.map((t, i) => {
+        const horaTxt = t.hora ? ` às ${t.hora}` : '';
+        return `${i + 1}. ${t.titulo}${horaTxt}`;
+      }).join('\n');
+      CONFIRMACOES_ACAO.multiplas_tarefas = `✅ Pode deixar! Anotei ${classified.tarefas.length} lembretes aqui comigo:\n\n${linhas}\n\nPode relaxar que eu te aviso 😊`;
+    }
+
     const acaoConfirmacao = CONFIRMACOES_ACAO[classified.tipo] || null;
 
     // Confirmação de dose tomada — resposta fixa, sem LLM.
@@ -942,6 +952,15 @@ async function handleMessage(phone, text, location = null) {
     if (classified.tipo === 'ajustar_remedio' && classified.operacao === 'decrementar' && confirmacaoAjusteRemedio) {
       await sendMessage(phone, confirmacaoAjusteRemedio);
       emitirAtualizacao(phone, 'remedios');
+      return;
+    }
+
+    // Múltiplas tarefas — confirmação fixa direta (sem LLM), pra não "mentir"
+    // dizendo que criou tarefas que não foram processadas. A confirmação
+    // lista exatamente o que foi gravado no banco.
+    if (classified.tipo === 'multiplas_tarefas' && acaoConfirmacao) {
+      await sendMessage(phone, acaoConfirmacao);
+      emitirAtualizacao(phone, 'lembretes');
       return;
     }
 
@@ -1178,6 +1197,16 @@ async function executeAction(user, phone, classified, originalText) {
       break;
     case 'tarefa':
       await salvarTarefaSilenciosa(user, phone, classified, originalText);
+      break;
+    case 'multiplas_tarefas':
+      // Cria cada tarefa do array individualmente, reusando salvarTarefaSilenciosa
+      if (Array.isArray(classified.tarefas)) {
+        for (const t of classified.tarefas) {
+          await salvarTarefaSilenciosa(user, phone, { ...t, tipo: 'tarefa' }, null).catch(e => {
+            console.error(`[MultiTarefa] Erro ao criar "${t.titulo}":`, e.message);
+          });
+        }
+      }
       break;
     case 'deletar_remedio':
       if (classified.nome) {
@@ -1428,7 +1457,6 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
       const scheduledAntes = new Date(scheduledBase.getTime() - antecedencia * 60 * 1000);
       if (scheduledAntes > new Date()) {
         await prisma.reminder.create({ data: { userId: user.id, phone, message: `⏰ Em ${antecedencia} minutos: ${classified.titulo}`, scheduledAt: scheduledAntes } });
-        acaoConfirmacao = `Anotado! Vou te lembrar às ${scheduledAntes.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })} sobre ${classified.titulo} 🔔`;
       }
     }
   }
