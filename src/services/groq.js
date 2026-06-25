@@ -179,7 +179,7 @@ async function ativarModoDireto(phone, tipo) {
       try {
         const { sendMessage } = require('./whatsapp');
         const retorno = AVISOS_RETORNO_COMPLETO[Math.floor(Math.random() * AVISOS_RETORNO_COMPLETO.length)];
-        await sendMessage(phone, retorno);
+        if (retorno) await sendMessage(phone, retorno);
       } catch(e) {
         console.error('[RateLimit] Erro ao avisar retorno:', e.message);
       }
@@ -341,12 +341,14 @@ EXEMPLOS:
 
 async function classify(message, phone = null, contexto = '') {
   try {
-    const systemContent = contexto
-      ? SYSTEM_PROMPT() + `\n\nCONTEXTO RECENTE:\n${contexto}`
+    // Limita contexto para não exceder tokens do classify
+    const ctxLimitado = contexto ? contexto.slice(-2000) : '';
+    const systemContent = ctxLimitado
+      ? SYSTEM_PROMPT() + `\n\nCONTEXTO RECENTE:\n${ctxLimitado}`
       : SYSTEM_PROMPT();
 
     const completion = await groq.chat.completions.create({
-      model: MODEL_LEVE,
+      model: MODEL_FORTE,  // 70b suporta mais tokens que o 8b (limite 6k vs 6k mas contexto maior)
       messages: [
         { role: 'system', content: systemContent },
         { role: 'user', content: message }
