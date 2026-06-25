@@ -336,7 +336,9 @@ cron.schedule('0 18 * * *', async () => {
 // ═══════════════════════════════════════════════════════════════════════
 // BOA NOITE (21:30) — curta, calorosa, só preview de amanhã
 // ═══════════════════════════════════════════════════════════════════════
-cron.schedule('30 21 * * *', async () => {
+// Boa noite roda às 21:30 E às 22:30 (para quem estava conversando no primeiro disparo)
+cron.schedule('30 22 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
+async function boaNoiteInteligente() {
   try {
     const now = nowBRT();
     const hoje = dateBRT(now);
@@ -347,6 +349,14 @@ cron.schedule('30 21 * * *', async () => {
       try {
         if (!(await tentarLockDiario(user.id, 'boa_noite_lock'))) {
           console.log(`[Boa noite] ja enviado hoje para ${user.phone}`); continue;
+        }
+        // Não dispara se houve conversa nos últimos 30 minutos
+        // Espera a conversa esfriar antes de mandar boa noite
+        if (await houveConversaRecente(user.id, 30)) {
+          console.log(`[Boa noite] Conversa recente, aguardando para ${user.phone}`);
+          // Remove o lock para tentar de novo depois
+          await prisma.memory.deleteMany({ where: { userId: user.id, type: 'boa_noite_lock', content: dateBRT(now) } }).catch(() => {});
+          continue;
         }
         const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
         const fimHoje = new Date(`${hoje}T23:59:59-03:00`);
@@ -375,19 +385,20 @@ cron.schedule('30 21 * * *', async () => {
         // O fechamento do dia já foi às 18h. Aqui é descanso puro.
         const systemBoaNoite = `Você é a Clara, parceira pessoal d${user.name ? 'o ' + user.name.split(' ')[0] : 'o usuário'} no WhatsApp.
 SEU TOM: ${tomDesc(prefs.tom)}
-É quase meia noite — hora de descansar.
-Mande UMA mensagem curtíssima de boa noite — como uma amiga que manda mensagem antes de dormir.
+
+Mande UMA boa noite de verdade — curta, calorosa, do jeito que uma amiga manda mensagem antes de dormir.
+
 CONTEXTO:
 ${ctx}
+
 REGRAS ABSOLUTAS:
-- Máximo 1-2 linhas, ponto final
-- NÃO liste tarefas, NÃO mencione quantas tarefas foram feitas, NÃO faça resumo
-- Se souber que a pessoa estava viajando ou na estrada, pergunte se chegou bem
-- Se tiver UM compromisso importante amanhã (médico, consulta, reunião), pode mencionar levemente
-- Seja genuína e calorosa — como quem diz boa noite de verdade, não como assistente
-- NUNCA coloque entre aspas
-- Varie sempre a forma de dizer boa noite
-Tom: ${prefs.tom || 'carinhoso'}.`;
+- Máximo 1-2 linhas. UMA frase curta com pontuação final.
+- NUNCA entre aspas. NUNCA "Parabéns". NUNCA "estarei aqui". NUNCA "Podes". NUNCA liste tarefas ou faça resumo do dia.
+- NUNCA use português de Portugal (podes, tens, fazes) — use sempre português do Brasil (pode, tem, faz)
+- Se a pessoa estava viajando hoje, pergunte se chegou bem
+- Se tiver compromisso importante amanhã, mencione levemente e só isso
+- Varie sempre — nunca repita a mesma frase de boa noite
+- Tom: ${prefs.tom || 'carinhoso'}`;
         const msg = await freeResponse('Boa noite.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBoaNoite, _maxTokens: 60 });
         if (!msg) { console.log(`[Boa noite] Rate limit, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
@@ -395,7 +406,9 @@ Tom: ${prefs.tom || 'carinhoso'}.`;
       } catch (e) { console.error(`[Boa noite] Erro ${user.phone}:`, e.message); }
     }
   } catch (e) { console.error('[Boa noite] Erro geral:', e.message); }
-}, { timezone: 'America/Sao_Paulo' });
+}
+
+cron.schedule('30 21 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
 
 // ═══════════════════════════════════════════════════════════════════════
 // ALERTAS DE DATAS IMPORTANTES (08:00)
