@@ -1,4 +1,6 @@
 // v2 - consulta direta sem LLM
+// Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
+// timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
 const { classify, extractPersonalInfo, extractPendenciaEmocional, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto } = require('./groq');
 
 // Importa whatsapp de forma segura com fallback direto via axios
