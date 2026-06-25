@@ -181,7 +181,7 @@ async function getUserContext(user) {
 // ═══════════════════════════════════════════════════════════════════════
 // BOM DIA INTELIGENTE (07:00)
 // ═══════════════════════════════════════════════════════════════════════
-cron.schedule('0 7 * * *', async () => {
+cron.schedule('20 7 * * *', async () => {
   try {
     const now = nowBRT();
     const hoje = dateBRT(now);
@@ -1068,20 +1068,23 @@ cron.schedule('* * * * *', async () => {
         }
         if (!lockCriado) continue;
 
-        // Envia UMA mensagem por remédio — mesmo quando no mesmo horário
-        // Isso permite que o swipe-reply identifique cada remédio separadamente
-        // Antes era agrupado numa mensagem só, mas aí o swipe do segundo
-        // não conseguia identificar qual remédio confirmar
-        for (const med of grupo.meds) {
+        // Remédios do mesmo horário = UMA mensagem só
+        if (grupo.meds.length === 1) {
+          const med = grupo.meds[0];
           const msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esquece de tomar certinho 😊\n\n💜 Restam ${med.remaining - 1} doses.`;
           await sendMessage(phone, msg);
-          await prisma.medication.update({
-            where: { id: med.id },
-            data: { remaining: { decrement: 1 } }
-          });
+          await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
           console.log(`[Med] ${med.name} → ${phone}`);
-          // Pequeno delay entre mensagens para não chegar simultâneo
-          await new Promise(r => setTimeout(r, 1500));
+        } else {
+          // Múltiplos remédios no mesmo horário — mensagem unificada
+          const listaRemedios = grupo.meds.map(m => `• *${m.name}* — restam ${m.remaining - 1} doses`).join('\n');
+          const msg = `💊 Hora dos medicamentos!\n⏰ ${minutoChave}\n\n${listaRemedios}\n\nNão esquece de tomar certinho 😊\n\nMe avisa quando tomar! 👋`;
+          await sendMessage(phone, msg);
+          // Decrementa todos
+          for (const med of grupo.meds) {
+            await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
+            console.log(`[Med] ${med.name} → ${phone} (agrupado)`);
+          }
         }
       } catch (e) {
         console.error(`[Med] Erro ao enviar grupo para ${phone}:`, e.message);
