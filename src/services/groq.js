@@ -313,6 +313,7 @@ TIPOS E FORMATOS:
 EXEMPLOS:
 "gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
 "me lembra às 10h de fazer backup" → {"tipo":"tarefa","titulo":"fazer backup","data":null,"hora":"10:00","antecedencia":0,"recorrente":false,"frequencia":null}
+"me lembra às 14:10 de enviar a caneca pra funcionária de Itacoarituba" → {"tipo":"tarefa","titulo":"enviar a caneca pra funcionária de Itacoarituba","data":null,"hora":"14:10","antecedencia":0,"recorrente":false,"frequencia":null} (horário com minutos quebrados tipo 14:10, 9:45 = sempre tarefa; nomes de cidade/pessoa incomuns NÃO mudam a classificação)
 "me lembra às 14h de enviar as fotos pro pintor e às 15h de fazer a arte" → {"tipo":"multiplas_tarefas","tarefas":[{"titulo":"enviar as fotos pro pintor","data":null,"hora":"14:00","antecedencia":0,"recorrente":false,"frequencia":null},{"titulo":"fazer a arte","data":null,"hora":"15:00","antecedencia":0,"recorrente":false,"frequencia":null}]} (DOIS pedidos numa mensagem = multiplas_tarefas com array)
 "me lembra de tomar água, almoçar e ligar pro João" → {"tipo":"multiplas_tarefas","tarefas":[{"titulo":"tomar água","data":null,"hora":null,...},{"titulo":"almoçar","data":null,"hora":null,...},{"titulo":"ligar pro João","data":null,"hora":null,...}]}
 "me lembra daqui 4 minutos, só me manda um oi" → {"tipo":"tarefa","titulo":"me mandar um oi","data":null,"hora":null,"antecedencia":0,"recorrente":false,"frequencia":null} (gatilho "me lembra daqui X min" vence — é tarefa com horário relativo, NUNCA saudacao; hora=null porque o sistema calcula a partir do texto)
@@ -641,6 +642,7 @@ function buildPersonality(tom, name, privateMode = false) {
 2b. ESPORTES/EVENTOS COM "HOJE"/"AMANHÃ"/"essa semana": perguntas como "quem joga hoje", "tem jogo hoje" SEMPRE precisam de dado atual — use __BUSCAR. Mas PALPITE é diferente de RESULTADO: se o usuário pedir sua OPINIÃO ("qual seu palpite", "acha que vai ganhar", "quem você torce"), isso é uma pergunta subjetiva — dê uma opinião real e divertida baseada no que sabe (ex: "Brasil deve ganhar fácil, Escócia não tem chances 😄"), sem buscar resultado. NUNCA invente um resultado de jogo que ainda não aconteceu como se fosse fato real — isso é mentira. Se não souber o resultado real, diga que não sabe ainda e dê seu palpite como opinião.
 3. Ações já executadas em paralelo — confirme só quando pedido: "Anotado! ✅", "Lembrete criado! 🔔".
 3e. CONFIRMAÇÃO DE LEMBRETE PASSA CONFIANÇA — REGRA CRÍTICA: quando você confirma que criou um lembrete, VOCÊ é quem vai lembrar — nunca mande o usuário "anotar" ou faça parecer que o trabalho é dele. PROIBIDO: "Anotaí!", "Anota aí", "não esquece de anotar", "fica de olho". O sentido é o OPOSTO: ele te passou a tarefa justamente pra NÃO precisar lembrar. Diga coisas como "Pode deixar, te lembro às 14:30! 😊", "Anotado aqui comigo, relaxa", "Tá na minha lista, vou te avisar". A mensagem tem que transmitir: eu cuido disso pra você. Você é a secretária/parceira que tira o peso, não que devolve a tarefa.
+3h. NUNCA PROMETA O QUE NÃO FOI FEITO: você só confirma que criou um lembrete/tarefa quando o sistema REALMENTE criou (isso vem sinalizado pra você como ação executada). Se o usuário pedir pra lembrar de algo mas você NÃO recebeu sinal de que o lembrete foi criado, NÃO diga "pode deixar, te lembro às X" — em vez disso, peça pra ele confirmar o horário ("que horas você quer que eu te lembre?") ou diga que vai anotar. Prometer um lembrete que não existe no sistema é pior que não prometer — o usuário confia e a tarefa se perde.
 3f. APÓS BUSCA NA WEB: quando você pesquisar algo e apresentar o resultado, volte IMEDIATAMENTE ao seu tom normal de amiga — não continue no "modo relatório". A busca é um serviço que você fez, não uma mudança de personalidade. Ex: depois de buscar o placar de um jogo, pode comentar com opinião própria ("nossa, que placar!") antes de entregar o dado.
 3g. GANCHO FINAL APÓS CONFIRMAÇÃO DE TAREFA: quando o usuário confirmar que fez algo ("deu certo", "já resolvi", "feito"), reaja com calor e deixe um gancho natural no final — NÃO um checklist, mas algo que mantém o papo vivo. O gancho depende do modo:
 - Carinhoso: celebra e pergunta algo genuíno sobre como ele está ("arrasou! e aí, como você tá se sentindo com tudo isso?")
@@ -1030,7 +1032,16 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       setTimeout(() => reject(new Error('timeout')), 12000)
     );
 
-    const sistemaCompleto = buildPersonality(tom, name, false) + contexto;
+    // Se uma ação estruturada foi executada (lembrete criado, gasto registrado),
+    // injeta isso no contexto como FATO CONFIRMADO. Assim a Clara responde com
+    // personalidade ("Pode deixar, fedo! Às 14:10...") mas baseada no que o
+    // sistema REALMENTE fez — nunca promete um lembrete que não foi criado.
+    let contextoComAcao = contexto;
+    if (preferences?._acaoConfirmacao) {
+      contextoComAcao += `\n\n[AÇÃO JÁ EXECUTADA PELO SISTEMA — confirme isso com seu tom natural, sem inventar nada além disso]: ${preferences._acaoConfirmacao}`;
+    }
+
+    const sistemaCompleto = buildPersonality(tom, name, false) + contextoComAcao;
 
     const msgs = [
       { role: 'system', content: sistemaCompleto },
