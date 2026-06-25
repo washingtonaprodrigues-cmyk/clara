@@ -342,13 +342,13 @@ EXEMPLOS:
 async function classify(message, phone = null, contexto = '') {
   try {
     // Limita contexto para não exceder tokens do classify
-    const ctxLimitado = contexto ? contexto.slice(-2000) : '';
+    const ctxLimitado = contexto ? contexto.slice(-800) : '';
     const systemContent = ctxLimitado
       ? SYSTEM_PROMPT() + `\n\nCONTEXTO RECENTE:\n${ctxLimitado}`
       : SYSTEM_PROMPT();
 
     const completion = await groq.chat.completions.create({
-      model: MODEL_FORTE,  // 70b suporta mais tokens que o 8b (limite 6k vs 6k mas contexto maior)
+      model: MODEL_LEVE,  // 8b tem TPM maior (30k vs 12k do 70b) — melhor pra rajadas de mensagens
       messages: [
         { role: 'system', content: systemContent },
         { role: 'user', content: message }
@@ -1023,7 +1023,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     }
 
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('timeout')), 6000)
+      setTimeout(() => reject(new Error('timeout')), 12000)
     );
 
     const sistemaCompleto = buildPersonality(tom, name, false) + contexto;
