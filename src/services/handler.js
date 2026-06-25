@@ -468,6 +468,20 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         contexto += `\n\n[SAÚDE EM ABERTO] Mais cedo a pessoa mencionou: "${pendenciaSaude.resumo}".${agendaRelac} Se fizer sentido natural na conversa, pergunte com carinho genuíno como está — referencie a agenda acima se relevante. NUNCA cite remédios, doses ou medicamentos aqui. Não force se a mensagem for sobre outro assunto.`;
       }
 
+      // Injeta hora atual e período do dia (em horário de Brasília) para a Clara
+      // não chutar "bom dia"/"hora do almoço" errado. Bug antigo: o modelo
+      // não recebia a hora e inventava o período baseado em UTC.
+      const agoraBRT = nowBRT();
+      const horaBRTnum = agoraBRT.getHours();
+      const horaBRTfmt = `${String(horaBRTnum).padStart(2,'0')}:${String(agoraBRT.getMinutes()).padStart(2,'0')}`;
+      const periodoDia = horaBRTnum < 5 ? 'madrugada'
+        : horaBRTnum < 12 ? 'manhã'
+        : horaBRTnum < 14 ? 'horário de almoço'
+        : horaBRTnum < 18 ? 'tarde'
+        : horaBRTnum < 22 ? 'noite'
+        : 'fim da noite';
+      contexto += `\n\n[HORA ATUAL] Agora são ${horaBRTfmt} (Brasília), período: ${periodoDia}. Use isso pra saudar corretamente — não diga "bom dia" à tarde nem "hora do almoço" de manhã.`;
+
       if (contexto) contexto = `\n\nUse as informações abaixo para responder com precisão:${contexto}`;
       if (perfilPessoal) contexto += perfilPessoal;
       if (contextoExtra) contexto += contextoExtra;
