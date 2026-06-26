@@ -272,8 +272,8 @@ REGRAS:
 - Para salvar_cofre, o campo "conteudo" deve ser o texto completo informado (emails, senhas, códigos) tal como foi escrito, sem reformular
 
 EXEMPLOS DE ANTI-BUSCA (NÃO classifique como busca):
-"nossa que interessante" → {"tipo":"outro"} (reação, não pedido de busca)
-"sério mesmo?" → {"tipo":"outro"} (comentário sobre o que foi dito)
+"nossa que interessante" → {"tipo":"outro"}
+"sério mesmo?" → {"tipo":"outro"}
 "kkkk" → {"tipo":"outro"}
 "que louco isso" → {"tipo":"outro"}
 "e aí, o que você acha?" → {"tipo":"outro"}
@@ -313,34 +313,34 @@ TIPOS E FORMATOS:
 EXEMPLOS:
 "gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
 "me lembra às 10h de fazer backup" → {"tipo":"tarefa","titulo":"fazer backup","data":null,"hora":"10:00","antecedencia":0,"recorrente":false,"frequencia":null}
-"me lembra às 14:10 de enviar a caneca pra funcionária de Itacoarituba" → {"tipo":"tarefa","titulo":"enviar a caneca pra funcionária de Itacoarituba","data":null,"hora":"14:10","antecedencia":0,"recorrente":false,"frequencia":null} (horário com minutos quebrados tipo 14:10, 9:45 = sempre tarefa; nomes de cidade/pessoa incomuns NÃO mudam a classificação)
-"me lembra às 14h de enviar as fotos pro pintor e às 15h de fazer a arte" → {"tipo":"multiplas_tarefas","tarefas":[{"titulo":"enviar as fotos pro pintor","data":null,"hora":"14:00","antecedencia":0,"recorrente":false,"frequencia":null},{"titulo":"fazer a arte","data":null,"hora":"15:00","antecedencia":0,"recorrente":false,"frequencia":null}]} (DOIS pedidos numa mensagem = multiplas_tarefas com array)
+"me lembra às 14:10 de enviar a caneca pra funcionária de Itacoarituba" → {"tipo":"tarefa","titulo":"enviar a caneca pra funcionária de Itacoarituba","data":null,"hora":"14:10","antecedencia":0,"recorrente":false,"frequencia":null}
+"me lembra às 14h de enviar as fotos pro pintor e às 15h de fazer a arte" → {"tipo":"multiplas_tarefas","tarefas":[{"titulo":"enviar as fotos pro pintor","data":null,"hora":"14:00","antecedencia":0,"recorrente":false,"frequencia":null},{"titulo":"fazer a arte","data":null,"hora":"15:00","antecedencia":0,"recorrente":false,"frequencia":null}]}
 "me lembra de tomar água, almoçar e ligar pro João" → {"tipo":"multiplas_tarefas","tarefas":[{"titulo":"tomar água","data":null,"hora":null,...},{"titulo":"almoçar","data":null,"hora":null,...},{"titulo":"ligar pro João","data":null,"hora":null,...}]}
-"me lembra daqui 4 minutos, só me manda um oi" → {"tipo":"tarefa","titulo":"me mandar um oi","data":null,"hora":null,"antecedencia":0,"recorrente":false,"frequencia":null} (gatilho "me lembra daqui X min" vence — é tarefa com horário relativo, NUNCA saudacao; hora=null porque o sistema calcula a partir do texto)
-"já anota aí pra me lembrar segunda dessa reunião hein, umas 7:00 já me lembra dela" → {"tipo":"tarefa","titulo":"reunião","data":"${mapa['segunda']}","hora":"07:00","antecedencia":0,"recorrente":false,"frequencia":null} (LINGUAGEM NATURAL: "já anota aí", "me lembra", "umas 7:00" = gatilho de tarefa. "dessa reunião"/"dela" = o título é "reunião", extraído mesmo sem estar no formato limpo. "segunda" = próxima segunda. "umas 7:00" = 07:00, ignore o "umas")
-"bota um lembrete pra eu ligar pro contador amanhã de manhã" → {"tipo":"tarefa","titulo":"ligar pro contador","data":"${amanhaISO}","hora":"09:00","antecedencia":0,"recorrente":false,"frequencia":null} ("bota um lembrete" = gatilho; "de manhã" sem hora exata = assume 09:00)
-"não me deixa esquecer de pagar o boleto sexta" → {"tipo":"tarefa","titulo":"pagar o boleto","data":"${mapa['sexta']}","hora":null,"antecedencia":0,"recorrente":false,"frequencia":null} ("não me deixa esquecer" = gatilho de lembrete em linguagem natural)
+"me lembra daqui 4 minutos, só me manda um oi" → {"tipo":"tarefa","titulo":"me mandar um oi","data":null,"hora":null,"antecedencia":0,"recorrente":false,"frequencia":null}
+"já anota aí pra me lembrar segunda dessa reunião hein, umas 7:00 já me lembra dela" → {"tipo":"tarefa","titulo":"reunião","data":"${mapa['segunda']}","hora":"07:00","antecedencia":0,"recorrente":false,"frequencia":null}
+"bota um lembrete pra eu ligar pro contador amanhã de manhã" → {"tipo":"tarefa","titulo":"ligar pro contador","data":"${amanhaISO}","hora":"09:00","antecedencia":0,"recorrente":false,"frequencia":null}
+"não me deixa esquecer de pagar o boleto sexta" → {"tipo":"tarefa","titulo":"pagar o boleto","data":"${mapa['sexta']}","hora":null,"antecedencia":0,"recorrente":false,"frequencia":null}
 "me avisa daqui meia hora pra tirar o bolo do forno" → {"tipo":"tarefa","titulo":"tirar o bolo do forno","data":null,"hora":null,"antecedencia":0,"recorrente":false,"frequencia":null}
 "me cutuca em 10 minutos" → {"tipo":"tarefa","titulo":"te cutucar","data":null,"hora":null,"antecedencia":0,"recorrente":false,"frequencia":null}
 "que horas eu tenho que deixar os sulfites?" → {"tipo":"consulta","sobre":"horário de deixar os sulfites","datas":null}
 "a que horas é a reunião?" → {"tipo":"consulta","sobre":"horário da reunião","datas":null}
-"o que eu tenho pro dia 24?" → {"tipo":"consulta","sobre":"agenda do dia 24","datas":["${hojeISO.substring(0,7)}-24"]} (mês/ano = mês/ano atual, NUNCA 2024/2025)
+"o que eu tenho pro dia 24?" → {"tipo":"consulta","sobre":"agenda do dia 24","datas":["${hojeISO.substring(0,7)}-24"]}
 "tenho algo amanhã?" → {"tipo":"consulta","sobre":"agenda de amanhã","datas":["${amanhaISO}"]}
-"o que eu tenho pro dia 24 e dia 27?" → {"tipo":"consulta","sobre":"agenda dos dias 24 e 27","datas":["${hojeISO.substring(0,7)}-24","${hojeISO.substring(0,7)}-27"]} (duas datas no mesmo array, mesmo mês/ano de hoje)
-"o que eu tive no dia 1 de junho?" → {"tipo":"consulta","sobre":"agenda do dia 1 de junho","datas":["${hojeISO.substring(0,4)}-06-01"]} (mesmo sendo uma data passada, NÃO rola para o ano seguinte — é consulta, pode ser sobre o passado)
-"no dia 24 tenho consulta com a nutricionista" → {"tipo":"tarefa","titulo":"consulta com a nutricionista","data":"${hojeISO.substring(0,7)}-24","hora":null,"antecedencia":0,"recorrente":false,"frequencia":null} (mês/ano = mês/ano atual, dia 24 — NUNCA 2024/2025)
+"o que eu tenho pro dia 24 e dia 27?" → {"tipo":"consulta","sobre":"agenda dos dias 24 e 27","datas":["${hojeISO.substring(0,7)}-24","${hojeISO.substring(0,7)}-27"]}
+"o que eu tive no dia 1 de junho?" → {"tipo":"consulta","sobre":"agenda do dia 1 de junho","datas":["${hojeISO.substring(0,4)}-06-01"]}
+"no dia 24 tenho consulta com a nutricionista" → {"tipo":"tarefa","titulo":"consulta com a nutricionista","data":"${hojeISO.substring(0,7)}-24","hora":null,"antecedencia":0,"recorrente":false,"frequencia":null}
 "remarca pras 14h" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"14:00","nova_data":null}
 "muda a reunião pra 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
 "já peguei o 2 e o 3" → {"tipo":"lista_marcar","numeros":[2,3],"nomes":null,"lista":null}
-"Penso em trocar minha academia, a atual custa R$ 90 e fica a 15 min de casa, a nova custa R$ 130 mas é ao lado do trabalho. Vale a pena?" → {"tipo":"outro"} (decisão pessoal com dados que ele mesmo deu, NÃO é busca)
+"Penso em trocar minha academia, a atual custa R$ 90 e fica a 15 min de casa, a nova custa R$ 130 mas é ao lado do trabalho. Vale a pena?" → {"tipo":"outro"}
 "salva no cofre como Senhas GHL Gerentes: wenceslaubraz@casaecasa.com.br #Wenceslau2025, siqueiracampos@casaecasa.com.br #Siqueira2023" → {"tipo":"salvar_cofre","nome":"Senhas GHL Gerentes","conteudo":"wenceslaubraz@casaecasa.com.br #Wenceslau2025, siqueiracampos@casaecasa.com.br #Siqueira2023"}
 "salva o número da Maria, é minha vizinha" → {"tipo":"salvar_contato","nome":"Maria","phone":null,"relation":"vizinha","notes":null}
-"ajusta pra mim pra 31 doses" (sobre remédio) → {"tipo":"ajustar_remedio","nome":null,"doses":31,"operacao":"definir"} (nome null se não foi citado — o sistema usa o remédio do contexto recente)
+"ajusta pra mim pra 31 doses" (sobre remédio) → {"tipo":"ajustar_remedio","nome":null,"doses":31,"operacao":"definir"}
 "Ajusta pra mim pra 31 doses por favor" → {"tipo":"ajustar_remedio","nome":null,"doses":31,"operacao":"definir"}
 "ajusta o estoque da tiroide pra 20" → {"tipo":"ajustar_remedio","nome":"tiroide","doses":20,"operacao":"definir"}
 "remarca o remédio da tiróide pra todo dia 7 horas" → {"tipo":"ajustar_remedio","nome":"tiroide","horario_antigo":null,"horario_novo":"07:00"}
 "muda o horário da tiroide de 7:30 pra 7:00" → {"tipo":"ajustar_remedio","nome":"tiroide","horario_antigo":"07:30","horario_novo":"07:00"}
-"tomei 2 hoje" (sobre remédio, mais do que o normal) → {"tipo":"ajustar_remedio","nome":null,"doses":1,"operacao":"decrementar"} (1 dose extra além da automática)
+"tomei 2 hoje" (sobre remédio, mais do que o normal) → {"tipo":"ajustar_remedio","nome":null,"doses":1,"operacao":"decrementar"}
 "oi" → {"tipo":"saudacao"}
 "meu saldo é 1400" → {"tipo":"saldo","valor":1400.0}
 `;
@@ -355,7 +355,7 @@ async function classify(message, phone = null, contexto = '') {
       : SYSTEM_PROMPT();
 
     const completion = await groq.chat.completions.create({
-      model: MODEL_LEVE,  // 8b tem TPM maior (30k vs 12k do 70b) — melhor pra rajadas de mensagens
+      model: MODEL_FORTE,  // 70b: limite TPM 12k vs 6k do 8b nesta conta — evita 413
       messages: [
         { role: 'system', content: systemContent },
         { role: 'user', content: message }
@@ -367,9 +367,33 @@ async function classify(message, phone = null, contexto = '') {
     text = text.replace(/```/g, '').replace(/```/g, '').trim();
     return JSON.parse(text);
   } catch (error) {
-    if (isRateLimit(error) && phone) {
-      const tipo = isTPD(error) ? 'tpd' : 'rpm';
-      await ativarPausaCreativa(phone, tipo);
+    // Se bateu rate limit no Groq chave 1, tenta a chave 2 antes de desistir.
+    // Isso evita que lembretes/gastos virem "outro" só porque a chave 1 encheu.
+    if (isRateLimit(error)) {
+      try {
+        if (groq2 && !_groq2EmTPD) {
+          const ctxLimitado2 = contexto ? contexto.slice(-800) : '';
+          const systemContent2 = ctxLimitado2 ? SYSTEM_PROMPT() + `\n\nCONTEXTO RECENTE:\n${ctxLimitado2}` : SYSTEM_PROMPT();
+          const completion2 = await groq2.chat.completions.create({
+            model: MODEL_FORTE,
+            messages: [
+              { role: 'system', content: systemContent2 },
+              { role: 'user', content: message }
+            ],
+            temperature: 0.2,
+            max_tokens: 200,
+          });
+          let text2 = completion2.choices[0].message.content.trim().replace(/```/g, '').trim();
+          console.log('[Classify] Resolvido via chave 2');
+          return JSON.parse(text2);
+        }
+      } catch (error2) {
+        console.error('[Classify] Chave 2 também falhou:', error2.message);
+      }
+      if (phone) {
+        const tipo = isTPD(error) ? 'tpd' : 'rpm';
+        await ativarPausaCreativa(phone, tipo);
+      }
     }
     console.error('Erro classify:', error.message);
     return { tipo: 'outro', resposta: 'Entendi!' };
