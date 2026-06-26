@@ -926,16 +926,20 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     if (preferences?._systemOverride) {
       const _overrideMaxTokens = preferences?._maxTokens || 200;
       try {
+        // Injeta a personalidade da Clara ANTES do override, pra ela manter
+        // o tom dela (carinhoso, brincalhão, "fedo") mesmo numa boa noite curta.
+        // Sem isso o modelo escreve genérico/formal com "parabéns" e aspas.
+        const sistemaComAlma = buildPersonality(tom, name, false) + '\n\n' + preferences._systemOverride;
         const completion = await groq.chat.completions.create({
           model: MODEL_LEVE,
           messages: [
-            { role: 'system', content: preferences._systemOverride },
+            { role: 'system', content: sistemaComAlma },
             { role: 'user', content: message }
           ],
           temperature: 0.85,
-          max_tokens: 200,
+          max_tokens: _overrideMaxTokens,
         });
-        return filtrarResposta(completion.choices[0].message.content.trim());
+        return filtrarResposta(apararRespostaCortada(completion.choices[0].message.content.trim()));
       } catch (eOverride) {
         if (isRateLimit(eOverride) && phone) {
           // Sem alternativa — retorna null em vez de mandar a desculpa de pausa
