@@ -403,7 +403,7 @@ REGRAS ABSOLUTAS:
 - Se tiver compromisso importante amanhã, mencione levemente e só isso
 - Varie sempre — nunca repita a mesma frase de boa noite
 - Tom: ${prefs.tom || 'carinhoso'}`;
-        const msg = await freeResponse('Boa noite.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBoaNoite, _maxTokens: 60 });
+        const msg = await freeResponse('Boa noite.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBoaNoite, _maxTokens: 80 });
         if (!msg) { console.log(`[Boa noite] Rate limit, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
         console.log(`[Boa noite] Enviado para ${user.phone}`);
