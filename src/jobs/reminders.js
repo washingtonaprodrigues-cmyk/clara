@@ -285,11 +285,15 @@ cron.schedule('0 18 * * *', async () => {
 
         let msg = '';
         if (concluidos.length > 0 && pendentes.length === 0) {
-          // Gera mensagem de fechamento com personalidade — sem LLM pra não virar coach
+          // Fechamento do dia — texto fixo no tom da Clara, sem coach/parabéns.
+          // Faz sentido pra fim de EXPEDIENTE (não fim do dia): a pessoa vai
+          // pra casa viver a noite, não dormir. Sem "mereceu descansar".
           const variacoesFechamento = [
-            `${concluidos.length} item${concluidos.length > 1 ? 's' : ''} na conta hoje${nome} 💪`,
-            `Tudo fechado hoje${nome}! Mereceu descansar 😊`,
-            `Dia produtivo${nome} — ${concluidos.length} item${concluidos.length > 1 ? 's' : ''} concluído${concluidos.length > 1 ? 's' : ''} ✅`,
+            `Deu o dia${nome}! Tudo fechado por aqui, sem nada pendente 😊`,
+            `Encerrou tudo hoje${nome}! Agenda limpa, pode seguir tranquilo ✅`,
+            `Tudo certo por aqui! Você finalizou os ${concluidos.length} compromisso${concluidos.length > 1 ? 's' : ''} de hoje 💜`,
+            `Fim de expediente${nome}! Tudo em dia, nada ficou pra trás 😊`,
+            `Pronto, dia organizado e sem pendências${nome}! Bora pra noite 💪`,
           ];
           msg = variacoesFechamento[Math.floor(Math.random() * variacoesFechamento.length)];
         } else if (concluidos.length > 0 && pendentes.length > 0) {
