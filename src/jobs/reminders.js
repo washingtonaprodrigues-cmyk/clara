@@ -312,12 +312,13 @@ REGRAS:
 - Se até 2, mencione em frase corrida
 - Encerre com algo curto tipo "estarei aqui pra te lembrar de tudo"
 - Varie a abertura. Máximo 1 emoji. NÃO seja poética. NUNCA coloque entre aspas.
+- DATA: hoje é ${diaTexto}. Se mencionar o dia da semana, use EXATAMENTE esse — NUNCA invente outro dia. Na dúvida, não cite o dia da semana.
 Tom: ${prefs.tom || 'carinhoso'}.`;
         } else {
           systemBomDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
 Crie uma mensagem de bom dia SIMPLES — como quem fala pela primeira vez no dia.
 CONTEXTO: ${ctx}
-REGRAS: Máximo 2-3 linhas. Sem compromissos hoje — algo positivo e leve. Varie sempre a abertura. Máximo 1 emoji. NÃO pergunte. NÃO agende nada.
+REGRAS: Máximo 2-3 linhas. Sem compromissos hoje — algo positivo e leve. Varie sempre a abertura. Máximo 1 emoji. NÃO pergunte. NÃO agende nada. DATA: hoje é ${diaTexto} — se citar o dia da semana, use EXATAMENTE esse, nunca invente outro.
 Tom: ${prefs.tom || 'carinhoso'}.`;
         }
         const msg = await freeResponse('Envie uma mensagem de bom dia.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBomDia });
