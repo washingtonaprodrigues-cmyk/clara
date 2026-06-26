@@ -207,6 +207,47 @@ async function ativarPausaCreativa(phone, tipo) {
   return ativarModoDireto(phone, tipo);
 }
 
+// ── Prompt ENXUTO só para classificação ───────────────────────────────────
+// O SYSTEM_PROMPT completo tem ~6000 tokens e rodava a cada mensagem no
+// classify, queimando o TPD diário do Groq em poucas horas. Este prompt
+// reduzido (~1200 tokens) tem só o essencial pra classificar corretamente.
+// As regras detalhadas e exemplos extras ficam no SYSTEM_PROMPT completo,
+// usado apenas quando realmente necessário.
+const CLASSIFY_PROMPT = () => {
+  const { hojeISO, diaSemanaHoje, mapa, amanhaISO, depoisAmanhaISO, horaAtual } = infoDatas();
+  const mapaTexto = Object.entries(mapa).map(([dia, data]) => dia + '=' + data).join(', ');
+  return `Classificador da Clara. Retorne APENAS JSON, nada mais. Hoje: ${hojeISO} (${diaSemanaHoje}), ${horaAtual} Brasília.
+Datas: hoje=${hojeISO}, amanhã=${amanhaISO}, depois=${depoisAmanhaISO}. Dias: ${mapaTexto}. Use SEMPRE estes valores. Dia X sem mês = mês atual ${hojeISO.substring(0,7)} (se passou, mês seguinte). Ano sempre ${hojeISO.substring(0,4)}+.
+
+TIPOS e formato de saída:
+- tarefa: {"tipo":"tarefa","titulo":"desc","data":"YYYY-MM-DD ou null","hora":"HH:MM ou null","antecedencia":0,"recorrente":false,"frequencia":null}
+- multiplas_tarefas: {"tipo":"multiplas_tarefas","tarefas":[{...},{...}]} — quando há 2+ pedidos numa mensagem
+- gasto: {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"x"}
+- entrada_financeira: {"tipo":"entrada_financeira","valor":100.0,"descricao":"x"}
+- consulta: {"tipo":"consulta","sobre":"x","datas":["YYYY-MM-DD"] ou null} — pergunta sobre agenda
+- concluir_lembrete: {"tipo":"concluir_lembrete","titulo":"x"} — "já fiz", "deu certo", "feito", "resolvido" quando há lembrete no contexto
+- editar_lembrete / deletar_lembrete: {"tipo":"...","titulo":"x","data":null,"hora":null}
+- ajustar_remedio: {"tipo":"ajustar_remedio","nome":"x","operacao":"decrementar/ajustar","valor":N}
+- relatorio_financeiro / consulta_saldo: {"tipo":"..."}
+- outro: {"tipo":"outro"} — conversa, pergunta de conhecimento, saudação, qualquer coisa que não seja ação acima
+
+GATILHOS DE TAREFA (prioridade sobre conteúdo): "me lembra", "me avisa", "anota aí", "já anota", "bota/põe um lembrete", "não me deixa esquecer", "agenda", "marca", "daqui X min/horas", "às HH de". Extraia título mesmo de referência vaga ("dessa reunião"→"reunião"). "umas 7:00"→07:00. CONDICIONAL ("se quiser", "se puder") = NÃO é pedido = outro.
+GATILHO vence saudação: "me lembra daqui 4 min de mandar um oi" = tarefa (titulo "mandar um oi"), não saudação.
+Se mensagem cita [Mensagem citada: X], use X pra achar qual item (lembrete/remédio).
+Hora relativa ("daqui 20 min", "em 1h") = tarefa com hora:null (sistema calcula do texto).
+"me lembra X min antes de Y" = {"tipo":"tarefa","titulo":"Y","hora":null,"antecedencia":X}.
+
+Exemplos:
+"me lembra às 10h de fazer backup" → {"tipo":"tarefa","titulo":"fazer backup","data":null,"hora":"10:00","antecedencia":0,"recorrente":false,"frequencia":null}
+"já anota aí pra me lembrar segunda dessa reunião, umas 7:00" → {"tipo":"tarefa","titulo":"reunião","data":"${mapa['segunda']}","hora":"07:00","antecedencia":0,"recorrente":false,"frequencia":null}
+"me lembra às 14h de enviar fotos e às 15h de fazer arte" → {"tipo":"multiplas_tarefas","tarefas":[{"titulo":"enviar fotos","data":null,"hora":"14:00","antecedencia":0,"recorrente":false,"frequencia":null},{"titulo":"fazer arte","data":null,"hora":"15:00","antecedencia":0,"recorrente":false,"frequencia":null}]}
+"gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
+"deu certo" (com lembrete no contexto) → {"tipo":"concluir_lembrete","titulo":"<do contexto>"}
+"o que tenho amanhã?" → {"tipo":"consulta","sobre":"agenda amanhã","datas":["${amanhaISO}"]}
+"qual a diferença entre X e Y?" → {"tipo":"outro"}
+"oi clara tudo bem?" → {"tipo":"outro"}`;
+};
+
 const SYSTEM_PROMPT = () => {
   const { hojeISO, diaSemanaHoje, mapa, amanhaISO, depoisAmanhaISO, horaAtual } = infoDatas();
   const mapaTexto = Object.entries(mapa).map(([dia, data]) => dia + '=' + data).join(', ');
@@ -350,12 +391,15 @@ async function classify(message, phone = null, contexto = '') {
   try {
     // Limita contexto para não exceder tokens do classify
     const ctxLimitado = contexto ? contexto.slice(-800) : '';
+    // Usa o prompt ENXUTO (~1200 tokens) em vez do SYSTEM_PROMPT completo
+    // (~6000 tokens). Reduz o consumo de TPD em ~5x — antes cada classify
+    // queimava o limite diário rápido, agora rende muito mais.
     const systemContent = ctxLimitado
-      ? SYSTEM_PROMPT() + `\n\nCONTEXTO RECENTE:\n${ctxLimitado}`
-      : SYSTEM_PROMPT();
+      ? CLASSIFY_PROMPT() + `\n\nCONTEXTO:\n${ctxLimitado}`
+      : CLASSIFY_PROMPT();
 
     const completion = await groq.chat.completions.create({
-      model: MODEL_FORTE,  // 70b: limite TPM 12k vs 6k do 8b nesta conta — evita 413
+      model: MODEL_LEVE,  // 8b: prompt enxuto cabe nos 6k TPM e é mais barato
       messages: [
         { role: 'system', content: systemContent },
         { role: 'user', content: message }
@@ -373,9 +417,9 @@ async function classify(message, phone = null, contexto = '') {
       try {
         if (groq2 && !_groq2EmTPD) {
           const ctxLimitado2 = contexto ? contexto.slice(-800) : '';
-          const systemContent2 = ctxLimitado2 ? SYSTEM_PROMPT() + `\n\nCONTEXTO RECENTE:\n${ctxLimitado2}` : SYSTEM_PROMPT();
+          const systemContent2 = ctxLimitado2 ? CLASSIFY_PROMPT() + `\n\nCONTEXTO:\n${ctxLimitado2}` : CLASSIFY_PROMPT();
           const completion2 = await groq2.chat.completions.create({
-            model: MODEL_FORTE,
+            model: MODEL_LEVE,
             messages: [
               { role: 'system', content: systemContent2 },
               { role: 'user', content: message }
@@ -389,6 +433,24 @@ async function classify(message, phone = null, contexto = '') {
         }
       } catch (error2) {
         console.error('[Classify] Chave 2 também falhou:', error2.message);
+      }
+      // Último recurso: tenta classificar via Gemini (quando ambas Groq esgotam)
+      try {
+        if (geminiDisponivel && geminiDisponivel()) {
+          const ctxLimitado3 = contexto ? contexto.slice(-800) : '';
+          const promptGemini = CLASSIFY_PROMPT() + (ctxLimitado3 ? `\n\nCONTEXTO:\n${ctxLimitado3}` : '');
+          const respGemini = await geminiFreeResponse([
+            { role: 'system', content: promptGemini },
+            { role: 'user', content: message }
+          ], { maxTokens: 200, temperature: 0.2 });
+          if (respGemini) {
+            const limpo = respGemini.replace(/```json|```/g, '').trim();
+            console.log('[Classify] Resolvido via Gemini');
+            return JSON.parse(limpo);
+          }
+        }
+      } catch (error3) {
+        console.error('[Classify] Gemini também falhou:', error3.message);
       }
       if (phone) {
         const tipo = isTPD(error) ? 'tpd' : 'rpm';
