@@ -261,6 +261,14 @@ router.post('/', async (req, res) => {
   try {
     const body = req.body;
 
+    // LOG DIAGNOSTICO — remove apos resolver duplicacao
+    const _msgId = body.message?.id || body.message?.messageid || body.message?.messageId || body.message?.key?.id || 'sem-id';
+    const _fromMe = body.message?.fromMe;
+    const _wasSentByApi = body.message?.wasSentByApi;
+    const _sender = body.message?.sender_pn || body.message?.sender || 'sem-sender';
+    const _text = (body.message?.text || body.message?.content?.text || '').slice(0, 40);
+    console.log(`[Webhook-diag] id:${_msgId} fromMe:${_fromMe} wasSentByApi:${_wasSentByApi} sender:${_sender} text:"${_text}"`);
+
     if (body.message?.fromMe === true) return res.json({ ok: true });
     if (body.message?.wasSentByApi === true) return res.json({ ok: true });
     if (body.message?.isGroup === true) return res.json({ ok: true });
