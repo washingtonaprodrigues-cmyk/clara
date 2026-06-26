@@ -24,7 +24,7 @@ function marcarGroq2TPD() {
 async function tentarGroq2(msgs, isCurta) {
   if (!groq2 || _groq2EmTPD) return null;
   try {
-    const timeout2 = new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000));
+    const timeout2 = new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 12000));
     const completion = await Promise.race([
       groq2.chat.completions.create({
         model: MODEL_FORTE,
@@ -1087,7 +1087,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     }
 
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('timeout')), 12000)
+      setTimeout(() => reject(new Error('timeout')), 18000)
     );
 
     // Se uma ação estruturada foi executada (lembrete criado, gasto registrado),
@@ -1175,7 +1175,15 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       return await ativarPausaCreativa(phone, tipo);
     }
     console.error('Erro freeResponse:', e.message);
-    return 'Entendi! Como posso te ajudar?';
+    // Fallback no tom da Clara — nunca o robótico "Entendi! Como posso ajudar?".
+    // Acontece em timeout/erro raro; soa como amiga com sinal ruim, não como bot.
+    const FALLBACK_CLARA = [
+      'Opa, me perdi aqui um segundinho 😅 repete pra mim?',
+      'Eita, travei agora 😅 manda de novo?',
+      'Desculpa fedo, me embolei aqui 😬 fala de novo?',
+      'Ai, deu um branco 😅 repete pra mim que eu respondo?',
+    ];
+    return FALLBACK_CLARA[Math.floor(Math.random() * FALLBACK_CLARA.length)];
   }
 }
 
