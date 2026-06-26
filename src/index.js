@@ -4,6 +4,10 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 
+// ── Versao de build — confirma no log qual codigo esta rodando ──────────
+const BUILD_VERSION = 's12-a';
+console.log(`[Build] Clara ${BUILD_VERSION} iniciando — ${new Date().toISOString()}`);
+
 const app = express();
 const httpServer = http.createServer(app);
 
@@ -68,12 +72,12 @@ app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/dashboard.html'));
 });
 app.get('/', (req, res) => {
-  res.json({ status: 'Clara online', version: '4.2.0' });
+  res.json({ status: 'Clara online', version: '4.2.0', build: BUILD_VERSION });
 });
 
 require('./jobs/reminders');
 
 const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => {
-  console.log(`✅ Clara rodando na porta ${PORT}`);
+  console.log(`Clara rodando na porta ${PORT} [${BUILD_VERSION}]`);
 });
