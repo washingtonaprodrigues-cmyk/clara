@@ -1054,8 +1054,11 @@ cron.schedule('* * * * *', async () => {
           where: { id: r.id, sent: false },
           data: { sent: true }
         });
-        if (res.count === 1) claimados.push(r);
-        // count:0 = outro processo já claimou este lembrete — ignora
+        if (res.count === 1) {
+          claimados.push(r);
+        } else {
+          console.log(`[Reminder] Claim FALHOU para ${r.id.slice(-6)} (count:${res.count}) — já enviado por outro processo, pulando`);
+        }
       }
       if (!claimados.length) continue;
       grupo.reminders = claimados;
@@ -1082,7 +1085,7 @@ cron.schedule('* * * * *', async () => {
       }
 
       await sendMessage(grupo.phone, msg);
-      console.log(`[Reminder] ${grupo.phone} → ${grupo.reminders.length} lembrete(s) às ${grupo.hora}`);
+      console.log(`[Reminder] ${grupo.phone} → ${grupo.reminders.length} lembrete(s) às ${grupo.hora} | enviado por instância ${INSTANCE_ID} | ids: ${grupo.reminders.map(r => r.id.slice(-6)).join(',')}`);
     }
   } catch (e) { console.error('[Reminder] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
