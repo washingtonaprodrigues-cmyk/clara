@@ -626,18 +626,7 @@ router.put('/lembrete-remarcar/:id', async (req, res) => {
     });
 
     res.json({ ok: true });
-
-    try {
-      const dataFormatada = scheduledAt.toLocaleString('pt-BR', {
-        timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short'
-      });
-      await sendButtons(lembrete.phone,
-        `✅ Lembrete remarcado!\n\n📌 ${lembrete.message}\n🕒 ${dataFormatada}\n\nVou te avisar no horário certinho.`,
-        [{ id: 'ver_lembretes', label: '📋 Ver lembretes' }, { id: 'menu', label: '🏠 Menu' }]
-      );
-    } catch (wErr) {
-      console.error('[lembrete-remarcar] Erro ao notificar WhatsApp:', wErr.message);
-    }
+    // Notificacao WhatsApp removida — dashboard ja exibe feedback visual ao remarcar
   } catch (e) {
     console.error('Erro remarcar lembrete:', e.message);
     res.status(500).json({ error: e.message });
