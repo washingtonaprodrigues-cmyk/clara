@@ -1002,7 +1002,9 @@ async function tentarFallbackCascata(contexto, name, message, logPrefix = 'ModoD
     try {
       const resposta = await openrouterFreeResponse(msgsFallback, { temperature: 0.3, maxTokens: 300 });
       console.log(`[${logPrefix}] OpenRouter respondeu`);
-      return resposta;
+      // Passa pelo filtro: o OpenRouter free é mais fraco e às vezes gera
+      // "(sim/não)", aspas e cortes — o filtrarResposta limpa esses vícios.
+      return filtrarResposta(apararRespostaCortada(resposta));
     } catch (eOR) {
       console.error(`[${logPrefix}] OpenRouter falhou:`, eOR.message);
     }
@@ -1014,8 +1016,14 @@ async function tentarFallbackCascata(contexto, name, message, logPrefix = 'ModoD
 // Filtro de saída — remove padrões banidos de qualquer resposta
 function filtrarResposta(t) {
   if (!t || typeof t !== 'string') return t;
-  t = t.replace(/\s*\(sim\s*\/\s*n[\xE3a]o\)\s*/gi, '');
-  t = t.replace(/\s*\(s\s*\/\s*n\)\s*/gi, '');
+  // Remove variações de "(sim/não)" que modelos mais fracos colam no fim:
+  // (sim/não), (s/n), (sim ou não), [sim/não], sim/não? etc
+  t = t.replace(/\s*[\(\[]\s*sim\s*\/\s*n[\xE3a]o\s*[\)\]]\s*/gi, '');
+  t = t.replace(/\s*[\(\[]\s*s\s*\/\s*n\s*[\)\]]\s*/gi, '');
+  t = t.replace(/\s*[\(\[]\s*sim\s+ou\s+n[\xE3a]o\s*[\)\]]\s*/gi, '');
+  t = t.replace(/\s*sim\s*\/\s*n[\xE3a]o\s*\??\s*$/gi, '');
+  // Remove "Responda com sim ou não" e variações no fim
+  t = t.replace(/\s*responda?\s+(com\s+)?sim\s+ou\s+n[\xE3a]o\.?\s*$/gi, '');
   t = t.trim();
   // Remove aspas do início E do final (mesmo que não fechem perfeitamente)
   if (t.startsWith('"')) t = t.replace(/^"+/, '').trim();
