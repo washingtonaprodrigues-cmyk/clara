@@ -179,9 +179,52 @@ function todosModelosEsgotados() {
   return GEMINI_MODELS.every(m => estaEsgotado(m));
 }
 
+// Analisa uma imagem com o Gemini Vision. Recebe o base64 da imagem, o
+// mimeType, e um prompt de sistema (a personalidade da Clara + instrução).
+// Retorna o texto da análise no tom pedido.
+async function geminiVision(base64Image, mimeType, systemPrompt, userPrompt = 'O que você vê nesta imagem?') {
+  if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
+
+  // Modelo com visão — gemini-2.5-flash enxerga imagem nativamente
+  const model = 'gemini-2.5-flash';
+  const body = {
+    contents: [{
+      role: 'user',
+      parts: [
+        { text: userPrompt },
+        { inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Image } }
+      ]
+    }],
+    generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
+  };
+  if (systemPrompt) {
+    body.systemInstruction = { parts: [{ text: systemPrompt }] };
+  }
+
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('timeout')), 15000)
+  );
+  const fetchPromise = fetch(geminiUrl(model), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const response = await Promise.race([fetchPromise, timeoutPromise]);
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(`Gemini Vision erro ${response.status}: ${errText.slice(0, 200)}`);
+  }
+  const data = await response.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('Gemini Vision retornou vazio');
+  return text.trim();
+}
+
 module.exports = {
   geminiDisponivel,
   geminiFreeResponse,
+  geminiVision,
   isGeminiRateLimit,
   todosModelosEsgotados,
   GEMINI_MODELS,
