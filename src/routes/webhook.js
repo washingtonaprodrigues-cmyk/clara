@@ -512,9 +512,15 @@ Isso é sua casa ou seu trabalho? Assim eu aprendo seus endereços fixos 😊`;
       return res.json({ ok: true });
     }
 
-    if (['image','video','document'].includes(body.message?.mediaType) ||
-        ['imageMessage','videoMessage','documentMessage'].includes(body.message?.messageType)) {
-      sendMessage(phone, 'Por enquanto não consigo ver fotos, vídeos ou arquivos — mas se escrever pra mim eu ajudo! 😊').catch(console.error);
+    // Imagem → processa com visão (Gemini). Vídeo e documento ainda não.
+    if (body.message?.mediaType === 'image' || body.message?.messageType === 'imageMessage') {
+      console.log('[Imagem] Detectada. Processando com visão...');
+      processImage(phone, body).catch(console.error);
+      return res.json({ ok: true });
+    }
+    if (['video','document'].includes(body.message?.mediaType) ||
+        ['videoMessage','documentMessage'].includes(body.message?.messageType)) {
+      sendMessage(phone, 'Por enquanto não consigo ver vídeos ou arquivos — mas foto e áudio eu já dou conta! 😊').catch(console.error);
       return res.json({ ok: true });
     }
 
@@ -581,3 +587,99 @@ async function transcribeAndProcess(phone, body) {
 }
 
 module.exports = router;
+
+// ── Processamento de imagem com visão (Gemini) ────────────────────────────
+// Baixa a imagem via UAZAPI (mesmo fluxo do áudio), manda pro Gemini Vision
+// com a personalidade da Clara, e ela responde no jeito dela. Detecta o tipo:
+// - Comprovante/recibo → extrai valor e cria o gasto
+// - Documento → lê e resume o que importa
+// - Foto casual → comenta como amiga
+async function processImage(phone, body) {
+  try {
+    const messageId = body.message?.id || body.message?.messageid || body.message?.messageId || body.message?.key?.id;
+    if (!messageId) {
+      await sendMessage(phone, 'Não consegui abrir a imagem 😕 Manda de novo?');
+      return;
+    }
+
+    // Aviso rápido no tom da Clara enquanto analisa
+    let nome = '';
+    try {
+      const u = await prisma.user.findFirst({ where: { phone } }).catch(() => null);
+      nome = u?.name ? ` ${u.name.split(' ')[0]}` : '';
+    } catch {}
+    await sendMessage(phone, 'Deixa eu dar uma olhada 👀');
+
+    // Baixa a imagem em base64
+    const UAZAPI_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
+    const UAZAPI_TOKEN = process.env.UAZAPI_TOKEN;
+    const dlRes = await fetch(`${UAZAPI_URL}/message/download`, {
+      method: 'POST',
+      headers: { 'token': UAZAPI_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: messageId, return_base64: true, return_link: false }),
+    });
+    if (!dlRes.ok) {
+      await sendMessage(phone, 'Não consegui baixar a imagem 😕 Tenta de novo?');
+      return;
+    }
+    const dlData = await dlRes.json();
+    if (!dlData.base64Data) {
+      await sendMessage(phone, 'A imagem veio vazia 😕 Manda de novo?');
+      return;
+    }
+    const mimeType = dlData.mimetype || 'image/jpeg';
+
+    // Legenda que o usuário mandou junto com a foto (se houver)
+    const legenda = body.message?.caption || body.message?.text || '';
+
+    // Monta o prompt da Clara para análise de imagem
+    const { geminiVision } = require('../services/gemini');
+    const systemPrompt = `Você é a Clara, uma amiga próxima e esperta no WhatsApp${nome ? `, conversando com${nome}` : ''}. Você está olhando uma imagem que seu amigo te mandou. Reaja de forma natural e calorosa, do SEU jeito — não como um robô descrevendo pixels.
+
+Identifique o que é e responda adequadamente:
+- Se for COMPROVANTE/RECIBO/NOTA com um valor: diga que registrou o gasto e mencione o valor e onde foi (ex: "Anotei aqui: R$ 50 no mercado 💸"). Comece a resposta com a tag oculta [GASTO:valor:categoria:descricao] na PRIMEIRA linha (ex: [GASTO:50.00:mercado:compras]), depois a resposta normal embaixo. A tag será removida antes de enviar.
+- Se for DOCUMENTO/PRINT com informação: leia e resuma o que importa, de forma útil e no seu tom.
+- Se for uma FOTO casual (pessoa, lugar, comida, pet): comente como amiga, com carinho e bom humor.
+- Se tiver um remédio/receita: identifique e fale sobre, mas lembre de confirmar dosagem com médico.
+
+${legenda ? `O amigo escreveu junto com a foto: "${legenda}" — leve isso em conta.` : ''}
+
+Seja calorosa, breve (máximo 5 linhas), sem aspas, no português do Brasil. Use no máximo 1-2 emojis.`;
+
+    const userPrompt = legenda || 'Olha essa imagem e reage do seu jeito.';
+    let analise;
+    try {
+      analise = await geminiVision(dlData.base64Data, mimeType, systemPrompt, userPrompt);
+    } catch (eVision) {
+      console.error('[Imagem] Erro na visão:', eVision.message);
+      await sendMessage(phone, 'Vi que você mandou uma foto, mas não consegui processar agora 😕 Me conta o que é?');
+      return;
+    }
+
+    // Se a Clara detectou um gasto, extrai a tag e cria o registro em silêncio
+    // (a própria resposta dela já confirma o gasto — não duplica mensagem)
+    const gastoMatch = analise.match(/\[GASTO:([\d.]+):([^:]+):([^\]]+)\]/);
+    if (gastoMatch) {
+      const valor = parseFloat(gastoMatch[1]);
+      const categoria = gastoMatch[2].trim();
+      const descricao = gastoMatch[3].trim();
+      analise = analise.replace(/\[GASTO:[^\]]+\]\s*/, '').trim();
+      try {
+        const memory = require('../services/memory');
+        const user = await prisma.user.findFirst({ where: { phone } }).catch(() => null);
+        if (user && valor > 0) {
+          await memory.saveExpense(user.id, { valor, categoria, descricao });
+          console.log(`[Imagem] Gasto criado: R$ ${valor} (${categoria})`);
+        }
+      } catch (eGasto) {
+        console.error('[Imagem] Erro ao criar gasto:', eGasto.message);
+      }
+    }
+
+    console.log(`[Imagem] ${phone} analisada: "${analise.slice(0, 60)}"`);
+    await sendMessage(phone, analise);
+  } catch (e) {
+    console.error('[Imagem] Erro:', e.message);
+    await sendMessage(phone, 'Tive um problema com a imagem 😕 Pode tentar de novo?');
+  }
+}
