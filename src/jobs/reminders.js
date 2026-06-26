@@ -15,6 +15,84 @@ if (global.__claraCronsRegistrados) {
 }
 global.__claraCronsRegistrados = true;
 
+// ── Lock de instância única (cross-container) ─────────────────────────────
+// O guard acima só protege contra duplo require no MESMO processo. Mas o
+// Railway pode ter dois containers vivos ao mesmo tempo (janela de deploy,
+// restart, etc), e aí os crons rodam em DOBRO → lembretes e remédios
+// duplicam de forma intermitente.
+//
+// Solução: cada container gera um ID único e grava um "heartbeat" no banco
+// a cada 20s. Antes de QUALQUER cron executar, ele checa se é o dono ativo
+// (o heartbeat mais recente). Só o dono roda. Se o dono morrer, em ~45s
+// outro container assume. Isso garante UM executor de crons, definitivamente.
+const INSTANCE_ID = `${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const HEARTBEAT_TYPE = '__cron_owner_heartbeat__';
+const HEARTBEAT_STALE_MS = 45000; // dono considerado morto após 45s sem heartbeat
+
+let _souODono = false;
+
+async function renovarHeartbeat() {
+  try {
+    const ancoraId = await getAncoraUserId();
+    if (!ancoraId) return;
+
+    const agora = new Date();
+    const heartbeats = await prisma.memory.findMany({
+      where: { type: HEARTBEAT_TYPE },
+      orderBy: { createdAt: 'desc' }
+    }).catch(() => []);
+
+    const vivo = heartbeats.find(h => (agora.getTime() - new Date(h.createdAt).getTime()) < HEARTBEAT_STALE_MS);
+
+    if (!vivo) {
+      // Ninguém vivo — reivindica ser o dono apagando heartbeats velhos e criando o meu
+      await prisma.memory.deleteMany({ where: { type: HEARTBEAT_TYPE } }).catch(() => {});
+      await prisma.memory.create({
+        data: { userId: ancoraId, type: HEARTBEAT_TYPE, content: INSTANCE_ID }
+      }).catch(() => {});
+      _souODono = true;
+      console.log(`[Instância] ${INSTANCE_ID} assumiu como DONO dos crons 👑`);
+    } else if (vivo.content === INSTANCE_ID) {
+      // Sou o dono — renova meu heartbeat (novo registro, createdAt atualizado)
+      await prisma.memory.deleteMany({ where: { type: HEARTBEAT_TYPE } }).catch(() => {});
+      await prisma.memory.create({
+        data: { userId: ancoraId, type: HEARTBEAT_TYPE, content: INSTANCE_ID }
+      }).catch(() => {});
+      _souODono = true;
+    } else {
+      // Outro container é o dono ativo — eu fico de prontidão (não rodo crons)
+      if (_souODono) console.log(`[Instância] ${INSTANCE_ID} cedeu o posto para ${vivo.content}`);
+      _souODono = false;
+    }
+  } catch (e) {
+    console.error('[Instância] Erro no heartbeat:', e.message);
+  }
+}
+
+// Função que todo cron chama no início. Retorna true só se este container
+// é o dono ativo dos crons. Se não for, o cron não executa.
+function souODonoDoCron() {
+  return _souODono;
+}
+
+// Inicia o heartbeat: renova a cada 20s. A primeira execução e o setInterval
+// são disparados no FINAL do arquivo, após prisma e getAncoraUserId estarem
+// definidos (const não tem hoisting).
+
+// ── Wrapper do cron.schedule com guarda de dono ───────────────────────────
+// Envolve TODO callback de cron com a checagem souODonoDoCron(). Assim, só
+// o container dono executa qualquer cron — sem precisar editar os 23 crons
+// um a um. Os crons que NÃO devem ter a guarda (nenhum, no momento) poderiam
+// usar cron.schedule original, mas todos os nossos devem respeitar o dono.
+const _cronScheduleOriginal = cron.schedule.bind(cron);
+cron.schedule = function (expr, fn, opts) {
+  const fnComGuarda = async (...args) => {
+    if (!souODonoDoCron()) return; // não sou o dono — não executo
+    return fn(...args);
+  };
+  return _cronScheduleOriginal(expr, fnComGuarda, opts);
+};
+
 
 // sendMessage via whatsapp.js (com fallback direto pra evitar circular dependency)
 async function sendMessage(phone, msg, delay) {
@@ -1046,42 +1124,39 @@ cron.schedule('* * * * *', async () => {
     // Processa cada grupo (um envio por usuário por horário)
     for (const [phone, grupo] of Object.entries(gruposPorPhone)) {
       try {
-        // Lock por grupo — usa IDs ordenados como chave única do grupo
-        // Garante que o grupo inteiro só é enviado uma vez
-        const grupoLockKey = `med_grupo_${grupo.meds.map(m=>m.id).sort().join('_')}_${minutoChave}`;
+        // CLAIM ATÔMICO POR REMÉDIO usando o updateMany no próprio medication.
+        // Decremento condicional: só decrementa se ainda não foi decrementado
+        // neste minuto. Usamos o campo `updatedAt` comparado com o início do
+        // minuto atual como guarda — se updatedAt já é deste minuto, outro
+        // processo já enviou. Isso NÃO exige campo novo no schema.
+        const inicioMinuto = new Date(nowBRT());
+        inicioMinuto.setSeconds(0, 0);
 
-        // Verificação em duas camadas:
-        // Camada 1: verifica se já existe lock pra este grupo/minuto
-        const grupoLockExistente = await prisma.memory.findFirst({
-          where: { type: 'med_lock', content: grupoLockKey }
-        }).catch(() => null);
-        if (grupoLockExistente) {
-          console.log(`[Med] Lock já existe para grupo ${minutoChave} ${phone}`);
-          continue;
+        const medsParaEnviar = [];
+        for (const med of grupo.meds) {
+          // Claim atômico: decrementa SÓ se updatedAt < início deste minuto.
+          // Quem vencer a corrida decrementa e marca updatedAt = agora.
+          // O perdedor encontra updatedAt >= inicioMinuto e pega count:0.
+          const claim = await prisma.medication.updateMany({
+            where: { id: med.id, updatedAt: { lt: inicioMinuto } },
+            data: { remaining: { decrement: 1 } }
+          });
+          if (claim.count > 0) {
+            // Relê o valor já decrementado pra mostrar o número certo
+            const atualizado = await prisma.medication.findUnique({ where: { id: med.id } });
+            medsParaEnviar.push({ ...med, remaining: (atualizado?.remaining ?? med.remaining - 1) + 1 });
+          } else {
+            console.log(`[Med] ${med.name} já enviado neste minuto por outro processo — pulando`);
+          }
         }
 
-        // Camada 2: tenta criar atomicamente — se outro processo criar antes, pula
-        let lockCriado = false;
-        try {
-          await prisma.memory.create({ data: { userId: grupo.userId, type: 'med_lock', content: grupoLockKey } });
-          lockCriado = true;
-        } catch (eLock) {
-          // Outro processo criou entre nosso findFirst e create
-          console.log(`[Med] Race condition no lock para ${phone} — pulando`);
-          continue;
-        }
-        if (!lockCriado) continue;
-
-        // Cada remédio em mensagem própria — mantém swipe-reply individual.
-        // Espaçados por 3s para não chegarem todos de uma vez.
-        for (let i = 0; i < grupo.meds.length; i++) {
-          const med = grupo.meds[i];
+        // Envia os remédios reivindicados (mensagem própria = swipe individual)
+        for (let i = 0; i < medsParaEnviar.length; i++) {
+          const med = medsParaEnviar[i];
           const msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esquece de tomar certinho 😊\n\n💜 Restam ${med.remaining - 1} doses.`;
           await sendMessage(phone, msg);
-          await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
           console.log(`[Med] ${med.name} → ${phone}`);
-          // Espaça 3s entre cada (exceto o último)
-          if (i < grupo.meds.length - 1) await new Promise(r => setTimeout(r, 3000));
+          if (i < medsParaEnviar.length - 1) await new Promise(r => setTimeout(r, 3000));
         }
       } catch (e) {
         console.error(`[Med] Erro ao enviar grupo para ${phone}:`, e.message);
@@ -1416,5 +1491,14 @@ cron.schedule('30 8 * * *', async () => {
 
 
 
+
+// ── Inicialização do lock de instância única ──────────────────────────────
+// Disparado aqui no final, quando prisma e getAncoraUserId já estão definidos.
+// O primeiro renovarHeartbeat() decide se este container é o dono dos crons.
+// Como os crons só executam se souODonoDoCron() === true, e o heartbeat só
+// libera após a primeira checada, há um pequeno atraso inicial (~1 ciclo)
+// até o container assumir — aceitável e seguro (melhor atrasar que duplicar).
+setInterval(renovarHeartbeat, 20000);
+renovarHeartbeat();
 
 console.log('Clara scheduler iniciado 💜');
