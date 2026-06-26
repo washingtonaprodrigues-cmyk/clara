@@ -677,6 +677,20 @@ Seja calorosa, breve (máximo 5 linhas), sem aspas, no português do Brasil. Use
     }
 
     console.log(`[Imagem] ${phone} analisada: "${analise.slice(0, 60)}"`);
+
+    // Salva no histórico pra Clara manter o fio da conversa — se o usuário
+    // comentar a foto depois ("essa é você", "gostou?"), ela tem o contexto.
+    try {
+      const memory = require('../services/memory');
+      const user = await prisma.user.findFirst({ where: { phone } }).catch(() => null);
+      if (user) {
+        await memory.saveConversationMessage(user.id, 'user', `[enviou uma imagem${legenda ? `: "${legenda}"` : ''}]`);
+        await memory.saveConversationMessage(user.id, 'assistant', analise);
+      }
+    } catch (eSave) {
+      console.error('[Imagem] Erro ao salvar histórico:', eSave.message);
+    }
+
     await sendMessage(phone, analise);
   } catch (e) {
     console.error('[Imagem] Erro:', e.message);
