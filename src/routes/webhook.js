@@ -442,12 +442,18 @@ router.post('/', async (req, res) => {
           let msgGeo;
 
           if (emCasa) {
-            // Chegou em casa
-            const extras = humor?.estado === 'cansado' ? ' Descansa que você merece! 😴' :
-                           humor?.estado === 'doente' ? ' Toma conta de você! 🙏' : '';
-            msgGeo = `🏠 Chegou em casa!${extras}`;
+            // Chegou em casa — tom de amiga que se importa, NÃO de vigilância.
+            // Nunca dizer "detectei/vi que você chegou" (soa monitoramento).
+            // Age como quem torce/imagina, não como quem rastreia.
+            const variacoesCasa = humor?.estado === 'cansado'
+              ? ['Chegou bem? Agora descansa que você merece 😴', 'Em casa enfim! Relaxa aí fedo 💜']
+              : humor?.estado === 'doente'
+              ? ['Chegou bem? Toma conta de você 🙏', 'Em casa! Se cuida e descansa 💜']
+              : ['Chegou bem em casa? 😊', 'Boa, chegou em casa! Como foi o dia?', 'Em casa enfim! Tudo certo por aí? 💜'];
+            msgGeo = variacoesCasa[Math.floor(Math.random() * variacoesCasa.length)];
           } else if (emTrabalho) {
-            msgGeo = `💼 No trabalho! Bom dia produtivo 💪`;
+            const variacoesTrab = ['Bom trabalho hoje fedo 💪', 'No batente! Dia produtivo aí 😊', 'Chegou no trampo! Bora que bora 💪'];
+            msgGeo = variacoesTrab[Math.floor(Math.random() * variacoesTrab.length)];
           } else if (!casaLat && !trabalhoLat) {
             // Não conhece nenhum endereço ainda — pergunta
             msgGeo = `📍 Recebi sua localização em ${locTexto}!
