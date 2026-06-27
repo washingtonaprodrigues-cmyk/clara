@@ -699,24 +699,47 @@ async function searchWebGroq(query, locationContext = '') {
     // Reprocessa o resultado bruto no TOM DA CLARA — ela "conta" o que
     // descobriu como uma amiga esperta, não despeja um relatório técnico.
     // Recebe a pergunta original pra dar contexto à explicação.
+    // IMPORTANTE: tenta chave 1 → chave 2 → Gemini antes de desistir.
+    // Antes só tentava a chave 1; quando ela estava em TPD, a pesquisa
+    // sempre saía sem personalidade e com a formatação crua da fonte
+    // (asteriscos de markdown, tom de relatório).
+    const promptReprocesso = `Você é a Clara, uma amiga próxima e esperta conversando no WhatsApp. Acabou de pesquisar algo pro seu amigo e vai contar o que descobriu DO SEU JEITO — leve, claro, com analogias do dia a dia quando ajudar, sem jargão técnico nem tom de relatório/Wikipedia. Transforme a informação crua abaixo numa explicação gostosa de ler, como se estivesse explicando pra um amigo tomando um café. Seja precisa com os fatos, mas calorosa no tom. Máximo 6 linhas. NÃO use markdown (sem *, sem #, sem listas com -). Não use aspas. Não comece com "Então" ou "Olha". Se for tema de saúde/remédio e envolver tomar/dosar/trocar, lembre de leve pra confirmar com o médico — sem ser robótica.`;
+    const msgsReprocesso = [
+      { role: 'system', content: promptReprocesso },
+      { role: 'user', content: `Pergunta do amigo: "${query}"\n\nInformação que você pesquisou:\n${resposta}\n\nAgora me conta isso do seu jeito, Clara:` }
+    ];
+
+    let traduzida = null;
     try {
       const respConversacional = await groq.chat.completions.create({
         model: MODEL_FORTE,
-        messages: [
-          { role: 'system', content: `Você é a Clara, uma amiga próxima e esperta conversando no WhatsApp. Acabou de pesquisar algo pro seu amigo e vai contar o que descobriu DO SEU JEITO — leve, claro, com analogias do dia a dia quando ajudar, sem jargão técnico nem tom de relatório/Wikipedia. Transforme a informação crua abaixo numa explicação gostosa de ler, como se estivesse explicando pra um amigo tomando um café. Seja precisa com os fatos, mas calorosa no tom. Máximo 6 linhas. Não use aspas. Não comece com "Então" ou "Olha". Se for tema de saúde/remédio e envolver tomar/dosar/trocar, lembre de leve pra confirmar com o médico — sem ser robótica.` },
-          { role: 'user', content: `Pergunta do amigo: "${query}"\n\nInformação que você pesquisou:\n${resposta}\n\nAgora me conta isso do seu jeito, Clara:` }
-        ],
+        messages: msgsReprocesso,
         temperature: 0.7,
         max_tokens: 400,
       });
-      const traduzida = respConversacional.choices[0].message.content.trim();
-      if (traduzida && traduzida.length > 10) {
-        return filtrarResposta(apararRespostaCortada(traduzida));
-      }
+      traduzida = respConversacional.choices[0].message.content.trim();
     } catch (eReproc) {
-      console.error('[searchWeb] Erro ao reprocessar no tom da Clara:', eReproc.message);
-      // Cai pro resultado cru se o reprocessamento falhar
+      console.error('[searchWeb] Chave 1 falhou ao reprocessar:', eReproc.message);
+      try {
+        traduzida = await tentarGroq2(msgsReprocesso, false);
+      } catch (eReproc2) {
+        console.error('[searchWeb] Chave 2 falhou ao reprocessar:', eReproc2?.message);
+      }
     }
+    if (!traduzida && geminiDisponivel() && !todosModelosEsgotados()) {
+      try {
+        traduzida = await geminiFreeResponse(msgsReprocesso, { temperature: 0.7, maxTokens: 400 });
+      } catch (eReprocGem) {
+        console.error('[searchWeb] Gemini falhou ao reprocessar:', eReprocGem?.message);
+      }
+    }
+    if (traduzida && traduzida.length > 10) {
+      return filtrarResposta(apararRespostaCortada(traduzida));
+    }
+
+    // Última rede de segurança: se nada conseguiu reprocessar, ao menos
+    // tira a formatação markdown crua antes de mandar pro usuário.
+    resposta = resposta.replace(/[*_#`]/g, '');
 
     return resposta;
 
@@ -886,7 +909,17 @@ function buildPromptModoDireto(contexto, name, tom) {
   // o prompt fixo objetivo, mantendo a regra de Central de Decisões
   // (essa sim melhorou de fato e vale manter).
   const nomeTxt = name ? `O nome da pessoa é ${name}.` : '';
+  // Data/hora de Brasília — sem isso, o modelo de fallback não tem ideia
+  // de que horas são e pode supor coisas erradas (ex: achar que o usuário
+  // ainda está no trabalho às 21h). O prompt normal (buildPersonality) já
+  // injeta isso; esse aqui (modo direto) estava sem.
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const pad = n => String(n).padStart(2, '0');
+  const dataHora = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const diaSemana = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'][now.getDay()];
   return `Você é a Clara, assistente pessoal no WhatsApp. ${nomeTxt}
+
+Agora é ${diaSemana}, ${dataHora} (horário de Brasília). Use isso pra não supor coisas erradas sobre o que a pessoa está fazendo no momento.
 
 Seu estilo agora é o modo "Direta": objetiva e prática. Exemplo de como você fala nesse estilo: "Washington, você tem 3 coisas hoje: reunião 14h, backup 15h, lembrete 16h. Confirma?"
 
@@ -1249,14 +1282,19 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     console.error('Erro freeResponse:', e.message);
     // Fallback no tom da Clara — nunca o robótico "Entendi! Como posso ajudar?".
     // Acontece em timeout/erro raro; soa como amiga com sinal ruim, não como bot.
-    const FALLBACK_CLARA = [
-      'Opa, me perdi aqui um segundinho 😅 repete pra mim?',
-      'Eita, travei agora 😅 manda de novo?',
-      'Desculpa fedo, me embolei aqui 😬 fala de novo?',
-      'Ai, deu um branco 😅 repete pra mim que eu respondo?',
-    ];
     return FALLBACK_CLARA[Math.floor(Math.random() * FALLBACK_CLARA.length)];
   }
+}
+
+// Frases de fallback usadas quando freeResponse falha (timeout/erro em todos
+// os provedores). Exportado como FALLBACK_CLARA + isRespostaFallback() pra
+// que outros módulos (ex: proativaInteligente) possam detectar quando o
+// "resultado" de freeResponse não é uma resposta real, e sim esse pedido
+// de repetição — sem isso, esse texto pode ser enviado como se fosse uma
+// mensagem proativa genuína, o que não faz sentido (ninguém pediu nada
+// pra "repetir" numa mensagem que a Clara inicia).
+function isRespostaFallback(texto) {
+  return FALLBACK_CLARA.includes((texto || '').trim());
 }
 
 async function generateRelationshipSummary(recentMessages, currentSummary) {
@@ -1366,4 +1404,5 @@ module.exports = {
   detectarComandoComparacao,
   getUltimoProvider,
   detectarAssuntoEmAberto,
+  isRespostaFallback,
 };
