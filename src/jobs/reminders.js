@@ -250,6 +250,107 @@ async function houveConversaRecente(userId, minutos = 5) {
   const limite = new Date(Date.now() - minutos * 60 * 1000);
   return !!(await prisma.memory.findFirst({ where: { userId, type: 'conversa', createdAt: { gte: limite } } }).catch(() => null));
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// CALLBACK DE CONTINUIDADE — "ela ainda estava pensando nisso"
+// Diferente da proativa de janela (que é sobre o DIA), esse roda durante
+// uma conversa ATIVA: se teve troca real de mensagens sobre um assunto
+// nos últimos minutos e a pessoa ficou quieta (mas não parece ter
+// encerrado o assunto), a Clara volta com algo NOVO — ideia, opinião ou
+// brincadeira — como quem ficou pensando nisso enquanto fazia outra
+// coisa. NÃO muda a personalidade (mesmo buildPersonality de sempre, via
+// _systemOverride) — só adiciona o gatilho e o contexto da conversa.
+// Freios: no máximo 1x por "gap de silêncio" (lock por sessão) e no
+// máximo 2x por dia no total, independente da proativa de janela.
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('*/2 * * * *', async () => {
+  try {
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    for (const user of users) {
+      try {
+        const hoje = dateBRT(nowBRT());
+
+        // Teto diário — separado da proativa de janela
+        const jaHojeCount = await prisma.memory.count({
+          where: { userId: user.id, type: 'callback_continuidade_lock', content: { startsWith: hoje } }
+        }).catch(() => 0);
+        if (jaHojeCount >= 2) continue;
+
+        // Janela de observação: últimos 15 minutos de conversa
+        const limite15min = new Date(Date.now() - 15 * 60 * 1000);
+        const msgsRecentes = await prisma.memory.findMany({
+          where: { userId: user.id, type: 'conversa', createdAt: { gte: limite15min } },
+          orderBy: { createdAt: 'asc' }
+        }).catch(() => []);
+        if (msgsRecentes.length === 0) continue;
+
+        const ultimaMsg = msgsRecentes[msgsRecentes.length - 1];
+        const minutosDesdeUltima = (Date.now() - new Date(ultimaMsg.createdAt).getTime()) / 60000;
+
+        // Janela de silêncio: nem muito em cima (pareceria notificação
+        // automática), nem muito depois (perde o "tava pensando AGORA").
+        if (minutosDesdeUltima < 5 || minutosDesdeUltima > 20) continue;
+
+        // Engajamento real — pelo menos 2 mensagens DO USUÁRIO na janela,
+        // não só a Clara falando sozinha.
+        const msgsUsuario = msgsRecentes.filter(m => {
+          try { return JSON.parse(m.content).role === 'user'; } catch { return false; }
+        });
+        if (msgsUsuario.length < 2) continue;
+
+        // Lock por sessão (chave = timestamp da última mensagem) — cada
+        // "gap de silêncio" só é avaliado uma vez, mesmo rodando a cada 2min.
+        const sessaoKey = `${hoje}_${new Date(ultimaMsg.createdAt).getTime()}`;
+        const jaAvaliado = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'callback_continuidade_sessao', content: sessaoKey }
+        }).catch(() => null);
+        if (jaAvaliado) continue;
+        // Marca como avaliado IMEDIATAMENTE, mesmo que decida não mandar
+        // nada — senão reavaliaria o mesmo gap a cada 2 minutos.
+        await prisma.memory.create({
+          data: { userId: user.id, type: 'callback_continuidade_sessao', content: sessaoKey }
+        }).catch(() => {});
+
+        const { prefs } = await getUserContext(user);
+        const history = msgsRecentes.map(m => {
+          try { const p = JSON.parse(m.content); return { role: p.role, content: p.content }; } catch { return null; }
+        }).filter(Boolean);
+        if (history.length < 3) continue; // pouca substância pra valer um callback
+        const transcricao = history.map(h => `${h.role === 'user' ? 'Usuário' : 'Clara'}: ${h.content}`).join('\n');
+
+        const systemContinuidade = `Vocês estavam conversando sobre algo há poucos minutos, e a pessoa ficou quieta. Você quer voltar a falar sobre o MESMO assunto, mas trazendo algo NOVO — uma ideia que te ocorreu, uma opinião que não deu tempo de falar antes, ou uma brincadeira sobre o que vocês comentaram. Não é repetir a pergunta de antes nem cobrar resposta — é como se você tivesse ficado pensando nisso enquanto fazia outra coisa, e resolveu mandar.
+
+TRECHO DA CONVERSA RECENTE:
+${transcricao}
+
+REGRAS:
+- 1-2 linhas no máximo.
+- NÃO repita o que já foi dito, NÃO refaça a mesma pergunta de antes.
+- NÃO comece com "Oi", "Olá" ou o nome da pessoa.
+- Siga o SEU tom normal — se for mais sem filtro/direto, não force "fofura"; se o assunto for sério, não force humor.
+- Se o assunto já parecia encerrado/resolvido na conversa, ou se você não tem nada genuíno e novo pra acrescentar, responda APENAS: SKIP`;
+
+        const msg = await freeResponse('continuar a conversa', [], {
+          name: prefs.name,
+          tom: prefs.tom || 'carinhoso',
+          _systemOverride: systemContinuidade,
+          _maxTokens: 120,
+        });
+
+        if (!msg || msg.trim() === 'SKIP' || msg.length < 5 || isRespostaFallback(msg)) continue;
+
+        await sendMessage(user.phone, msg);
+        await prisma.memory.create({
+          data: { userId: user.id, type: 'callback_continuidade_lock', content: `${hoje}_${Date.now()}` }
+        }).catch(() => {});
+        console.log(`[Callback continuidade] ${user.phone}: ${msg}`);
+      } catch (eUser) {
+        console.error(`[Callback continuidade] Erro pra ${user.phone}:`, eUser.message);
+      }
+    }
+  } catch (e) { console.error('[Callback continuidade] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
 async function getUserContext(user) {
   const prefs = await memory.getUserPreference(user.id);
   const perfilTexto = await memory.buildPersonalContext(user.id);
@@ -567,49 +668,51 @@ cron.schedule('0 8 * * *', async () => {
 // Almoço 12:15 — e aí, já almoçou? retoma assunto pendente
 // Noite 20:00 — como foi o dia? conversa genuína
 // ═══════════════════════════════════════════════════════════════════════
-cron.schedule('30 8 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('15 12 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0 20 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+// Antes, cada período rodava UMA VEZ no horário exato (8:30/12:15/20:00).
+// Problema: sempre no mesmo minuto (mecânico) e, se a tentativa única do
+// dia fosse pulada (sem assunto, conversa recente etc), não tentava de
+// novo. Agora cada período é uma JANELA com várias tentativas — a
+// primeira que tiver algo genuíno pra dizer (e passar a chancela
+// cacheada do dia) manda a mensagem; as outras tentativas da mesma
+// janela só seguem adiante se a anterior não mandou nada.
+// Manhã: 08:00–09:30 | Almoço: 11:30–13:30 | Noite: 19:30–21:30
+cron.schedule('*/15 8 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('0,15,30 9 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
+
+cron.schedule('30,45 11 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('*/15 12 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('0,15,30 13 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
+
+cron.schedule('30,45 19 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('*/15 20 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('0,15,30 21 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
 async function proativaInteligente(periodo) {
   try {
     const users = await prisma.user.findMany({ where: { blocked: false } });
     const now = nowBRT();
     for (const user of users) {
       try {
-        const lockKey = `proativa_${periodo}_${dateBRT()}`;
+        const dayKey = `${periodo}_${dateBRT()}`;
 
-        // ── Claim atômico ANTES de qualquer processamento ──
-        // Problema anterior: findFirst (verificar) + create (gravar) eram
-        // operações separadas — dois containers passavam pelo findFirst
-        // (ambos encontravam null), ambos geravam a mensagem via LLM
-        // (textos diferentes = dedup do whatsapp.js não pegava), ambos
-        // enviavam. Resultado: duas proativas idênticas em tema mas com
-        // texto diferente.
-        //
-        // Solução: tenta criar o lock imediatamente via updateMany atômico.
-        // Se já existe → outro processo chegou primeiro → para aqui.
-        // Se não existe → cria → continua. O try/catch cobre o caso de
-        // dois processos tentarem criar ao mesmo tempo (um pega erro de
-        // constraint ou findFirst vê o registro do outro).
-        const jaExiste = await prisma.memory.findFirst({
-          where: { userId: user.id, type: 'proativa_lock', content: lockKey }
+        // ── Já enviou hoje pra esse período? ──
+        // Antes isso era decidido ANTES de processar (claim atômico), o
+        // que travava o dia inteiro mesmo se a tentativa fosse pulada por
+        // chancela aleatória ou falta de assunto. Agora os 3 horários
+        // fixos viraram JANELAS (várias tentativas dentro de um intervalo,
+        // ver cron.schedule mais abaixo) — então o que precisa ser travado
+        // de verdade é só "já mandou uma mensagem real hoje nesse período",
+        // não "já tentou". Isso permite tentar de novo no próximo horário
+        // da janela se a tentativa anterior não tinha nada genuíno pra dizer.
+        // A proteção contra dois containers rodando ao mesmo tempo já vem
+        // do sistema de "dono dos crons" (heartbeat) no topo do arquivo —
+        // só um processo executa isso por vez, então não precisamos mais
+        // do claim atômico pré-decisão de antes.
+        const jaEnviouHoje = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'proativa_enviado_lock', content: dayKey }
         }).catch(() => null);
-        if (jaExiste) continue;
+        if (jaEnviouHoje) continue;
 
-        // Tenta criar o lock atomicamente — se outro processo criar antes
-        // de nós, o catch nos para
-        let lockCriado = null;
-        try {
-          lockCriado = await prisma.memory.create({
-            data: { userId: user.id, type: 'proativa_lock', content: lockKey }
-          });
-        } catch (eLock) {
-          // Outro processo criou o lock entre nosso findFirst e create
-          console.log(`[Proativa ${periodo}] Lock tomado por outro processo para ${user.phone}`);
-          continue;
-        }
-
-        // A partir daqui, somos o único processo autorizado — processa com segurança
+        // A partir daqui, processa com segurança
         try {
           if (await houveConversaRecente(user.id, 5)) continue;
           const ultimaConversa = await prisma.memory.findFirst({ where: { userId: user.id, type: 'conversa' }, orderBy: { createdAt: 'desc' } });
@@ -700,8 +803,26 @@ async function proativaInteligente(periodo) {
             // Se já mandou mensagem hoje → já acordou, pode disparar
           }
 
-          // Chancela aleatória — mas se tem assunto em aberto, sempre dispara
-          if (!ctxPendencias && Math.random() > 0.5) continue;
+          // Chancela aleatória — mas se tem assunto em aberto, sempre dispara.
+          // CACHEADA por dia: sem isso, numa janela com várias tentativas
+          // (ex: a cada 15min por 1h30), a "moeda" seria jogada de novo em
+          // cada tentativa e a frequência real subiria muito além do que
+          // foi combinado (~50% dos dias sem pendência, não ~50% por tentativa).
+          if (!ctxPendencias) {
+            const moedaKey = `moeda_${dayKey}`;
+            let moeda = await prisma.memory.findFirst({
+              where: { userId: user.id, type: 'proativa_moeda', content: { startsWith: moedaKey } }
+            }).catch(() => null);
+            if (!moeda) {
+              const skip = Math.random() > 0.5;
+              await prisma.memory.create({
+                data: { userId: user.id, type: 'proativa_moeda', content: `${moedaKey}:${skip ? 'skip' : 'ok'}` }
+              }).catch(() => {});
+              if (skip) continue;
+            } else if (moeda.content.endsWith(':skip')) {
+              continue;
+            }
+          }
 
           // ── Prompt específico por período ──
           // Cada período tem uma "energia" diferente, exemplos concretos
@@ -799,6 +920,9 @@ ${horaAcorda ? `(Acordou por volta das ${horaAcorda})` : ''}`;
             continue;
           }
           await sendMessage(user.phone, msg);
+          await prisma.memory.create({
+            data: { userId: user.id, type: 'proativa_enviado_lock', content: dayKey }
+          }).catch(() => {});
           console.log(`[Proativa ${periodo}] ${user.phone}: ${msg.slice(0, 60)}`);
         } catch (eInner) {
           console.error(`[Proativa] Erro interno ${user.phone}:`, eInner.message);
