@@ -1,7 +1,36 @@
 // v2 - consulta direta sem LLM
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
-const { classify, extractPersonalInfo, extractPendenciaEmocional, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto } = require('./groq');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas } = require('./groq');
+
+// CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
+// O classify() já recebe uma tabela com a data exata de cada dia da semana
+// e instrução pra "nunca calcular por conta própria" — mas modelos (mesmo
+// seguindo a instrução na maioria das vezes) ocasionalmente calculam errado
+// de qualquer forma (ex: usuário disse "segunda" e o modelo devolveu uma
+// data de outra semana). Como isso é 100% calculável em código, sempre que
+// o texto original citar um dia da semana explícito (sem qualificador tipo
+// "que vem"/"próxima", que pode legitimamente significar a semana seguinte),
+// sobrescrevemos classified.data com o valor correto, ignorando o que o
+// modelo respondeu.
+const DIAS_SEMANA_REGEX = /\b(domingo|segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado)(-feira)?\b/i;
+const QUALIFICADOR_SEMANA_QUE_VEM = /\b(que vem|pr[oó]xim[ao]|da semana que vem)\b/i;
+function corrigirDataDiaSemana(textoOriginal, classified) {
+  if (!classified || !classified.data) return classified;
+  const matchDia = textoOriginal.match(DIAS_SEMANA_REGEX);
+  if (!matchDia) return classified;
+  if (QUALIFICADOR_SEMANA_QUE_VEM.test(textoOriginal)) return classified; // deixa o modelo decidir esse caso mais ambíguo
+  const nomeDiaRaw = matchDia[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // remove acento: terça→terca, sábado→sabado
+  const mapaNormalizado = { domingo: 'domingo', segunda: 'segunda', terca: 'terça', quarta: 'quarta', quinta: 'quinta', sexta: 'sexta', sabado: 'sábado' };
+  const nomeDia = mapaNormalizado[nomeDiaRaw];
+  const { mapa } = infoDatas();
+  const dataCorreta = nomeDia && mapa[nomeDia];
+  if (dataCorreta && dataCorreta !== classified.data) {
+    console.log(`[DATA_CORRIGIDA] "${nomeDia}" → modelo disse ${classified.data}, correto é ${dataCorreta}`);
+    classified.data = dataCorreta;
+  }
+  return classified;
+}
 
 // Importa whatsapp de forma segura com fallback direto via axios
 let _whatsappModule = null;
@@ -735,6 +764,17 @@ async function handleMessage(phone, text, location = null) {
 
     const classified = await classify(text, phone, contextoClassify);
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
+
+    // Corrige a data com base em código (não no modelo) sempre que o texto
+    // citar um dia da semana explícito — cobre tarefa, editar_lembrete,
+    // deletar_lembrete, consulta etc, qualquer tipo que tenha campo `data`.
+    corrigirDataDiaSemana(text, classified);
+    if (classified.tipo === 'multiplas_tarefas' && Array.isArray(classified.tarefas)) {
+      // Múltiplas tarefas numa mensagem só citam o dia da semana uma vez
+      // (ex: "segunda me lembra de X às 9h e de Y às 15h") — aplica a
+      // mesma correção pra cada uma das tarefas extraídas.
+      classified.tarefas.forEach(t => corrigirDataDiaSemana(text, t));
+    }
 
     // ── Intercepta: lista_marcar com hora → editar_lembrete ──
     if (classified.tipo === 'lista_marcar' && (classified.nova_hora || classified.nova_data)) {
