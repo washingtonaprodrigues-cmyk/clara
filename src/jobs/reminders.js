@@ -110,7 +110,7 @@ async function sendMessage(phone, msg, delay) {
   );
 }
 
-const { freeResponse } = require('../services/groq');
+const { freeResponse, isRespostaFallback } = require('../services/groq');
 const memory = require('../services/memory');
 const { getHumorDia, getLocalizacao, getCamposDesconhecidos, getProximaCuriosidade, salvarResumoRelacionamento, getResumoRelacionamento, getMemoriaAfetiva } = memory;
 const { PrismaClient } = require('@prisma/client');
@@ -322,7 +322,7 @@ REGRAS: Máximo 2-3 linhas. Sem compromissos hoje — algo positivo e leve. Vari
 Tom: ${prefs.tom || 'carinhoso'}.`;
         }
         const msg = await freeResponse('Envie uma mensagem de bom dia.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBomDia });
-        if (!msg) { console.log(`[Bom dia] Rate limit, pulado para ${user.phone}`); continue; }
+        if (!msg || isRespostaFallback(msg)) { console.log(`[Bom dia] Rate limit ou fallback genérico, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
         // Meu Dia removido — redundante com aba Lembretes
         console.log(`[Bom dia] Enviado para ${user.phone}`);
@@ -483,7 +483,7 @@ REGRAS ABSOLUTAS:
 - Varie sempre — nunca repita a mesma frase de boa noite
 - Tom: ${prefs.tom || 'carinhoso'}`;
         const msg = await freeResponse('Boa noite.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBoaNoite, _maxTokens: 80 });
-        if (!msg) { console.log(`[Boa noite] Rate limit, pulado para ${user.phone}`); continue; }
+        if (!msg || isRespostaFallback(msg)) { console.log(`[Boa noite] Rate limit ou fallback, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
         console.log(`[Boa noite] Enviado para ${user.phone}`);
       } catch (e) { console.error(`[Boa noite] Erro ${user.phone}:`, e.message); }
@@ -539,6 +539,7 @@ cron.schedule('0 8 * * *', async () => {
                   _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso',
                   _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''} Tom: ${prefs?.tom || 'carinhoso'}. É ${quando} o aniversário de ${ev.personName}. O que você sabe: ${linhasRelacionadas.join('; ')}. Envie uma mensagem curta (1-2 linhas) avisando e mencionando naturalmente esse detalhe pessoal. NÃO liste como tópicos.`
                 }).catch(() => null);
+                if (msg && isRespostaFallback(msg)) msg = null;
               }
             } catch (e) { console.error(`[Datas] Erro memórias ${ev.personName}:`, e.message); }
           }
@@ -793,6 +794,10 @@ ${horaAcorda ? `(Acordou por volta das ${horaAcorda})` : ''}`;
             _maxTokens: 80  // proativa deve ser curta — 1-2 linhas
           });
           if (!msg || msg.trim() === 'SKIP' || msg.length < 5) continue;
+          if (isRespostaFallback(msg)) {
+            console.log(`[Proativa ${periodo}] ${user.phone}: resposta de fallback genérica recebida — não enviando como proativa`);
+            continue;
+          }
           await sendMessage(user.phone, msg);
           console.log(`[Proativa ${periodo}] ${user.phone}: ${msg.slice(0, 60)}`);
         } catch (eInner) {
@@ -856,7 +861,7 @@ cron.schedule('30 9 * * 0', async () => {
           _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso',
           _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''} Tom: ${prefs?.tom || 'carinhoso'}. Padrões notados:\n${insightsTexto}\nEnvie UMA mensagem natural (2-3 linhas) comentando como observação genuína. NÃO use tópicos. NÃO termine com saudação de período.`
         });
-        if (!msg) continue;
+        if (!msg || isRespostaFallback(msg)) continue;
         await sendMessage(user.phone, msg);
         await prisma.memory.create({ data: { userId: user.id, type: 'radar_lock', content: lockKey } });
         for (const i of insights.filter(x => x.tipo === 'padrao_dia')) {
@@ -891,7 +896,7 @@ cron.schedule('0 17 * * 5', async () => {
           _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
           _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} Envie uma mensagem de sexta-feira calorosa e breve (2-3 linhas). NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.\n${ctx}`
         });
-        if (!msg) { console.log(`[Sexta] Rate limit, pulado para ${user.phone}`); continue; }
+        if (!msg || isRespostaFallback(msg)) { console.log(`[Sexta] Rate limit ou fallback, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
         await marcarEnviadoHoje(user.id, 'sexta_enviado');
         console.log(`[Sexta] Enviado para ${user.phone}`);
@@ -924,7 +929,7 @@ cron.schedule('0 19 * * 0', async () => {
           _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
           _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} Envie uma mensagem de domingo à noite — tranquila, motivadora e breve (2-3 linhas). NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.\n${ctx}`
         });
-        if (!msg) { console.log(`[Domingo] Rate limit, pulado para ${user.phone}`); continue; }
+        if (!msg || isRespostaFallback(msg)) { console.log(`[Domingo] Rate limit ou fallback, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
         console.log(`[Domingo] Enviado para ${user.phone}`);
       } catch (e) { console.error(`[Domingo] Erro ${user.phone}:`, e.message); }
@@ -953,7 +958,7 @@ cron.schedule('0 9 * * *', async () => {
           _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
           _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} O usuário não conversa com você há ${diasSemConversa} dias. Envie uma mensagem curta e genuína perguntando como ele está — sem ser dramática, sem cobrar. Máx 2 linhas. Tom: ${prefs.tom || 'carinhoso'}.\n${infoPessoal}`
         });
-        if (!msg) continue;
+        if (!msg || isRespostaFallback(msg)) continue;
         await sendMessage(user.phone, msg);
         await prisma.memory.create({ data: { userId: user.id, type: 'sumico_lock', content: lockKey } });
         console.log(`[Sumiço] ${user.phone} — ${diasSemConversa} dias sem conversar`);
@@ -1155,11 +1160,25 @@ cron.schedule('* * * * *', async () => {
         }
 
         // Envia os remédios reivindicados (mensagem própria = swipe individual)
+        // IMPORTANTE: se o envio falhar (API fora, WS desconectado etc), a
+        // dose foi decrementada acima mas a mensagem nunca chegou — antes
+        // isso ficava perdido pra sempre (decremento já tinha sido feito
+        // e o registro não tentava de novo). Agora, em caso de falha,
+        // desfazemos o decremento — no próximo minuto, updatedAt já não é
+        // "deste minuto" pra mais ninguém, e o cron tenta reenviar.
         for (let i = 0; i < medsParaEnviar.length; i++) {
           const med = medsParaEnviar[i];
           const msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esquece de tomar certinho 😊\n\n💜 Restam ${med.remaining - 1} doses.`;
-          await sendMessage(phone, msg);
-          console.log(`[Med] ${med.name} → ${phone}`);
+          try {
+            await sendMessage(phone, msg);
+            console.log(`[Med] ${med.name} → ${phone}`);
+          } catch (eSend) {
+            console.error(`[Med] Falha ao ENVIAR ${med.name} para ${phone} — desfazendo decremento pra tentar de novo:`, eSend.message);
+            await prisma.medication.updateMany({
+              where: { id: med.id },
+              data: { remaining: { increment: 1 } }
+            }).catch(eRevert => console.error(`[Med] Falha ao desfazer decremento de ${med.name}:`, eRevert.message));
+          }
           if (i < medsParaEnviar.length - 1) await new Promise(r => setTimeout(r, 3000));
         }
       } catch (e) {
@@ -1249,7 +1268,7 @@ Envie UMA mensagem curta (1-2 linhas) como parceira presente:
 - NÃO use "lembrete" ou "aviso" — seja natural
 - NUNCA termine com "boa sorte" ou saudação de período`;
         const msg = await freeResponse('Mensagem de parceira.', [], { _contexto: '', name: nome, tom: prefs?.tom || 'carinhoso', _systemOverride: systemParceira });
-        if (!msg || msg.length < 5) continue;
+        if (!msg || msg.length < 5 || isRespostaFallback(msg)) continue;
         await sendMessage(user.phone, msg);
         console.log(`[Parceira] ${user.phone} → "${r.message}" em 30min`);
       } catch (e) { console.error(`[Parceira] Erro ${r.id}:`, e.message); }
@@ -1316,7 +1335,7 @@ NUNCA coloque entre aspas. NUNCA use tópicos — escreva em prosa natural.`;
           _maxTokens: 200
         });
 
-        if (novoResumo && novoResumo.length > 20) {
+        if (novoResumo && novoResumo.length > 20 && !isRespostaFallback(novoResumo)) {
           await salvarResumoRelacionamento(user.id, novoResumo);
           console.log(`[Resumo] Atualizado para ${user.phone}`);
         }
