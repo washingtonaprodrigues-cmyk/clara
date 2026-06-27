@@ -90,6 +90,13 @@ async function chamarGemini(model, msgs, { temperature = 0.7, maxTokens = 800 } 
     generationConfig: {
       temperature,
       maxOutputTokens: maxTokens,
+      // CRÍTICO: os modelos 2.5 (flash/flash-lite) usam "thinking" por padrão,
+      // e o raciocínio interno consome do MESMO orçamento de maxOutputTokens.
+      // Sem isso, a resposta visível pode ser cortada no meio mesmo sendo
+      // curta, porque a maior parte do limite foi gasta "pensando" antes de
+      // escrever o texto. Modelos que não suportam thinking (ex: 2.0-flash)
+      // simplesmente ignoram este campo, então é seguro mandar sempre.
+      thinkingConfig: { thinkingBudget: 0 },
     },
   };
   if (systemInstruction) {
@@ -117,8 +124,10 @@ async function chamarGemini(model, msgs, { temperature = 0.7, maxTokens = 800 } 
 
   const data = await response.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const finishReason = data?.candidates?.[0]?.finishReason;
+  const usage = data?.usageMetadata;
+  console.log(`[Gemini-DIAG] model=${model} finishReason=${finishReason} thoughtsTokens=${usage?.thoughtsTokenCount || 0} outputTokens=${usage?.candidatesTokenCount || 0} maxTokens=${maxTokens}`);
   if (!text) {
-    const finishReason = data?.candidates?.[0]?.finishReason;
     throw new Error(`Gemini retornou vazio (${model}, finishReason: ${finishReason || 'desconhecido'})`);
   }
   return text.trim();
@@ -195,7 +204,7 @@ async function geminiVision(base64Image, mimeType, systemPrompt, userPrompt = 'O
         { inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Image } }
       ]
     }],
-    generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
+    generationConfig: { temperature: 0.7, maxOutputTokens: 800, thinkingConfig: { thinkingBudget: 0 } },
   };
   if (systemPrompt) {
     body.systemInstruction = { parts: [{ text: systemPrompt }] };
