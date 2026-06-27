@@ -1413,4 +1413,5 @@ module.exports = {
   getUltimoProvider,
   detectarAssuntoEmAberto,
   isRespostaFallback,
+  infoDatas,
 };
