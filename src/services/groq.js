@@ -35,6 +35,7 @@ async function tentarGroq2(msgs, isCurta) {
       timeout2
     ]);
     console.log('[Groq2] Respondeu com chave 2');
+    console.log(`[Groq2-DIAG] finish_reason=${completion.choices[0].finish_reason} | tokens_completion=${completion.usage?.completion_tokens} | max_tokens=${isCurta ? 60 : 800} | texto_bruto="${completion.choices[0].message.content}"`);
     return filtrarResposta(apararRespostaCortada(completion.choices[0].message.content.trim()));
   } catch (e2) {
     if (isTPD(e2)) marcarGroq2TPD();
@@ -963,7 +964,7 @@ async function tentarGeminiComPersonalidade(message, history, tom, name, context
     ];
     const resposta = await geminiFreeResponse(msgs, {
       temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-      maxTokens: 400,
+      maxTokens: 600,
     });
     console.log(`[GeminiSubstituto] Gemini respondeu para ${phone || '?'}`);
     return apararRespostaCortada(resposta);
@@ -1189,6 +1190,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         timeoutPromise
       ]);
       marcarProvider('groq');
+      console.log(`[Groq1-DIAG] finish_reason=${completion.choices[0].finish_reason} | tokens_completion=${completion.usage?.completion_tokens} | max_tokens=${isCurta ? 60 : 800} | texto_bruto="${completion.choices[0].message.content}"`);
       return filtrarResposta(apararRespostaCortada(completion.choices[0].message.content.trim()));
     } catch (e1) {
       if (isRateLimit(e1) && phone) {
