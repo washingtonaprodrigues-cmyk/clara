@@ -1243,8 +1243,23 @@ cron.schedule('* * * * *', async () => {
         where: { type: 'reminder_lock', content: lockLembreteKey }
       }).catch(() => null);
       if (lockExistente) {
-        console.log(`[Reminder] Lock já existe para grupo ${grupo.hora} ${grupo.phone} — outro processo enviando`);
-        continue;
+        // ── TTL no lock (corrige deadlock) ──
+        // Um lock de reminder só é legítimo enquanto o processo que o criou
+        // ainda está enviando — o que leva poucos segundos. Se o lock tem
+        // mais de 2 minutos, o processo que o criou MORREU sem limpá-lo
+        // (deploy no meio do envio, crash, timeout da UazAPI). Antes, esse
+        // lock órfão fazia o cron pular o grupo PRA SEMPRE — o lembrete
+        // (sent:false) reaparecia a cada minuto, batia no mesmo lock e
+        // logava "Lock já existe" em loop infinito, engasgando os outros
+        // crons (remédios, proativas). Agora, lock velho é tratado como
+        // morto: apaga e segue, deixando este processo assumir o envio.
+        const ageMs = Date.now() - new Date(lockExistente.createdAt).getTime();
+        if (ageMs < 120000) {
+          console.log(`[Reminder] Lock ativo (${Math.round(ageMs/1000)}s) para grupo ${grupo.hora} ${grupo.phone} — outro processo enviando`);
+          continue;
+        }
+        console.log(`[Reminder] Lock ÓRFÃO (${Math.round(ageMs/1000)}s) removido para grupo ${grupo.hora} ${grupo.phone} — assumindo envio`);
+        await prisma.memory.delete({ where: { id: lockExistente.id } }).catch(() => {});
       }
       try {
         await prisma.memory.create({
@@ -1298,6 +1313,14 @@ cron.schedule('* * * * *', async () => {
 
       await sendMessage(grupo.phone, msg);
       console.log(`[Reminder] ${grupo.phone} → ${grupo.reminders.length} lembrete(s) às ${grupo.hora} | enviado por instância ${INSTANCE_ID} | ids: ${grupo.reminders.map(r => r.id.slice(-6)).join(',')}`);
+
+      // ── Limpa o lock IMEDIATAMENTE após enviar ──
+      // O lock só existe pra impedir envio duplo durante o envio. Já que
+      // terminou, apaga agora — não espera o cron de limpeza das 03:00.
+      // Sem isso, o lock ficava vivo até a madrugada e, se algo o tornasse
+      // órfão antes disso, virava deadlock. (O claim atômico sent:true já
+      // é a barreira real contra duplicação; o lock é só otimização.)
+      await prisma.memory.deleteMany({ where: { type: 'reminder_lock', content: lockLembreteKey } }).catch(() => {});
     }
   } catch (e) { console.error('[Reminder] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
