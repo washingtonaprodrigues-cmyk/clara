@@ -1208,6 +1208,49 @@ router.delete('/admin/usuario/:id', async (req, res) => {
   }
 });
 
+// ====================== ADMIN: LIMPAR LOCKS PRESOS (manutenção) ======================
+// Remove locks órfãos de lembrete e o lock de minuto, além de lembretes
+// "fantasma" — sent:false, não confirmados, vencidos há mais de 2h, que
+// nunca foram enviados (resíduo de processo morto/deadlock). Esse é o
+// estado que faz o cron girar em loop ("Lock já existe...") todo minuto e
+// engasgar os outros crons (remédios, proativas).
+//
+// Chamada manual pelo navegador, a qualquer momento:
+//   GET /forms/admin/limpar-locks
+// Idempotente e segura: locks se recriam sozinhos no próximo ciclo.
+router.get('/admin/limpar-locks', async (req, res) => {
+  try {
+    // 1) Lock de grupo de lembrete (reminder_lock)
+    const locks = await prisma.memory.deleteMany({
+      where: { type: 'reminder_lock' }
+    });
+
+    // 2) Lock de minuto — tipo dinâmico __lock_cron_lembretes__ (pega por prefixo)
+    const locksMinuto = await prisma.memory.deleteMany({
+      where: { type: { startsWith: '__lock_' } }
+    }).catch(() => ({ count: 0 }));
+
+    // 3) Lembretes travados: sent:false, não confirmados, vencidos há +2h
+    const corte = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const lembretesTravados = await prisma.reminder.deleteMany({
+      where: { sent: false, confirmed: false, scheduledAt: { lt: corte } }
+    });
+
+    const resultado = {
+      ok: true,
+      locks_removidos: locks.count,
+      locks_minuto_removidos: locksMinuto.count,
+      lembretes_travados_removidos: lembretesTravados.count,
+      em: new Date().toISOString()
+    };
+    console.log('[Limpar-locks]', JSON.stringify(resultado));
+    res.json(resultado);
+  } catch (e) {
+    console.error('Erro admin/limpar-locks:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== ADMIN: PÁGINA DE LIMPEZA (HTML) ======================
 // Serve a página de bloqueio de usuários duplicados direto do mesmo
 // domínio do backend — evita qualquer bloqueio de CORS que ocorreria se
