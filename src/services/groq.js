@@ -1081,6 +1081,20 @@ function filtrarResposta(t) {
   return t;
 }
 
+// ── Frases de fallback da Clara ──────────────────────────────────────────
+// Usadas quando freeResponse falha em TODOS os provedores (timeout, erro
+// raro). Soam como uma amiga com sinal ruim, não como bot travado.
+// IMPORTANTE: esse array é referenciado em freeResponse (catch final) e em
+// isRespostaFallback() — sem a declaração, ambos quebram com
+// "FALLBACK_CLARA is not defined", o que derrubava as mensagens proativas
+// (elas caem nesse caminho sempre que o Groq bate rate limit).
+const FALLBACK_CLARA = [
+  'Opa, deu uma travadinha aqui no sinal 😅 manda de novo?',
+  'Eita, me perdi por um segundo aqui. Repete pra mim?',
+  'Acho que engasguei aqui 😅 pode mandar de novo?',
+  'Deu uma falhada na minha conexão agora. Tenta de novo?',
+];
+
 async function freeResponse(message, history = [], preferences = {}, privateMode = false) {
   const phone = preferences?._phone || null;
 
