@@ -319,13 +319,21 @@ function formatarListaWhatsApp(listaResult) {
   return `🛒 *${listaNome}*\n\n${itens}\n\n_${done}/${listaItems.length} itens marcados_`;
 }
 
-async function responderLivre(user, phone, text, contextoExtra = '', skipContext = false, acaoConfirmacao = null) {
+async function responderLivre(user, phone, text, contextoExtra = '', skipContext = false, acaoConfirmacao = null, confirmacaoSeparada = null) {
   try {
     const history = await memory.getConversationHistory(user.id, 10);
     const preferences = await memory.getUserPreference(user.id);
     preferences._phone = phone;
 
     if (acaoConfirmacao) preferences._acaoConfirmacao = acaoConfirmacao;
+    if (confirmacaoSeparada) {
+      preferences._confirmacaoSeparada = confirmacaoSeparada;
+      // A IA não recebe a confirmação pra despejar (isso vai na 2ª mensagem),
+      // mas precisa saber que o lembrete FOI criado, pra responder coerente
+      // (comentar/brincar) sem dizer que vai anotar no futuro nem repetir
+      // título/hora — isso já vem logo depois, cru.
+      preferences._dicaAcao = 'O lembrete que o usuário pediu JÁ foi anotado com sucesso (a confirmação detalhada será enviada logo após sua mensagem). Responda de forma natural e no seu tom — pode comentar, brincar, reagir — mas NÃO repita o título nem o horário, e NÃO diga que "vai anotar" (já está feito).';
+    }
 
     if (skipContext) {
       preferences._contexto = '';
@@ -604,6 +612,23 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     await memory.saveConversationMessage(user.id, 'user', text);
     await memory.saveConversationMessage(user.id, 'assistant', respStr);
     await sendMessage(phone, respStr);
+
+    // ── Segunda mensagem: confirmação CRUA do lembrete ──
+    // Quando o pedido criou um lembrete, a Clara responde de forma humana
+    // (a mensagem acima) e LOGO EM SEGUIDA manda a confirmação estruturada,
+    // literal (título + quando). Assim o usuário tem a conversa natural E um
+    // comprovante exato do que foi anotado, sem depender do Dashboard — e a
+    // parte estruturada nunca é "amolecida" ou inventada pela IA.
+    if (preferences?._confirmacaoSeparada) {
+      try {
+        await new Promise(r => setTimeout(r, 1200)); // respiro pra chegar depois, como humano
+        await sendMessage(phone, preferences._confirmacaoSeparada);
+        await memory.saveConversationMessage(user.id, 'assistant', preferences._confirmacaoSeparada).catch(() => {});
+      } catch (eConf) {
+        console.error(`[${phone}] Erro ao enviar confirmação separada:`, eConf.message);
+      }
+    }
+
     updateRelationshipSummary(user.id, history, respStr).catch(() => {});
 
     // ── Detecção de assunto em aberto (fire-and-forget) ──────────────
@@ -981,7 +1006,9 @@ async function handleMessage(phone, text, location = null) {
 
     // Tipos estruturados que executam uma ação concreta (criar lembrete, gasto, etc) —
     // usados para dar confirmação fixa caso o bate-papo livre esteja em modo direto
-    let confirmacaoTarefa = '✅ Anotado! Vou te lembrar.';
+    let confirmacaoTarefa = classified.titulo
+      ? `✅ Anotado! "${classified.titulo}" — vou te lembrar 😉`
+      : '✅ Anotado! Vou te lembrar.';
     if (classified.tipo === 'tarefa' && classified.hora) {
       // Calcula o mesmo scheduledAt que salvarTarefaSilenciosa vai gravar,
       // para dar uma confirmação com data/hora reais — igual ao formato
@@ -1002,9 +1029,23 @@ async function handleMessage(phone, text, location = null) {
           scheduledAt = new Date(`${dataUsada}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
           if (!classified.data && scheduledAt < nowBRT()) { scheduledAt.setDate(scheduledAt.getDate() + 1); }
         }
-        const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+        const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' });
         const horaFmt = scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-        confirmacaoTarefa = `✅ Pronto! "${classified.titulo}" agendado pra ${dataFmt} às ${horaFmt} 📌`;
+
+        // Regra de confirmação: se o lembrete é pra HOJE, mostra só a hora
+        // (dizer a data de hoje é redundante e robótico). Se é pra outro dia,
+        // mostra data + hora. Em ambos os casos, SEMPRE devolve o que foi
+        // anotado (título + quando) — assim o usuário confere na hora que a
+        // Clara entendeu certo, sem depender do Dashboard.
+        // É texto PRONTO (não instrução): no fluxo normal serve de guia pra
+        // IA confirmar no tom; se cair em modo direto/fallback, vai assim
+        // mesmo — então tem que estar apresentável sozinho.
+        const ehHoje = scheduledAt.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) === nowBRT().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+        if (ehHoje) {
+          confirmacaoTarefa = `✅ Anotado! "${classified.titulo}" às ${horaFmt} ⏰`;
+        } else {
+          confirmacaoTarefa = `✅ Lembrete criado!\n\n📌 ${classified.titulo}\n🕒 ${dataFmt}, ${horaFmt}\n\nVou te avisar no horário certinho.`;
+        }
       } catch (e) {
         // mantém fallback genérico em caso de erro de parsing
       }
@@ -1044,6 +1085,17 @@ async function handleMessage(phone, text, location = null) {
     // lista exatamente o que foi gravado no banco.
     if (classified.tipo === 'multiplas_tarefas' && acaoConfirmacao) {
       await sendMessage(phone, acaoConfirmacao);
+      emitirAtualizacao(phone, 'lembretes');
+      return;
+    }
+
+    // Para TAREFA (lembrete único): a confirmação vai como SEGUNDA mensagem
+    // crua, separada da resposta humana. A IA gera só a conversa natural (não
+    // recebe a confirmação no contexto, pra não confirmar embutido e duplicar);
+    // a confirmação estruturada é enviada logo depois dentro de responderLivre.
+    if (classified.tipo === 'tarefa' && acaoConfirmacao) {
+      await responderLivre(user, phone, text, '', isSaudacao, null, acaoConfirmacao);
+      extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
       emitirAtualizacao(phone, 'lembretes');
       return;
     }
