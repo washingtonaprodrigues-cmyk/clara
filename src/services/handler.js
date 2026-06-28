@@ -513,6 +513,48 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         : 'fim da noite';
       contexto += `\n\n[HORA ATUAL] Agora são ${horaBRTfmt} (Brasília), período: ${periodoDia}. Use isso pra saudar corretamente — não diga "bom dia" à tarde nem "hora do almoço" de manhã.`;
 
+      // ── BOM DIA EMENDADO (proativo na resposta) ──
+      // Se é de manhã (5h-11h), esta é a PRIMEIRA mensagem do usuário no dia,
+      // e ele NÃO começou com um cumprimento, a Clara emenda o "bom dia" dela
+      // na resposta — no tom configurado — em vez de só responder seco. Isso
+      // transforma um "Clara, me lembra de X" às 7h num momento dela perceber
+      // que você acordou e te cumprimentar (com graça, conforme o tom).
+      // Coordenação: marca o bom_dia_lock do dia, pra o cron automático de
+      // bom dia (reminders.js) NÃO mandar outro depois — sem duplicar.
+      try {
+        if (horaBRTnum >= 5 && horaBRTnum < 11) {
+          const hojeStr = dateBRT();
+          const lockBomDia = await prisma.memory.findFirst({
+            where: { userId: user.id, type: 'bom_dia_lock', content: hojeStr }
+          }).catch(() => null);
+          if (!lockBomDia) {
+            // É a primeira mensagem do dia? (a atual ainda não foi salva)
+            const inicioHojeBRT = new Date(`${hojeStr}T00:00:00-03:00`);
+            const conversaAnteriorHoje = await prisma.memory.findFirst({
+              where: { userId: user.id, type: 'conversa', createdAt: { gte: inicioHojeBRT } }
+            }).catch(() => null);
+            // O usuário já cumprimentou nesta mensagem?
+            const jaCumprimentou = /\b(bom dia|bomdia|oi|ola|opa|eai|e ai|salve|bom diaa+)\b/i.test(normalizar(text));
+            if (!conversaAnteriorHoje && !jaCumprimentou) {
+              contexto += `\n\n[BOM DIA — IMPORTANTE] Esta é a PRIMEIRA mensagem do usuário hoje e ele NÃO te deu bom dia — foi direto ao assunto. Antes (ou junto) de responder o que ele pediu, EMENDE um bom dia SEU no SEU tom atual, de forma natural e curta. Exemplos conforme o tom: se for sarcástica/sem filtro, algo como "bom dia primeiro, né, grosso 🙄" ou "nem um oi, mas tá bom kk bom dia"; se for carinhosa/simpática, algo como "hummm acordou cedinho! bom dia, fedo 💜" ou "bom dia! 😊". Se souber algo do dia anterior ou do estado dele pela memória, pode puxar com humanidade ("dormiu bem?", "como você tá hoje?", "melhorou de ontem?"). NÃO seja robótica nem repita a mesma frase de sempre — varie. Depois disso, responda normalmente o que ele pediu.`;
+              // Marca o lock agora pra o cron não duplicar (ela vai cumprimentar nesta resposta)
+              await prisma.memory.create({
+                data: { userId: user.id, type: 'bom_dia_lock', content: hojeStr }
+              }).catch(() => {});
+            } else if (jaCumprimentou && !conversaAnteriorHoje) {
+              // Usuário já deu bom dia primeiro — ela responde no clima, mas
+              // marcamos o lock mesmo assim pra o cron não mandar um bom dia
+              // redundante depois.
+              await prisma.memory.create({
+                data: { userId: user.id, type: 'bom_dia_lock', content: hojeStr }
+              }).catch(() => {});
+            }
+          }
+        }
+      } catch (eBomDia) {
+        console.error(`[${phone}] Erro bom dia emendado:`, eBomDia.message);
+      }
+
       if (contexto) contexto = `\n\nUse as informações abaixo para responder com precisão:${contexto}`;
       if (perfilPessoal) contexto += perfilPessoal;
       if (contextoExtra) contexto += contextoExtra;
