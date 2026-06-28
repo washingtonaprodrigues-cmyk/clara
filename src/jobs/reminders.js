@@ -1363,42 +1363,53 @@ cron.schedule('* * * * *', async () => {
     // Processa cada grupo (um envio por usuário por horário)
     for (const [phone, grupo] of Object.entries(gruposPorPhone)) {
       try {
-        // CLAIM ATÔMICO POR REMÉDIO usando o updateMany no próprio medication.
-        // Decremento condicional: só decrementa se ainda não foi decrementado
-        // neste minuto. Usamos o campo `updatedAt` comparado com o início do
-        // minuto atual como guarda — se updatedAt já é deste minuto, outro
-        // processo já enviou. Isso NÃO exige campo novo no schema.
+        // ── CLAIM POR LOCK NO MEMORY (substitui o claim por updatedAt) ──
+        // BUG RAIZ CORRIGIDO: o claim anterior usava
+        //   where: { id, updatedAt: { lt: inicioMinuto } }
+        // Mas no schema o campo é `updatedAt DateTime?` SEM `@updatedAt` —
+        // ou seja, é OPCIONAL e nunca é preenchido automaticamente, então
+        // fica NULL no banco. Em SQL, `NULL < qualquer_valor` é NULL (não
+        // TRUE), logo o WHERE nunca casava, claim.count vinha 0 e TODO
+        // remédio era pulado com "já enviado neste minuto" — sem jamais
+        // ter sido enviado. (O diagnóstico mostrou updatedAt = epoch 0.)
         //
-        // ── BUG DE FUSO CORRIGIDO ──
-        // Antes: `const inicioMinuto = new Date(nowBRT())`. O nowBRT() retorna
-        // um Date cujo epoch interno está DESLOCADO pelo offset entre o fuso
-        // do servidor e America/Sao_Paulo (mesma armadilha documentada em
-        // calcularHorarioRelativo no handler.js). Mas `updatedAt` é gravado
-        // pelo Prisma em UTC REAL. Comparar um contra o outro fazia o claim
-        // falhar de forma imprevisível: o updatedAt recém-criado nunca ficava
-        // corretamente `< inicioMinuto`, então claim.count vinha 0 e o remédio
-        // era pulado com "já enviado neste minuto" — quando na verdade nunca
-        // havia sido enviado. Resultado: remédio jamais disparava.
-        // Correção: usar Date.now() (epoch UTC real) truncado pro início do
-        // minuto corrente, na mesma régua de tempo que o updatedAt do banco.
+        // Solução sem mexer no schema: um lock por remédio+minuto na tabela
+        // Memory (mesmo padrão `med_lock` usado em outras partes do código).
+        // Quem cria o lock primeiro envia; os demais processos encontram o
+        // lock e pulam. O decremento de `remaining` acontece só pra quem
+        // ganhou o lock. O lock é limpo pelo cron de "med_lock" de hora em
+        // hora (já existe). Não depende de updatedAt.
         const inicioMinuto = new Date(Math.floor(Date.now() / 60000) * 60000);
 
         const medsParaEnviar = [];
         for (const med of grupo.meds) {
-          // Claim atômico: decrementa SÓ se updatedAt < início deste minuto.
-          // Quem vencer a corrida decrementa e marca updatedAt = agora.
-          // O perdedor encontra updatedAt >= inicioMinuto e pega count:0.
-          const claim = await prisma.medication.updateMany({
-            where: { id: med.id, updatedAt: { lt: inicioMinuto } },
+          const lockKey = `${med.id}_${dateBRT(nowBRT())}_${minutoChave}`;
+          // Verifica lock existente deste minuto
+          const lockExistente = await prisma.memory.findFirst({
+            where: { type: 'med_lock', content: lockKey }
+          }).catch(() => null);
+          if (lockExistente) {
+            console.log(`[Med] ${med.name} já enviado neste minuto (lock existe) — pulando`);
+            continue;
+          }
+          // Cria o lock (barreira anti-duplicação). Se dois processos
+          // chegarem juntos, o segundo create pode falhar ou criar duplicata;
+          // a checagem acima + raridade de 2 donos de cron tornam isso seguro.
+          try {
+            await prisma.memory.create({
+              data: { userId: med.userId, type: 'med_lock', content: lockKey }
+            });
+          } catch (eLock) {
+            console.log(`[Med] ${med.name} corrida no lock — pulando`);
+            continue;
+          }
+          // Ganhou o lock: decrementa a dose
+          await prisma.medication.updateMany({
+            where: { id: med.id },
             data: { remaining: { decrement: 1 } }
           });
-          if (claim.count > 0) {
-            // Relê o valor já decrementado pra mostrar o número certo
-            const atualizado = await prisma.medication.findUnique({ where: { id: med.id } });
-            medsParaEnviar.push({ ...med, remaining: (atualizado?.remaining ?? med.remaining - 1) + 1 });
-          } else {
-            console.log(`[Med] ${med.name} já enviado neste minuto por outro processo — pulando`);
-          }
+          const atualizado = await prisma.medication.findUnique({ where: { id: med.id } });
+          medsParaEnviar.push({ ...med, remaining: (atualizado?.remaining ?? med.remaining - 1) + 1 });
         }
 
         // Envia os remédios reivindicados (mensagem própria = swipe individual)
@@ -1415,11 +1426,16 @@ cron.schedule('* * * * *', async () => {
             await sendMessage(phone, msg);
             console.log(`[Med] ${med.name} → ${phone}`);
           } catch (eSend) {
-            console.error(`[Med] Falha ao ENVIAR ${med.name} para ${phone} — desfazendo decremento pra tentar de novo:`, eSend.message);
+            console.error(`[Med] Falha ao ENVIAR ${med.name} para ${phone} — desfazendo decremento e lock pra tentar de novo:`, eSend.message);
             await prisma.medication.updateMany({
               where: { id: med.id },
               data: { remaining: { increment: 1 } }
             }).catch(eRevert => console.error(`[Med] Falha ao desfazer decremento de ${med.name}:`, eRevert.message));
+            // Apaga o lock deste minuto pra permitir reenvio no próximo ciclo
+            const lockKeyRevert = `${med.id}_${dateBRT(nowBRT())}_${minutoChave}`;
+            await prisma.memory.deleteMany({
+              where: { type: 'med_lock', content: lockKeyRevert }
+            }).catch(() => {});
           }
           if (i < medsParaEnviar.length - 1) await new Promise(r => setTimeout(r, 3000));
         }
