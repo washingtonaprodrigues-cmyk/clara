@@ -1,1653 +1,1797 @@
-const express = require('express');
-const router = express.Router();
-const memory = require('../services/memory');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const cron = require('node-cron');
 
-// sendMessage/sendButtons com fallback direto via axios — mesmo padrão
-// usado em handler.js e reminders.js, evita "sendButtons is not a function"
-// quando require('../services/whatsapp') falha ao carregar.
+// ── Singleton guard ──────────────────────────────────────────────────────
+// O Node.js faz cache de módulos pelo caminho resolvido, então em condições
+// normais este arquivo só é carregado uma vez. Mas em alguns cenários de
+// hot-reload, restart sem exit limpo ou ferramentas de dev que limpam o
+// cache do require, o módulo pode ser carregado mais de uma vez no mesmo
+// processo — e o node-cron acumula todos os schedules, dobrando os crons.
+// Este guard garante que os crons só sejam registrados uma única vez,
+// mesmo que o módulo seja requerido múltiplas vezes.
+if (global.__claraCronsRegistrados) {
+  console.log('[Reminders] Crons já registrados — ignorando duplo require.');
+  module.exports = {};
+  return;
+}
+global.__claraCronsRegistrados = true;
+
+// ── Lock de instância única (cross-container) ─────────────────────────────
+// O guard acima só protege contra duplo require no MESMO processo. Mas o
+// Railway pode ter dois containers vivos ao mesmo tempo (janela de deploy,
+// restart, etc), e aí os crons rodam em DOBRO → lembretes e remédios
+// duplicam de forma intermitente.
+//
+// Solução: cada container gera um ID único e grava um "heartbeat" no banco
+// a cada 20s. Antes de QUALQUER cron executar, ele checa se é o dono ativo
+// (o heartbeat mais recente). Só o dono roda. Se o dono morrer, em ~45s
+// outro container assume. Isso garante UM executor de crons, definitivamente.
+const INSTANCE_ID = `${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const HEARTBEAT_TYPE = '__cron_owner_heartbeat__';
+const HEARTBEAT_STALE_MS = 45000; // dono considerado morto após 45s sem heartbeat
+
+let _souODono = false;
+
+async function renovarHeartbeat() {
+  try {
+    const ancoraId = await getAncoraUserId();
+    if (!ancoraId) return;
+
+    const agora = new Date();
+    const heartbeats = await prisma.memory.findMany({
+      where: { type: HEARTBEAT_TYPE },
+      orderBy: { createdAt: 'desc' }
+    }).catch(() => []);
+
+    const vivo = heartbeats.find(h => (agora.getTime() - new Date(h.createdAt).getTime()) < HEARTBEAT_STALE_MS);
+
+    if (!vivo) {
+      // Ninguém vivo — reivindica ser o dono apagando heartbeats velhos e criando o meu
+      await prisma.memory.deleteMany({ where: { type: HEARTBEAT_TYPE } }).catch(() => {});
+      await prisma.memory.create({
+        data: { userId: ancoraId, type: HEARTBEAT_TYPE, content: INSTANCE_ID }
+      }).catch(() => {});
+      _souODono = true;
+      console.log(`[Instância] ${INSTANCE_ID} assumiu como DONO dos crons 👑`);
+    } else if (vivo.content === INSTANCE_ID) {
+      // Sou o dono — renova meu heartbeat (novo registro, createdAt atualizado)
+      await prisma.memory.deleteMany({ where: { type: HEARTBEAT_TYPE } }).catch(() => {});
+      await prisma.memory.create({
+        data: { userId: ancoraId, type: HEARTBEAT_TYPE, content: INSTANCE_ID }
+      }).catch(() => {});
+      _souODono = true;
+    } else {
+      // Outro container é o dono ativo — eu fico de prontidão (não rodo crons)
+      if (_souODono) console.log(`[Instância] ${INSTANCE_ID} cedeu o posto para ${vivo.content}`);
+      _souODono = false;
+    }
+  } catch (e) {
+    console.error('[Instância] Erro no heartbeat:', e.message);
+  }
+}
+
+// Função que todo cron chama no início. Retorna true só se este container
+// é o dono ativo dos crons. Se não for, o cron não executa.
+function souODonoDoCron() {
+  return _souODono;
+}
+
+// Inicia o heartbeat: renova a cada 20s. A primeira execução e o setInterval
+// são disparados no FINAL do arquivo, após prisma e getAncoraUserId estarem
+// definidos (const não tem hoisting).
+
+// ── Wrapper do cron.schedule com guarda de dono ───────────────────────────
+// Envolve TODO callback de cron com a checagem souODonoDoCron(). Assim, só
+// o container dono executa qualquer cron — sem precisar editar os 23 crons
+// um a um. Os crons que NÃO devem ter a guarda (nenhum, no momento) poderiam
+// usar cron.schedule original, mas todos os nossos devem respeitar o dono.
+const _cronScheduleOriginal = cron.schedule.bind(cron);
+cron.schedule = function (expr, fn, opts) {
+  const fnComGuarda = async (...args) => {
+    if (!souODonoDoCron()) return; // não sou o dono — não executo
+    return fn(...args);
+  };
+  return _cronScheduleOriginal(expr, fnComGuarda, opts);
+};
+
+
+// sendMessage via whatsapp.js (com fallback direto pra evitar circular dependency)
 async function sendMessage(phone, msg, delay) {
   try {
     const w = require('../services/whatsapp');
     if (w && typeof w.sendMessage === 'function') return w.sendMessage(phone, msg, delay);
-  } catch (e) {
-    console.error('[Forms] Erro ao carregar whatsapp.js:', e.message);
-  }
+  } catch (e) { console.error('[Reminders] Erro ao carregar whatsapp.js:', e.message); }
   const axios = require('axios');
   const BASE_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
   const TOKEN = process.env.UAZAPI_TOKEN;
-  console.log(`[Forms/Fallback] Enviando direto para ${phone}: ${String(msg).slice(0,60)}`);
+  console.log(`[Reminders/Fallback] Enviando direto para ${phone}: ${String(msg).slice(0,60)}`);
   return axios.post(`${BASE_URL}/send/text`,
     { number: phone, text: msg, delay: delay || 800 },
     { headers: { token: TOKEN, 'Content-Type': 'application/json' }, timeout: 30000 }
   );
 }
 
-async function sendButtons(phone, msg, buttons) {
-  try {
-    const w = require('../services/whatsapp');
-    if (w && typeof w.sendButtons === 'function') return w.sendButtons(phone, msg, buttons);
-  } catch (e) {
-    console.error('[Forms] Erro ao carregar whatsapp.js (sendButtons):', e.message);
+const { freeResponse, isRespostaFallback } = require('../services/groq');
+const memory = require('../services/memory');
+const { getHumorDia, getLocalizacao, getCamposDesconhecidos, getProximaCuriosidade, salvarResumoRelacionamento, getResumoRelacionamento, getMemoriaAfetiva } = memory;
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+function nowBRT() { return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })); }
+function pad(n) { return String(n).padStart(2, '0'); }
+function dateBRT(d = nowBRT()) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function random(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function tomDesc(tom) {
+  return {
+    carinhoso: 'calorosa e próxima, como uma amiga que genuinamente se importa. Use emojis com moderação. Varie sempre o jeito de falar.',
+    direto: 'direta e objetiva, sem rodeios ou fofice. Vá ao ponto. Sem emojis desnecessários.',
+    divertido: 'animada, com humor e energia, usando gírias naturais. Leve e bem-humorada.',
+    sarcastico: 'sarcástica e sem filtro — usa ironia fina, deboche carinhoso, nunca elogia à toa. Fala a verdade com um sorrisinho. NUNCA seja sentimental ou emotiva. Tom ácido mas com carinho real por baixo.',
+    clara_sendo_clara: 'adaptável ao clima de cada mensagem — anime-se com quem brinca, seja direta com quem é prático, acolha quem está mal, devolva provocação com sarcasmo leve. Sempre genuína, nunca fria ou forçada.',
+  }[tom || 'carinhoso'] || 'calorosa e próxima, como uma amiga que genuinamente se importa.';
+}
+
+// Final fixo — sem variação garante que o dedup do whatsapp.js
+// bloqueie qualquer duplicata, independente da versão do código.
+function finalParaLembrete(r) {
+  return 'Me avisa quando fizer! 👋';
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// LOCKS
+// ═══════════════════════════════════════════════════════════════════════
+
+async function jaEnviouHoje(userId, tipo) {
+  return prisma.memory.findFirst({ where: { userId, type: tipo, content: dateBRT() } });
+}
+async function marcarEnviadoHoje(userId, tipo) {
+  await prisma.memory.create({ data: { userId, type: tipo, content: dateBRT() } });
+}
+
+const _locksEmMemoria = new Map();
+async function tentarLockDiario(userId, tipo) {
+  const hoje = dateBRT();
+  const chave = `${userId}_${tipo}_${hoje}`;
+  if (_locksEmMemoria.has(chave)) return false;
+  _locksEmMemoria.set(chave, true);
+  if (_locksEmMemoria.size > 5000) {
+    for (const k of _locksEmMemoria.keys()) { if (!k.endsWith(`_${hoje}`)) _locksEmMemoria.delete(k); }
   }
-  return sendMessage(phone, msg);
-}
-
-function nowBRT() {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-}
-
-function dateBRT() {
-  const d = nowBRT();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-
-function criarDataBRT(dataStr, horaStr) {
-  const [ano, mes, dia] = dataStr.split('-').map(Number);
-  const [hora, min] = horaStr.split(':').map(Number);
-  const isoStr = `${ano}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}T${String(hora).padStart(2,'0')}:${String(min).padStart(2,'0')}:00-03:00`;
-  return new Date(isoStr);
-}
-
-const CSS_BASE = `
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
-  .card { background: white; border-radius: 16px; padding: 24px; width: 100%; max-width: 420px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
-  .header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
-  .header-icon { font-size: 32px; }
-  .header h1 { font-size: 20px; font-weight: 700; color: #1a1a2e; }
-  .header p { font-size: 13px; color: #888; margin-top: 2px; }
-  .field { margin-bottom: 16px; }
-  label { display: block; font-size: 13px; font-weight: 600; color: #444; margin-bottom: 6px; }
-  input, select, textarea { width: 100%; padding: 12px 14px; border: 1.5px solid #e0e0e0; border-radius: 10px; font-size: 15px; color: #1a1a2e; background: #fafafa; outline: none; transition: border 0.2s; }
-  textarea { resize: none; height: 80px; }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .success { display: none; text-align: center; padding: 32px 0; }
-  .success-icon { font-size: 56px; margin-bottom: 12px; }
-  .success h2 { font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 8px; }
-  .success p { font-size: 14px; color: #888; }
-  .tip { font-size: 12px; color: #aaa; margin-top: 4px; }
-  .resumo { border-radius: 10px; padding: 14px; margin-bottom: 16px; display: none; font-size: 13px; line-height: 1.6; }
-`;
-
-// ====================== LISTAGEM: LEMBRETES ======================
-router.get('/lembretes/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const user = await memory.getOrCreateUser(phone);
-    const lembretes = await prisma.reminder.findMany({
-      where: { userId: user.id },
-      orderBy: { scheduledAt: 'asc' },
-      take: 500, // aumentado pra não perder lembretes futuros
-    });
-    res.json(lembretes);
-  } catch (e) {
-    console.error('Erro GET lembretes:', e.message);
-    res.status(500).json({ error: e.message });
+  const existente = await prisma.memory.findFirst({ where: { userId, type: tipo }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+  if (existente && existente.content === hoje) return false;
+  if (existente) {
+    await prisma.memory.update({ where: { id: existente.id }, data: { content: hoje } });
+  } else {
+    await prisma.memory.create({ data: { userId, type: tipo, content: hoje } });
   }
-});
+  return true;
+}
 
-// ====================== LISTAGEM: REMÉDIOS ======================
-router.get('/remedios/:phone', async (req, res) => {
+// ── Lock por MINUTO ──────────────────────────────────────────────────────
+// ARQUITETURA DE SEGURANÇA (importante entender):
+//
+// Este lock NÃO é a barreira principal contra duplicação — é apenas uma
+// otimização para evitar queries desnecessárias quando dois containers
+// sobem ao mesmo tempo (sobreposição de deploy do Railway).
+//
+// A barreira REAL e matematicamente garantida é o CLAIM ATÔMICO no cron
+// de lembretes: `updateMany where { id, sent: false } → sent: true`.
+// Só um processo consegue mudar sent:false → true no banco. Mesmo que
+// 5 containers rodem o cron simultaneamente, cada lembrete só é enviado
+// uma vez — porque após o primeiro claim, sent:true impede os demais.
+//
+// O lock de minuto pode ter race condition em janelas de milissegundos
+// (dois processos chegam exatamente quando o registro ainda não existe).
+// Por isso ele usa try/catch e, em caso de erro (corrida detectada),
+// retorna false (o processo que perdeu a corrida não processa). Mas mesmo
+// que ambos passem pelo lock, o claim atômico por lembrete garante que
+// só um envia.
+const _locksMinutoMemoria = new Map();
+let _ancoraUserId = null;
+async function getAncoraUserId() {
+  if (_ancoraUserId) return _ancoraUserId;
+  const u = await prisma.user.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } }).catch(() => null);
+  if (u) _ancoraUserId = u.id;
+  return _ancoraUserId;
+}
+
+async function tentarLockMinuto(tipo) {
+  const n = nowBRT();
+  const minutoChave = `${dateBRT(n)}-${pad(n.getHours())}:${pad(n.getMinutes())}`;
+  const chaveMemoria = `${tipo}_${minutoChave}`;
+
+  // Camada 1: cache em memória (mesmo processo)
+  if (_locksMinutoMemoria.has(chaveMemoria)) return false;
+  _locksMinutoMemoria.set(chaveMemoria, true);
+
+  const ancoraId = await getAncoraUserId();
+  if (!ancoraId) return true;
+
+  const lockType = `__${tipo}__`;
+  const lockContent = minutoChave;
+
   try {
-    const { phone } = req.params;
-    const user = await memory.getOrCreateUser(phone);
-    const medicamentos = await prisma.medication.findMany({
-      where: { userId: user.id, active: true },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
+    // Camada 2: banco — verifica se já existe pra este minuto
+    const existente = await prisma.memory.findFirst({
+      where: { userId: ancoraId, type: lockType, content: lockContent }
+    }).catch(() => null);
+
+    if (existente) {
+      // Já existe — outro processo chegou primeiro
+      return false;
+    }
+
+    // Tenta criar atomicamente
+    // Apaga locks de minutos anteriores primeiro (limpeza)
+    await prisma.memory.deleteMany({
+      where: { userId: ancoraId, type: lockType }
+    }).catch(() => {});
+
+    // Cria o lock para este minuto
+    await prisma.memory.create({
+      data: { userId: ancoraId, type: lockType, content: lockContent }
     });
-    // ── Pendências de confirmação reais (ver reminders.js/MEDICAMENTOS) ──
-    // Antes, o Dashboard inferia "tomado" só comparando o horário atual
-    // com a lista `times` do remédio — se já tinha passado o último
-    // horário do dia, mostrava "Todas as doses tomadas hoje" mesmo sem
-    // nenhuma confirmação real. Agora expomos quais medicamentos têm uma
-    // pendência de confirmação genuinamente aberta, pro frontend distinguir
-    // "realmente confirmado" de "só já passou da hora".
-    const pendentes = await prisma.memory.findMany({ where: { userId: user.id, type: 'confirmacao_pendente' } });
-    const medIdsPendentes = new Set();
+
+    // Limpeza do cache em memória
+    if (_locksMinutoMemoria.size > 5000) {
+      for (const [k] of _locksMinutoMemoria) {
+        if (!k.endsWith(minutoChave)) _locksMinutoMemoria.delete(k);
+      }
+    }
+
+    return true;
+  } catch (e) {
+    // Race condition — outro processo criou entre nosso delete e create
+    console.log(`[LockMinuto] Race condition em ${tipo}: ${e.message}`);
+    return false;
+  }
+}
+
+async function houveConversaRecente(userId, minutos = 5) {
+  const limite = new Date(Date.now() - minutos * 60 * 1000);
+  return !!(await prisma.memory.findFirst({ where: { userId, type: 'conversa', createdAt: { gte: limite } } }).catch(() => null));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// CALLBACK DE CONTINUIDADE — "ela ainda estava pensando nisso"
+// Diferente da proativa de janela (que é sobre o DIA), esse roda durante
+// uma conversa ATIVA: se teve troca real de mensagens sobre um assunto
+// nos últimos minutos e a pessoa ficou quieta (mas não parece ter
+// encerrado o assunto), a Clara volta com algo NOVO — ideia, opinião ou
+// brincadeira — como quem ficou pensando nisso enquanto fazia outra
+// coisa. NÃO muda a personalidade (mesmo buildPersonality de sempre, via
+// _systemOverride) — só adiciona o gatilho e o contexto da conversa.
+// Freios: no máximo 1x por "gap de silêncio" (lock por sessão) e no
+// máximo 2x por dia no total, independente da proativa de janela.
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('*/2 * * * *', async () => {
+  try {
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    for (const user of users) {
+      try {
+        const hoje = dateBRT(nowBRT());
+
+        // Teto diário — separado da proativa de janela
+        const jaHojeCount = await prisma.memory.count({
+          where: { userId: user.id, type: 'callback_continuidade_lock', content: { startsWith: hoje } }
+        }).catch(() => 0);
+        if (jaHojeCount >= 2) continue;
+
+        // Janela de observação: últimos 15 minutos de conversa
+        const limite15min = new Date(Date.now() - 15 * 60 * 1000);
+        const msgsRecentes = await prisma.memory.findMany({
+          where: { userId: user.id, type: 'conversa', createdAt: { gte: limite15min } },
+          orderBy: { createdAt: 'asc' }
+        }).catch(() => []);
+        if (msgsRecentes.length === 0) continue;
+
+        const ultimaMsg = msgsRecentes[msgsRecentes.length - 1];
+        const minutosDesdeUltima = (Date.now() - new Date(ultimaMsg.createdAt).getTime()) / 60000;
+
+        // Janela de silêncio: nem muito em cima (pareceria notificação
+        // automática), nem muito depois (perde o "tava pensando AGORA").
+        if (minutosDesdeUltima < 5 || minutosDesdeUltima > 20) continue;
+
+        // Engajamento real — pelo menos 2 mensagens DO USUÁRIO na janela,
+        // não só a Clara falando sozinha.
+        const msgsUsuario = msgsRecentes.filter(m => {
+          try { return JSON.parse(m.content).role === 'user'; } catch { return false; }
+        });
+        if (msgsUsuario.length < 2) continue;
+
+        // Lock por sessão (chave = timestamp da última mensagem) — cada
+        // "gap de silêncio" só é avaliado uma vez, mesmo rodando a cada 2min.
+        const sessaoKey = `${hoje}_${new Date(ultimaMsg.createdAt).getTime()}`;
+        const jaAvaliado = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'callback_continuidade_sessao', content: sessaoKey }
+        }).catch(() => null);
+        if (jaAvaliado) continue;
+        // Marca como avaliado IMEDIATAMENTE, mesmo que decida não mandar
+        // nada — senão reavaliaria o mesmo gap a cada 2 minutos.
+        await prisma.memory.create({
+          data: { userId: user.id, type: 'callback_continuidade_sessao', content: sessaoKey }
+        }).catch(() => {});
+
+        const { prefs } = await getUserContext(user);
+        const history = msgsRecentes.map(m => {
+          try { const p = JSON.parse(m.content); return { role: p.role, content: p.content }; } catch { return null; }
+        }).filter(Boolean);
+        if (history.length < 3) continue; // pouca substância pra valer um callback
+        const transcricao = history.map(h => `${h.role === 'user' ? 'Usuário' : 'Clara'}: ${h.content}`).join('\n');
+
+        const systemContinuidade = `Vocês estavam conversando sobre algo há poucos minutos, e a pessoa ficou quieta. Você quer voltar a falar sobre o MESMO assunto, mas trazendo algo NOVO — uma ideia que te ocorreu, uma opinião que não deu tempo de falar antes, ou uma brincadeira sobre o que vocês comentaram. Não é repetir a pergunta de antes nem cobrar resposta — é como se você tivesse ficado pensando nisso enquanto fazia outra coisa, e resolveu mandar.
+
+TRECHO DA CONVERSA RECENTE:
+${transcricao}
+
+REGRAS:
+- 1-2 linhas no máximo.
+- NÃO repita o que já foi dito, NÃO refaça a mesma pergunta de antes.
+- NÃO comece com "Oi", "Olá" ou o nome da pessoa.
+- Siga o SEU tom normal — se for mais sem filtro/direto, não force "fofura"; se o assunto for sério, não force humor.
+- Se o assunto já parecia encerrado/resolvido na conversa, ou se você não tem nada genuíno e novo pra acrescentar, responda APENAS: SKIP`;
+
+        const msg = await freeResponse('continuar a conversa', [], {
+          name: prefs.name,
+          tom: prefs.tom || 'carinhoso',
+          _systemOverride: systemContinuidade,
+          _maxTokens: 120,
+        });
+
+        if (!msg || msg.trim() === 'SKIP' || msg.length < 5 || isRespostaFallback(msg)) continue;
+
+        await sendMessage(user.phone, msg);
+        await prisma.memory.create({
+          data: { userId: user.id, type: 'callback_continuidade_lock', content: `${hoje}_${Date.now()}` }
+        }).catch(() => {});
+        console.log(`[Callback continuidade] ${user.phone}: ${msg}`);
+      } catch (eUser) {
+        console.error(`[Callback continuidade] Erro pra ${user.phone}:`, eUser.message);
+      }
+    }
+  } catch (e) { console.error('[Callback continuidade] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+async function getUserContext(user) {
+  const prefs = await memory.getUserPreference(user.id);
+  const perfilTexto = await memory.buildPersonalContext(user.id);
+  return { prefs, perfilTexto };
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// BOM DIA INTELIGENTE — reativo
+// Em vez de hora fixa: espera o "sinal de que acordou" — alguns minutos
+// depois do PRIMEIRO remédio ou lembrete do dia (entre 05h-11h), quando o
+// usuário manda a primeira mensagem dele no dia. Isso é mais parecido com
+// uma pessoa de verdade do que mandar bom dia num horário fixo sem saber
+// se a pessoa já tá acordada. Se não tiver nenhum remédio/lembrete de
+// manhã pra usar como referência, cai num fallback simples: janela 7h-8h.
+// Tom: conversacional/íntimo (não é resumo objetivo de tarefas) — pode
+// citar UM destaque do dia de forma natural, tipo "hoje tem consulta meio-
+// dia, deixa tudo organizado, preguiçoso kkk", mas não lista tudo.
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
+  try {
+    const now = nowBRT();
+    const hoje = dateBRT(now);
+    const diasSemana = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+    const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+    const diaTexto = `${diasSemana[now.getDay()]}, ${now.getDate()} de ${meses[now.getMonth()]}`;
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    for (const user of users) {
+      try {
+        // Checagem (sem consumir o lock ainda) — só consumimos quando for
+        // de fato enviar, pra não travar o dia numa tentativa que só
+        // estava esperando o sinal de "acordou".
+        const jaTem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'bom_dia_lock', content: hoje } }).catch(() => null);
+        if (jaTem) continue;
+
+        let podeEnviarAgora = false;
+
+        // ── GATILHO PROATIVO: ela começa sozinha, sem você falar ──
+        // O cron é o caminho "você ainda não interagiu hoje" — se você mandar
+        // mensagem primeiro, o bom dia vem emendado na RESPOSTA (handler.js),
+        // e o bom_dia_lock já estará marcado, então este cron nem chega aqui.
+        //
+        // Sinal de "acordou" sem depender de mensagem: o primeiro
+        // remédio/lembrete da manhã (5h-11h). Ela espera de 3 a 5 minutos
+        // depois do disparo e manda o bom dia — não colado (robótico), mas
+        // como quem "lembrou de você" logo depois.
+        const inicioJanela = new Date(now); inicioJanela.setHours(5, 0, 0, 0);
+        const fimJanela = new Date(now); fimJanela.setHours(11, 0, 0, 0);
+
+        const lembretesManha = await prisma.reminder.findMany({
+          where: { userId: user.id, scheduledAt: { gte: inicioJanela, lte: fimJanela } },
+          orderBy: { scheduledAt: 'asc' }
+        }).catch(() => []);
+
+        const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
+        let primeiroHorarioMed = null;
+        for (const med of meds) {
+          let horarios = [];
+          try { horarios = JSON.parse(med.times || '[]'); } catch {}
+          for (const h of horarios) {
+            const hh = parseInt(h.split(':')[0], 10);
+            if (hh >= 5 && hh < 11 && (!primeiroHorarioMed || h < primeiroHorarioMed)) primeiroHorarioMed = h;
+          }
+        }
+
+        let primeiroEvento = lembretesManha.length > 0 ? new Date(lembretesManha[0].scheduledAt) : null;
+        if (primeiroHorarioMed) {
+          const [hh, mm] = primeiroHorarioMed.split(':').map(Number);
+          const dataMed = new Date(now); dataMed.setHours(hh, mm, 0, 0);
+          if (!primeiroEvento || dataMed < primeiroEvento) primeiroEvento = dataMed;
+        }
+
+        const ehDomingo = now.getDay() === 0;
+
+        if (primeiroEvento) {
+          // Espera de 3 a 5 minutos depois do disparo do evento — janela
+          // curta pra não ficar nem colado (robótico) nem atrasado demais.
+          const minutosDesdeEvento = (now - primeiroEvento) / 60000;
+          if (minutosDesdeEvento >= 3 && minutosDesdeEvento <= 8) {
+            podeEnviarAgora = true;
+          }
+        } else {
+          // ── FALLBACK por horário fixo (sem remédio/lembrete de manhã) ──
+          // Dia de semana: 7h. Domingo: 9h (deixa você dormir).
+          const horaAlvo = ehDomingo ? 9 : 7;
+          if (now.getHours() === horaAlvo && now.getMinutes() < 6) {
+            podeEnviarAgora = true;
+          }
+        }
+
+        if (!podeEnviarAgora) continue;
+
+        const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
+        const fimHoje = new Date(`${hoje}T23:59:59-03:00`);
+        const [lembretesDoDia, eventos] = await Promise.all([
+          prisma.reminder.findMany({ where: { userId: user.id, confirmed: false, sent: false, scheduledAt: { gte: now, lte: fimHoje } }, orderBy: { scheduledAt: 'asc' }, take: 3 }),
+          prisma.event.findMany({ where: { userId: user.id, date: { gte: inicioHoje, lte: fimHoje } } }).catch(() => []),
+        ]);
+        const { prefs } = await getUserContext(user);
+
+        // Puxa a memória pessoal (resumo de relacionamento, pendências,
+        // acontecimentos recentes) pra ela poder dizer coisas humanas tipo
+        // "dormiu bem?" / "melhorou de ontem?" referenciando algo real.
+        let memoriaContexto = '';
+        try { memoriaContexto = await memory.buildPersonalContext(user.id); } catch {}
+
+        let destaqueTexto = 'nada de especial marcado pro resto do dia';
+        if (eventos.length > 0) {
+          destaqueTexto = eventos.map(e => `${e.title}${e.personName ? ` (${e.personName})` : ''}`).join('; ');
+        } else if (lembretesDoDia.length > 0) {
+          const h = new Date(lembretesDoDia[0].scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+          destaqueTexto = `${h} — ${lembretesDoDia[0].message}`;
+        }
+
+        const systemBomDia = `É de manhã e você está começando a conversa POR INICIATIVA SUA — a pessoa ainda não falou com você hoje. Mande um "bom dia" curto e NATURAL, como alguém próximo que lembrou da pessoa de manhã. NÃO é resumo de tarefas.
+
+DATA DE HOJE: ${diaTexto} (use exatamente esse dia se for citar, nunca invente outro)
+DESTAQUE DO DIA (use só se fizer sentido natural, não force): ${destaqueTexto}
+
+REGRAS:
+- 1-2 linhas. NUNCA liste tarefas em tópicos, NUNCA seja um resumo objetivo.
+- Como você está iniciando, é natural perguntar algo humano: "dormiu bem?", "como você tá hoje?", "descansou?". Se a memória de vocês tiver algo de ontem ou recente (um perrengue, uma vitória, um clima), pode puxar com carinho ("melhorou de ontem?", "como ficou aquela parada?") — isso é o que te torna humana, use quando souber de algo real.
+- Pode já brincar/provocar conforme o SEU tom — varie, depende do clima de vocês.
+- Se tiver algo importante marcado hoje, mencione de forma leve e natural, só se acrescentar — não force.
+- Use o apelido que vocês já têm, se fizer sentido. Siga o SEU tom (mais brincalhão = pode zoar; mais carinhoso = mais suave).
+- NUNCA poética, NUNCA entre aspas, máximo 1 emoji, nunca repita a mesma frase de outro dia.
+- NUNCA use português de Portugal (podes, tens) — só português do Brasil.`;
+
+        const msg = await freeResponse('Bom dia.', [], { _contexto: memoriaContexto || '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBomDia, _maxTokens: 100 });
+        if (!msg || isRespostaFallback(msg)) { console.log(`[Bom dia] Rate limit ou fallback genérico, pulado para ${user.phone}`); continue; }
+
+        if (!(await tentarLockDiario(user.id, 'bom_dia_lock'))) continue; // alguém já mandou enquanto gerávamos
+
+        await sendMessage(user.phone, msg);
+        console.log(`[Bom dia] ${user.phone}: ${msg}`);
+      } catch (e) { console.error(`[Bom dia] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error('[Bom dia] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// FECHAMENTO DO DIA — 18:00
+// Resume o dia de trabalho: concluídos, pendentes e opção de remarcar.
+// Separado do boa noite para que a noite seja só descanso.
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('0 18 * * *', async () => {
+  try {
+    const now = nowBRT();
+    const hoje = dateBRT(now);
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    for (const user of users) {
+      try {
+        const lockKey = `fechamento_dia_${hoje}`;
+        if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'fechamento_dia_lock', content: lockKey } })) continue;
+
+        const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
+        const fimHoje = new Date(`${hoje}T23:59:59-03:00`);
+        const todosHoje = await prisma.reminder.findMany({
+          where: { userId: user.id, scheduledAt: { gte: inicioHoje, lte: fimHoje } }
+        });
+
+        const concluidos = todosHoje.filter(r => r.confirmed);
+        const pendentes = todosHoje.filter(r => r.sent && !r.confirmed);
+
+        // Só envia se teve atividade hoje
+        if (todosHoje.length === 0) continue;
+
+        const { prefs } = await getUserContext(user);
+        const nome = prefs.name ? ` ${prefs.name.split(' ')[0]}` : '';
+
+        let msg = '';
+        if (concluidos.length > 0 && pendentes.length === 0) {
+          // Fechamento do dia — texto fixo no tom da Clara, sem coach/parabéns.
+          // Faz sentido pra fim de EXPEDIENTE (não fim do dia): a pessoa vai
+          // pra casa viver a noite, não dormir. Sem "mereceu descansar".
+          const variacoesFechamento = [
+            `Deu o dia${nome}! Tudo fechado por aqui, sem nada pendente 😊`,
+            `Encerrou tudo hoje${nome}! Agenda limpa, pode seguir tranquilo ✅`,
+            `Tudo certo por aqui! Você finalizou os ${concluidos.length} compromisso${concluidos.length > 1 ? 's' : ''} de hoje 💜`,
+            `Fim de expediente${nome}! Tudo em dia, nada ficou pra trás 😊`,
+            `Pronto, dia organizado e sem pendências${nome}! Bora pra noite 💪`,
+          ];
+          msg = variacoesFechamento[Math.floor(Math.random() * variacoesFechamento.length)];
+        } else if (concluidos.length > 0 && pendentes.length > 0) {
+          const ids = pendentes.map(r => r.id);
+          // Salva confirmação pendente pra remarcar
+          await prisma.memory.create({
+            data: {
+              userId: user.id,
+              type: 'confirmacao_pendente',
+              content: JSON.stringify({
+                tipo: 'fechamento_pendentes',
+                reminderIds: ids,
+                expira: Date.now() + 3 * 60 * 60 * 1000 // 3h pra responder
+              })
+            }
+          }).catch(() => {});
+          msg = `Hoje foram ${concluidos.length} item${concluidos.length > 1 ? 's' : ''} concluído${concluidos.length > 1 ? 's' : ''} 👏 Ficaram ${pendentes.length} pendente${pendentes.length > 1 ? 's' : ''} — posso remarcar tudo pro mesmo horário amanhã ou você prefere concluir agora?`;
+        } else if (concluidos.length === 0 && pendentes.length > 0) {
+          const ids = pendentes.map(r => r.id);
+          await prisma.memory.create({
+            data: {
+              userId: user.id,
+              type: 'confirmacao_pendente',
+              content: JSON.stringify({
+                tipo: 'fechamento_pendentes',
+                reminderIds: ids,
+                expira: Date.now() + 3 * 60 * 60 * 1000
+              })
+            }
+          }).catch(() => {});
+          msg = `Ficaram ${pendentes.length} item${pendentes.length > 1 ? 's' : ''} pendente${pendentes.length > 1 ? 's' : ''} hoje — remarco tudo pro mesmo horário amanhã ou prefere concluir agora?`;
+        }
+
+        if (msg) {
+          await prisma.memory.create({ data: { userId: user.id, type: 'fechamento_dia_lock', content: lockKey } });
+          await sendMessage(user.phone, msg);
+          console.log(`[Fechamento] ${user.phone} — ${concluidos.length} concluídos, ${pendentes.length} pendentes`);
+        }
+      } catch (e) { console.error(`[Fechamento] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error('[Fechamento] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
+// BOA NOITE (21:30) — curta, calorosa, só preview de amanhã
+// ═══════════════════════════════════════════════════════════════════════
+// Boa noite roda às 21:30 E às 22:30 (para quem estava conversando no primeiro disparo)
+cron.schedule('30 22 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
+async function boaNoiteInteligente() {
+  try {
+    const now = nowBRT();
+    const hoje = dateBRT(now);
+    const amanha = new Date(now); amanha.setDate(amanha.getDate() + 1);
+    const amanhaStr = dateBRT(amanha);
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    for (const user of users) {
+      try {
+        if (!(await tentarLockDiario(user.id, 'boa_noite_lock'))) {
+          console.log(`[Boa noite] ja enviado hoje para ${user.phone}`); continue;
+        }
+        // Não dispara se houve conversa nos últimos 30 minutos
+        // Espera a conversa esfriar antes de mandar boa noite
+        if (await houveConversaRecente(user.id, 30)) {
+          console.log(`[Boa noite] Conversa recente, aguardando para ${user.phone}`);
+          // Remove o lock para tentar de novo depois
+          await prisma.memory.deleteMany({ where: { userId: user.id, type: 'boa_noite_lock', content: dateBRT(now) } }).catch(() => {});
+          continue;
+        }
+        const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
+        const fimHoje = new Date(`${hoje}T23:59:59-03:00`);
+        const inicioAmanha = new Date(`${amanhaStr}T00:00:00-03:00`);
+        const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
+        const [todosHoje, lembretesAmanha, infoPessoal] = await Promise.all([
+          prisma.reminder.findMany({ where: { userId: user.id, scheduledAt: { gte: inicioHoje, lte: fimHoje } } }),
+          prisma.reminder.findMany({ where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: inicioAmanha, lte: fimAmanha } }, orderBy: { scheduledAt: 'asc' }, take: 3 }),
+          memory.buildPersonalContext(user.id)
+        ]);
+        const { prefs } = await getUserContext(user);
+        const concluidosHoje = todosHoje.filter(t => t.confirmed).length;
+        const pendentesHoje = todosHoje.filter(t => t.sent && !t.confirmed);
+        let ctx = `Hoje foi ${['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'][now.getDay()]}.\n`;
+        if (todosHoje.length > 0) ctx += `Compromissos do dia: ${concluidosHoje} concluídos, ${pendentesHoje.length} pendentes.\n`;
+        if (pendentesHoje.length > 0) { ctx += `Pendentes hoje:\n${pendentesHoje.map(r => `• ${r.message}`).join('\n')}\n`; }
+        if (lembretesAmanha.length > 0) {
+          ctx += `\nAmanhã tem ${lembretesAmanha.length} compromisso(s):\n`;
+          lembretesAmanha.forEach(r => {
+            const h = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+            ctx += `• ${h} — ${r.message}\n`;
+          });
+        }
+        if (infoPessoal) ctx += infoPessoal;
+        // Boa noite — só uma amiga desejando boa noite, nada mais.
+        // O fechamento do dia já foi às 18h. Aqui é descanso puro.
+        const systemBoaNoite = `Você é a Clara, parceira pessoal d${user.name ? 'o ' + user.name.split(' ')[0] : 'o usuário'} no WhatsApp.
+SEU TOM: ${tomDesc(prefs.tom)}
+
+Mande UMA boa noite de verdade — curta, calorosa, do jeito que uma amiga manda mensagem antes de dormir.
+
+CONTEXTO:
+${ctx}
+
+REGRAS ABSOLUTAS:
+- Máximo 1-2 linhas. UMA frase curta com pontuação final.
+- NUNCA entre aspas. NUNCA "Parabéns". NUNCA "estarei aqui". NUNCA "Podes". NUNCA liste tarefas ou faça resumo do dia.
+- NUNCA use português de Portugal (podes, tens, fazes) — use sempre português do Brasil (pode, tem, faz)
+- Se a pessoa estava viajando hoje, pergunte se chegou bem
+- Se tiver compromisso importante amanhã, mencione levemente e só isso
+- Varie sempre — nunca repita a mesma frase de boa noite
+- Tom: ${prefs.tom || 'carinhoso'}`;
+        const msg = await freeResponse('Boa noite.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBoaNoite, _maxTokens: 80 });
+        if (!msg || isRespostaFallback(msg)) {
+          console.log(`[Boa noite] Rate limit ou fallback, pulado para ${user.phone} — liberando pra tentar de novo`);
+          // Libera o lock pra próxima tentativa do dia poder tentar de novo
+          // (antes, uma falha aqui consumia a única tentativa do dia e o
+          // boa noite simplesmente não saía — Washington pediu que esse
+          // nunca pode falhar).
+          await prisma.memory.deleteMany({ where: { userId: user.id, type: 'boa_noite_lock', content: dateBRT(now) } }).catch(() => {});
+          continue;
+        }
+        await sendMessage(user.phone, msg);
+        console.log(`[Boa noite] Enviado para ${user.phone}`);
+      } catch (e) { console.error(`[Boa noite] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error('[Boa noite] Erro geral:', e.message); }
+}
+
+cron.schedule('30 21 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
+
+// ── REDE DE SEGURANÇA FINAL — 23:00 ──
+// Se, depois das duas tentativas (21:30 e 22:30, geradas por IA), o boa
+// noite ainda não saiu por algum motivo (rate limit total, erro etc),
+// manda uma mensagem fixa — sem IA, não tem como falhar. Boa noite é o
+// único disparo que Washington pediu pra NUNCA faltar.
+const BOA_NOITE_GARANTIDA = [
+  'Boa noite! Descansa bem 💜',
+  'Boa noite, durma bem 😊',
+  'Por hoje é só. Boa noite!',
+  'Boa noite! Até amanhã 💜',
+];
+cron.schedule('0 23 * * *', async () => {
+  try {
+    const hoje = dateBRT(nowBRT());
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    for (const user of users) {
+      try {
+        const jaEnviou = await prisma.memory.findFirst({ where: { userId: user.id, type: 'boa_noite_lock', content: hoje } }).catch(() => null);
+        if (jaEnviou) continue;
+        const msg = BOA_NOITE_GARANTIDA[Math.floor(Math.random() * BOA_NOITE_GARANTIDA.length)];
+        await sendMessage(user.phone, msg);
+        await prisma.memory.create({ data: { userId: user.id, type: 'boa_noite_lock', content: hoje } }).catch(() => {});
+        console.log(`[Boa noite GARANTIDA] ${user.phone}: ${msg}`);
+      } catch (e) { console.error(`[Boa noite GARANTIDA] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error('[Boa noite GARANTIDA] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
+// ALERTAS DE DATAS IMPORTANTES (08:00)
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('0 8 * * *', async () => {
+  try {
+    const now = nowBRT();
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    for (const user of users) {
+      try {
+        const infos = await memory.getPersonalInfo(user.id, 'datas');
+        for (const [chave, { valor }] of Object.entries(infos)) {
+          const match = valor.match(/(\d{1,2})\s+de\s+(\w+)/i);
+          if (!match) continue;
+          const mesesMap = { janeiro:1,fevereiro:2,março:3,abril:4,maio:5,junho:6,julho:7,agosto:8,setembro:9,outubro:10,novembro:11,dezembro:12 };
+          const dia = parseInt(match[1]); const mes = mesesMap[match[2].toLowerCase()];
+          if (!dia || !mes) continue;
+          const dataEvento = new Date(now.getFullYear(), mes - 1, dia);
+          const diffDias = Math.round((dataEvento - now) / (1000 * 60 * 60 * 24));
+          const lockKey = `alerta_data_${chave}_${dateBRT()}`;
+          if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'alerta_data_lock', content: lockKey } })) continue;
+          let msg = null;
+          if (diffDias === 0) msg = `🎉 ${valor.replace('Aniversário', 'Hoje é o aniversário')} — não esquece de dar os parabéns! 🎂`;
+          else if (diffDias === 1) msg = `⏰ Amanhã: ${valor} Já preparou algo especial? 😊`;
+          else if (diffDias === 3) msg = `📅 Em 3 dias: ${valor} 💜`;
+          else if (diffDias === 7) msg = `📅 Em uma semana: ${valor} 😊`;
+          if (msg) {
+            await sendMessage(user.phone, msg);
+            await prisma.memory.create({ data: { userId: user.id, type: 'alerta_data_lock', content: lockKey } });
+          }
+        }
+        const eventos = await prisma.event.findMany({ where: { userId: user.id, notified: false } }).catch(() => []);
+        for (const ev of eventos) {
+          const dataEv = new Date(ev.date);
+          const diffDias = Math.round((dataEv - now) / (1000 * 60 * 60 * 24));
+          let msg = null;
+          if ((diffDias === 0 || diffDias === 1) && ev.personName) {
+            try {
+              const infoPessoalCompleta = await memory.buildPersonalContext(user.id).catch(() => '');
+              const linhasRelacionadas = (infoPessoalCompleta || '').split('\n').filter(l => l.toLowerCase().includes(ev.personName.toLowerCase()));
+              if (linhasRelacionadas.length > 0) {
+                const prefs = await memory.getUserPreference(user.id).catch(() => null);
+                const quando = diffDias === 0 ? 'hoje' : 'amanhã';
+                msg = await freeResponse(`Aviso de aniversário de ${ev.personName}.`, [], {
+                  _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso',
+                  _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''} Tom: ${prefs?.tom || 'carinhoso'}. É ${quando} o aniversário de ${ev.personName}. O que você sabe: ${linhasRelacionadas.join('; ')}. Envie uma mensagem curta (1-2 linhas) avisando e mencionando naturalmente esse detalhe pessoal. NÃO liste como tópicos.`
+                }).catch(() => null);
+                if (msg && isRespostaFallback(msg)) msg = null;
+              }
+            } catch (e) { console.error(`[Datas] Erro memórias ${ev.personName}:`, e.message); }
+          }
+          if (!msg) {
+            if (diffDias === 0) msg = `🎉 Hoje é ${ev.title}${ev.personName ? ` da ${ev.personName}` : ''}! 🎂`;
+            else if (diffDias === 1) msg = `⏰ Amanhã é ${ev.title}${ev.personName ? ` da ${ev.personName}` : ''}! Não esquece 😊`;
+            else if (diffDias === 3) msg = `📅 Em 3 dias: ${ev.title}${ev.personName ? ` da ${ev.personName}` : ''} 💜`;
+            else if (diffDias === 7) msg = `📅 Em uma semana: ${ev.title}${ev.personName ? ` da ${ev.personName}` : ''} 😊`;
+          }
+          if (msg) {
+            await sendMessage(user.phone, msg);
+            await prisma.event.update({ where: { id: ev.id }, data: { notified: true } });
+          }
+        }
+      } catch (e) { console.error(`[Datas] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error('[Datas] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
+// MENSAGENS PROATIVAS (10:00 e 15:00, dias úteis)
+// ═══════════════════════════════════════════════════════════════════════
+// PROATIVAS — 3 momentos do dia como uma amiga de verdade
+// Manhã 08:30 — dormiu bem? referência ao dia anterior
+// Almoço 12:15 — e aí, já almoçou? retoma assunto pendente
+// Noite 20:00 — como foi o dia? conversa genuína
+// ═══════════════════════════════════════════════════════════════════════
+// Antes, cada período rodava UMA VEZ no horário exato (8:30/12:15/20:00).
+// Problema: sempre no mesmo minuto (mecânico) e, se a tentativa única do
+// dia fosse pulada (sem assunto, conversa recente etc), não tentava de
+// novo. Agora cada período é uma JANELA com várias tentativas — a
+// primeira que tiver algo genuíno pra dizer (e passar a chancela
+// cacheada do dia) manda a mensagem; as outras tentativas da mesma
+// janela só seguem adiante se a anterior não mandou nada.
+// Manhã: 08:00–09:30 | Almoço: 11:30–13:30 | Noite: 19:30–21:30
+cron.schedule('*/15 8 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('0,15,30 9 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
+
+cron.schedule('30,45 11 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('*/15 12 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('0,15,30 13 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
+
+cron.schedule('30,45 19 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('*/15 20 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('0,15,30 21 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+async function proativaInteligente(periodo) {
+  try {
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    const now = nowBRT();
+    for (const user of users) {
+      try {
+        const dayKey = `${periodo}_${dateBRT()}`;
+
+        // ── Já enviou hoje pra esse período? ──
+        // Antes isso era decidido ANTES de processar (claim atômico), o
+        // que travava o dia inteiro mesmo se a tentativa fosse pulada por
+        // chancela aleatória ou falta de assunto. Agora os 3 horários
+        // fixos viraram JANELAS (várias tentativas dentro de um intervalo,
+        // ver cron.schedule mais abaixo) — então o que precisa ser travado
+        // de verdade é só "já mandou uma mensagem real hoje nesse período",
+        // não "já tentou". Isso permite tentar de novo no próximo horário
+        // da janela se a tentativa anterior não tinha nada genuíno pra dizer.
+        // A proteção contra dois containers rodando ao mesmo tempo já vem
+        // do sistema de "dono dos crons" (heartbeat) no topo do arquivo —
+        // só um processo executa isso por vez, então não precisamos mais
+        // do claim atômico pré-decisão de antes.
+        const jaEnviouHoje = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'proativa_enviado_lock', content: dayKey }
+        }).catch(() => null);
+        if (jaEnviouHoje) continue;
+
+        // A partir daqui, processa com segurança
+        try {
+          if (await houveConversaRecente(user.id, 5)) continue;
+          const ultimaConversa = await prisma.memory.findFirst({ where: { userId: user.id, type: 'conversa' }, orderBy: { createdAt: 'desc' } });
+          if (!ultimaConversa) continue;
+          const diasSemConversa = (now - new Date(ultimaConversa.createdAt)) / (1000 * 60 * 60 * 24);
+          if (diasSemConversa > 3) continue;
+
+          const [infoPessoal, memsRecentes, { prefs }] = await Promise.all([
+            memory.buildPersonalContext(user.id),
+            memory.getRecentMemories(user.id, 20),
+            getUserContext(user)
+          ]);
+
+          // Assuntos em aberto — prioridade máxima em qualquer período
+          const pendenciasAbertas = await prisma.pendencia.findMany({
+            where: { userId: user.id, resolvido: false },
+            orderBy: { createdAt: 'desc' }, take: 2
+          }).catch(() => []);
+          const ctxPendencias = pendenciasAbertas.length > 0
+            ? `ASSUNTOS EM ABERTO (use como gancho natural, não robótico):\n${pendenciasAbertas.map(p => `- ${p.assunto}: ${p.contexto} → ${p.como_retomar}`).join('\n')}`
+            : '';
+
+          // Contexto recente filtrado
+          const contextoMems = memsRecentes
+            .filter(m => !['conversa','bom_dia_enviado','boa_noite_enviado','proativa_lock','med_lock','alerta_data_lock','fechamento_dia_lock','ultima_localizacao'].includes(m.type))
+            .filter(m => !/dose|rem[eé]dio|medica[cç]|tiroide|toroide|colesterol|pressao|pressão/i.test(m.content || ''))
+            .slice(0, 10).map(m => `[${m.type}] ${m.content}`).join('\n');
+
+          // ── Infere quando o usuário acordou hoje ──
+          // Ordem de confiabilidade:
+          // 1. Primeira mensagem do usuário hoje (sinal real — ele escreveu)
+          // 2. Remédio mais cedo (estimativa quando não tem sinal real)
+          let horaAcorda = null;
+          let jaAcordouConfirmado = false;
+          try {
+            const hoje = dateBRT(now);
+            const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
+
+            // Sinal 1: qualquer interação do usuário hoje
+            // Inclui conversa E confirmação de remédio (swipe-reply)
+            const primeiraInteracao = await prisma.memory.findFirst({
+              where: {
+                userId: user.id,
+                type: { in: ['conversa', 'med_confirmado', 'lembrete_confirmado'] },
+                createdAt: { gte: inicioHoje }
+              },
+              orderBy: { createdAt: 'asc' }
+            }).catch(() => null);
+
+            // Fallback: verifica se algum remédio foi confirmado hoje
+            // (swipe-reply de remédio não salva em memory, mas o medication.remaining diminuiu)
+            if (!primeiraInteracao) {
+              const medConfirmadoHoje = await prisma.medication.findFirst({
+                where: {
+                  userId: user.id,
+                  updatedAt: { gte: inicioHoje }
+                }
+              }).catch(() => null);
+              if (medConfirmadoHoje) {
+                const d = new Date(medConfirmadoHoje.updatedAt);
+                horaAcorda = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                jaAcordouConfirmado = true;
+              }
+            } else {
+              const d = new Date(primeiraInteracao.createdAt);
+              horaAcorda = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+              jaAcordouConfirmado = true;
+            }
+
+            // Sinal 2: remédio mais cedo (fallback)
+            if (!horaAcorda) {
+              const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true } });
+              const horarios = meds.flatMap(m => { try { return JSON.parse(m.times || '[]'); } catch { return []; } });
+              if (horarios.length) horaAcorda = horarios.sort()[0];
+            }
+          } catch {}
+
+          // Proativa da manhã: só dispara se já acordou de fato
+          // (confirmado por mensagem) ou passou 45min do remédio estimado
+          if (periodo === 'manha') {
+            if (!horaAcorda) continue; // sem nenhum sinal, não dispara
+            if (!jaAcordouConfirmado) {
+              // Só estimativa do remédio — espera 45min pra ter certeza
+              const [hAc, mAc] = horaAcorda.split(':').map(Number);
+              const diffMin = (now.getHours() * 60 + now.getMinutes()) - (hAc * 60 + mAc);
+              if (diffMin < 45) continue;
+            }
+            // Se já mandou mensagem hoje → já acordou, pode disparar
+          }
+
+          // Chancela aleatória — mas se tem assunto em aberto, sempre dispara.
+          // CACHEADA por dia: sem isso, numa janela com várias tentativas
+          // (ex: a cada 15min por 1h30), a "moeda" seria jogada de novo em
+          // cada tentativa e a frequência real subiria muito além do que
+          // foi combinado (~50% dos dias sem pendência, não ~50% por tentativa).
+          if (!ctxPendencias) {
+            const moedaKey = `moeda_${dayKey}`;
+            let moeda = await prisma.memory.findFirst({
+              where: { userId: user.id, type: 'proativa_moeda', content: { startsWith: moedaKey } }
+            }).catch(() => null);
+            if (!moeda) {
+              const skip = Math.random() > 0.5;
+              await prisma.memory.create({
+                data: { userId: user.id, type: 'proativa_moeda', content: `${moedaKey}:${skip ? 'skip' : 'ok'}` }
+              }).catch(() => {});
+              if (skip) continue;
+            } else if (moeda.content.endsWith(':skip')) {
+              continue;
+            }
+          }
+
+          // ── Prompt específico por período ──
+          // Cada período tem uma "energia" diferente, exemplos concretos
+          // do que uma amiga diria, e prioridade de gancho.
+          let instrucao = '';
+          // Verifica se já tem casa/trabalho cadastrado
+          const temCasa = infoPessoal && /Casa:/i.test(infoPessoal);
+          const temTrabalho = infoPessoal && /Trabalho:/i.test(infoPessoal);
+
+          if (periodo === 'manha') {
+            const pedirGeo = !temCasa ? `
+IMPORTANTE: Se não houver assunto urgente pra falar, peça a localização da pessoa de forma natural — diga que assim você consegue saber quando ela chega em casa ou no trabalho e avisar na hora certa. Algo como "me manda sua localização pra eu aprender onde é sua casa e trabalho".` : '';
+
+            instrucao = `É manhã cedo — a pessoa acabou de acordar ou está começando o dia.
+Como uma amiga que sabe da rotina dela, você pode:
+- Perguntar se dormiu bem, especialmente se ontem teve algo difícil
+- Referenciar algo do dia anterior que ficou em aberto de forma natural
+- Comentar algo do dia que está por vir se houver compromisso próximo
+TOM: curto, genuíno, como quem manda mensagem de manhã pro amigo — sem formalidade${pedirGeo}`;
+          } else if (periodo === 'almoco') {
+            let curiosidadeAlmocoCtx = '';
+            if (!ctxPendencias) {
+              const curiosidade = await getProximaCuriosidade(user.id, 'qualquer').catch(() => null);
+              if (curiosidade && Math.random() > 0.5) { // 50% das vezes no almoço
+                curiosidadeAlmocoCtx = `\nGANCHO OPCIONAL: Se não tiver assunto específico, pode perguntar naturalmente: "${curiosidade.pergunta}". Integre como amiga, nunca como formulário.`;
+              }
+            }
+
+            instrucao = `É horário de almoço — pausa natural do dia.
+Como uma amiga curiosa e presente, você pode:
+- Perguntar como está sendo o dia
+- Referenciar algo que ficou em aberto recentemente de forma descontraída
+- Comentar algo que você sugeriu e a pessoa não respondeu ainda
+- Se não tiver nada específico, algo simples e genuíno sobre o almoço/dia
+TOM: leve, informal, como uma mensagem rápida entre amigos no almoço${curiosidadeAlmocoCtx}`;
+          } else {
+            instrucao = `É noite — a pessoa relaxou, receptiva pra conversa mais pessoal.
+Como uma amiga que quer saber como foi o dia, você pode:
+- Se o contexto mencionar viagem, estrada, trânsito ou deslocamento hoje, pergunte se chegou bem — isso é mais natural que perguntar como foi o dia
+- Perguntar como foi o dia de forma genuína, especialmente se foi cheio
+- Retomar um assunto em aberto com curiosidade real
+- Comentar sobre algo concreto que aconteceu hoje (agenda, compromisso)
+TOM: acolhedor, curioso, como quem pergunta do dia de verdade — sem ser protocolar`;
+          }
+
+          // Busca humor do dia e localização para enriquecer o contexto
+          const humorDia = await getHumorDia(user.id).catch(() => null);
+          const localizacao = await getLocalizacao(user.id).catch(() => null);
+
+          const ctxHumor = humorDia
+            ? `ESTADO EMOCIONAL ATUAL: ${humorDia.estado}${humorDia.intensidade === 'intenso' ? ' (intenso)' : ''}${humorDia.motivo ? ` — motivo: ${humorDia.motivo}` : ''}. Use isso com naturalidade — se está cansado, seja mais acolhedora; se está doente, seja mais cuidadosa; se está animado, celebre junto.`
+            : '';
+
+          const ctxLocal = localizacao?.cidade
+            ? `LOCALIZAÇÃO RECENTE: ${localizacao.bairro ? localizacao.bairro + ', ' : ''}${localizacao.cidade}. Pode referenciar isso se for natural (ex: "já chegou em casa?", "como foi a volta?").`
+            : '';
+
+          // Filtra remédios do perfil — proativa não deve cobrar remédios
+          const infoPessoalFiltrado = (infoPessoal || '').split('\n')
+            .filter(l => !/dose|rem[eé]dio|medica[cç]|tiroide|toroide|colesterol|pressao|pressão|estoque/i.test(l))
+            .join('\n');
+
+          const systemProativa = `Você é a Clara, parceira pessoal d${prefs.name ? 'o ' + prefs.name.split(' ')[0] : 'o usuário'} no WhatsApp.
+SEU TOM: ${tomDesc(prefs.tom)}
+
+${instrucao}
+
+${ctxHumor ? ctxHumor + '\n\n' : ''}${ctxLocal ? ctxLocal + '\n\n' : ''}VOZ PRÓPRIA — USE COM CORAGEM:
+- Você tem memória real dessa pessoa. Referencie o passado de forma afetiva: "semana passada você disse...", "desde aquele dia no hospital...", "você ainda não resolveu aquilo do Flavinho né?"
+- Não seja genérica — qualquer LLM seria genérico. Você é específica porque conhece essa pessoa de verdade.
+- Se souber algo relevante sobre o dia/semana dela, use. Se não souber nada genuíno, mande SKIP.
+
+REGRAS ABSOLUTAS:
+- UMA mensagem, 1-2 linhas no máximo
+- NUNCA comece com "Oi", "Olá" ou o nome da pessoa
+- NÃO agende nada, NÃO liste tarefas, NÃO seja assistente
+- NUNCA reproduza exemplos ou frases entre aspas — crie algo original
+- NUNCA coloque sua mensagem entre aspas
+- Se não tiver NADA genuíno pra dizer, responda APENAS: SKIP
+
+${ctxPendencias ? ctxPendencias + '\n\n' : ''}CONTEXTO RECENTE:
+${contextoMems}
+
+${infoPessoalFiltrado || ''}
+${horaAcorda ? `(Acordou por volta das ${horaAcorda})` : ''}`;
+
+          const msg = await freeResponse('Mensagem proativa.', [], {
+            _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
+            _systemOverride: systemProativa,
+            _maxTokens: 80  // proativa deve ser curta — 1-2 linhas
+          });
+          if (!msg || msg.trim() === 'SKIP' || msg.length < 5) continue;
+          if (isRespostaFallback(msg)) {
+            console.log(`[Proativa ${periodo}] ${user.phone}: resposta de fallback genérica recebida — não enviando como proativa`);
+            continue;
+          }
+          await sendMessage(user.phone, msg);
+          await prisma.memory.create({
+            data: { userId: user.id, type: 'proativa_enviado_lock', content: dayKey }
+          }).catch(() => {});
+          console.log(`[Proativa ${periodo}] ${user.phone}: ${msg.slice(0, 60)}`);
+        } catch (eInner) {
+          console.error(`[Proativa] Erro interno ${user.phone}:`, eInner.message);
+        }
+      } catch (e) { console.error(`[Proativa] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error(`[Proativa ${periodo}] Erro geral:`, e.message); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// RADAR DA CLARA — domingo 09:30
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('30 9 * * 0', async () => {
+  try {
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    const now = nowBRT();
+    for (const user of users) {
+      try {
+        const lockKey = `radar_${dateBRT(now)}`;
+        if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'radar_lock', content: lockKey } })) continue;
+        const tresMesesAtras = new Date(now); tresMesesAtras.setMonth(tresMesesAtras.getMonth() - 3);
+        const gastos = await prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: tresMesesAtras } }, orderBy: { createdAt: 'asc' } });
+        if (gastos.length < 6) continue;
+        const insights = [];
+        const porCategoria = {};
+        gastos.forEach(g => { const cat = g.category || 'outro'; (porCategoria[cat] = porCategoria[cat] || []).push(g); });
+        for (const [cat, lista] of Object.entries(porCategoria)) {
+          if (lista.length < 3) continue;
+          const dias = lista.map(g => new Date(g.createdAt).getDate());
+          const media = dias.reduce((a, d) => a + d, 0) / dias.length;
+          const desvioMedio = dias.map(d => Math.abs(d - media)).reduce((a, d) => a + d, 0) / dias.length;
+          if (desvioMedio <= 3) {
+            const jaAvisado = await prisma.memory.findFirst({ where: { userId: user.id, type: 'padrao_dia_avisado', content: cat } });
+            if (!jaAvisado) insights.push({ tipo: 'padrao_dia', categoria: cat, diaAproximado: Math.round(media) });
+          }
+        }
+        const inicioMesAtual = new Date(now.getFullYear(), now.getMonth(), 1);
+        const gastosMesAtual = gastos.filter(g => new Date(g.createdAt) >= inicioMesAtual);
+        const gastosAnteriores = gastos.filter(g => new Date(g.createdAt) < inicioMesAtual);
+        for (const [cat, listaAtual] of Object.entries(gastosMesAtual.reduce((acc, g) => { const c = g.category || 'outro'; (acc[c] = acc[c] || []).push(g); return acc; }, {}))) {
+          const totalAtual = listaAtual.reduce((a, g) => a + g.value, 0);
+          const anterioresMesmaCat = gastosAnteriores.filter(g => (g.category || 'outro') === cat);
+          if (anterioresMesmaCat.length < 2) continue;
+          const porMes = {};
+          anterioresMesmaCat.forEach(g => { const d = new Date(g.createdAt); const k = `${d.getFullYear()}-${d.getMonth()}`; porMes[k] = (porMes[k] || 0) + g.value; });
+          const mediasHistoricas = Object.values(porMes);
+          if (!mediasHistoricas.length) continue;
+          const mediaHistorica = mediasHistoricas.reduce((a, v) => a + v, 0) / mediasHistoricas.length;
+          if (mediaHistorica > 0 && totalAtual > mediaHistorica * 1.4) {
+            insights.push({ tipo: 'gasto_fora_padrao', categoria: cat, percentual: Math.round((totalAtual / mediaHistorica - 1) * 100), valorAtual: totalAtual, valorMedio: mediaHistorica });
+          }
+        }
+        if (!insights.length) continue;
+        const prefs = await memory.getUserPreference(user.id).catch(() => null);
+        const insightsTexto = insights.map(i => i.tipo === 'padrao_dia'
+          ? `- "${i.categoria}" costuma ter gastos por volta do dia ${i.diaAproximado}.`
+          : `- Gasto com "${i.categoria}" este mês: R$ ${i.valorAtual.toFixed(2)}, ${i.percentual}% acima da média (R$ ${i.valorMedio.toFixed(2)}).`
+        ).join('\n');
+        const msg = await freeResponse('Mensagem de radar/padrões.', [], {
+          _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso',
+          _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''} Tom: ${prefs?.tom || 'carinhoso'}. Padrões notados:\n${insightsTexto}\nEnvie UMA mensagem natural (2-3 linhas) comentando como observação genuína. NÃO use tópicos. NÃO termine com saudação de período.`
+        });
+        if (!msg || isRespostaFallback(msg)) continue;
+        await sendMessage(user.phone, msg);
+        await prisma.memory.create({ data: { userId: user.id, type: 'radar_lock', content: lockKey } });
+        for (const i of insights.filter(x => x.tipo === 'padrao_dia')) {
+          await prisma.memory.create({ data: { userId: user.id, type: 'padrao_dia_avisado', content: i.categoria } }).catch(() => {});
+        }
+        console.log(`[Radar] Enviado para ${user.phone}`);
+      } catch (e) { console.error(`[Radar] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error('[Radar] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
+// TRADIÇÃO SEXTA (17:00)
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('0 17 * * 5', async () => {
+  try {
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    const now = nowBRT();
+    const inicioSemana = new Date(now); inicioSemana.setDate(now.getDate() - 4); inicioSemana.setHours(0,0,0,0);
+    for (const user of users) {
+      try {
+        if (await jaEnviouHoje(user.id, 'sexta_enviado')) continue;
+        const [gastosSemana, tarefasSemana, { prefs }] = await Promise.all([
+          prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioSemana } } }),
+          prisma.reminder.findMany({ where: { userId: user.id, scheduledAt: { gte: inicioSemana }, confirmed: true } }),
+          getUserContext(user)
+        ]);
+        const totalGasto = gastosSemana.reduce((a, g) => a + g.value, 0);
+        const infoPessoal = await memory.buildPersonalContext(user.id);
+        const ctx = `É sexta-feira à tarde.\n${tarefasSemana.length > 0 ? `Essa semana o usuário concluiu ${tarefasSemana.length} compromisso(s)${totalGasto > 0 ? ` e registrou R$ ${totalGasto.toFixed(2)} em gastos` : ''}.` : ''}\n${infoPessoal}`;
+        const msg = await freeResponse('Envie mensagem de sexta.', [], {
+          _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
+          _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} Envie uma mensagem de sexta-feira calorosa e breve (2-3 linhas). NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.\n${ctx}`
+        });
+        if (!msg || isRespostaFallback(msg)) { console.log(`[Sexta] Rate limit ou fallback, pulado para ${user.phone}`); continue; }
+        await sendMessage(user.phone, msg);
+        await marcarEnviadoHoje(user.id, 'sexta_enviado');
+        console.log(`[Sexta] Enviado para ${user.phone}`);
+      } catch (e) { console.error(`[Sexta] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error('[Sexta] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
+// TRADIÇÃO DOMINGO (19:00)
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('0 19 * * 0', async () => {
+  try {
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    const now = nowBRT();
+    const semanaQ = new Date(now); semanaQ.setDate(now.getDate() + 1);
+    const fimSemanaQ = new Date(now); fimSemanaQ.setDate(now.getDate() + 7);
+    for (const user of users) {
+      try {
+        if (!(await tentarLockDiario(user.id, 'domingo_enviado'))) {
+          console.log(`[Domingo] ja enviado hoje para ${user.phone}`); continue;
+        }
+        const [lembretesSemana, { prefs }, infoPessoal] = await Promise.all([
+          prisma.reminder.findMany({ where: { userId: user.id, confirmed: false, sent: false, scheduledAt: { gte: semanaQ, lte: fimSemanaQ } }, orderBy: { scheduledAt: 'asc' }, take: 5 }),
+          getUserContext(user),
+          memory.buildPersonalContext(user.id)
+        ]);
+        const ctx = `É domingo à noite, véspera de uma nova semana.\n${lembretesSemana.length > 0 ? `Próximos compromissos:\n${lembretesSemana.map(r => `• ${r.message}`).join('\n')}` : 'Sem compromissos agendados para a semana.'}\n${infoPessoal}`;
+        const msg = await freeResponse('Envie mensagem de domingo.', [], {
+          _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
+          _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} Envie uma mensagem de domingo à noite — tranquila, motivadora e breve (2-3 linhas). NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.\n${ctx}`
+        });
+        if (!msg || isRespostaFallback(msg)) { console.log(`[Domingo] Rate limit ou fallback, pulado para ${user.phone}`); continue; }
+        await sendMessage(user.phone, msg);
+        console.log(`[Domingo] Enviado para ${user.phone}`);
+      } catch (e) { console.error(`[Domingo] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error('[Domingo] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
+// SUMIÇO — 5+ dias sem conversar (09:00)
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('0 9 * * *', async () => {
+  try {
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    const now = nowBRT();
+    for (const user of users) {
+      try {
+        const lockKey = `sumico_${dateBRT()}`;
+        if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'sumico_lock', content: lockKey } })) continue;
+        const ultimaConversa = await prisma.memory.findFirst({ where: { userId: user.id, type: 'conversa' }, orderBy: { createdAt: 'desc' } });
+        if (!ultimaConversa) continue;
+        const diasSemConversa = Math.round((now - new Date(ultimaConversa.createdAt)) / (1000 * 60 * 60 * 24));
+        if (diasSemConversa < 5 || diasSemConversa > 7) continue;
+        const { prefs } = await getUserContext(user);
+        const infoPessoal = await memory.buildPersonalContext(user.id);
+        const msg = await freeResponse('Mensagem para usuário que sumiu.', [], {
+          _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
+          _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} O usuário não conversa com você há ${diasSemConversa} dias. Envie uma mensagem curta e genuína perguntando como ele está — sem ser dramática, sem cobrar. Máx 2 linhas. Tom: ${prefs.tom || 'carinhoso'}.\n${infoPessoal}`
+        });
+        if (!msg || isRespostaFallback(msg)) continue;
+        await sendMessage(user.phone, msg);
+        await prisma.memory.create({ data: { userId: user.id, type: 'sumico_lock', content: lockKey } });
+        console.log(`[Sumiço] ${user.phone} — ${diasSemConversa} dias sem conversar`);
+      } catch (e) { console.error(`[Sumiço] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error('[Sumiço] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
+// LEMBRETES — a cada minuto
+//
+// ARQUITETURA ANTI-DUPLICAÇÃO (3 camadas independentes):
+//
+// Camada 1 — tentarLockMinuto: otimização que tenta impedir que dois
+//   containers processem a fila no mesmo minuto. Pode falhar em race
+//   conditions extremas — por isso NÃO é a barreira principal.
+//
+// Camada 2 — Claim atômico por lembrete: updateMany WHERE sent:false →
+//   sent:true. Esta é a barreira REAL e matematicamente garantida.
+//   Só um processo consegue mudar sent:false → true. Mesmo que múltiplos
+//   containers passem pelo lock do Camada 1, cada lembrete só é enviado
+//   uma vez. Esta camada nunca falha contanto que o banco seja ACID.
+//
+// Camada 3 — whatsapp.js dedup de saída: mesmo texto pro mesmo número
+//   dentro de 90s é bloqueado. Última defesa contra retries da UazAPI.
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('* * * * *', async () => {
+  try {
+    // Camada 1: lock por minuto (otimização, não barreira principal)
+    if (!(await tentarLockMinuto('lock_cron_lembretes'))) return;
+
+    const now = new Date();
+    const reminders = await prisma.reminder.findMany({
+      where: { sent: false, confirmed: false, scheduledAt: { lte: now } },
+      orderBy: { scheduledAt: 'asc' }
+    });
+    if (!reminders.length) return;
+
+    const grupos = {};
+    for (const r of reminders) {
+      const hora = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+      const key = `${r.phone}_${hora}`;
+      if (!grupos[key]) grupos[key] = { phone: r.phone, hora, reminders: [] };
+      grupos[key].reminders.push(r);
+    }
+
+    for (const key of Object.keys(grupos)) {
+      const grupo = grupos[key];
+
+      // Cancela follow-ups cujo original já foi confirmado
+      const reminderesParaEnviar = [];
+      for (const r of grupo.reminders) {
+        const matchOrigem = r.message.match(/^__followup_origem__([^_]+)__/);
+        if (matchOrigem) {
+          const original = await prisma.reminder.findUnique({ where: { id: matchOrigem[1] } }).catch(() => null);
+          if (!original || original.confirmed) {
+            await prisma.reminder.delete({ where: { id: r.id } }).catch(() => {});
+            continue;
+          }
+        }
+        reminderesParaEnviar.push(r);
+      }
+      if (!reminderesParaEnviar.length) continue;
+      grupo.reminders = reminderesParaEnviar;
+
+      // ── Camada 2a: Lock por ID no banco (pré-claim) ──
+      // Cria um registro de lock ANTES do updateMany. Se dois containers
+      // chegarem ao mesmo tempo, o segundo encontra o lock já existente
+      // via findFirst e descarta o grupo sem nem tentar o claim.
+      // Isso fecha a janela de race condition do updateMany em cenários
+      // de alta concorrência (ex: Railway subindo container novo enquanto
+      // o antigo ainda respira).
+      const lockLembreteKey = `reminder_sending_${grupo.reminders.map(r => r.id).sort().join('_')}`;
+      const lockExistente = await prisma.memory.findFirst({
+        where: { type: 'reminder_lock', content: lockLembreteKey }
+      }).catch(() => null);
+      if (lockExistente) {
+        // ── TTL no lock (corrige deadlock) ──
+        // Um lock de reminder só é legítimo enquanto o processo que o criou
+        // ainda está enviando — o que leva poucos segundos. Se o lock tem
+        // mais de 2 minutos, o processo que o criou MORREU sem limpá-lo
+        // (deploy no meio do envio, crash, timeout da UazAPI). Antes, esse
+        // lock órfão fazia o cron pular o grupo PRA SEMPRE — o lembrete
+        // (sent:false) reaparecia a cada minuto, batia no mesmo lock e
+        // logava "Lock já existe" em loop infinito, engasgando os outros
+        // crons (remédios, proativas). Agora, lock velho é tratado como
+        // morto: apaga e segue, deixando este processo assumir o envio.
+        const ageMs = Date.now() - new Date(lockExistente.createdAt).getTime();
+        if (ageMs < 120000) {
+          console.log(`[Reminder] Lock ativo (${Math.round(ageMs/1000)}s) para grupo ${grupo.hora} ${grupo.phone} — outro processo enviando`);
+          continue;
+        }
+        console.log(`[Reminder] Lock ÓRFÃO (${Math.round(ageMs/1000)}s) removido para grupo ${grupo.hora} ${grupo.phone} — assumindo envio`);
+        await prisma.memory.delete({ where: { id: lockExistente.id } }).catch(() => {});
+      }
+      try {
+        await prisma.memory.create({
+          data: { userId: grupo.reminders[0].userId, type: 'reminder_lock', content: lockLembreteKey }
+        });
+      } catch (eLock) {
+        // Outro processo criou o lock entre nosso findFirst e create
+        console.log(`[Reminder] Corrida no lock para grupo ${grupo.hora} ${grupo.phone} — descartando`);
+        continue;
+      }
+
+      // ── Camada 2b: Claim atômico — barreira REAL anti-duplicação ──
+      // Marca sent:true ANTES de enviar. Se dois processos chegarem aqui
+      // ao mesmo tempo, só o primeiro que conseguir mudar sent:false → true
+      // prossegue. O segundo recebe count:0 e é descartado.
+      const claimados = [];
+      for (const r of grupo.reminders) {
+        const res = await prisma.reminder.updateMany({
+          where: { id: r.id, sent: false },
+          data: { sent: true }
+        });
+        if (res.count === 1) {
+          claimados.push(r);
+        } else {
+          console.log(`[Reminder] Claim FALHOU para ${r.id.slice(-6)} (count:${res.count}) — já enviado por outro processo, pulando`);
+        }
+      }
+      if (!claimados.length) continue;
+      grupo.reminders = claimados;
+
+      // ── Monta a mensagem ──
+      let msg;
+      try {
+        const isFollowup = grupo.reminders.length === 1 && /^__followup_origem__[^_]+__/.test(grupo.reminders[0].message);
+        if (isFollowup) {
+          msg = grupo.reminders[0].message.replace(/^__followup_origem__[^_]+__/, '');
+        } else if (grupo.reminders.length === 1) {
+          const r = grupo.reminders[0];
+          msg = `🔔 Lembrete\n\n${r.message}\n⏰ ${grupo.hora}\n\n${finalParaLembrete(r)}`;
+        } else {
+          const titulos = grupo.reminders.map((r, i) => `${i + 1}. ${r.message}`).join('\n');
+          const rRef = grupo.reminders[0];
+          msg = `🔔 Você tem ${grupo.reminders.length} lembretes agora\n\n${titulos}\n\n⏰ ${grupo.hora}\n\n${finalParaLembrete(rRef)}`;
+        }
+      } catch (e) {
+        const r = grupo.reminders[0];
+        msg = grupo.reminders.length === 1
+          ? `🔔 Lembrete\n\n${r.message}\n⏰ ${grupo.hora}\n\n${finalParaLembrete(r)}`
+          : `🔔 Você tem ${grupo.reminders.length} lembretes agora\n\n${grupo.reminders.map((r,i)=>`${i+1}. ${r.message}`).join('\n')}\n\n⏰ ${grupo.hora}\n\n${finalParaLembrete(grupo.reminders[0])}`;
+      }
+
+      await sendMessage(grupo.phone, msg);
+      console.log(`[Reminder] ${grupo.phone} → ${grupo.reminders.length} lembrete(s) às ${grupo.hora} | enviado por instância ${INSTANCE_ID} | ids: ${grupo.reminders.map(r => r.id.slice(-6)).join(',')}`);
+
+      // ── Limpa o lock IMEDIATAMENTE após enviar ──
+      // O lock só existe pra impedir envio duplo durante o envio. Já que
+      // terminou, apaga agora — não espera o cron de limpeza das 03:00.
+      // Sem isso, o lock ficava vivo até a madrugada e, se algo o tornasse
+      // órfão antes disso, virava deadlock. (O claim atômico sent:true já
+      // é a barreira real contra duplicação; o lock é só otimização.)
+      await prisma.memory.deleteMany({ where: { type: 'reminder_lock', content: lockLembreteKey } }).catch(() => {});
+    }
+  } catch (e) { console.error('[Reminder] Erro:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
+// MEDICAMENTOS — a cada minuto
+//
+// Agrupamento: remédios do mesmo usuário no mesmo horário chegam em UMA
+// mensagem só. Antes chegavam em mensagens separadas, o que causava:
+// 1) Experiência ruim (2 notificações em sequência)
+// 2) Bug: swipe-reply no segundo remédio retornava "Feito" idêntico ao
+//    primeiro → dedup do whatsapp.js bloqueava a segunda confirmação
+//    → segundo remédio nunca era decrementado via swipe-reply.
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('* * * * *', async () => {
+  try {
+    const nowLocal = nowBRT();
+    const minutoChave = `${pad(nowLocal.getHours())}:${pad(nowLocal.getMinutes())}`;
+
+    const meds = await prisma.medication.findMany({
+      where: { active: true, remaining: { gt: 0 } },
+      include: { user: true }
+    });
+
+    // Agrupa remédios por usuário (phone) para o horário atual
+    const gruposPorPhone = {};
+    for (const med of meds) {
+      let horarios = [];
+      try { horarios = JSON.parse(med.times || '[]'); } catch {}
+      if (!horarios.includes(minutoChave)) continue;
+
+      const phone = med.user?.phone || (await prisma.user.findUnique({ where: { id: med.userId } }))?.phone;
+      if (!phone) continue;
+
+      // Adiciona ao grupo — lock é verificado depois, por grupo completo
+      if (!gruposPorPhone[phone]) gruposPorPhone[phone] = { meds: [], userId: med.userId };
+      gruposPorPhone[phone].meds.push(med);
+    }
+
+    // Processa cada grupo (um envio por usuário por horário)
+    for (const [phone, grupo] of Object.entries(gruposPorPhone)) {
+      try {
+        // ── CLAIM POR LOCK NO MEMORY (substitui o claim por updatedAt) ──
+        // BUG RAIZ CORRIGIDO: o claim anterior usava
+        //   where: { id, updatedAt: { lt: inicioMinuto } }
+        // Mas no schema o campo é `updatedAt DateTime?` SEM `@updatedAt` —
+        // ou seja, é OPCIONAL e nunca é preenchido automaticamente, então
+        // fica NULL no banco. Em SQL, `NULL < qualquer_valor` é NULL (não
+        // TRUE), logo o WHERE nunca casava, claim.count vinha 0 e TODO
+        // remédio era pulado com "já enviado neste minuto" — sem jamais
+        // ter sido enviado. (O diagnóstico mostrou updatedAt = epoch 0.)
+        //
+        // Solução sem mexer no schema: um lock por remédio+minuto na tabela
+        // Memory (mesmo padrão `med_lock` usado em outras partes do código).
+        // Quem cria o lock primeiro envia; os demais processos encontram o
+        // lock e pulam. O decremento de `remaining` acontece só pra quem
+        // ganhou o lock. O lock é limpo pelo cron de "med_lock" de hora em
+        // hora (já existe). Não depende de updatedAt.
+        const inicioMinuto = new Date(Math.floor(Date.now() / 60000) * 60000);
+
+        const medsParaEnviar = [];
+        for (const med of grupo.meds) {
+          const lockKey = `${med.id}_${dateBRT(nowBRT())}_${minutoChave}`;
+          // Verifica lock existente deste minuto
+          const lockExistente = await prisma.memory.findFirst({
+            where: { type: 'med_lock', content: lockKey }
+          }).catch(() => null);
+          if (lockExistente) {
+            console.log(`[Med] ${med.name} já enviado neste minuto (lock existe) — pulando`);
+            continue;
+          }
+          // Cria o lock (barreira anti-duplicação). Se dois processos
+          // chegarem juntos, o segundo create pode falhar ou criar duplicata;
+          // a checagem acima + raridade de 2 donos de cron tornam isso seguro.
+          try {
+            await prisma.memory.create({
+              data: { userId: med.userId, type: 'med_lock', content: lockKey }
+            });
+          } catch (eLock) {
+            console.log(`[Med] ${med.name} corrida no lock — pulando`);
+            continue;
+          }
+          // Ganhou o lock: decrementa a dose
+          await prisma.medication.updateMany({
+            where: { id: med.id },
+            data: { remaining: { decrement: 1 } }
+          });
+          const atualizado = await prisma.medication.findUnique({ where: { id: med.id } });
+          medsParaEnviar.push({ ...med, remaining: (atualizado?.remaining ?? med.remaining - 1) + 1 });
+        }
+
+        // Envia os remédios reivindicados (mensagem própria = swipe individual)
+        // IMPORTANTE: se o envio falhar (API fora, WS desconectado etc), a
+        // dose foi decrementada acima mas a mensagem nunca chegou — antes
+        // isso ficava perdido pra sempre (decremento já tinha sido feito
+        // e o registro não tentava de novo). Agora, em caso de falha,
+        // desfazemos o decremento — no próximo minuto, updatedAt já não é
+        // "deste minuto" pra mais ninguém, e o cron tenta reenviar.
+        for (let i = 0; i < medsParaEnviar.length; i++) {
+          const med = medsParaEnviar[i];
+          const msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esquece de tomar certinho 😊\n\n💜 Restam ${med.remaining - 1} doses.`;
+          try {
+            await sendMessage(phone, msg);
+            console.log(`[Med] ${med.name} → ${phone}`);
+          } catch (eSend) {
+            console.error(`[Med] Falha ao ENVIAR ${med.name} para ${phone} — desfazendo decremento e lock pra tentar de novo:`, eSend.message);
+            await prisma.medication.updateMany({
+              where: { id: med.id },
+              data: { remaining: { increment: 1 } }
+            }).catch(eRevert => console.error(`[Med] Falha ao desfazer decremento de ${med.name}:`, eRevert.message));
+            // Apaga o lock deste minuto pra permitir reenvio no próximo ciclo
+            const lockKeyRevert = `${med.id}_${dateBRT(nowBRT())}_${minutoChave}`;
+            await prisma.memory.deleteMany({
+              where: { type: 'med_lock', content: lockKeyRevert }
+            }).catch(() => {});
+          }
+          if (i < medsParaEnviar.length - 1) await new Promise(r => setTimeout(r, 3000));
+        }
+      } catch (e) {
+        console.error(`[Med] Erro ao enviar grupo para ${phone}:`, e.message);
+      }
+    }
+  } catch (e) { console.error('[Med] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
+// MENSAGENS AGENDADAS PARA CONTATOS — a cada minuto
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('* * * * *', async () => {
+  try {
+    const now = nowBRT();
+    const msgs = await prisma.scheduledMessage.findMany({ where: { sent: false, scheduledAt: { lte: now } }, orderBy: { scheduledAt: 'asc' } });
+    for (const msg of msgs) {
+      try {
+        const userRemetente = await prisma.user.findFirst({ where: { phone: msg.fromPhone } });
+        const nomeRemetente = userRemetente?.name || 'seu contato';
+        const foneFormatado = msg.fromPhone.replace('55', '').replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
+        const msgFormatada = `Oi! Sou a Clara, secretária virtual do ${nomeRemetente}. Ele(a) pediu pra enviar esse recado:\n\n_${msg.message}_\n\nNão precisa me responder, tá? Dúvidas, é só chamar no WhatsApp do ${nomeRemetente}: ${foneFormatado} 😊`;
+        await sendMessage(msg.toPhone, msgFormatada);
+        await prisma.scheduledMessage.update({ where: { id: msg.id }, data: { sent: true } });
+        const horaBRT = new Date(msg.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+        await sendMessage(msg.fromPhone, `✅ Mensagem enviada para *${msg.toName || msg.toPhone}* às ${horaBRT}! 📤`);
+        console.log(`[Msg Agendada] Enviada: ${msg.toName || msg.toPhone}`);
+      } catch (e) { console.error(`[Msg Agendada] Erro ${msg.id}:`, e.message); }
+    }
+  } catch (e) { console.error('[Msg Agendada] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
+// TIMEOUT DE LEMBRETES SEM HORÁRIO DEFINIDO — a cada minuto
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('* * * * *', async () => {
+  try {
+    const pendentes = await prisma.memory.findMany({ where: { type: 'confirmacao_pendente' } });
     for (const p of pendentes) {
       try {
-        const dados = JSON.parse(p.content);
-        if (dados.tipo === 'remedio_dose') medIdsPendentes.add(dados.medId);
-      } catch {}
+        let dados; try { dados = JSON.parse(p.content); } catch { continue; }
+        if (dados.tipo !== 'hora_lembrete') continue;
+        if (Date.now() <= dados.expira) continue;
+        const user = await prisma.user.findUnique({ where: { id: p.userId } }).catch(() => null);
+        if (!user?.phone) { await prisma.memory.delete({ where: { id: p.id } }).catch(() => {}); continue; }
+        const scheduledAt = new Date(`${dados.data}T09:00:00-03:00`);
+        await prisma.reminder.create({ data: { userId: user.id, phone: user.phone, message: dados.titulo, scheduledAt } });
+        await prisma.memory.delete({ where: { id: p.id } }).catch(() => {});
+        const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+        await sendMessage(user.phone, `⏰ Não me respondeu o horário, então deixei "${dados.titulo}" pra ${dataFmt} às 09:00 (provisório). Pode me dizer o horário certo a qualquer momento 😊`);
+        console.log(`[HoraLembrete] Finalizado com 09:00 provisório: "${dados.titulo}" → ${user.phone}`);
+      } catch (e) { console.error(`[HoraLembrete] Erro ${p.id}:`, e.message); }
     }
-    const enriquecido = medicamentos.map(m => ({ ...m, aguardandoConfirmacao: medIdsPendentes.has(m.id) }));
-    res.json(enriquecido);
-  } catch (e) {
-    console.error('Erro GET remedios:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
+  } catch (e) { console.error('[HoraLembrete] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
 
-// ====================== LISTAGEM: GASTOS ======================
-router.get('/gastos/:phone', async (req, res) => {
+// ═══════════════════════════════════════════════════════════════════════
+// PARCEIRA — aviso 30min antes de compromissos IMPORTANTES
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('* * * * *', async () => {
   try {
-    const { phone } = req.params;
-    const user = await memory.getOrCreateUser(phone);
-    const inicioMes = new Date(nowBRT().getFullYear(), nowBRT().getMonth(), 1);
-    const gastos = await prisma.expense.findMany({
-      where: { userId: user.id, createdAt: { gte: inicioMes } },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
-    res.json(gastos);
-  } catch (e) {
-    console.error('Erro GET gastos:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== REGISTRAR GASTO ======================
-router.post('/gasto/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const { valor, categoria, descricao, data } = req.body;
-    const user = await memory.getOrCreateUser(phone);
-    const createdAt = data ? new Date(data + 'T12:00:00-03:00') : undefined;
-    await memory.saveExpense(user.id, { valor, categoria, descricao, createdAt });
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Erro POST gasto:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== DELETAR GASTO ======================
-router.delete('/gasto/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    await prisma.expense.delete({ where: { id } });
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Erro DELETE gasto:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== PONTO: GET ======================
-router.get('/pontos/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const user = await memory.getOrCreateUser(phone);
-    const inicioMes = new Date();
-    inicioMes.setDate(1); inicioMes.setHours(0,0,0,0);
-    const pontos = await prisma.workLog.findMany({
-      where: { userId: user.id, createdAt: { gte: inicioMes } },
-      orderBy: { createdAt: 'asc' },
-    });
-    res.json(pontos);
-  } catch (e) {
-    console.error('Erro GET pontos:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== PONTO: POST (registro) ======================
-router.post('/ponto/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const user = await memory.getOrCreateUser(phone);
-    const body = req.body;
-
-    function toTimestamp(horaStr) {
-      if (!horaStr) return null;
-      const [h, m] = horaStr.split(':').map(Number);
-      const isoStr = `${dateBRT()}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`;
-      return new Date(isoStr);
+    const now = nowBRT();
+    const em30min = new Date(now.getTime() + 30 * 60 * 1000);
+    const em31min = new Date(now.getTime() + 31 * 60 * 1000);
+    const proximos = await prisma.reminder.findMany({ where: { sent: false, confirmed: false, scheduledAt: { gte: em30min, lt: em31min } } });
+    if (!proximos.length) return;
+    const URGENCIA_RE = /medico|médico|médica|medica|consulta|dentista|cirurgia|exame|laboratorio|laboratório|farmacia|farmácia|vacina|hospital|clinica|clínica|psico|terapia|fisio|upa|reuniao|reunião|apresentacao|apresentação|entrevista|prova|concurso|voo|aeroporto|embarque|onibus|ônibus|trem|documento|cartorio|cartório|contrato|assinar|protocolar|prazo|vencimento|vence|renovar|passaporte|entrega|importante|urgente|cnh|rg/i;
+    for (const r of proximos) {
+      try {
+        if (!URGENCIA_RE.test(r.message)) continue;
+        const lockKey = `parceira_${r.id}`;
+        if (await prisma.memory.findFirst({ where: { type: 'parceira_lock', content: lockKey } })) continue;
+        await prisma.memory.create({ data: { userId: r.userId, type: 'parceira_lock', content: lockKey } });
+        const user = await prisma.user.findFirst({ where: { id: r.userId } });
+        if (!user?.phone) continue;
+        const prefs = await memory.getUserPreference(r.userId).catch(() => null);
+        const nome = prefs?.name || user.name || null;
+        const infoPessoal = await memory.buildPersonalContext(r.userId).catch(() => '');
+        const hora = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+        const systemParceira = `Você é a Clara, parceira pessoal do ${nome || 'usuário'} no WhatsApp.
+Tom: ${tomDesc(prefs?.tom)}
+Daqui a 30 minutos ele(a) tem algo IMPORTANTE: "${r.message}" às ${hora}.
+${infoPessoal ? `O que você sabe sobre ele(a):\n${infoPessoal}` : ''}
+Envie UMA mensagem curta (1-2 linhas) como parceira presente:
+- Mencione o compromisso de forma natural
+- Ofereça ajuda específica para aquele contexto
+- NÃO use "lembrete" ou "aviso" — seja natural
+- NUNCA termine com "boa sorte" ou saudação de período`;
+        const msg = await freeResponse('Mensagem de parceira.', [], { _contexto: '', name: nome, tom: prefs?.tom || 'carinhoso', _systemOverride: systemParceira });
+        if (!msg || msg.length < 5 || isRespostaFallback(msg)) continue;
+        await sendMessage(user.phone, msg);
+        console.log(`[Parceira] ${user.phone} → "${r.message}" em 30min`);
+      } catch (e) { console.error(`[Parceira] Erro ${r.id}:`, e.message); }
     }
+  } catch (e) { console.error('[Parceira] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
 
-    const hoje = dateBRT();
-    const tipos = ['entrada', 'saida_almoco', 'volta_almoco', 'saida'];
-
-    for (const tipo of tipos) {
-      if (!body[tipo]) continue;
-      const timestamp = toTimestamp(body[tipo]);
-      const existing = await prisma.workLog.findFirst({ where: { userId: user.id, type: tipo, date: hoje } });
-      if (existing) {
-        await prisma.workLog.update({ where: { id: existing.id }, data: { timestamp } });
-      } else {
-        await prisma.workLog.create({ data: { userId: user.id, type: tipo, timestamp, date: hoje } });
-      }
-    }
-
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Erro POST ponto:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== PONTO CONFIG: GET ======================
-router.get('/ponto-config/:phone', async (req, res) => {
+// ═══════════════════════════════════════════════════════════════════════
+// RESUMO EVOLUTIVO DO RELACIONAMENTO — domingo 22:00
+// Analisa o histórico da semana e atualiza o resumo permanente.
+// Esse resumo nunca some — só cresce. É a "memória longa" da Clara.
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('0 22 * * 0', async () => {
   try {
-    const { phone } = req.params;
-    const user = await memory.getOrCreateUser(phone);
-    const mems = await memory.getRecentMemories(user.id, 20);
-    const conf = mems.find(m => m.type === 'ponto_config');
-    if (conf) {
-      try { return res.json(JSON.parse(conf.content)); } catch {}
-    }
-    res.json({ entrada: '08:00', saida: '17:00', almoco: 60, jornada: 480 });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    for (const user of users) {
+      try {
+        // Pega últimas 30 conversas da semana
+        const seteDiasAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const conversas = await prisma.memory.findMany({
+          where: { userId: user.id, type: 'conversa', createdAt: { gte: seteDiasAtras } },
+          orderBy: { createdAt: 'asc' },
+          take: 30
+        }).catch(() => []);
 
-// ====================== PONTO CONFIG: POST ======================
-router.post('/ponto-config/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const user = await memory.getOrCreateUser(phone);
-    const { entrada, saida, almoco, jornada } = req.body;
+        if (conversas.length < 3) continue; // pouco histórico pra resumir
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { jornadaMinutos: jornada || 480 }
-    });
+        const resumoAtual = await getResumoRelacionamento(user.id);
+        const afetiva = await getMemoriaAfetiva(user.id);
+        const infoPessoal = await memory.buildPersonalContext(user.id);
 
-    await memory.saveMemory(user.id, 'ponto_config', JSON.stringify({ entrada, saida, almoco, jornada }));
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Erro POST ponto-config:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
+        const historicoTexto = conversas.map(m => {
+          try {
+            const d = JSON.parse(m.content);
+            return `${d.role === 'user' ? 'Usuário' : 'Clara'}: ${d.content}`;
+          } catch { return null; }
+        }).filter(Boolean).join('\n');
 
-// ====================== COFRE: GET ======================
-router.get('/cofre/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const user = await memory.getOrCreateUser(phone);
-    const itens = await prisma.memory.findMany({
-      where: { userId: user.id, type: 'cofre' },
-      orderBy: { createdAt: 'desc' },
-    });
-    res.json(itens);
-  } catch (e) {
-    console.error('Erro GET cofre:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
+        const systemResumo = `Você é a Clara, assistente pessoal. Analise o histórico de conversa desta semana e crie/atualize um resumo do relacionamento com o usuário.
 
-// ====================== COFRE: POST ======================
-router.post('/cofre/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const { conteudo } = req.body;
-    const user = await memory.getOrCreateUser(phone);
-    const item = await prisma.memory.create({
-      data: { userId: user.id, type: 'cofre', content: conteudo }
-    });
-    res.json({ ok: true, id: item.id });
-  } catch (e) {
-    console.error('Erro POST cofre:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
+RESUMO ATUAL (se existir):
+${resumoAtual || 'Ainda não existe resumo — crie o primeiro.'}
 
-// ====================== COFRE: DELETE ======================
-router.delete('/cofre/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    await prisma.memory.delete({ where: { id } });
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Erro DELETE cofre:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
+MEMÓRIA AFETIVA:
+${JSON.stringify(afetiva)}
 
-// ====================== LISTAGEM: MEMÓRIAS ======================
-// ====================== REMÉDIO TOMADO ======================
-router.post('/remedio-tomado/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const med = await prisma.medication.update({
-      where: { id },
-      data: { remaining: { decrement: 1 } }
-    });
-    // ── Limpa a pendência de confirmação criada pelo alarme (reminders.js) ──
-    // Bug corrigido: confirmar pelo Dashboard decrementava normalmente,
-    // mas não cancelava a pendência de confirmação aberta pelo alarme —
-    // isso significava que o follow-up de 20 minutos ("oi, voltei...")
-    // ainda disparava no WhatsApp mesmo já tendo confirmado por aqui,
-    // parecendo que a Clara "esqueceu" que você já tinha confirmado.
-    try {
-      const pendente = await prisma.memory.findFirst({
-        where: { userId: med.userId, type: 'confirmacao_pendente' },
-        orderBy: { createdAt: 'desc' }
-      });
-      if (pendente) {
-        const dados = JSON.parse(pendente.content);
-        if (dados.tipo === 'remedio_dose' && dados.medId === id) {
-          await prisma.memory.delete({ where: { id: pendente.id } });
+HISTÓRICO DA SEMANA:
+${historicoTexto}
+
+Escreva um resumo em 3-5 linhas que capture:
+- Quem é essa pessoa (personalidade, jeito de ser)
+- Como é a relação de vocês (tom, apelidos, intimidade)
+- O que aconteceu de importante essa semana
+- O que ela costuma falar, preocupações recorrentes
+- Como você se sente em relação a ela
+
+Seja genuína e afetiva — esse resumo vai te ajudar a nunca esquecer quem ela é.
+Escreva em primeira pessoa (você é a Clara).
+NUNCA coloque entre aspas. NUNCA use tópicos — escreva em prosa natural.`;
+
+        const novoResumo = await freeResponse('Atualize o resumo do relacionamento.', [], {
+          _contexto: '', name: user.name, tom: 'carinhoso',
+          _systemOverride: systemResumo,
+          _maxTokens: 200
+        });
+
+        if (novoResumo && novoResumo.length > 20 && !isRespostaFallback(novoResumo)) {
+          await salvarResumoRelacionamento(user.id, novoResumo);
+          console.log(`[Resumo] Atualizado para ${user.phone}`);
         }
-      }
-    } catch (e) {
-      console.error('[remedio-tomado] Erro ao limpar pendência:', e.message);
+      } catch (e) { console.error(`[Resumo] Erro ${user.phone}:`, e.message); }
     }
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Erro remedio-tomado:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
+  } catch (e) { console.error('[Resumo] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
 
-// ====================== REMÉDIO: AJUSTAR ESTOQUE (doses restantes) ======================
-// Permite corrigir manualmente o número de doses restantes — útil quando
-// o usuário tomou mais de uma dose no dia, errou a contagem, ou repôs o
-// estoque (comprou uma caixa nova).
-router.put('/remedio-estoque/:id', async (req, res) => {
+// ═══════════════════════════════════════════════════════════════════════
+// LIMPEZA DE LOCKS ANTIGOS (03:00)
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('0 3 * * *', async () => {
   try {
-    const { id } = req.params;
-    const { remaining } = req.body;
-    const remainingNum = parseInt(remaining);
-    if (isNaN(remainingNum) || remainingNum < 0) {
-      return res.status(400).json({ error: 'Quantidade inválida' });
-    }
-    const med = await prisma.medication.update({
-      where: { id },
-      data: { remaining: remainingNum }
-    });
-    res.json({ ok: true, remaining: med.remaining });
-  } catch (e) {
-    console.error('Erro ajustar estoque remedio:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== REMÉDIO: AJUSTAR HORÁRIOS ======================
-// Permite redefinir a lista completa de horários das doses — útil quando
-// a rotina muda (ex: passou a tomar mais cedo) ou foi cadastrado errado.
-router.put('/remedio-horarios/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { horarios } = req.body;
-    if (!Array.isArray(horarios) || !horarios.length) {
-      return res.status(400).json({ error: 'Lista de horários inválida' });
-    }
-    const formatoValido = /^([01]\d|2[0-3]):[0-5]\d$/;
-    if (!horarios.every(h => formatoValido.test(h))) {
-      return res.status(400).json({ error: 'Formato de horário inválido (use HH:MM)' });
-    }
-    const horariosOrdenados = [...horarios].sort();
-    const med = await prisma.medication.update({
-      where: { id },
-      data: { times: JSON.stringify(horariosOrdenados), frequency: horariosOrdenados.length }
-    });
-    res.json({ ok: true, times: med.times });
-  } catch (e) {
-    console.error('Erro ajustar horarios remedio:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== LIMPAR CONVERSA ======================
-router.post('/conversa-limpar/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const user = await memory.getOrCreateUser(phone);
+    const ontem = new Date(nowBRT()); ontem.setDate(ontem.getDate() - 2);
     await prisma.memory.deleteMany({
-      where: { userId: user.id, type: 'conversa' }
-    });
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Erro limpar conversa:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== CONCLUIR LEMBRETE ======================
-router.post('/lembrete-concluir/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const rem = await prisma.reminder.findUnique({ where: { id } }).catch(() => null);
-    await prisma.reminder.update({
-      where: { id },
-      data: { sent: true, confirmed: true }
-    });
-    // Fecha pendência relacionada ao título do lembrete (fire-and-forget)
-    if (rem?.userId && rem?.message) {
-      memory.fecharPendenciaLembrete(rem.userId, rem.message).catch(() => {});
-    }
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Erro concluir lembrete:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== PREFERÊNCIA: GET ======================
-router.get('/preferencia/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const user = await memory.getOrCreateUser(phone);
-    const pref = await memory.getUserPreference(user.id);
-    res.json(pref);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== MEMÓRIA DO RELACIONAMENTO (debug) ======================
-router.get('/relacionamento/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const user = await memory.getOrCreateUser(phone);
-    const rel = await prisma.memory.findFirst({
-      where: { userId: user.id, type: 'relationship_summary' },
-      orderBy: { createdAt: 'desc' }
-    });
-    res.json({
-      content: rel?.content || null,
-      createdAt: rel?.createdAt || null,
-      updatedAt: rel?.updatedAt || null
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== PREFERÊNCIA: POST ======================
-router.post('/preferencia/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const { nome, tom, saldo } = req.body;
-    const user = await memory.getOrCreateUser(phone);
-    const saldoNum = (saldo !== undefined && saldo !== null && saldo !== '') ? parseFloat(saldo) : null;
-
-    const prefsAntigas = await memory.getUserPreference(user.id).catch(() => null);
-    const tomMudou = tom && prefsAntigas?.tom !== tom;
-
-    await memory.saveUserPreference(user.id, nome || null, tom || null, saldoNum);
-
-    if (tomMudou) {
-      const NOMES_TOM = {
-        clara_sendo_clara: 'Clara Sendo Clara 🙎🏻‍♀️',
-        carinhoso: 'Simpática 🥰',
-        direto: 'Direta 🎯',
-        divertido: 'Divertida 🎉',
-        sarcastico: 'Sem Filtro 🔥',
-      };
-      const nomeTom = NOMES_TOM[tom] || tom;
-      sendMessage(phone, `💜 Modo de personalidade atualizado para *${nomeTom}*!\n\nÉ assim que vou conversar com você a partir de agora.`).catch(() => {});
-    }
-
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== LEMBRETE: GET (form) ======================
-router.get('/lembrete/:phone', (req, res) => {
-  const { phone } = req.params;
-  const now = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  const dataHoje = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
-  const horaAgora = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-
-  res.send(`<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Criar Lembrete</title>
-  <style>
-    ${CSS_BASE}
-    input:focus, textarea:focus { border-color: #7c3aed; background: white; }
-    .btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #7c3aed, #a855f7); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 8px; }
-    .btn:disabled { opacity: 0.6; }
-  </style>
-</head>
-<body>
-<div class="card">
-  <div id="form-area">
-    <div class="header">
-      <div class="header-icon">⏰</div>
-      <div><h1>Criar Lembrete</h1><p>Vou te avisar na hora certa!</p></div>
-    </div>
-    <div class="field">
-      <label>O que você quer lembrar?</label>
-      <textarea id="titulo" placeholder="Ex: Buscar minha filha na escola, pagar a conta de luz..."></textarea>
-    </div>
-    <div class="row">
-      <div class="field">
-        <label>Data</label>
-        <input type="date" id="data" value="${dataHoje}" />
-      </div>
-      <div class="field">
-        <label>Horário</label>
-        <input type="time" id="hora" value="${horaAgora}" />
-      </div>
-    </div>
-    <button class="btn" onclick="salvar()">Criar lembrete</button>
-  </div>
-  <div class="success" id="success-area">
-    <div class="success-icon">🎉</div>
-    <h2>Lembrete criado!</h2>
-    <p>Vou te avisar na hora certinha 😊</p>
-  </div>
-</div>
-<script>
-  async function salvar() {
-    const titulo = document.getElementById('titulo').value.trim();
-    const data = document.getElementById('data').value;
-    const hora = document.getElementById('hora').value;
-    if (!titulo) { alert('Descreva o lembrete!'); return; }
-    if (!hora) { alert('Informe o horário!'); return; }
-    const btn = document.querySelector('.btn');
-    btn.textContent = 'Salvando...'; btn.disabled = true;
-    try {
-      const res = await fetch('/forms/lembrete/${phone}', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ titulo, data, hora })
-      });
-      if (res.ok) {
-        document.getElementById('form-area').style.display = 'none';
-        document.getElementById('success-area').style.display = 'block';
-        setTimeout(() => window.close(), 2500);
-      } else {
-        alert('Erro ao salvar. Tente novamente.');
-        btn.textContent = 'Criar lembrete'; btn.disabled = false;
-      }
-    } catch(e) {
-      alert('Erro de conexão.');
-      btn.textContent = 'Criar lembrete'; btn.disabled = false;
-    }
-  }
-</script>
-</body></html>`);
-});
-
-// ====================== LEMBRETE: POST ======================
-router.post('/lembrete/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const { titulo, data, hora } = req.body;
-    const user = await memory.getOrCreateUser(phone);
-    const scheduledAt = criarDataBRT(data || dateBRT(), hora);
-
-    await prisma.reminder.create({
-      data: { userId: user.id, phone, message: titulo, scheduledAt }
-    });
-
-    await memory.saveMemory(user.id, 'tarefa', titulo, { data, hora });
-
-    res.json({ ok: true });
-
-    try {
-      const dataFormatada = scheduledAt.toLocaleString('pt-BR', {
-        timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short'
-      });
-      await sendButtons(phone,
-        `✅ Lembrete criado!\n\n📌 ${titulo}\n🕒 ${dataFormatada}\n\nVou te avisar no horário certinho.`,
-        [{ id: 'ver_lembretes', label: '📋 Ver lembretes' }, { id: 'menu', label: '🏠 Menu' }]
-      );
-    } catch(wErr) {
-      console.error('[lembrete] Erro ao notificar WhatsApp:', wErr.message);
-    }
-  } catch (e) {
-    console.error('Erro form lembrete:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== LEMBRETE: DELETE ======================
-router.delete('/lembrete/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    await prisma.reminder.delete({ where: { id } });
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Erro DELETE lembrete:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== LEMBRETE: REMARCAR ======================
-router.put('/lembrete-remarcar/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { data, hora } = req.body;
-    if (!data || !hora) return res.status(400).json({ error: 'Data e hora obrigatórios' });
-
-    const scheduledAt = criarDataBRT(data, hora);
-
-    const lembrete = await prisma.reminder.findUnique({ where: { id } });
-    if (!lembrete) return res.status(404).json({ error: 'Lembrete não encontrado' });
-
-    await prisma.reminder.update({
-      where: { id },
-      data: { scheduledAt, sent: false, confirmed: false }
-    });
-
-    res.json({ ok: true });
-    // Notificacao WhatsApp removida — dashboard ja exibe feedback visual ao remarcar
-  } catch (e) {
-    console.error('Erro remarcar lembrete:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== REMÉDIO: GET (form) ======================
-router.get('/remedio/:phone', (req, res) => {
-  const { phone } = req.params;
-  const pad = n => String(n).padStart(2, '0');
-  const now = new Date();
-  const horaAgora = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-
-  res.send(`<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cadastrar Remédio</title>
-  <style>
-    ${CSS_BASE}
-    input:focus, select:focus { border-color: #059669; background: white; }
-    .btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #059669, #10b981); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 8px; }
-    .btn:disabled { opacity: 0.6; }
-    .resumo { background: #f0fdf4; border: 1.5px solid #bbf7d0; color: #166534; }
-  </style>
-</head>
-<body>
-<div class="card">
-  <div id="form-area">
-    <div class="header">
-      <div class="header-icon">💊</div>
-      <div><h1>Cadastrar Remédio</h1><p>Vou te lembrar em todos os horários!</p></div>
-    </div>
-    <div class="field">
-      <label>Nome do medicamento</label>
-      <input type="text" id="nome" placeholder="Ex: Losartana, Vitamina C..." oninput="atualizar()" />
-    </div>
-    <div class="row">
-      <div class="field">
-        <label>Dose</label>
-        <input type="text" id="dose" placeholder="Ex: 1 comp, 5ml" />
-      </div>
-      <div class="field">
-        <label>A cada quantas horas</label>
-        <select id="intervalo" onchange="atualizar()">
-          <option value="4">4 horas</option>
-          <option value="6">6 horas</option>
-          <option value="8">8 horas</option>
-          <option value="12" selected>12 horas</option>
-          <option value="24">24h (1x/dia)</option>
-        </select>
-      </div>
-    </div>
-    <div class="row">
-      <div class="field">
-        <label>Por quantos dias</label>
-        <input type="number" id="dias" placeholder="Ex: 7" min="1" max="365" oninput="atualizar()" />
-      </div>
-      <div class="field">
-        <label>Primeira dose</label>
-        <input type="time" id="horario_inicio" value="${horaAgora}" oninput="atualizar()" />
-      </div>
-    </div>
-    <div class="resumo" id="resumo"><span id="resumo-texto"></span></div>
-    <button class="btn" onclick="salvar()">Cadastrar remédio</button>
-  </div>
-  <div class="success" id="success-area">
-    <div class="success-icon">✅</div>
-    <h2>Remédio cadastrado!</h2>
-    <p>Vou te lembrar em todos os horários 😊</p>
-  </div>
-</div>
-<script>
-  const pad = n => String(n).padStart(2, '0');
-  function atualizar() {
-    const nome = document.getElementById('nome').value.trim();
-    const intervalo = parseInt(document.getElementById('intervalo').value);
-    const dias = parseInt(document.getElementById('dias').value) || 0;
-    const hi = document.getElementById('horario_inicio').value;
-    if (!nome || !hi) { document.getElementById('resumo').style.display = 'none'; return; }
-    const freqDia = Math.round(24 / intervalo);
-    const [h, m] = hi.split(':').map(Number);
-    const horarios = [];
-    for (let i = 0; i < freqDia; i++) {
-      horarios.push(pad((h + i * intervalo) % 24) + ':' + pad(m));
-    }
-    const termina = new Date();
-    if (dias > 0) termina.setDate(termina.getDate() + dias);
-    document.getElementById('resumo-texto').innerHTML =
-      '💊 ' + nome + ' — a cada ' + intervalo + 'h<br>' +
-      '⏰ ' + horarios.join(', ') + '<br>' +
-      (dias > 0 ? '📅 ' + dias + ' dias · ' + (dias * freqDia) + ' doses · até ' + termina.toLocaleDateString('pt-BR') : '');
-    document.getElementById('resumo').style.display = 'block';
-  }
-  async function salvar() {
-    const nome = document.getElementById('nome').value.trim();
-    const dose = document.getElementById('dose').value.trim();
-    const intervalo = parseInt(document.getElementById('intervalo').value);
-    const dias = parseInt(document.getElementById('dias').value) || 0;
-    const horarioInicio = document.getElementById('horario_inicio').value;
-    if (!nome) { alert('Informe o nome do medicamento!'); return; }
-    if (!horarioInicio) { alert('Informe o horário da primeira dose!'); return; }
-    const btn = document.querySelector('.btn');
-    btn.textContent = 'Salvando...'; btn.disabled = true;
-    try {
-      const res = await fetch('/forms/remedio/${phone}', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nome, dose, intervalo, dias, horarioInicio })
-      });
-      if (res.ok) {
-        document.getElementById('form-area').style.display = 'none';
-        document.getElementById('success-area').style.display = 'block';
-        setTimeout(() => window.close(), 2500);
-      } else {
-        alert('Erro ao salvar. Tente novamente.');
-        btn.textContent = 'Cadastrar remédio'; btn.disabled = false;
-      }
-    } catch(e) {
-      alert('Erro de conexão.');
-      btn.textContent = 'Cadastrar remédio'; btn.disabled = false;
-    }
-  }
-</script>
-</body></html>`);
-});
-
-// ====================== REMÉDIO: POST ======================
-router.post('/remedio/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const { nome, dose, intervalo, dias, horarioInicio } = req.body;
-    const user = await memory.getOrCreateUser(phone);
-
-    const freqDia = Math.round(24 / intervalo);
-    const totalDoses = dias > 0 ? dias * freqDia : 30;
-    const pad = n => String(n).padStart(2, '0');
-    const [h, m] = horarioInicio.split(':').map(Number);
-    const horarios = [];
-    for (let i = 0; i < freqDia; i++) {
-      horarios.push(pad((h + i * intervalo) % 24) + ':' + pad(m));
-    }
-
-    await memory.saveMedication(user.id, { nome, quantidade: totalDoses, frequencia: freqDia, horarios });
-
-    const termina = new Date();
-    if (dias > 0) termina.setDate(termina.getDate() + dias);
-
-    res.json({ ok: true });
-
-    try {
-      await sendButtons(phone,
-        `✅ Remédio anotado!\n\n💊 ${nome}\n🕒 ${horarios.join(', ')}\n📅 ${dias > 0 ? dias + ' dias · termina ' + termina.toLocaleDateString('pt-BR') : 'uso contínuo'}\n\nVou te lembrar nos horários certinhos.`,
-        [{ id: 'ver_medicamentos', label: '💊 Ver remédios' }, { id: 'menu', label: '🏠 Menu' }]
-      );
-    } catch (wErr) {
-      console.error('[remedio] Erro ao notificar WhatsApp:', wErr.message);
-    }
-  } catch (e) {
-    console.error('Erro form remedio:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== REMÉDIO: DELETE ======================
-router.delete('/remedio/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    await prisma.medication.update({ where: { id }, data: { active: false } });
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Erro DELETE remedio:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== PONTO: GET (form) ======================
-router.get('/ponto/:phone', (req, res) => {
-  const { phone } = req.params;
-  res.send(`<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Registrar Ponto</title>
-  <style>
-    ${CSS_BASE}
-    input:focus { border-color: #2563eb; background: white; }
-    .btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #2563eb, #3b82f6); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 8px; }
-    .btn:disabled { opacity: 0.6; }
-  </style>
-</head>
-<body>
-<div class="card">
-  <div id="form-area">
-    <div class="header">
-      <div class="header-icon">📍</div>
-      <div><h1>Registrar Ponto</h1><p>Preencha os horários do seu dia</p></div>
-    </div>
-    <div class="row">
-      <div class="field"><label>🟢 Entrada</label><input type="time" id="entrada" /></div>
-      <div class="field"><label>🍽️ Saída almoço</label><input type="time" id="saida_almoco" /></div>
-    </div>
-    <div class="row">
-      <div class="field"><label>🔄 Volta almoço</label><input type="time" id="volta_almoco" /></div>
-      <div class="field"><label>🔴 Saída</label><input type="time" id="saida" /></div>
-    </div>
-    <p class="tip" style="margin-bottom:16px">Preencha apenas os horários que já aconteceram</p>
-    <button class="btn" onclick="salvar()">Registrar ponto</button>
-  </div>
-  <div class="success" id="success-area">
-    <div class="success-icon">✅</div>
-    <h2>Ponto registrado!</h2>
-    <p>Resumo enviado no WhatsApp 😊</p>
-  </div>
-</div>
-<script>
-  async function salvar() {
-    const entrada = document.getElementById('entrada').value;
-    if (!entrada) { alert('Informe o horário de entrada!'); return; }
-    const btn = document.querySelector('.btn');
-    btn.textContent = 'Salvando...'; btn.disabled = true;
-    try {
-      const res = await fetch('/forms/ponto/${phone}', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          entrada,
-          saida_almoco: document.getElementById('saida_almoco').value,
-          volta_almoco: document.getElementById('volta_almoco').value,
-          saida: document.getElementById('saida').value
-        })
-      });
-      if (res.ok) {
-        document.getElementById('form-area').style.display = 'none';
-        document.getElementById('success-area').style.display = 'block';
-        setTimeout(() => window.close(), 2500);
-      } else {
-        alert('Erro ao salvar. Tente novamente.');
-        btn.textContent = 'Registrar ponto'; btn.disabled = false;
-      }
-    } catch(e) {
-      alert('Erro de conexão.');
-      btn.textContent = 'Registrar ponto'; btn.disabled = false;
-    }
-  }
-</script>
-</body></html>`);
-});
-
-// ====================== PONTO: POST ======================
-router.post('/ponto/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const { entrada, saida_almoco, volta_almoco, saida } = req.body;
-    const user = await memory.getOrCreateUser(phone);
-
-    function toTimestamp(horaStr) {
-      if (!horaStr) return null;
-      const [h, m] = horaStr.split(':').map(Number);
-      const isoStr = `${dateBRT()}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`;
-      return new Date(isoStr);
-    }
-
-    const hoje = dateBRT();
-    const pontos = [
-      { type: 'entrada', hora: entrada },
-      { type: 'saida_almoco', hora: saida_almoco },
-      { type: 'volta_almoco', hora: volta_almoco },
-      { type: 'saida', hora: saida },
-    ].filter(p => p.hora);
-
-    for (const p of pontos) {
-      const timestamp = toTimestamp(p.hora);
-      const existing = await prisma.workLog.findFirst({ where: { userId: user.id, type: p.type, date: hoje } });
-      if (existing) {
-        await prisma.workLog.update({ where: { id: existing.id }, data: { timestamp } });
-      } else {
-        await prisma.workLog.create({ data: { userId: user.id, type: p.type, timestamp, date: hoje } });
-      }
-    }
-
-    const todosPontos = await prisma.workLog.findMany({
-      where: { userId: user.id, date: hoje },
-      orderBy: { timestamp: 'asc' }
-    });
-
-    const { getJornada } = require('../services/memory');
-
-    const pad = n => String(n).padStart(2, '0');
-    function horaStr(date) {
-      if (!date) return '—';
-      const d = new Date(date);
-      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    }
-    function minToH(min) {
-      const h = Math.floor(min/60), m = min%60;
-      return `${h}h${m > 0 ? m+'min' : ''}`;
-    }
-
-    const get = tipo => todosPontos.find(p => p.type === tipo);
-    const e = get('entrada'), sa = get('saida_almoco'), va = get('volta_almoco'), s = get('saida');
-    const jornada = await getJornada(user.id);
-
-    let manha = null, tarde = null, total = null, extras = null;
-    if (e && sa) manha = (new Date(sa.timestamp) - new Date(e.timestamp)) / 60000;
-    if (va && s) tarde = (new Date(s.timestamp) - new Date(va.timestamp)) / 60000;
-    if (manha !== null && tarde !== null) { total = manha + tarde; extras = total - jornada; }
-
-    let texto = '';
-    if (e && !s) {
-      texto = `✅ Entrada registrada\n\n⏰ ${horaStr(e.timestamp)}\n\nTenha um ótimo trabalho hoje 😊`;
-    } else {
-      texto = `🏁 Saída registrada\n\n⏰ ${horaStr(s?.timestamp)}\n\n📊 Resumo do dia:\n`;
-      texto += `• Total trabalhado: ${total !== null ? minToH(total) : '—'}\n`;
-      if (extras !== null) {
-        if (extras > 0) texto += `• Horas extras: ${minToH(extras)}`;
-        else if (extras < 0) texto += `• Faltaram: ${minToH(Math.abs(extras))}`;
-        else texto += `• Jornada completa ✅`;
-      }
-      texto += `\n\nBom descanso 💜`;
-    }
-
-    res.json({ ok: true });
-
-    try {
-      await sendButtons(phone, texto, [
-        { id: 'ver_horas_hoje', label: '📋 Ver horas hoje' },
-        { id: 'menu', label: '🏠 Menu' },
-      ]);
-    } catch (wErr) {
-      console.error('[ponto] Erro ao notificar WhatsApp:', wErr.message);
-    }
-  } catch (e) {
-    console.error('Erro form ponto:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== LISTAS: GET ======================
-router.get('/listas/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const user = await memory.getOrCreateUser(phone);
-    const listas = await prisma.groceryList.findMany({
-      where: { userId: user.id, done: false },
-      orderBy: { createdAt: 'desc' },
-    });
-    const result = listas.map(l => ({
-      ...l, items: (() => { try { return JSON.parse(l.items); } catch { return []; } })()
-    }));
-    res.json(result);
-  } catch (e) {
-    console.error('Erro GET listas:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== LISTA: POST (criar) ======================
-router.post('/lista/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const { nome, itens } = req.body;
-    const user = await memory.getOrCreateUser(phone);
-    const itemsArr = Array.isArray(itens)
-      ? itens
-      : String(itens).split(/[,\n;]+/).map(i => i.trim()).filter(Boolean);
-    const itemsJson = itemsArr.map((nome, i) => ({ id: i + 1, nome, done: false }));
-    const lista = await prisma.groceryList.create({
-      data: { userId: user.id, name: nome || '🛒 Lista de compras', items: JSON.stringify(itemsJson), done: false }
-    });
-    const { saveMemory } = require('../services/memory');
-    await saveMemory(user.id, 'ultima_lista', lista.id);
-    res.json({ ok: true, id: lista.id, items: itemsJson });
-  } catch (e) {
-    console.error('Erro POST lista:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== LISTA: DELETE ======================
-router.delete('/lista/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    await prisma.groceryList.delete({ where: { id } });
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Erro DELETE lista:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== LISTA ITEM: TOGGLE ======================
-router.post('/lista-item/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { itemId } = req.body;
-    const lista = await prisma.groceryList.findUnique({ where: { id } });
-    if (!lista) return res.status(404).json({ error: 'Lista não encontrada' });
-    let items = []; try { items = JSON.parse(lista.items); } catch {}
-    items = items.map(i => i.id === itemId ? { ...i, done: !i.done } : i);
-    const allDone = items.every(i => i.done);
-    await prisma.groceryList.update({ where: { id }, data: { items: JSON.stringify(items), done: allDone } });
-    res.json({ ok: true, items, allDone });
-  } catch (e) {
-    console.error('Erro toggle item:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== LISTA ITEM: ADD ======================
-router.post('/lista-add-item/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { nome } = req.body;
-    const lista = await prisma.groceryList.findUnique({ where: { id } });
-    if (!lista) return res.status(404).json({ error: 'Lista não encontrada' });
-    let items = []; try { items = JSON.parse(lista.items); } catch {}
-    const newId = items.length > 0 ? Math.max(...items.map(i => i.id)) + 1 : 1;
-    items.push({ id: newId, nome, done: false });
-    await prisma.groceryList.update({ where: { id }, data: { items: JSON.stringify(items) } });
-    res.json({ ok: true, items });
-  } catch (e) {
-    console.error('Erro add item:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== LISTA ITEM: REMOVE ======================
-router.delete('/lista-item/:id/:itemId', async (req, res) => {
-  try {
-    const { id, itemId } = req.params;
-    const lista = await prisma.groceryList.findUnique({ where: { id } });
-    if (!lista) return res.status(404).json({ error: 'Lista não encontrada' });
-    let items = []; try { items = JSON.parse(lista.items); } catch {}
-    items = items.filter(i => i.id !== parseInt(itemId));
-    await prisma.groceryList.update({ where: { id }, data: { items: JSON.stringify(items) } });
-    res.json({ ok: true, items });
-  } catch (e) {
-    console.error('Erro remove item:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== LISTA: EDITAR TÍTULO ======================
-router.put('/lista-titulo/:id', async (req, res) => {
-  try {
-    const { nome } = req.body;
-    if (!nome) return res.status(400).json({ error: 'Nome obrigatório' });
-    await prisma.groceryList.update({ where: { id: req.params.id }, data: { name: nome } });
-    res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ====================== LISTA ITEM: EDITAR ======================
-router.put('/lista-item-editar/:id/:itemId', async (req, res) => {
-  try {
-    const { nome } = req.body;
-    const lista = await prisma.groceryList.findUnique({ where: { id: req.params.id } });
-    if (!lista) return res.status(404).json({ error: 'Lista não encontrada' });
-    const items = JSON.parse(lista.items || '[]');
-    const itemId = parseInt(req.params.itemId);
-    const item = items.find(i => i.id === itemId);
-    if (!item) return res.status(404).json({ error: 'Item não encontrado' });
-    item.nome = nome;
-    await prisma.groceryList.update({ where: { id: req.params.id }, data: { items: JSON.stringify(items) } });
-    res.json({ items });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ====================== LISTA: ARQUIVAR ======================
-router.post('/lista-arquivar/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    await prisma.groceryList.update({ where: { id }, data: { done: true } });
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Erro arquivar lista:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== LISTA: REORDENAR ======================
-router.put('/lista-reorder/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { items: newOrder } = req.body;
-    const lista = await prisma.groceryList.findUnique({ where: { id } });
-    if (!lista) return res.status(404).json({ error: 'Lista não encontrada' });
-    let items = []; try { items = JSON.parse(lista.items); } catch {}
-    const reordered = newOrder.map(id => items.find(i => i.id === id)).filter(Boolean);
-    items.forEach(i => { if (!reordered.find(r => r.id === i.id)) reordered.push(i); });
-    await prisma.groceryList.update({ where: { id }, data: { items: JSON.stringify(reordered) } });
-    res.json({ ok: true, items: reordered });
-  } catch (e) {
-    console.error('Erro reorder lista:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== ADMIN: LISTAR USUÁRIOS (debug/limpeza) ======================
-// Rota temporária para identificar usuários duplicados/incorretos no banco.
-// Mostra todos os usuários com contagem de dados relacionados, para decidir
-// com segurança quais merecem ser removidos. REMOVER após a limpeza.
-router.get('/admin/usuarios', async (req, res) => {
-  try {
-    const users = await prisma.user.findMany({
-      orderBy: { createdAt: 'asc' },
-      include: {
-        _count: {
-          select: { reminders: true, medications: true, expenses: true, groceryLists: true }
-        }
+      where: {
+        // NUNCA inclua: resumo_relacionamento, memoria_afetiva, info_pessoal — são permanentes
+        type: { in: ['med_lock','alerta_data_lock','proativa_lock','sumico_lock','bom_dia_lock','boa_noite_lock','meu_dia_criado','radar_lock','parceira_lock','reminder_lock','alerta_perfil_lock','hora_extra_lock','ponto_proativa_lock','msg_dedup_lock','fechamento_dia_lock'] },
+        createdAt: { lt: ontem }
       }
     });
-    const resumo = users.map(u => ({
-      id: u.id,
-      phone: u.phone,
-      name: u.name,
-      blocked: u.blocked,
-      createdAt: u.createdAt,
-      lembretes: u._count.reminders,
-      medicamentos: u._count.medications,
-      gastos: u._count.expenses,
-      listas: u._count.groceryLists,
-    }));
-    res.json(resumo);
-  } catch (e) {
-    console.error('Erro admin/usuarios:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== ADMIN: BLOQUEAR USUÁRIO (não deletar dados) ======================
-// Marca um usuário como blocked=true em vez de deletar — assim os crons
-// (bom dia, boa noite, etc) param de notificar esse número, mas os dados
-// continuam no banco caso seja preciso recuperar algo depois.
-router.post('/admin/bloquear/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    await prisma.user.update({ where: { id }, data: { blocked: true } });
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Erro admin/bloquear:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== ADMIN: EXCLUIR USUÁRIO (definitivo) ======================
-// Remove o usuário e TODOS os dados relacionados do banco — irreversível.
-// Apaga primeiro os registros que referenciam o usuário (Reminder,
-// Medication, Expense, GroceryList, Memory, Contact, etc) antes do User,
-// pois o schema não tem onDelete: Cascade configurado.
-router.delete('/admin/usuario/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    await prisma.$transaction([
-      prisma.reminder.deleteMany({ where: { userId: id } }),
-      prisma.medication.deleteMany({ where: { userId: id } }),
-      prisma.expense.deleteMany({ where: { userId: id } }),
-      prisma.purchase.deleteMany({ where: { userId: id } }),
-      prisma.task.deleteMany({ where: { userId: id } }),
-      prisma.bill.deleteMany({ where: { userId: id } }),
-      prisma.event.deleteMany({ where: { userId: id } }),
-      prisma.groceryList.deleteMany({ where: { userId: id } }),
-      prisma.sleepLog.deleteMany({ where: { userId: id } }),
-      prisma.workout.deleteMany({ where: { userId: id } }),
-      prisma.workLog.deleteMany({ where: { userId: id } }),
-      prisma.secret.deleteMany({ where: { userId: id } }),
-      prisma.contact.deleteMany({ where: { userId: id } }),
-      prisma.scheduledMessage.deleteMany({ where: { userId: id } }),
-      prisma.memory.deleteMany({ where: { userId: id } }),
-      prisma.user.delete({ where: { id } }),
-    ]);
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Erro admin/excluir usuario:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== ADMIN: LIMPAR LOCKS PRESOS (manutenção) ======================
-// Remove locks órfãos de lembrete e o lock de minuto, além de lembretes
-// "fantasma" — sent:false, não confirmados, vencidos há mais de 2h, que
-// nunca foram enviados (resíduo de processo morto/deadlock). Esse é o
-// estado que faz o cron girar em loop ("Lock já existe...") todo minuto e
-// engasgar os outros crons (remédios, proativas).
-//
-// Chamada manual pelo navegador, a qualquer momento:
-//   GET /forms/admin/limpar-locks
-// Idempotente e segura: locks se recriam sozinhos no próximo ciclo.
-router.get('/admin/limpar-locks', async (req, res) => {
-  try {
-    // 1) Lock de grupo de lembrete (reminder_lock)
-    const locks = await prisma.memory.deleteMany({
-      where: { type: 'reminder_lock' }
-    });
-
-    // 2) Lock de minuto — tipo dinâmico __lock_cron_lembretes__ (pega por prefixo)
-    const locksMinuto = await prisma.memory.deleteMany({
-      where: { type: { startsWith: '__lock_' } }
-    }).catch(() => ({ count: 0 }));
-
-    // 3) Lembretes travados: sent:false, não confirmados, vencidos há +2h
-    const corte = new Date(Date.now() - 2 * 60 * 60 * 1000);
-    const lembretesTravados = await prisma.reminder.deleteMany({
-      where: { sent: false, confirmed: false, scheduledAt: { lt: corte } }
-    });
-
-    const resultado = {
-      ok: true,
-      locks_removidos: locks.count,
-      locks_minuto_removidos: locksMinuto.count,
-      lembretes_travados_removidos: lembretesTravados.count,
-      em: new Date().toISOString()
-    };
-    console.log('[Limpar-locks]', JSON.stringify(resultado));
-    res.json(resultado);
-  } catch (e) {
-    console.error('Erro admin/limpar-locks:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== ADMIN: VER/RESETAR RESUMO DE RELACIONAMENTO ======================
-// Mostra o resumo de relacionamento salvo. Com ?reset=1, apaga o resumo
-// (ele se reconstrói nas próximas conversas, já com as regras corrigidas).
-// Útil quando o resumo ficou contaminado — ex: um terceiro ("patroa" = a
-// esposa) registrado por engano como apelido do próprio usuário.
-//   GET /forms/admin/relacionamento/:phone        → mostra
-//   GET /forms/admin/relacionamento/:phone?reset=1 → apaga e reconstrói
-router.get('/admin/relacionamento/:phone', async (req, res) => {
-  try {
-    const { phone } = req.params;
-    const user = await prisma.user.findUnique({ where: { phone } });
-    if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
-
-    const atual = await prisma.memory.findFirst({
-      where: { userId: user.id, type: 'relationship_summary' },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    if (req.query.reset === '1') {
-      const apagados = await prisma.memory.deleteMany({
-        where: { userId: user.id, type: 'relationship_summary' }
-      });
-      return res.json({
-        ok: true,
-        acao: 'resetado',
-        removidos: apagados.count,
-        resumo_anterior: atual?.content || null,
-        nota: 'O resumo será reconstruído nas próximas conversas, já com as regras corrigidas (terceiros não viram apelido).'
-      });
+    const seteDiasAtras = new Date(nowBRT()); seteDiasAtras.setDate(seteDiasAtras.getDate() - 7);
+    const pendencias = await prisma.memory.findMany({ where: { type: 'pendencia_conversa', createdAt: { lt: seteDiasAtras } } });
+    if (pendencias.length) {
+      await prisma.memory.deleteMany({ where: { id: { in: pendencias.map(p => p.id) } } });
     }
-
-    res.json({
-      ok: true,
-      resumo_atual: atual?.content || '(nenhum resumo salvo ainda)',
-      criadoEm: atual?.createdAt || null,
-      dica: 'Para apagar e reconstruir, adicione ?reset=1 na URL.'
-    });
-  } catch (e) {
-    console.error('Erro admin/relacionamento:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== ADMIN: DIAGNÓSTICO DE REMÉDIOS ======================
-// Mostra, pra cada medicamento ativo, os dados crus que o cron de remédios
-// usa pra decidir o claim atômico — pra entender por que o disparo falha
-// com "já enviado neste minuto" sem nunca ter enviado.
-//   GET /forms/admin/diag-remedio
-router.get('/admin/diag-remedio', async (req, res) => {
-  try {
-    const meds = await prisma.medication.findMany({
-      where: { active: true },
-      include: { user: { select: { phone: true } } }
-    });
-    const agoraUTC = new Date();
-    const inicioMinuto = new Date(Math.floor(Date.now() / 60000) * 60000);
-    // minutoChave como o cron calcula (horário de Brasília)
-    const nowBRTlocal = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-    const pad = n => String(n).padStart(2, '0');
-    const minutoChave = `${pad(nowBRTlocal.getHours())}:${pad(nowBRTlocal.getMinutes())}`;
-
-    const diag = meds.map(m => {
-      let times = [];
-      try { times = JSON.parse(m.times || '[]'); } catch {}
-      const updatedAt = new Date(m.updatedAt);
-      return {
-        nome: m.name,
-        phone: m.user?.phone || null,
-        times,
-        minutoChave_agora: minutoChave,
-        bate_horario_agora: times.includes(minutoChave),
-        remaining: m.remaining,
-        active: m.active,
-        updatedAt_iso: updatedAt.toISOString(),
-        updatedAt_epoch: updatedAt.getTime(),
-        inicioMinuto_iso: inicioMinuto.toISOString(),
-        inicioMinuto_epoch: inicioMinuto.getTime(),
-        claim_passaria_AGORA: updatedAt.getTime() < inicioMinuto.getTime(),
-        diff_segundos_updatedAt_para_agora: Math.round((agoraUTC.getTime() - updatedAt.getTime()) / 1000)
-      };
-    });
-    res.json({
-      agora_utc: agoraUTC.toISOString(),
-      minutoChave_brasilia: minutoChave,
-      inicioMinuto_utc: inicioMinuto.toISOString(),
-      medicamentos: diag
-    });
-  } catch (e) {
-    console.error('Erro admin/diag-remedio:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ====================== ADMIN: PÁGINA DE LIMPEZA (HTML) ======================
-// Serve a página de bloqueio de usuários duplicados direto do mesmo
-// domínio do backend — evita qualquer bloqueio de CORS que ocorreria se
-// a página fosse aberta localmente (file://) fazendo fetch para outro
-// domínio. Busca os usuários ao vivo via /admin/usuarios em vez de lista
-// fixa, então sempre reflete o estado real do banco.
-router.get('/admin/limpeza', (req, res) => {
-  res.send(`<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Limpeza de Usuários — Clara</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0b0d12; color: #eee; min-height: 100vh; padding: 20px; }
-  h1 { font-size: 18px; margin-bottom: 6px; }
-  .sub { font-size: 13px; color: #888; margin-bottom: 24px; }
-  .card { background: #161922; border: 1px solid #2a2d3a; border-radius: 14px; padding: 16px; margin-bottom: 12px; }
-  .card.real { border-color: #22c55e; background: #0f1a13; }
-  .card.blocked { opacity: 0.5; }
-  .phone { font-size: 16px; font-weight: 700; }
-  .meta { font-size: 12px; color: #999; margin-top: 4px; line-height: 1.5; }
-  .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 8px; margin-top: 8px; }
-  .badge.real { background: rgba(34,197,94,.15); color: #22c55e; }
-  .badge.lixo { background: rgba(239,68,68,.15); color: #f87171; }
-  .badge.blocked { background: rgba(107,114,128,.2); color: #9ca3af; }
-  button { width: 100%; padding: 12px; margin-top: 10px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
-  button.bloquear { background: #dc2626; color: white; }
-  button.bloquear:disabled { background: #3a3a3a; color: #888; cursor: default; }
-  .status { font-size: 12px; margin-top: 8px; min-height: 16px; }
-  .status.ok { color: #22c55e; }
-  .status.erro { color: #f87171; }
-  .loading { text-align: center; padding: 40px; color: #888; }
-</style>
-</head>
-<body>
-<h1>🧹 Limpeza de usuários duplicados</h1>
-<div class="sub">Bloqueia os usuários que não são você — eles continuam no banco, só param de receber mensagens automáticas (bom dia, boa noite, etc).</div>
-
-<div id="lista"><div class="loading">Carregando usuários...</div></div>
-
-<script>
-async function carregar() {
-  const el = document.getElementById('lista');
-  try {
-    const res = await fetch('/forms/admin/usuarios');
-    const usuarios = await res.json();
-    // Heurística simples: o usuário com mais dados totais é provavelmente
-    // o real — os outros aparecem marcados como possível duplicado.
-    const totais = usuarios.map(u => u.lembretes + u.medicamentos + u.gastos + u.listas);
-    const maxTotal = Math.max(...totais);
-
-    el.innerHTML = usuarios.map((u, i) => {
-      const isReal = totais[i] === maxTotal && maxTotal > 0;
-      const isBlocked = u.blocked;
-      return \`
-        <div class="card \${isReal ? 'real' : ''} \${isBlocked ? 'blocked' : ''}" id="card-\${u.id}">
-          <div class="phone">\${u.phone}</div>
-          <div class="meta">\${u.name || '(sem nome)'} · \${u.lembretes} lembretes · \${u.medicamentos} medicamentos · \${u.gastos} gastos · \${u.listas} listas</div>
-          \${isBlocked
-            ? '<span class="badge blocked">🚫 já bloqueado</span>'
-            : isReal
-              ? '<span class="badge real">✅ provável usuário real — confira antes de bloquear</span>'
-              : '<span class="badge lixo">⚠️ possível duplicado/lixo</span>'
-          }
-          \${!isBlocked ? \`<button class="bloquear" id="btn-\${u.id}" onclick="bloquear('\${u.id}')">Bloquear esse número</button>\` : ''}
-          <div class="status" id="status-\${u.id}"></div>
-        </div>
-      \`;
-    }).join('');
-  } catch (e) {
-    el.innerHTML = '<div class="status erro">Erro ao carregar usuários: ' + e.message + '</div>';
-  }
-}
-
-async function bloquear(id) {
-  const btn = document.getElementById('btn-' + id);
-  const status = document.getElementById('status-' + id);
-  btn.disabled = true;
-  btn.textContent = 'Bloqueando...';
-  status.textContent = '';
-  status.className = 'status';
-  try {
-    const res = await fetch('/forms/admin/bloquear/' + id, { method: 'POST' });
-    const data = await res.json();
-    if (res.ok && data.ok) {
-      btn.textContent = '✅ Bloqueado';
-      status.textContent = 'Esse número não vai mais receber mensagens automáticas.';
-      status.className = 'status ok';
-    } else {
-      throw new Error(data.error || 'Erro desconhecido');
+    const pendenciasEncerradas = await prisma.memory.findMany({ where: { type: 'pendencia_conversa', createdAt: { lt: ontem } } });
+    for (const p of pendenciasEncerradas) {
+      try { const d = JSON.parse(p.content); if (d.encerrado) await prisma.memory.delete({ where: { id: p.id } }); } catch {}
     }
-  } catch (e) {
-    btn.disabled = false;
-    btn.textContent = 'Tentar de novo';
-    status.textContent = 'Erro: ' + e.message;
-    status.className = 'status erro';
-  }
-}
+    console.log('[Cleanup] Locks antigos e pendências expiradas removidos');
+  } catch (e) { console.error('[Cleanup] Erro:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
 
-carregar();
-</script>
-</body>
-</html>`);
-});
+// Limpeza de med_lock a cada hora
+cron.schedule('0 * * * *', async () => {
+  try {
+    const resultado = await prisma.memory.deleteMany({ where: { type: 'med_lock', createdAt: { lt: new Date(Date.now() - 2 * 60 * 1000) } } });
+    if (resultado.count > 0) console.log(`[Cleanup Med Locks] ${resultado.count} locks removidos`);
+  } catch (e) { console.error('[Cleanup Med Locks] Erro:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
 
+// Limpeza de lembretes não confirmados > 48h (04:00)
+cron.schedule('0 4 * * *', async () => {
+  try {
+    const limite = new Date(nowBRT().getTime() - 48 * 60 * 60 * 1000);
+    const resultado = await prisma.reminder.deleteMany({ where: { confirmed: false, scheduledAt: { lt: limite } } });
+    if (resultado.count > 0) console.log(`[Cleanup Lembretes] ${resultado.count} removidos`);
+  } catch (e) { console.error('[Cleanup Lembretes] Erro:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
 
 // ═══════════════════════════════════════════════════════════════════════
-// MEMÓRIAS — Perfil rico da Clara 3.0
-// GET  /memorias/:phone        → lista todas as memórias por categoria
-// DELETE /memoria/:id/:phone   → deleta uma memória específica
-// POST /memoria/:phone         → adiciona memória manualmente
-// GET  /memorias-categorias    → retorna as categorias disponíveis
+// ALERTAS PROATIVOS — Perfil rico da Clara 3.0
+// Roda junto com alertas de datas (08:00) mas separado pra clareza.
+// Verifica: aniversários de filhos, cônjuge, relacionamento, metas, etc.
 // ═══════════════════════════════════════════════════════════════════════
-
-router.get('/memorias/:phone', async (req, res) => {
+cron.schedule('15 8 * * *', async () => {
   try {
-    const user = await prisma.user.findUnique({ where: { phone: req.params.phone } });
-    if (!user) return res.json({ categorias: {} });
-
-    const mems = await prisma.memory.findMany({
-      where: { userId: user.id, type: 'info_pessoal' },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    // Agrupa por categoria para exibição no Dashboard
-    const categorias = {};
-    for (const m of mems) {
-      let meta = {};
-      try { meta = JSON.parse(m.metadata || '{}'); } catch {}
-      const cat = meta.categoria || 'outro';
-      if (!categorias[cat]) categorias[cat] = [];
-      categorias[cat].push({
-        id: m.id,
-        chave: meta.chave || '',
-        valor: m.content,
-        categoria: cat,
-        criadoEm: m.createdAt,
-        atualizadoEm: meta.updatedAt || meta.createdAt || m.createdAt
-      });
+    const now = nowBRT();
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    for (const user of users) {
+      try {
+        await alertasPerfilRico(user, now);
+      } catch (e) { console.error(`[AlertasPerfil] Erro ${user.phone}:`, e.message); }
     }
+  } catch (e) { console.error('[AlertasPerfil] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
 
-    // Também inclui assuntos em aberto
-    const pendencias = await prisma.memory.findMany({
-      where: { userId: user.id, type: 'pendencia_conversa' },
-      orderBy: { createdAt: 'desc' },
-      take: 10
-    });
-    const pendenciasAtivas = pendencias
-      .map(m => { try { return { id: m.id, criadoEm: m.createdAt, ...JSON.parse(m.content) }; } catch { return null; } })
-      .filter(p => p && !p.encerrado);
+async function alertasPerfilRico(user, now) {
+  const mems = await prisma.memory.findMany({
+    where: { userId: user.id, type: 'info_pessoal' },
+    orderBy: { createdAt: 'desc' }
+  }).catch(() => []);
 
-    res.json({ categorias, pendenciasAbertas: pendenciasAtivas });
-  } catch (e) {
-    console.error('[GET /memorias]', e.message);
-    res.status(500).json({ error: 'Erro ao buscar memórias' });
-  }
-});
-
-router.delete('/memoria/:id/:phone', async (req, res) => {
-  try {
-    const user = await prisma.user.findUnique({ where: { phone: req.params.phone } });
-    if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
-
-    const mem = await prisma.memory.findFirst({
-      where: { id: req.params.id, userId: user.id }
-    });
-    if (!mem) return res.status(404).json({ error: 'Memória não encontrada' });
-
-    await prisma.memory.delete({ where: { id: req.params.id } });
-
-    // Marca que o usuário não quer ser perguntado sobre isso por 30 dias
+  for (const m of mems) {
     let meta = {};
-    try { meta = JSON.parse(mem.metadata || '{}'); } catch {}
-    if (meta.chave) {
-      await prisma.memory.create({
-        data: {
-          userId: user.id,
-          type: 'perfil_deletado',
-          content: meta.chave,
-          metadata: JSON.stringify({
-            deletadoEm: new Date().toISOString(),
-            expira: Date.now() + 30 * 24 * 60 * 60 * 1000
-          })
-        }
-      }).catch(() => {});
-    }
+    try { meta = JSON.parse(m.metadata || '{}'); } catch { continue; }
+    const { chave, categoria } = meta;
+    const valor = m.content || '';
 
-    // Avisa a Clara via WhatsApp que a memória foi removida (opcional, não bloqueia)
-    try {
-      const w = require('../services/whatsapp');
-      if (w && user.phone) {
-        const chave = meta.chave || 'essa informação';
-        await w.sendMessage(user.phone, `🗑️ Entendido! Removi "${mem.content}" das minhas memórias. Não vou mais trazer esse assunto 😊`);
+    // ── Datas: aniversários de pessoas próximas ──
+    if (categoria === 'datas' || categoria === 'filhos' || categoria === 'relacionamento') {
+      const matchData = valor.match(/(\d{1,2})\s+de\s+(\w+)/i) ||
+                        valor.match(/(\d{1,2})\/(\d{1,2})/);
+      if (matchData) {
+        const mesesMap = { janeiro:1,fevereiro:2,março:3,abril:4,maio:5,junho:6,julho:7,agosto:8,setembro:9,outubro:10,novembro:11,dezembro:12 };
+        let dia, mes;
+        if (matchData[0].includes('/')) {
+          dia = parseInt(matchData[1]);
+          mes = parseInt(matchData[2]);
+        } else {
+          dia = parseInt(matchData[1]);
+          mes = mesesMap[(matchData[2] || '').toLowerCase()];
+        }
+        if (!dia || !mes) continue;
+
+        const dataEvento = new Date(now.getFullYear(), mes - 1, dia);
+        const diffDias = Math.round((dataEvento - now) / (1000 * 60 * 60 * 24));
+        const lockKey = `alerta_perfil_${m.id}_${dateBRT()}`;
+        if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'alerta_perfil_lock', content: lockKey } })) continue;
+
+        let msg = null;
+        const prefs = await memory.getUserPreference(user.id).catch(() => null);
+
+        // Aniversário de filho(a)
+        if (categoria === 'filhos' && chave?.startsWith('filh')) {
+          const nomeMatch = valor.match(/[Ff]ilh[oa]\s+(\w+)/);
+          const nome = nomeMatch ? nomeMatch[1] : 'seu filho(a)';
+          if (diffDias === 7) msg = `📅 Daqui uma semana é aniversário d${valor.toLowerCase().includes('filha') ? 'a' : 'o'} ${nome}! Já pensou no presente?`;
+          else if (diffDias === 3) msg = `⏰ Em 3 dias é aniversário d${valor.toLowerCase().includes('filha') ? 'a' : 'o'} ${nome} — já tem algum plano?`;
+          else if (diffDias === 1) msg = `🎂 Amanhã é aniversário d${valor.toLowerCase().includes('filha') ? 'a' : 'o'} ${nome}! Não esquece 😊`;
+          else if (diffDias === 0) msg = `🎉 Hoje é aniversário d${valor.toLowerCase().includes('filha') ? 'a' : 'o'} ${nome}! Já deu os parabéns? 🎂`;
+        }
+        // Aniversário do cônjuge
+        else if (categoria === 'relacionamento' && chave?.includes('aniversario')) {
+          if (diffDias === 7) msg = `📅 Uma semana pro aniversário da sua parceira/o — hora de planejar algo especial?`;
+          else if (diffDias === 3) msg = `⏰ Daqui 3 dias é o aniversário! Já tem ideia do que vai fazer?`;
+          else if (diffDias === 1) msg = `🎂 Amanhã é o aniversário! Não esquece 😊`;
+          else if (diffDias === 0) msg = `🎉 Hoje é o grande dia! Já deu os parabéns? 💜`;
+        }
+        // Data importante genérica
+        else if (categoria === 'datas') {
+          if (diffDias === 3) msg = `📅 Em 3 dias: ${valor} — lembrete antecipado 😊`;
+          else if (diffDias === 1) msg = `⏰ Amanhã: ${valor} — não esquece!`;
+          else if (diffDias === 0) msg = `🎉 Hoje: ${valor}!`;
+        }
+
+        if (msg) {
+          // Oferece criar lembrete se for aniversário próximo
+          const ofertaLembrete = diffDias <= 3 && diffDias > 0
+            ? `\n\nQuer que eu crie um lembrete pra isso?`
+            : '';
+          await sendMessage(user.phone, msg + ofertaLembrete);
+          await prisma.memory.create({ data: { userId: user.id, type: 'alerta_perfil_lock', content: lockKey } });
+          console.log(`[AlertasPerfil] ${chave} → ${user.phone} (${diffDias} dias)`);
+        }
       }
-    } catch {}
-
-    res.json({ ok: true, deletado: mem.content });
-  } catch (e) {
-    console.error('[DELETE /memoria]', e.message);
-    res.status(500).json({ error: 'Erro ao deletar memória' });
-  }
-});
-
-router.post('/memoria/:phone', async (req, res) => {
-  try {
-    const user = await prisma.user.findUnique({ where: { phone: req.params.phone } });
-    if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
-
-    const { chave, valor, categoria } = req.body;
-    if (!chave || !valor) return res.status(400).json({ error: 'chave e valor são obrigatórios' });
-
-    // Verifica se já existe e atualiza
-    const existing = await prisma.memory.findFirst({
-      where: { userId: user.id, type: 'info_pessoal', metadata: { contains: `"chave":"${chave}"` } }
-    });
-
-    let mem;
-    if (existing) {
-      mem = await prisma.memory.update({
-        where: { id: existing.id },
-        data: {
-          content: valor,
-          metadata: JSON.stringify({ chave, categoria: categoria || 'outro', updatedAt: new Date().toISOString() })
-        }
-      });
-    } else {
-      mem = await prisma.memory.create({
-        data: {
-          userId: user.id,
-          type: 'info_pessoal',
-          content: valor,
-          metadata: JSON.stringify({ chave, categoria: categoria || 'outro', createdAt: new Date().toISOString() })
-        }
-      });
     }
 
-    res.json({ ok: true, id: mem.id, chave, valor, categoria });
-  } catch (e) {
-    console.error('[POST /memoria]', e.message);
-    res.status(500).json({ error: 'Erro ao salvar memória' });
-  }
-});
-
-// Limpeza de pendências — mantém só as 3 mais recentes e válidas
-// Útil para limpar acúmulo histórico de pendências triviais
-router.post('/pendencias-limpar/:phone', async (req, res) => {
-  try {
-    const user = await memory.getOrCreateUser(req.params.phone);
-    const todas = await prisma.memory.findMany({
-      where: { userId: user.id, type: 'pendencia_conversa' },
-      orderBy: { createdAt: 'desc' }
-    });
-    // Mantém as 3 mais recentes, deleta o resto
-    const paraApagar = todas.slice(3);
-    if (paraApagar.length > 0) {
-      await prisma.memory.deleteMany({ where: { id: { in: paraApagar.map(p => p.id) } } });
+    // ── Metas: check-in mensal ──
+    if (categoria === 'metas') {
+      const diaDoMes = now.getDate();
+      // Check-in no dia 1 de cada mês
+      if (diaDoMes === 1) {
+        const lockKey = `meta_checkin_${m.id}_${now.getFullYear()}_${now.getMonth()}`;
+        if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'alerta_perfil_lock', content: lockKey } })) continue;
+        const msg = `🚀 Começo de mês — como está o progresso da sua meta? "${valor.slice(0, 60)}"`;
+        await sendMessage(user.phone, msg);
+        await prisma.memory.create({ data: { userId: user.id, type: 'alerta_perfil_lock', content: lockKey } });
+        console.log(`[AlertasPerfil] Meta check-in → ${user.phone}`);
+      }
     }
-    res.json({ removidas: paraApagar.length, restantes: Math.min(todas.length, 3) });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
   }
-});
+}
 
-router.delete('/pendencia/:id/:phone', async (req, res) => {
+// ═══════════════════════════════════════════════════════════════════════
+// ALERTA ESTOQUE BAIXO DE REMÉDIO (08:30)
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('30 8 * * *', async () => {
   try {
-    const user = await prisma.user.findUnique({ where: { phone: req.params.phone } });
-    if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
-    const mem = await prisma.memory.findFirst({
-      where: { id: req.params.id, userId: user.id, type: 'pendencia_conversa' }
-    });
-    if (!mem) return res.status(404).json({ error: 'Pendência não encontrada' });
-    // Marca como encerrada em vez de deletar — preserva histórico
-    const dados = JSON.parse(mem.content || '{}');
-    await prisma.memory.update({
-      where: { id: req.params.id },
-      data: { content: JSON.stringify({ ...dados, encerrado: true }) }
-    });
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: 'Erro ao encerrar pendência' });
-  }
-});
-
-router.get('/memorias-categorias', (req, res) => {
-  // Retorna as categorias disponíveis com labels para o Dashboard
-  res.json({
-    categorias: {
-      relacionamento:  { label: 'Relacionamento',  emoji: '❤️' },
-      filhos:          { label: 'Filhos',           emoji: '👶' },
-      familia:         { label: 'Família',          emoji: '👨‍👩‍👧' },
-      trabalho:        { label: 'Trabalho',         emoji: '💼' },
-      hobbies:         { label: 'Hobbies',          emoji: '🎯' },
-      entretenimento:  { label: 'Entretenimento',   emoji: '🎬' },
-      alimentacao:     { label: 'Alimentação',      emoji: '🍔' },
-      metas:           { label: 'Metas',            emoji: '🚀' },
-      personalidade:   { label: 'Personalidade',    emoji: '✨' },
-      saude:           { label: 'Saúde',            emoji: '💊' },
-      datas:           { label: 'Datas importantes',emoji: '📅' },
-      rotina:          { label: 'Rotina',           emoji: '⏰' },
-      outro:           { label: 'Informações gerais',emoji: '📌' },
+    const meds = await prisma.medication.findMany({ where: { active: true, remaining: { gt: 0, lte: 5 } }, include: { user: true } });
+    for (const med of meds) {
+      try {
+        const phone = med.user?.phone || (await prisma.user.findUnique({ where: { id: med.userId } }))?.phone;
+        if (!phone) continue;
+        const lockKey = `estoque_baixo_${med.id}_${dateBRT()}`;
+        if (await prisma.memory.findFirst({ where: { type: 'estoque_lock', content: lockKey } })) continue;
+        await prisma.memory.create({ data: { userId: med.userId, type: 'estoque_lock', content: lockKey } });
+        const urgencia = med.remaining === 1 ? '🚨 Última dose!' : `⚠️ Restam apenas ${med.remaining} doses`;
+        await sendMessage(phone, `💊 ${urgencia}\n\n*${med.name}* está acabando.\n\nNão esquece de comprar mais para não interromper o tratamento! 🏥`);
+        console.log(`[Estoque] Alerta: ${med.name} → ${phone}`);
+      } catch (e) { console.error(`[Estoque] Erro ${med.id}:`, e.message); }
     }
-  });
-});
+  } catch (e) { console.error('[Estoque] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
 
-module.exports = router;
+
+
+
+// ── Inicialização do lock de instância única ──────────────────────────────
+// Disparado aqui no final, quando prisma e getAncoraUserId já estão definidos.
+// O primeiro renovarHeartbeat() decide se este container é o dono dos crons.
+// Como os crons só executam se souODonoDoCron() === true, e o heartbeat só
+// libera após a primeira checada, há um pequeno atraso inicial (~1 ciclo)
+// até o container assumir — aceitável e seguro (melhor atrasar que duplicar).
+setInterval(renovarHeartbeat, 20000);
+renovarHeartbeat();
+
+console.log('Clara scheduler iniciado 💜');
