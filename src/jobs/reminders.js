@@ -1368,8 +1368,20 @@ cron.schedule('* * * * *', async () => {
         // neste minuto. Usamos o campo `updatedAt` comparado com o início do
         // minuto atual como guarda — se updatedAt já é deste minuto, outro
         // processo já enviou. Isso NÃO exige campo novo no schema.
-        const inicioMinuto = new Date(nowBRT());
-        inicioMinuto.setSeconds(0, 0);
+        //
+        // ── BUG DE FUSO CORRIGIDO ──
+        // Antes: `const inicioMinuto = new Date(nowBRT())`. O nowBRT() retorna
+        // um Date cujo epoch interno está DESLOCADO pelo offset entre o fuso
+        // do servidor e America/Sao_Paulo (mesma armadilha documentada em
+        // calcularHorarioRelativo no handler.js). Mas `updatedAt` é gravado
+        // pelo Prisma em UTC REAL. Comparar um contra o outro fazia o claim
+        // falhar de forma imprevisível: o updatedAt recém-criado nunca ficava
+        // corretamente `< inicioMinuto`, então claim.count vinha 0 e o remédio
+        // era pulado com "já enviado neste minuto" — quando na verdade nunca
+        // havia sido enviado. Resultado: remédio jamais disparava.
+        // Correção: usar Date.now() (epoch UTC real) truncado pro início do
+        // minuto corrente, na mesma régua de tempo que o updatedAt do banco.
+        const inicioMinuto = new Date(Math.floor(Date.now() / 60000) * 60000);
 
         const medsParaEnviar = [];
         for (const med of grupo.meds) {
