@@ -232,7 +232,8 @@ TIPOS e formato de saída:
 - relatorio_financeiro / consulta_saldo: {"tipo":"..."}
 - outro: {"tipo":"outro"} — conversa, pergunta de conhecimento, saudação, qualquer coisa que não seja ação acima
 
-GATILHOS DE TAREFA (prioridade sobre conteúdo): "me lembra", "me avisa", "anota aí", "já anota", "bota/põe um lembrete", "não me deixa esquecer", "agenda", "marca", "daqui X min/horas", "às HH de". Extraia título mesmo de referência vaga ("dessa reunião"→"reunião"). "umas 7:00"→07:00. CONDICIONAL ("se quiser", "se puder") = NÃO é pedido = outro.
+GATILHOS DE TAREFA (prioridade sobre conteúdo): "me lembra", "me avisa", "anota aí", "já anota", "bota/põe um lembrete", "não me deixa esquecer", "agenda", "marca", "daqui X min/horas", "às HH de". Extraia título mesmo de referência vaga ("dessa reunião"→"reunião"). CONDICIONAL ("se quiser", "se puder") = NÃO é pedido = outro.
+FORMATOS DE HORA (sempre converta pra HH:MM 24h): "umas 7:00"→07:00; "18 horas"/"umas 18 horas"/"às 18 horas"/"às 18h"/"18h"→18:00; "7 e meia"/"7:30"→07:30; "meio-dia"→12:00; "meia-noite"→00:00; "8 da noite"→20:00; "6 da tarde"→18:00; "9 da manhã"→09:00. NUNCA deixe hora:null quando o usuário disse um horário claro do dia.
 GATILHO vence saudação: "me lembra daqui 4 min de mandar um oi" = tarefa (titulo "mandar um oi"), não saudação.
 Se mensagem cita [Mensagem citada: X], use X pra achar qual item (lembrete/remédio).
 Hora relativa ("daqui 20 min", "em 1h") = tarefa com hora:null (sistema calcula do texto).
@@ -240,6 +241,7 @@ Hora relativa ("daqui 20 min", "em 1h") = tarefa com hora:null (sistema calcula 
 
 Exemplos:
 "me lembra às 10h de fazer backup" → {"tipo":"tarefa","titulo":"fazer backup","data":null,"hora":"10:00","antecedencia":0,"recorrente":false,"frequencia":null}
+"me lembra de ver a água do carro umas 18 horas" → {"tipo":"tarefa","titulo":"ver a água do carro","data":null,"hora":"18:00","antecedencia":0,"recorrente":false,"frequencia":null}
 "já anota aí pra me lembrar segunda dessa reunião, umas 7:00" → {"tipo":"tarefa","titulo":"reunião","data":"${mapa['segunda']}","hora":"07:00","antecedencia":0,"recorrente":false,"frequencia":null}
 "me lembra às 14h de enviar fotos e às 15h de fazer arte" → {"tipo":"multiplas_tarefas","tarefas":[{"titulo":"enviar fotos","data":null,"hora":"14:00","antecedencia":0,"recorrente":false,"frequencia":null},{"titulo":"fazer arte","data":null,"hora":"15:00","antecedencia":0,"recorrente":false,"frequencia":null}]}
 "gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
