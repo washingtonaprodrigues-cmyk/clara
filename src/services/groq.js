@@ -1326,17 +1326,20 @@ async function generateRelationshipSummary(recentMessages, currentSummary) {
       model: MODEL_FORTE,
       messages: [
         { role: 'system', content: `Você é a memória relacional da Clara, assistente pessoal do Washington.
+IMPORTANTE: Washington é HOMEM. Pessoas que ele menciona (esposa, amigos, colegas) NÃO são apelidos dele nem seus — são terceiros na vida dele. Ex: "patroa", "amor", "mulher" = a ESPOSA do Washington, NUNCA um apelido pra chamá-lo. Nunca registre o nome/apelido de um terceiro como se fosse forma de tratar o Washington.
+
 Analise a conversa e atualize o resumo do relacionamento. Capture, em ORDEM DE PRIORIDADE:
-1. APELIDOS e CÓDIGOS PRÓPRIOS — qualquer apelido carinhoso/provocador criado entre eles (ex: "fedo"), e emojis específicos com significado combinado (ex: 🙄 = provocação). Esses são os detalhes MAIS importantes — nunca deixe de registrar quando aparecerem.
-2. Como Washington se sente hoje (humor, estresse, animação)
-3. Assuntos que ele mencionou (trabalho, família, planos)
-4. Como ele prefere ser tratado (tom, brincadeiras, jeito de zoar)
-5. Piadas internas e expressões recorrentes dele
-6. O que aconteceu de importante na vida dele recentemente
+1. APELIDOS e CÓDIGOS PRÓPRIOS — apelidos criados ENTRE Clara e Washington (ex: ele a chama de "Clarita", ela o chama de "fedo"), e emojis com significado combinado (ex: 🙄 = provocação). ATENÇÃO: só conta como apelido se for claramente um termo que UM usa pra chamar o OUTRO — não uma pessoa que o Washington citou de passagem.
+2. PESSOAS NA VIDA DELE (registre SEPARADO, como terceiros, nunca como apelido): esposa (a "patroa"/"amor"), filhos, colegas (ex: Vinicius), etc. — anote quem é quem pra ela lembrar com naturalidade ("como foi o filme com a patroa?").
+3. Como Washington se sente hoje (humor, estresse, animação)
+4. Assuntos que ele mencionou (trabalho, família, planos)
+5. Como ele prefere ser tratado (tom, brincadeiras, jeito de zoar)
+6. Piadas internas e expressões recorrentes dele
+7. O que aconteceu de importante na vida dele recentemente
 
 Seja como uma amiga próxima que anota o que importa para lembrar depois — principalmente os "códigos secretos" que tornam a relação única.
 Escreva em formato de notas curtas, naturais, em português. Máximo 6 linhas.
-Integre com o resumo anterior sem repetir — evolua ele, mas NUNCA descarte apelidos/emojis combinados já registrados, mesmo que não apareçam nesta conversa.` },
+Integre com o resumo anterior sem repetir — evolua ele, mas NUNCA descarte apelidos/emojis combinados já registrados, mesmo que não apareçam nesta conversa. Se o resumo anterior tiver registrado por engano um terceiro (ex: "patroa") como apelido do Washington, CORRIJA — passe a tratá-lo como a esposa dele.` },
         { role: 'user', content: `Conversa recente:\n${msgs}\n\nResumo anterior:\n${currentSummary || 'Primeiro contato.'}` }
       ],
       temperature: 0.4,
