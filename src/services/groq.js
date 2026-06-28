@@ -1227,6 +1227,9 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     if (preferences?._acaoConfirmacao) {
       contextoComAcao += `\n\n[AÇÃO JÁ EXECUTADA PELO SISTEMA — confirme isso com seu tom natural, sem inventar nada além disso]: ${preferences._acaoConfirmacao}`;
     }
+    if (preferences?._dicaAcao) {
+      contextoComAcao += `\n\n[AÇÃO JÁ EXECUTADA]: ${preferences._dicaAcao}`;
+    }
 
     const sistemaCompleto = buildPersonality(tom, name, false) + contextoComAcao;
 
