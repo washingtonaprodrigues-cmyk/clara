@@ -358,79 +358,126 @@ async function getUserContext(user) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// BOM DIA INTELIGENTE (07:00)
+// BOM DIA INTELIGENTE — reativo
+// Em vez de hora fixa: espera o "sinal de que acordou" — alguns minutos
+// depois do PRIMEIRO remédio ou lembrete do dia (entre 05h-11h), quando o
+// usuário manda a primeira mensagem dele no dia. Isso é mais parecido com
+// uma pessoa de verdade do que mandar bom dia num horário fixo sem saber
+// se a pessoa já tá acordada. Se não tiver nenhum remédio/lembrete de
+// manhã pra usar como referência, cai num fallback simples: janela 7h-8h.
+// Tom: conversacional/íntimo (não é resumo objetivo de tarefas) — pode
+// citar UM destaque do dia de forma natural, tipo "hoje tem consulta meio-
+// dia, deixa tudo organizado, preguiçoso kkk", mas não lista tudo.
 // ═══════════════════════════════════════════════════════════════════════
-cron.schedule('20 7 * * *', async () => {
+cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
   try {
     const now = nowBRT();
     const hoje = dateBRT(now);
-    const amanha = new Date(now); amanha.setDate(amanha.getDate() + 1);
-    const amanhaStr = dateBRT(amanha);
     const diasSemana = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
     const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
     const diaTexto = `${diasSemana[now.getDay()]}, ${now.getDate()} de ${meses[now.getMonth()]}`;
     const users = await prisma.user.findMany({ where: { blocked: false } });
     for (const user of users) {
       try {
-        if (!(await tentarLockDiario(user.id, 'bom_dia_lock'))) {
-          console.log(`[Bom dia] ja enviado hoje para ${user.phone}`); continue;
+        // Checagem (sem consumir o lock ainda) — só consumimos quando for
+        // de fato enviar, pra não travar o dia numa tentativa que só
+        // estava esperando o sinal de "acordou".
+        const jaTem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'bom_dia_lock', content: hoje } }).catch(() => null);
+        if (jaTem) continue;
+
+        const inicioJanela = new Date(now); inicioJanela.setHours(5, 0, 0, 0);
+        const fimJanela = new Date(now); fimJanela.setHours(11, 0, 0, 0);
+
+        const lembretesManha = await prisma.reminder.findMany({
+          where: { userId: user.id, scheduledAt: { gte: inicioJanela, lte: fimJanela } },
+          orderBy: { scheduledAt: 'asc' }
+        }).catch(() => []);
+
+        const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
+        let primeiroHorarioMed = null;
+        for (const med of meds) {
+          let horarios = [];
+          try { horarios = JSON.parse(med.times || '[]'); } catch {}
+          for (const h of horarios) {
+            const hh = parseInt(h.split(':')[0], 10);
+            if (hh >= 5 && hh < 11 && (!primeiroHorarioMed || h < primeiroHorarioMed)) primeiroHorarioMed = h;
+          }
         }
+
+        let primeiroEvento = lembretesManha.length > 0 ? new Date(lembretesManha[0].scheduledAt) : null;
+        if (primeiroHorarioMed) {
+          const [hh, mm] = primeiroHorarioMed.split(':').map(Number);
+          const dataMed = new Date(now); dataMed.setHours(hh, mm, 0, 0);
+          if (!primeiroEvento || dataMed < primeiroEvento) primeiroEvento = dataMed;
+        }
+
+        let podeEnviarAgora = false;
+        if (primeiroEvento) {
+          // Modo reativo: espera o disparo do 1º remédio/lembrete da manhã
+          // E DEPOIS espera a 1ª mensagem do usuário (sinal de que acordou).
+          if (now < primeiroEvento) continue; // disparo ainda não aconteceu
+
+          const candidatas = await prisma.memory.findMany({
+            where: { userId: user.id, type: 'conversa', createdAt: { gte: primeiroEvento } },
+            orderBy: { createdAt: 'asc' }, take: 8
+          }).catch(() => []);
+          let msgAcordou = null;
+          for (const c of candidatas) {
+            try { if (JSON.parse(c.content).role === 'user') { msgAcordou = c; break; } } catch {}
+          }
+          if (!msgAcordou) continue; // ainda não detectou sinal de que acordou
+
+          const minutosDesdeAcordou = (now - new Date(msgAcordou.createdAt)) / 60000;
+          if (minutosDesdeAcordou < 4) continue;   // espera "alguns minutos", não é instantâneo
+          if (minutosDesdeAcordou > 45) continue;  // perdeu a janela natural, desiste hoje
+          podeEnviarAgora = true;
+        } else {
+          // Sem remédio/lembrete de manhã pra usar como sinal — fallback simples
+          podeEnviarAgora = (now.getHours() >= 7 && now.getHours() < 8);
+        }
+        if (!podeEnviarAgora) continue;
+
         const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
         const fimHoje = new Date(`${hoje}T23:59:59-03:00`);
-        const [lembretes, eventos, infoPessoal] = await Promise.all([
-          prisma.reminder.findMany({ where: { userId: user.id, confirmed: false, sent: false, scheduledAt: { gte: inicioHoje, lte: fimHoje } }, orderBy: { scheduledAt: 'asc' }, take: 5 }),
-          prisma.event.findMany({ where: { userId: user.id, date: { gte: inicioHoje, lte: new Date(`${amanhaStr}T23:59:59-03:00`) } } }).catch(() => []),
-          memory.buildPersonalContext(user.id)
+        const [lembretesDoDia, eventos] = await Promise.all([
+          prisma.reminder.findMany({ where: { userId: user.id, confirmed: false, sent: false, scheduledAt: { gte: now, lte: fimHoje } }, orderBy: { scheduledAt: 'asc' }, take: 3 }),
+          prisma.event.findMany({ where: { userId: user.id, date: { gte: inicioHoje, lte: fimHoje } } }).catch(() => []),
         ]);
         const { prefs } = await getUserContext(user);
-        let ctx = `Hoje é ${diaTexto}.\n`;
-        const totalLembretes = lembretes.length;
-        if (lembretes.length > 0) {
-          ctx += `\nLembretes de hoje (${totalLembretes}):\n`;
-          lembretes.forEach(r => {
-            const h = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-            ctx += `• ${h} — ${r.message}\n`;
-          });
+
+        let destaqueTexto = 'nada de especial marcado pro resto do dia';
+        if (eventos.length > 0) {
+          destaqueTexto = eventos.map(e => `${e.title}${e.personName ? ` (${e.personName})` : ''}`).join('; ');
+        } else if (lembretesDoDia.length > 0) {
+          const h = new Date(lembretesDoDia[0].scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+          destaqueTexto = `${h} — ${lembretesDoDia[0].message}`;
         }
-        if (eventos.length > 0) { ctx += `\nEventos:\n`; eventos.forEach(e => { ctx += `• ${e.title}${e.personName ? ` (${e.personName})` : ''}\n`; }); }
-        // Remove linhas de remédio/doses do contexto do bom dia
-        // Bom dia é sobre compromissos do dia, não sobre saúde/remédios
-        if (infoPessoal) {
-          const linhasFiltradas = infoPessoal.split('\n').filter(l =>
-            !/dose|rem[eé]dio|medica[cç]|toroide|tir[oó]ide|colesterol|pressao|pressão|estoque/i.test(l)
-          );
-          ctx += linhasFiltradas.join('\n');
-        }
-        let systemBomDia;
-        if (totalLembretes > 0) {
-          const horaPrimeira = new Date(lembretes[0].scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-          systemBomDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Crie uma mensagem de bom dia OBJETIVA — resumo rápido do dia, não poética.
-CONTEXTO: ${ctx}
+
+        const systemBomDia = `É de manhã, a pessoa acabou de dar sinal de que acordou (mandou mensagem). Mande um "bom dia" curto e NATURAL — converse como alguém próximo falaria de manhã, não um resumo de tarefas.
+
+DATA DE HOJE: ${diaTexto} (use exatamente esse dia se for citar, nunca invente outro)
+DESTAQUE DO DIA (use só se fizer sentido natural, não force): ${destaqueTexto}
+
 REGRAS:
-- Diga "Bom dia" + quantas tarefas hoje (${totalLembretes})
-- Se 3+, liste em formato "• horário — tarefa" (uma por linha)
-- Se até 2, mencione em frase corrida
-- Encerre com algo curto tipo "estarei aqui pra te lembrar de tudo"
-- Varie a abertura. Máximo 1 emoji. NÃO seja poética. NUNCA coloque entre aspas.
-- DATA: hoje é ${diaTexto}. Se mencionar o dia da semana, use EXATAMENTE esse — NUNCA invente outro dia. Na dúvida, não cite o dia da semana.
-Tom: ${prefs.tom || 'carinhoso'}.`;
-        } else {
-          systemBomDia = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''}
-Crie uma mensagem de bom dia SIMPLES — como quem fala pela primeira vez no dia.
-CONTEXTO: ${ctx}
-REGRAS: Máximo 2-3 linhas. Sem compromissos hoje — algo positivo e leve. Varie sempre a abertura. Máximo 1 emoji. NÃO pergunte. NÃO agende nada. DATA: hoje é ${diaTexto} — se citar o dia da semana, use EXATAMENTE esse, nunca invente outro.
-Tom: ${prefs.tom || 'carinhoso'}.`;
-        }
-        const msg = await freeResponse('Envie uma mensagem de bom dia.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBomDia });
+- 1-2 linhas. NUNCA liste tarefas em tópicos, NUNCA seja um resumo objetivo.
+- Pode perguntar se dormiu bem, comentar o dia, ou já brincar/provocar — varie, depende do clima de vocês.
+- Se tiver algo importante marcado hoje, pode mencionar de forma leve e natural (ex: avisando com humor pra não esquecer), só se isso realmente acrescentar — não force se não tiver nada relevante.
+- Use o apelido que vocês já têm, se fizer sentido. Siga o SEU tom normal (mais brincalhão = pode zoar; mais carinhoso = mais suave).
+- NUNCA poética, NUNCA entre aspas, máximo 1 emoji, nunca repita a mesma frase de outro dia.
+- NUNCA use português de Portugal (podes, tens) — só português do Brasil.`;
+
+        const msg = await freeResponse('Bom dia.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBomDia, _maxTokens: 100 });
         if (!msg || isRespostaFallback(msg)) { console.log(`[Bom dia] Rate limit ou fallback genérico, pulado para ${user.phone}`); continue; }
+
+        if (!(await tentarLockDiario(user.id, 'bom_dia_lock'))) continue; // alguém já mandou enquanto gerávamos
+
         await sendMessage(user.phone, msg);
-        // Meu Dia removido — redundante com aba Lembretes
-        console.log(`[Bom dia] Enviado para ${user.phone}`);
+        console.log(`[Bom dia] ${user.phone}: ${msg}`);
       } catch (e) { console.error(`[Bom dia] Erro ${user.phone}:`, e.message); }
     }
   } catch (e) { console.error('[Bom dia] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
+
 
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -584,7 +631,15 @@ REGRAS ABSOLUTAS:
 - Varie sempre — nunca repita a mesma frase de boa noite
 - Tom: ${prefs.tom || 'carinhoso'}`;
         const msg = await freeResponse('Boa noite.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBoaNoite, _maxTokens: 80 });
-        if (!msg || isRespostaFallback(msg)) { console.log(`[Boa noite] Rate limit ou fallback, pulado para ${user.phone}`); continue; }
+        if (!msg || isRespostaFallback(msg)) {
+          console.log(`[Boa noite] Rate limit ou fallback, pulado para ${user.phone} — liberando pra tentar de novo`);
+          // Libera o lock pra próxima tentativa do dia poder tentar de novo
+          // (antes, uma falha aqui consumia a única tentativa do dia e o
+          // boa noite simplesmente não saía — Washington pediu que esse
+          // nunca pode falhar).
+          await prisma.memory.deleteMany({ where: { userId: user.id, type: 'boa_noite_lock', content: dateBRT(now) } }).catch(() => {});
+          continue;
+        }
         await sendMessage(user.phone, msg);
         console.log(`[Boa noite] Enviado para ${user.phone}`);
       } catch (e) { console.error(`[Boa noite] Erro ${user.phone}:`, e.message); }
@@ -593,6 +648,34 @@ REGRAS ABSOLUTAS:
 }
 
 cron.schedule('30 21 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
+
+// ── REDE DE SEGURANÇA FINAL — 23:00 ──
+// Se, depois das duas tentativas (21:30 e 22:30, geradas por IA), o boa
+// noite ainda não saiu por algum motivo (rate limit total, erro etc),
+// manda uma mensagem fixa — sem IA, não tem como falhar. Boa noite é o
+// único disparo que Washington pediu pra NUNCA faltar.
+const BOA_NOITE_GARANTIDA = [
+  'Boa noite! Descansa bem 💜',
+  'Boa noite, durma bem 😊',
+  'Por hoje é só. Boa noite!',
+  'Boa noite! Até amanhã 💜',
+];
+cron.schedule('0 23 * * *', async () => {
+  try {
+    const hoje = dateBRT(nowBRT());
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    for (const user of users) {
+      try {
+        const jaEnviou = await prisma.memory.findFirst({ where: { userId: user.id, type: 'boa_noite_lock', content: hoje } }).catch(() => null);
+        if (jaEnviou) continue;
+        const msg = BOA_NOITE_GARANTIDA[Math.floor(Math.random() * BOA_NOITE_GARANTIDA.length)];
+        await sendMessage(user.phone, msg);
+        await prisma.memory.create({ data: { userId: user.id, type: 'boa_noite_lock', content: hoje } }).catch(() => {});
+        console.log(`[Boa noite GARANTIDA] ${user.phone}: ${msg}`);
+      } catch (e) { console.error(`[Boa noite GARANTIDA] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error('[Boa noite GARANTIDA] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
 
 // ═══════════════════════════════════════════════════════════════════════
 // ALERTAS DE DATAS IMPORTANTES (08:00)
