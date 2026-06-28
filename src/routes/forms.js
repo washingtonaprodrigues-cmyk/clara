@@ -1251,6 +1251,49 @@ router.get('/admin/limpar-locks', async (req, res) => {
   }
 });
 
+// ====================== ADMIN: VER/RESETAR RESUMO DE RELACIONAMENTO ======================
+// Mostra o resumo de relacionamento salvo. Com ?reset=1, apaga o resumo
+// (ele se reconstrói nas próximas conversas, já com as regras corrigidas).
+// Útil quando o resumo ficou contaminado — ex: um terceiro ("patroa" = a
+// esposa) registrado por engano como apelido do próprio usuário.
+//   GET /forms/admin/relacionamento/:phone        → mostra
+//   GET /forms/admin/relacionamento/:phone?reset=1 → apaga e reconstrói
+router.get('/admin/relacionamento/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const user = await prisma.user.findUnique({ where: { phone } });
+    if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
+
+    const atual = await prisma.memory.findFirst({
+      where: { userId: user.id, type: 'relationship_summary' },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (req.query.reset === '1') {
+      const apagados = await prisma.memory.deleteMany({
+        where: { userId: user.id, type: 'relationship_summary' }
+      });
+      return res.json({
+        ok: true,
+        acao: 'resetado',
+        removidos: apagados.count,
+        resumo_anterior: atual?.content || null,
+        nota: 'O resumo será reconstruído nas próximas conversas, já com as regras corrigidas (terceiros não viram apelido).'
+      });
+    }
+
+    res.json({
+      ok: true,
+      resumo_atual: atual?.content || '(nenhum resumo salvo ainda)',
+      criadoEm: atual?.createdAt || null,
+      dica: 'Para apagar e reconstruir, adicione ?reset=1 na URL.'
+    });
+  } catch (e) {
+    console.error('Erro admin/relacionamento:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== ADMIN: DIAGNÓSTICO DE REMÉDIOS ======================
 // Mostra, pra cada medicamento ativo, os dados crus que o cron de remédios
 // usa pra decidir o claim atômico — pra entender por que o disparo falha
