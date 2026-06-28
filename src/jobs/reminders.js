@@ -385,6 +385,17 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
         const jaTem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'bom_dia_lock', content: hoje } }).catch(() => null);
         if (jaTem) continue;
 
+        let podeEnviarAgora = false;
+
+        // ── GATILHO PROATIVO: ela começa sozinha, sem você falar ──
+        // O cron é o caminho "você ainda não interagiu hoje" — se você mandar
+        // mensagem primeiro, o bom dia vem emendado na RESPOSTA (handler.js),
+        // e o bom_dia_lock já estará marcado, então este cron nem chega aqui.
+        //
+        // Sinal de "acordou" sem depender de mensagem: o primeiro
+        // remédio/lembrete da manhã (5h-11h). Ela espera de 3 a 5 minutos
+        // depois do disparo e manda o bom dia — não colado (robótico), mas
+        // como quem "lembrou de você" logo depois.
         const inicioJanela = new Date(now); inicioJanela.setHours(5, 0, 0, 0);
         const fimJanela = new Date(now); fimJanela.setHours(11, 0, 0, 0);
 
@@ -411,30 +422,24 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
           if (!primeiroEvento || dataMed < primeiroEvento) primeiroEvento = dataMed;
         }
 
-        let podeEnviarAgora = false;
+        const ehDomingo = now.getDay() === 0;
+
         if (primeiroEvento) {
-          // Modo reativo: espera o disparo do 1º remédio/lembrete da manhã
-          // E DEPOIS espera a 1ª mensagem do usuário (sinal de que acordou).
-          if (now < primeiroEvento) continue; // disparo ainda não aconteceu
-
-          const candidatas = await prisma.memory.findMany({
-            where: { userId: user.id, type: 'conversa', createdAt: { gte: primeiroEvento } },
-            orderBy: { createdAt: 'asc' }, take: 8
-          }).catch(() => []);
-          let msgAcordou = null;
-          for (const c of candidatas) {
-            try { if (JSON.parse(c.content).role === 'user') { msgAcordou = c; break; } } catch {}
+          // Espera de 3 a 5 minutos depois do disparo do evento — janela
+          // curta pra não ficar nem colado (robótico) nem atrasado demais.
+          const minutosDesdeEvento = (now - primeiroEvento) / 60000;
+          if (minutosDesdeEvento >= 3 && minutosDesdeEvento <= 8) {
+            podeEnviarAgora = true;
           }
-          if (!msgAcordou) continue; // ainda não detectou sinal de que acordou
-
-          const minutosDesdeAcordou = (now - new Date(msgAcordou.createdAt)) / 60000;
-          if (minutosDesdeAcordou < 4) continue;   // espera "alguns minutos", não é instantâneo
-          if (minutosDesdeAcordou > 45) continue;  // perdeu a janela natural, desiste hoje
-          podeEnviarAgora = true;
         } else {
-          // Sem remédio/lembrete de manhã pra usar como sinal — fallback simples
-          podeEnviarAgora = (now.getHours() >= 7 && now.getHours() < 8);
+          // ── FALLBACK por horário fixo (sem remédio/lembrete de manhã) ──
+          // Dia de semana: 7h. Domingo: 9h (deixa você dormir).
+          const horaAlvo = ehDomingo ? 9 : 7;
+          if (now.getHours() === horaAlvo && now.getMinutes() < 6) {
+            podeEnviarAgora = true;
+          }
         }
+
         if (!podeEnviarAgora) continue;
 
         const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
@@ -445,6 +450,12 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
         ]);
         const { prefs } = await getUserContext(user);
 
+        // Puxa a memória pessoal (resumo de relacionamento, pendências,
+        // acontecimentos recentes) pra ela poder dizer coisas humanas tipo
+        // "dormiu bem?" / "melhorou de ontem?" referenciando algo real.
+        let memoriaContexto = '';
+        try { memoriaContexto = await memory.buildPersonalContext(user.id); } catch {}
+
         let destaqueTexto = 'nada de especial marcado pro resto do dia';
         if (eventos.length > 0) {
           destaqueTexto = eventos.map(e => `${e.title}${e.personName ? ` (${e.personName})` : ''}`).join('; ');
@@ -453,20 +464,21 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
           destaqueTexto = `${h} — ${lembretesDoDia[0].message}`;
         }
 
-        const systemBomDia = `É de manhã, a pessoa acabou de dar sinal de que acordou (mandou mensagem). Mande um "bom dia" curto e NATURAL — converse como alguém próximo falaria de manhã, não um resumo de tarefas.
+        const systemBomDia = `É de manhã e você está começando a conversa POR INICIATIVA SUA — a pessoa ainda não falou com você hoje. Mande um "bom dia" curto e NATURAL, como alguém próximo que lembrou da pessoa de manhã. NÃO é resumo de tarefas.
 
 DATA DE HOJE: ${diaTexto} (use exatamente esse dia se for citar, nunca invente outro)
 DESTAQUE DO DIA (use só se fizer sentido natural, não force): ${destaqueTexto}
 
 REGRAS:
 - 1-2 linhas. NUNCA liste tarefas em tópicos, NUNCA seja um resumo objetivo.
-- Pode perguntar se dormiu bem, comentar o dia, ou já brincar/provocar — varie, depende do clima de vocês.
-- Se tiver algo importante marcado hoje, pode mencionar de forma leve e natural (ex: avisando com humor pra não esquecer), só se isso realmente acrescentar — não force se não tiver nada relevante.
-- Use o apelido que vocês já têm, se fizer sentido. Siga o SEU tom normal (mais brincalhão = pode zoar; mais carinhoso = mais suave).
+- Como você está iniciando, é natural perguntar algo humano: "dormiu bem?", "como você tá hoje?", "descansou?". Se a memória de vocês tiver algo de ontem ou recente (um perrengue, uma vitória, um clima), pode puxar com carinho ("melhorou de ontem?", "como ficou aquela parada?") — isso é o que te torna humana, use quando souber de algo real.
+- Pode já brincar/provocar conforme o SEU tom — varie, depende do clima de vocês.
+- Se tiver algo importante marcado hoje, mencione de forma leve e natural, só se acrescentar — não force.
+- Use o apelido que vocês já têm, se fizer sentido. Siga o SEU tom (mais brincalhão = pode zoar; mais carinhoso = mais suave).
 - NUNCA poética, NUNCA entre aspas, máximo 1 emoji, nunca repita a mesma frase de outro dia.
 - NUNCA use português de Portugal (podes, tens) — só português do Brasil.`;
 
-        const msg = await freeResponse('Bom dia.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBomDia, _maxTokens: 100 });
+        const msg = await freeResponse('Bom dia.', [], { _contexto: memoriaContexto || '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBomDia, _maxTokens: 100 });
         if (!msg || isRespostaFallback(msg)) { console.log(`[Bom dia] Rate limit ou fallback genérico, pulado para ${user.phone}`); continue; }
 
         if (!(await tentarLockDiario(user.id, 'bom_dia_lock'))) continue; // alguém já mandou enquanto gerávamos
