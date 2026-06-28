@@ -1251,6 +1251,56 @@ router.get('/admin/limpar-locks', async (req, res) => {
   }
 });
 
+// ====================== ADMIN: DIAGNÓSTICO DE REMÉDIOS ======================
+// Mostra, pra cada medicamento ativo, os dados crus que o cron de remédios
+// usa pra decidir o claim atômico — pra entender por que o disparo falha
+// com "já enviado neste minuto" sem nunca ter enviado.
+//   GET /forms/admin/diag-remedio
+router.get('/admin/diag-remedio', async (req, res) => {
+  try {
+    const meds = await prisma.medication.findMany({
+      where: { active: true },
+      include: { user: { select: { phone: true } } }
+    });
+    const agoraUTC = new Date();
+    const inicioMinuto = new Date(Math.floor(Date.now() / 60000) * 60000);
+    // minutoChave como o cron calcula (horário de Brasília)
+    const nowBRTlocal = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    const pad = n => String(n).padStart(2, '0');
+    const minutoChave = `${pad(nowBRTlocal.getHours())}:${pad(nowBRTlocal.getMinutes())}`;
+
+    const diag = meds.map(m => {
+      let times = [];
+      try { times = JSON.parse(m.times || '[]'); } catch {}
+      const updatedAt = new Date(m.updatedAt);
+      return {
+        nome: m.name,
+        phone: m.user?.phone || null,
+        times,
+        minutoChave_agora: minutoChave,
+        bate_horario_agora: times.includes(minutoChave),
+        remaining: m.remaining,
+        active: m.active,
+        updatedAt_iso: updatedAt.toISOString(),
+        updatedAt_epoch: updatedAt.getTime(),
+        inicioMinuto_iso: inicioMinuto.toISOString(),
+        inicioMinuto_epoch: inicioMinuto.getTime(),
+        claim_passaria_AGORA: updatedAt.getTime() < inicioMinuto.getTime(),
+        diff_segundos_updatedAt_para_agora: Math.round((agoraUTC.getTime() - updatedAt.getTime()) / 1000)
+      };
+    });
+    res.json({
+      agora_utc: agoraUTC.toISOString(),
+      minutoChave_brasilia: minutoChave,
+      inicioMinuto_utc: inicioMinuto.toISOString(),
+      medicamentos: diag
+    });
+  } catch (e) {
+    console.error('Erro admin/diag-remedio:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== ADMIN: PÁGINA DE LIMPEZA (HTML) ======================
 // Serve a página de bloqueio de usuários duplicados direto do mesmo
 // domínio do backend — evita qualquer bloqueio de CORS que ocorreria se
