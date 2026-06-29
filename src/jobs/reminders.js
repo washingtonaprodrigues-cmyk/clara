@@ -578,7 +578,8 @@ cron.schedule('0 18 * * *', async () => {
               })
             }
           }).catch(() => {});
-          msg = `Hoje foram ${concluidos.length} item${concluidos.length > 1 ? 's' : ''} concluído${concluidos.length > 1 ? 's' : ''} 👏 Ficaram ${pendentes.length} pendente${pendentes.length > 1 ? 's' : ''} — posso remarcar tudo pro mesmo horário amanhã ou você prefere concluir agora?`;
+          const listaPendentes = pendentes.map(r => `• ${r.message}`).join('\n');
+          msg = `Hoje foram ${concluidos.length} item${concluidos.length > 1 ? 's' : ''} concluído${concluidos.length > 1 ? 's' : ''} 👏\n\nFicou${pendentes.length > 1 ? 'ram' : ''} pendente${pendentes.length > 1 ? 's' : ''}:\n${listaPendentes}\n\nRemarco pro mesmo horário amanhã ou você prefere concluir agora?`;
         } else if (concluidos.length === 0 && pendentes.length > 0) {
           const ids = pendentes.map(r => r.id);
           await prisma.memory.create({
@@ -592,7 +593,8 @@ cron.schedule('0 18 * * *', async () => {
               })
             }
           }).catch(() => {});
-          msg = `Ficaram ${pendentes.length} item${pendentes.length > 1 ? 's' : ''} pendente${pendentes.length > 1 ? 's' : ''} hoje — remarco tudo pro mesmo horário amanhã ou prefere concluir agora?`;
+          const listaPendentes2 = pendentes.map(r => `• ${r.message}`).join('\n');
+          msg = `Nenhum item concluído hoje 😅 Ficou${pendentes.length > 1 ? 'ram' : ''} pendente${pendentes.length > 1 ? 's' : ''}:\n${listaPendentes2}\n\nRemarco tudo pro mesmo horário amanhã ou prefere concluir agora?`;
         }
 
         if (msg) {
