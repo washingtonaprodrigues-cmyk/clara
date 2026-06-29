@@ -350,6 +350,32 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       return;
     }
 
+    // ── BLOCO 2: COLETA DE HORÁRIO DA PRIMEIRA INTERAÇÃO DO DIA ──────────
+    // Registra diariamente o horário em que o Washington manda a primeira
+    // mensagem. Após 7-14 dias, a média móvel substitui o fallback fixo do
+    // bom dia automático — fazendo a Clara aprender quando ele acorda de
+    // verdade. Roda em fire-and-forget (não bloqueia a resposta).
+    (async () => {
+      try {
+        const _now = nowBRT();
+        const _pad = n => String(n).padStart(2,'0');
+        const _hoje = `${_now.getFullYear()}-${_pad(_now.getMonth()+1)}-${_pad(_now.getDate())}`;
+        const _chave = `rotina_acorda:${_hoje}`;
+        // Só registra uma vez por dia
+        const jaRegistrou = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'rotina_acorda', content: { startsWith: _chave } }
+        }).catch(() => null);
+        if (!jaRegistrou) {
+          const _hm = `${_pad(_now.getHours())}:${_pad(_now.getMinutes())}`;
+          await prisma.memory.create({
+            data: { userId: user.id, type: 'rotina_acorda', content: `${_chave}:${_hm}` }
+          }).catch(() => {});
+          console.log(`[Rotina] Primeira interação ${user.phone}: ${_hoje} às ${_hm}`);
+        }
+      } catch (_e) { /* silencioso */ }
+    })();
+    // ── FIM BLOCO 2 ───────────────────────────────────────────────────────
+
     let contexto = '';
     try {
       const now = nowBRT();
