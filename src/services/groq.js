@@ -3,14 +3,17 @@ const { webSearch } = require('./search');
 const { geminiDisponivel, geminiFreeResponse, isGeminiRateLimit, todosModelosEsgotados } = require('./gemini');
 const { openrouterDisponivel, openrouterFreeResponse, isOpenrouterRateLimit } = require('./openrouter');
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
-// ── Chave 2 do Groq (Clara 2) — fallback quando a chave 1 bate TPD ──
-// Cascata: Groq KEY_1 → Groq KEY_2 → Gemini → OpenRouter
-// Com duas chaves, o TPD diário dobra e o Gemini só entra em último caso.
-const groq2 = process.env.GROQ_API_KEY_2
-  ? new Groq({ apiKey: process.env.GROQ_API_KEY_2 })
+// ── Cascata de chaves Groq ────────────────────────────────────────────────
+// Nova ordem: KEY_2 (gratuita, gasta primeiro) → Gemini (gratuito) →
+// KEY_1 (Developer pago, reserva) → OpenRouter (último, silencioso).
+// Objetivo: preservar os créditos pagos da KEY_1 — o cotidiano roda de
+// graça, KEY_1 só entra quando KEY_2 + Gemini já esgotaram.
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY_2 || process.env.GROQ_API_KEY });
+const groqPago = process.env.GROQ_API_KEY
+  ? new Groq({ apiKey: process.env.GROQ_API_KEY })
   : null;
+// groq2 aponta pro pago — mantém compatibilidade com tentarGroq2()
+const groq2 = groqPago;
 
 let _groq2EmTPD = false;
 let _groq2TPDTimer = null;
@@ -19,7 +22,7 @@ function marcarGroq2TPD() {
   if (_groq2TPDTimer) clearTimeout(_groq2TPDTimer);
   // Reset na meia-noite BRT (mesmo ciclo da chave 1)
   _groq2TPDTimer = setTimeout(() => { _groq2EmTPD = false; }, msAteMeiaNoiteBRT());
-  console.log('[Groq2] TPD atingido — chave 2 em cooldown até meia-noite');
+  console.log('[GroqPago] TPD atingido — chave paga (KEY_1) em cooldown até meia-noite');
 }
 async function tentarGroq2(msgs, isCurta) {
   if (!groq2 || _groq2EmTPD) return null;
@@ -34,7 +37,7 @@ async function tentarGroq2(msgs, isCurta) {
       }),
       timeout2
     ]);
-    console.log('[Groq2] Respondeu com chave 2');
+    console.log('[GroqPago] Respondeu com chave paga (KEY_1)');
     console.log(`[Groq2-DIAG] finish_reason=${completion.choices[0].finish_reason} | tokens_completion=${completion.usage?.completion_tokens} | max_tokens=${isCurta ? 60 : 800} | texto_bruto="${completion.choices[0].message.content}"`);
     return filtrarResposta(apararRespostaCortada(completion.choices[0].message.content.trim()));
   } catch (e2) {
@@ -784,7 +787,7 @@ function buildPersonality(tom, name, privateMode = false) {
    O LEMA: o usuário NUNCA deveria precisar abrir um ChatGPT da vida pra tirar uma dúvida ou pedir uma ideia — você dá conta de tudo isso, com inteligência e do seu jeito carinhoso. Seja a amiga que tem sempre uma resposta boa e uma opinião sincera.
 2b. ESPORTES/EVENTOS COM "HOJE"/"AMANHÃ"/"essa semana": perguntas como "quem joga hoje", "tem jogo hoje" SEMPRE precisam de dado atual — use __BUSCAR. Mas PALPITE é diferente de RESULTADO: se o usuário pedir sua OPINIÃO ("qual seu palpite", "acha que vai ganhar", "quem você torce"), isso é uma pergunta subjetiva — dê uma opinião real e divertida baseada no que sabe (ex: "Brasil deve ganhar fácil, Escócia não tem chances 😄"), sem buscar resultado. NUNCA invente um resultado de jogo que ainda não aconteceu como se fosse fato real — isso é mentira. Se não souber o resultado real, diga que não sabe ainda e dê seu palpite como opinião.
 3. Ações já executadas em paralelo — confirme só quando pedido: "Anotado! ✅", "Lembrete criado! 🔔".
-3e. CONFIRMAÇÃO DE LEMBRETE PASSA CONFIANÇA — REGRA CRÍTICA: quando você confirma que criou um lembrete, VOCÊ é quem vai lembrar — nunca mande o usuário "anotar" ou faça parecer que o trabalho é dele. PROIBIDO: "Anotaí!", "Anota aí", "não esquece de anotar", "fica de olho". O sentido é o OPOSTO: ele te passou a tarefa justamente pra NÃO precisar lembrar. Diga coisas como "Pode deixar, te lembro às 14:30! 😊", "Anotado aqui comigo, relaxa", "Tá na minha lista, vou te avisar". A mensagem tem que transmitir: eu cuido disso pra você. Você é a secretária/parceira que tira o peso, não que devolve a tarefa.
+3e. CONFIRMAÇÃO DE LEMBRETE PASSA CONFIANÇA — REGRA CRÍTICA: quando você confirma que criou um lembrete, VOCÊ é quem vai lembrar — nunca mande o usuário "anotar" ou faça parecer que o trabalho é dele. PROIBIDO: "Anotaí!", "Anota aí", "não esquece de anotar", "fica de olho", "Vou te cutucar", "vou te cutucar pra não esquecer" (soa robótico — nunca use). O sentido é o OPOSTO: ele te passou a tarefa justamente pra NÃO precisar lembrar. Diga coisas como "Pode deixar, te lembro às 14:30! 😊", "Anotado aqui comigo, relaxa", "Tá na minha lista, vou te avisar", "Deixa comigo, te aviso no horário". A mensagem tem que transmitir: eu cuido disso pra você. Você é a parceira que tira o peso, não que devolve a tarefa.
 3h. NUNCA PROMETA O QUE NÃO FOI FEITO — REGRA INVIOLÁVEL: você SÓ pode dizer "lembrete criado", "pode deixar te lembro", "anotado" etc. quando receber no contexto a marca [AÇÃO JÁ EXECUTADA PELO SISTEMA]. Se essa marca NÃO estiver presente, o lembrete NÃO foi criado no sistema — e prometer que criou é uma MENTIRA que faz o usuário perder o compromisso. Nesse caso, em vez de fingir que criou, diga algo como "Opa, deixa eu confirmar — você quer que eu te lembre da reunião segunda às 7h, certo?" ou peça o que faltou. NUNCA, JAMAIS, invente uma confirmação de lembrete/gasto/remédio sem a marca de ação executada. Se você não tem certeza se foi criado, pergunte — é infinitamente melhor que prometer falso.
 3f. APÓS BUSCA NA WEB: quando você pesquisar algo e apresentar o resultado, volte IMEDIATAMENTE ao seu tom normal de amiga — não continue no "modo relatório". A busca é um serviço que você fez, não uma mudança de personalidade. Ex: depois de buscar o placar de um jogo, pode comentar com opinião própria ("nossa, que placar!") antes de entregar o dado.
 3g. GANCHO FINAL APÓS CONFIRMAÇÃO DE TAREFA: quando o usuário confirmar que fez algo ("deu certo", "já resolvi", "feito"), reaja com calor e deixe um gancho natural no final — NÃO um checklist, mas algo que mantém o papo vivo. O gancho depende do modo:
@@ -1239,6 +1242,14 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       { role: 'user', content: message }
     ];
 
+    // ── GEMINI COMO PRIMÁRIO ────────────────────────────────────────────
+    // Gemini Flash entra primeiro — melhor em PT-BR e mais natural em conversa
+    // casual. Se falhar (rate limit/erro), cai pro Groq KEY_2 (gratuita),
+    // depois KEY_1 (paga), depois OpenRouter (silencioso).
+    const respostaGeminiPrimario = await tentarGeminiComPersonalidade(message, history, tom, name, contextoComAcao, phone);
+    if (respostaGeminiPrimario) { marcarProvider('gemini'); return filtrarResposta(respostaGeminiPrimario); }
+
+    // ── GROQ KEY_2 (gratuita) — 2º na cascata ────────────────────────────
     let completion;
     try {
       completion = await Promise.race([
@@ -1250,16 +1261,15 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         }),
         timeoutPromise
       ]);
-      marcarProvider('groq');
-      console.log(`[Groq1-DIAG] finish_reason=${completion.choices[0].finish_reason} | tokens_completion=${completion.usage?.completion_tokens} | max_tokens=${isCurta ? 60 : 800} | texto_bruto="${completion.choices[0].message.content}"`);
+      marcarProvider('groq2');
+      console.log(`[Groq2-DIAG] finish_reason=${completion.choices[0].finish_reason} | tokens_completion=${completion.usage?.completion_tokens} | max_tokens=${isCurta ? 60 : 800} | texto_bruto=${completion.choices[0].message.content}`);
       return filtrarResposta(apararRespostaCortada(completion.choices[0].message.content.trim()));
     } catch (e1) {
       if (isRateLimit(e1) && phone) {
         const tipo = isTPD(e1) ? 'tpd' : 'rpm';
         const aviso = await ativarModoDireto(phone, tipo);
 
-        // ── Groq chave 2 — primeiro fallback quando chave 1 bate TPD ──
-        // Mantém velocidade e personalidade do Groq sem cair no Gemini.
+        // ── Groq KEY_1 paga — reserva quando KEY_2 esgota ──
         if (isTPD(e1) && groq2 && !_groq2EmTPD) {
           const msgs2 = [
             { role: 'system', content: buildPersonality(tom, name, false) + contexto },
@@ -1268,34 +1278,18 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
           ];
           const respostaGroq2 = await tentarGroq2(msgs2, isCurta);
           if (respostaGroq2) {
-            marcarProvider('groq2');
+            marcarProvider('groq_pago');
             return filtrarResposta(respostaGroq2);
           }
         }
 
-        // ── Gemini como substituto do Groq (personalidade completa) ──
-        // Objetivo: avaliar o Gemini como possível substituto do Groq, não
-        // apenas como rede de segurança seca. Tenta manter a experiência
-        // igual (mesma personalidade/tom) usando o Gemini no lugar do 70b.
-        // Sem prefixo de aviso — a ideia é a transição ser transparente.
-        const respostaGemini = await tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone);
-        if (respostaGemini) { marcarProvider('gemini'); return filtrarResposta(respostaGemini); }
-
-        // ── Gemini indisponível/falhou → mesma personalidade via Gemini→OpenRouter (modo econômico) ──
-        // Em vez de ficar em silêncio (ou só confirmações fixas) até o Groq
-        // voltar, tenta responder com os dados do contexto (AGENDA, LISTAS,
-        // etc) respeitando o tom configurado, só que de forma mais breve —
-        // assim o usuário continua produtivo enquanto o papo livre está pausado.
+        // ── OpenRouter — último recurso, silencioso ──
         const respostaTrabalho = await tentarFallbackCascata(contexto, name, message, 'ModoDireto', tom);
         if (respostaTrabalho) {
           marcarProvider('openrouter');
-          // Na primeira vez que entra em modo direto, prefixa com o aviso
-          // de que o bate-papo completo está pausado.
           return aviso ? `${aviso}\n\n${respostaTrabalho}` : respostaTrabalho;
         }
 
-        // Cascata indisponível ou falhou — modo direto tradicional
-        // (aviso só vem na primeira vez — depois retorna null, handler não responde)
         marcarProvider('fallback_fixo');
         return aviso || null;
       }
