@@ -425,17 +425,46 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
         const ehDomingo = now.getDay() === 0;
 
         if (primeiroEvento) {
-          // Espera de 3 a 5 minutos depois do disparo do evento — janela
-          // curta pra não ficar nem colado (robótico) nem atrasado demais.
+          // Espera pelo menos 3 min depois do remédio/lembrete (não fica
+          // colado) e até 30 min (cobre o caso de o usuário demorar pra
+          // responder o remédio — ex: viu às 7:19, remédio era às 7:00).
           const minutosDesdeEvento = (now - primeiroEvento) / 60000;
-          if (minutosDesdeEvento >= 3 && minutosDesdeEvento <= 8) {
+          if (minutosDesdeEvento >= 3 && minutosDesdeEvento <= 30) {
             podeEnviarAgora = true;
           }
         } else {
-          // ── FALLBACK por horário fixo (sem remédio/lembrete de manhã) ──
-          // Dia de semana: 7h. Domingo: 9h (deixa você dormir).
-          const horaAlvo = ehDomingo ? 9 : 7;
-          if (now.getHours() === horaAlvo && now.getMinutes() < 6) {
+          // ── GATILHO DINÂMICO: média móvel de 14 dias (Bloco 2) ──
+          // Calcula a hora média em que o Washington manda a primeira mensagem
+          // nos últimos 14 dias. Se tiver >= 5 dias de dados, usa essa média
+          // + 8 min (mais natural, não parece alarme). Ignora outliers
+          // (< 5h ou > 11h). Se não tiver dados suficientes, cai no fixo
+          // (dia de semana: 7h; domingo: 9h).
+          let horaAlvo = ehDomingo ? 9 : 7;
+          let minutosAlvo = 0;
+          try {
+            const quatorze = new Date(now);
+            quatorze.setDate(quatorze.getDate() - 14);
+            const registros = await prisma.memory.findMany({
+              where: { userId: user.id, type: 'rotina_acorda', createdAt: { gte: quatorze } },
+              orderBy: { createdAt: 'desc' }, take: 14
+            }).catch(() => []);
+            // Extrai horários válidos (formato rotina_acorda:YYYY-MM-DD:HH:MM)
+            const horarios = registros
+              .map(r => { const m = (r.content || '').match(/:(\d{2}):(\d{2})$/); return m ? parseInt(m[1])*60 + parseInt(m[2]) : null; })
+              .filter(v => v !== null && v >= 5*60 && v <= 11*60); // 5h-11h
+            if (horarios.length >= 5) {
+              // Média simples + 8 min (pausa natural antes de aparecer)
+              const media = Math.round(horarios.reduce((a,b) => a+b, 0) / horarios.length) + 8;
+              horaAlvo = Math.floor(media / 60);
+              minutosAlvo = media % 60;
+              console.log(`[BomDia] Gatilho dinâmico ${user.phone}: ${horaAlvo}h${String(minutosAlvo).padStart(2,'0')} (${horarios.length} dias)`);
+            }
+          } catch (_e) { /* usa fallback fixo */ }
+          const hAtual = now.getHours(), mAtual = now.getMinutes();
+          const totalAtual = hAtual*60 + mAtual;
+          const totalAlvo = horaAlvo*60 + minutosAlvo;
+          // Janela de 6 minutos centrada no alvo
+          if (totalAtual >= totalAlvo && totalAtual < totalAlvo + 6) {
             podeEnviarAgora = true;
           }
         }
