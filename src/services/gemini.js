@@ -103,17 +103,32 @@ async function chamarGemini(model, msgs, { temperature = 0.7, maxTokens = 800 } 
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
 
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('timeout')), 6000)
-  );
-
   const fetchPromise = fetch(geminiUrl(model), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 
-  const response = await Promise.race([fetchPromise, timeoutPromise]);
+  const timeoutPromise = new Promise((_, reject) => {
+    const t = setTimeout(() => reject(new Error('timeout')), 6000);
+    // Evita que o timer mantenha o processo vivo desnecessariamente e
+    // garante que, mesmo que o fetch vença a corrida primeiro, o timer
+    // restante seja limpo — sem isso, cada chamada a chamarGemini() deixa
+    // um setTimeout pendurado rejeitando "no vácuo" alguns segundos depois,
+    // o que em sequências de várias chamadas (múltiplos modelos falhando)
+    // pode acumular unhandled rejections e derrubar o processo Node inteiro
+    // (mesma classe de bug corrigida antes em groq.js).
+    if (t.unref) t.unref();
+  });
+
+  let response;
+  try {
+    response = await Promise.race([fetchPromise, timeoutPromise]);
+  } finally {
+    // Garante que a promise de fetch, se ainda pendente, não gere uma
+    // rejeição não tratada depois que já desistimos dela.
+    fetchPromise.catch(() => {});
+  }
 
   if (!response.ok) {
     const errText = await response.text().catch(() => '');
