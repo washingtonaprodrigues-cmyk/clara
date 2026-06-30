@@ -235,8 +235,8 @@ async function enviarMenu(phone) {
 async function executeListaAction(user, phone, classified) {
   try {
     const tipo = classified.tipo;
-    if ((tipo === 'lista_compras') && classified.itens && classified.itens.length > 0) {
-      const itemsJson = classified.itens.map((nome, i) => ({ id: i + 1, nome, done: false }));
+    if (tipo === 'lista_compras' && ((classified.itens && classified.itens.length > 0) || classified.nome)) {
+      const itemsJson = (classified.itens || []).map((nome, i) => ({ id: i + 1, nome, done: false }));
       const lista = await prisma.groceryList.create({
         data: { userId: user.id, name: classified.nome || '🛒 Lista de compras', items: JSON.stringify(itemsJson), done: false }
       });
@@ -885,7 +885,9 @@ async function handleMessage(phone, text, location = null) {
         const { acao, listaId, listaNome, listaItems, allDone, itemAdicionado } = listaResult;
         if (acao === 'criada') {
           const linkLista = listaId ? `${DASHBOARD_URL}/?lista=${listaId}` : '';
-          contextoExtra = `\n\n[AÇÃO REALIZADA] Acabei de criar a lista "${listaNome}" com os itens: ${listaItems.map(i=>i.nome).join(', ')}. Confirme de forma animada. Não liste os itens pois aparecem separadamente. ${linkLista ? `Inclua este link no final da sua resposta para o usuário poder ver/marcar a lista direto: ${linkLista} — e mencione que ele também pode simplesmente te dizer quais itens já pegou (ex: "peguei arroz e feijão") que você risca pra ele.` : ''}`;
+          const temItens = listaItems.length > 0;
+          const descricaoItens = temItens ? ` com os itens: ${listaItems.map(i=>i.nome).join(', ')}` : ' (ainda vazia)';
+          contextoExtra = `\n\n[AÇÃO REALIZADA] Acabei de criar a lista "${listaNome}"${descricaoItens}. Confirme de forma animada.${temItens ? ' Não liste os itens pois aparecem separadamente.' : ' Pergunte o que ele quer adicionar, ou diga que pode mandar os itens quando quiser.'} ${linkLista ? `Inclua este link no final da sua resposta para o usuário poder ver/marcar a lista direto: ${linkLista}${temItens ? ' — e mencione que ele também pode simplesmente te dizer quais itens já pegou (ex: "peguei arroz e feijão") que você risca pra ele.' : '.'}` : ''}`;
         }
         else if (acao === 'encontrada') contextoExtra = `\n\n[LISTA ENCONTRADA] Lista "${listaNome}" com: ${listaItems.map(i=>`${i.done?'✅':'⬜'} ${i.nome}`).join(', ')}. Apresente naturalmente.`;
         else if (acao === 'nenhuma') contextoExtra = `\n\n[SEM LISTA] Usuário não tem lista ativa. Informe e ofereça criar uma.`;
