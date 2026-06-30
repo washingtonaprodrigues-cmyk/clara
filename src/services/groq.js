@@ -1063,7 +1063,12 @@ function filtrarResposta(t) {
   // uma ação e "citar" essa tag como se fosse prova, isso remove a linha
   // inteira daquele trecho — em vez de só apagar a tag e deixar a frase
   // falsa de confirmação passar.
-  t = t.replace(/\[A[ÇC][ÃA]O\][^\n]*\n?/gi, '').trim();
+  // Remove qualquer linha que contenha marcações internas de contexto
+  // O Gemini às vezes imprime [AÇÃO JÁ EXECUTADA PELO SISTEMA] literalmente
+  // antes de responder — remove todas as linhas que contenham esses prefixos.
+  t = t.replace(/^\[A[ÇC][ÃA]O[^\]]*\][^\n]*\n?/gim, '').trim();
+  t = t.replace(/^\[sys:[^\]]*\][^\n]*\n?/gim, '').trim();
+  t = t.replace(/^\[AÇÃO[^\]]*\][^\n]*\n?/gim, '').trim();
   // Remove variações de "(sim/não)" que modelos mais fracos colam no fim:
   // (sim/não), (s/n), (sim ou não), [sim/não], sim/não? etc
   t = t.replace(/\s*[\(\[]\s*sim\s*\/\s*n[\xE3a]o\s*[\)\]]\s*/gi, '');
@@ -1228,7 +1233,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     // sistema REALMENTE fez — nunca promete um lembrete que não foi criado.
     let contextoComAcao = contexto;
     if (preferences?._acaoConfirmacao) {
-      contextoComAcao += `\n\n[AÇÃO JÁ EXECUTADA PELO SISTEMA — confirme isso com seu tom natural, sem inventar nada além disso]: ${preferences._acaoConfirmacao}`;
+      contextoComAcao += `\n\n[sys:acao_confirmada] ${preferences._acaoConfirmacao} — confirme isso com seu tom natural, sem inventar nada além disso.`;
     }
     if (preferences?._dicaAcao) {
       contextoComAcao += `\n\n[AÇÃO JÁ EXECUTADA]: ${preferences._dicaAcao}`;
