@@ -196,7 +196,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .msg-lista-add-inp{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-family:'Inter',sans-serif;font-size:12px;outline:none}
 .msg-lista-add-inp:focus{border-color:var(--accent)}
 .msg-lista-add-btn{padding:5px 10px;background:var(--accent);border:none;border-radius:6px;color:#fff;font-family:'Inter',sans-serif;font-size:12px;cursor:pointer;font-weight:500}
-.lista-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.lista-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px;transition:box-shadow .3s,border-color .3s}
+.lista-destacada{border-color:var(--accent,#7c5cff);box-shadow:0 0 0 3px rgba(124,92,255,.25)}
 .lista-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .lista-titulo{font-size:14px;font-weight:600;color:var(--text)}
 .lista-contador{font-size:11px;color:var(--text3);background:var(--s3);padding:2px 8px;border-radius:10px}
@@ -1037,7 +1038,28 @@ function showMainApp(user,savedPhone){
   }
   document.getElementById('welcome-greeting').textContent=getGreeting();
   document.getElementById('welcome-name').textContent=name.split(' ')[0];
-  loadAll().then(()=>{if(currentNav==='lembretes')renderRem();if(currentNav==='saude')renderSaude();});loadMood();loadSaldo();initPWA();
+  loadAll().then(()=>{
+    if(currentNav==='lembretes')renderRem();
+    if(currentNav==='saude')renderSaude();
+    // ── Deep link de lista (?lista=ID) ──
+    // Quando a Clara manda um link direto pra uma lista específica (ex: após
+    // criar uma lista de mercado pelo WhatsApp), o dashboard abre já na aba
+    // de listas com aquela lista destacada, sem o usuário precisar navegar.
+    const params = new URLSearchParams(window.location.search);
+    const listaIdLink = params.get('lista');
+    if (listaIdLink) {
+      navTo('listas');
+      setTimeout(() => {
+        const elLista = document.getElementById('lista-' + listaIdLink);
+        if (elLista) {
+          elLista.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          elLista.classList.add('lista-destacada');
+          setTimeout(() => elLista.classList.remove('lista-destacada'), 3000);
+        }
+      }, 600);
+    }
+  });
+  loadMood();loadSaldo();initPWA();
   if(pollInterval)clearInterval(pollInterval);
   pollInterval=setInterval(async()=>{await Promise.all([loadAll(),loadSaldo()]);if(currentNav==='lembretes')renderRem();if(currentNav==='saude')renderSaude();if(currentNav==='financeiro')renderFin();if(currentNav==='cofre')renderCofre();if(currentNav==='memorias')renderMemorias();},30000);
 }
