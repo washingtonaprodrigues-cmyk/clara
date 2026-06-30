@@ -78,6 +78,9 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName, savePendencia, fecharPendenciaLembrete, salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao, salvarMemoriaAfetiva } = memory;
 
+// URL base do dashboard — usada para montar links diretos (ex: deep link de lista)
+const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://clara-production-949e.up.railway.app';
+
 // Substitui prisma.memory.upsert({ where: { userId_type: {...} } }) — esse
 // nome de campo composto só existe quando o model Memory tem
 // @@unique([userId, type]) no schema, o que NÃO é o caso aqui. Em vez de
@@ -238,7 +241,7 @@ async function executeListaAction(user, phone, classified) {
         data: { userId: user.id, name: classified.nome || '🛒 Lista de compras', items: JSON.stringify(itemsJson), done: false }
       });
       await memory.saveMemory(user.id, 'ultima_lista', lista.id);
-      return { acao: 'criada', listaNome: lista.name, listaItems: itemsJson };
+      return { acao: 'criada', listaId: lista.id, listaNome: lista.name, listaItems: itemsJson };
     }
     if (tipo === 'lista_buscar' || (tipo === 'lista_compras' && (!classified.itens || classified.itens.length === 0))) {
       const mems = await memory.getRecentMemories(user.id, 20);
@@ -261,7 +264,7 @@ async function executeListaAction(user, phone, classified) {
     if (tipo === 'lista_marcar') {
       const temNumeros = classified.numeros && classified.numeros.length > 0;
       const temNomes = classified.nomes && classified.nomes.length > 0;
-      if (!temNumeros && !temNomes) return null;
+      const marcarTudo = !temNumeros && !temNomes; // "peguei tudo" — sem item específico citado
       let lista = null;
       if (classified.lista) {
         const nomeLista = classified.lista.toLowerCase();
@@ -276,6 +279,7 @@ async function executeListaAction(user, phone, classified) {
       if (!lista) lista = await prisma.groceryList.findFirst({ where: { userId: user.id, done: false }, orderBy: { createdAt: 'desc' } });
       if (!lista) return null;
       let items = []; try { items = JSON.parse(lista.items); } catch {}
+      if (marcarTudo) items = items.map(i => ({ ...i, done: true }));
       if (temNumeros) items = items.map(i => classified.numeros.includes(i.id) ? { ...i, done: true } : i);
       if (temNomes) {
         items = items.map(i => {
@@ -878,8 +882,11 @@ async function handleMessage(phone, text, location = null) {
       const listaResult = await executeListaAction(user, phone, classified);
       let contextoExtra = '';
       if (listaResult) {
-        const { acao, listaNome, listaItems, allDone, itemAdicionado } = listaResult;
-        if (acao === 'criada') contextoExtra = `\n\n[AÇÃO REALIZADA] Acabei de criar a lista "${listaNome}" com os itens: ${listaItems.map(i=>i.nome).join(', ')}. Confirme de forma animada. Não liste os itens pois aparecem separadamente.`;
+        const { acao, listaId, listaNome, listaItems, allDone, itemAdicionado } = listaResult;
+        if (acao === 'criada') {
+          const linkLista = listaId ? `${DASHBOARD_URL}/?lista=${listaId}` : '';
+          contextoExtra = `\n\n[AÇÃO REALIZADA] Acabei de criar a lista "${listaNome}" com os itens: ${listaItems.map(i=>i.nome).join(', ')}. Confirme de forma animada. Não liste os itens pois aparecem separadamente. ${linkLista ? `Inclua este link no final da sua resposta para o usuário poder ver/marcar a lista direto: ${linkLista} — e mencione que ele também pode simplesmente te dizer quais itens já pegou (ex: "peguei arroz e feijão") que você risca pra ele.` : ''}`;
+        }
         else if (acao === 'encontrada') contextoExtra = `\n\n[LISTA ENCONTRADA] Lista "${listaNome}" com: ${listaItems.map(i=>`${i.done?'✅':'⬜'} ${i.nome}`).join(', ')}. Apresente naturalmente.`;
         else if (acao === 'nenhuma') contextoExtra = `\n\n[SEM LISTA] Usuário não tem lista ativa. Informe e ofereça criar uma.`;
         else if (acao === 'marcada') contextoExtra = `\n\n[AÇÃO REALIZADA] Marquei itens na lista "${listaNome}".${allDone?' Todos concluídos! 🎉':''} Confirme.`;
