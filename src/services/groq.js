@@ -301,6 +301,7 @@ REGRAS:
 - Pergunta factual/geral que a Clara não pode responder com os dados do usuário (notícias, preços, fatos do mundo) → busca com {"query": "texto da pergunta"}
 - Usuário informa saldo/salário/orçamento → saldo
 - Consultar algo já guardado nos dados do usuário (lembretes, anotações, gastos) → consulta
+- "peguei tudo", "comprei tudo", "já peguei tudo", "consegui tudo", "tudo certo" (referente a LISTA, sem citar nenhum lembrete específico por nome) → SEMPRE lista_marcar com numeros=null e nomes=null (marca a lista inteira), NUNCA concluir_lembrete. Use isso quando o contexto mostrar uma lista de compras/itens criada recentemente (mesmo que também existam lembretes de tarefa no contexto) — "tudo" aqui se refere aos itens da lista, não aos lembretes separados.
 - Frases vagas sobre ação concluída ("já fiz", "ok feito", "pronto", "deu certo", "já resolvi", "resolvido", "feito", "tá feito", "já foi", "deu certo fedo", "já resolvi tá") → concluir_lembrete SEMPRE que houver qualquer lembrete recente no contexto. Tente extrair o título do lembrete mais relacionado ao assunto da frase — se o usuário respondeu a uma mensagem citada que menciona um lembrete, use esse título. Se a frase menciona um nome/assunto (ex: "Flavinho"), use como título. Se não der pra extrair, use o lembrete mais recente. NUNCA classifique como outro se há lembrete no contexto e a mensagem soa como conclusão.
 - "já peguei X", "já fiz X", "já fui" onde X é objeto físico e NÃO é título de lembrete → anotacao ou outro, NUNCA concluir_lembrete nem lista_marcar automaticamente
 - "ajusta", "altera", "corrige", "muda", "coloca", "deixa" + número + "doses"/"estoque"/"comprimidos"/"caixa" (com ou sem citar o nome do remédio) → SEMPRE ajustar_remedio, NUNCA editar_lembrete. Isso vale mesmo se a frase não citar o nome do remédio explicitamente (ex: contexto é uma resposta/reply a uma notificação de medicamento)
@@ -380,6 +381,8 @@ EXEMPLOS:
 "remarca pras 14h" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"14:00","nova_data":null}
 "muda a reunião pra 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
 "já peguei o 2 e o 3" → {"tipo":"lista_marcar","numeros":[2,3],"nomes":null,"lista":null}
+"peguei tudo" (com lista de compras recente no contexto, sem citar lembrete específico) → {"tipo":"lista_marcar","numeros":null,"nomes":null,"lista":null}
+"comprei tudo" / "consegui tudo" (mesmo contexto) → {"tipo":"lista_marcar","numeros":null,"nomes":null,"lista":null}
 "Penso em trocar minha academia, a atual custa R$ 90 e fica a 15 min de casa, a nova custa R$ 130 mas é ao lado do trabalho. Vale a pena?" → {"tipo":"outro"}
 "salva no cofre como Senhas GHL Gerentes: wenceslaubraz@casaecasa.com.br #Wenceslau2025, siqueiracampos@casaecasa.com.br #Siqueira2023" → {"tipo":"salvar_cofre","nome":"Senhas GHL Gerentes","conteudo":"wenceslaubraz@casaecasa.com.br #Wenceslau2025, siqueiracampos@casaecasa.com.br #Siqueira2023"}
 "salva o número da Maria, é minha vizinha" → {"tipo":"salvar_contato","nome":"Maria","phone":null,"relation":"vizinha","notes":null}
@@ -995,7 +998,20 @@ async function tentarGeminiComPersonalidade(message, history, tom, name, context
     // instrução só no final (regra 6/6b de buildPersonality), o que causava
     // respostas cortadas no meio de uma palavra ao bater o limite de tokens.
     const reforcoBrevidade = `IMPORTANTE: seja breve. Vá direto ao ponto, sem rodeios antes de responder o que foi pedido. Máximo 120 palavras no total, e SEMPRE termine com frase completa — nunca corte no meio.\n\n`;
-    const sistemaCompleto = reforcoBrevidade + buildPersonality(tom, name, false) + contexto;
+
+    // ── Reforço de tom para modo Sem Filtro (sarcástico) ──
+    // O Gemini tende a 'amaciar' personalidades provocativas/sarcásticas
+    // mesmo recebendo a mesma instrução que o Groq segue à risca — produz
+    // respostas mais emocionais/gentis do que o esperado nesse modo. Em vez
+    // de alterar buildPersonality() (que funciona bem no Groq e não deve ser
+    // tocado), reforçamos especificamente aqui, só quando tom=sarcastico e
+    // só pro Gemini — não muda a personalidade em si, só insiste que o
+    // modelo realmente a cumpra.
+    const reforcoSemFiltro = tom === 'sarcastico'
+      ? `LEMBRETE DE TOM: você está no modo SEM FILTRO. Seja sarcástica, provocativa e zoeira DE VERDADE — não amacie nem fique excessivamente carinhosa ou emocional. Ironia afiada, humor ácido, brincadeiras na cara. Evite frases de acolhimento genérico tipo \"como você se sente com isso?\" a menos que o contexto realmente peça isso — prefira provocar, zoar, debochar.\n\n`
+      : '';
+
+    const sistemaCompleto = reforcoBrevidade + reforcoSemFiltro + buildPersonality(tom, name, false) + contexto;
     const msgs = [
       { role: 'system', content: sistemaCompleto },
       ...history.slice(-6),
