@@ -344,8 +344,30 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       const resp = await freeResponse(text, history, preferences);
       if (resp === null) return;
       if (resp && resp.includes('__BUSCAR:')) {
-        // improvável em saudações, mas tratamos igual
-        await sendMessage(phone, 'Deixa eu pesquisar isso! 🔍');
+        const buscaMatchSkip = resp.match(/__BUSCAR:(.+?)(__|\n|$)/);
+        if (buscaMatchSkip) {
+          const querySkip = buscaMatchSkip[1].trim();
+          const tomSkip = preferences?.tom || 'carinhoso';
+          const avisosSkip = {
+            carinhoso: `✨ Buscando pra gente…`,
+            direto: `🔍 Buscando.`,
+            divertido: `✨ Um segundinho, deixa eu dar uma garimpada!`,
+            sarcastico: `Tá bom, vou pesquisar porque obviamente você não vai fazer isso sozinho. 🙄`,
+          };
+          await sendMessage(phone, avisosSkip[tomSkip] || avisosSkip.carinhoso);
+          try {
+            const resultadoSkip = await searchWeb(querySkip, '');
+            if (resultadoSkip) {
+              await memory.saveConversationMessage(user.id, 'user', text);
+              await memory.saveConversationMessage(user.id, 'assistant', resultadoSkip);
+              await sendMessage(phone, resultadoSkip);
+            } else {
+              await sendMessage(phone, 'Pesquisei mas não encontrei nada útil sobre isso agora 😕');
+            }
+          } catch (eBuscaSkip) {
+            await sendMessage(phone, 'Não consegui pesquisar isso agora 😕 Tenta de novo?');
+          }
+        }
         return;
       }
       await memory.saveConversationMessage(user.id, 'user', text);
