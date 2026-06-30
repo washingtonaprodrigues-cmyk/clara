@@ -380,6 +380,10 @@ EXEMPLOS:
 "no dia 24 tenho consulta com a nutricionista" → {"tipo":"tarefa","titulo":"consulta com a nutricionista","data":"${hojeISO.substring(0,7)}-24","hora":null,"antecedencia":0,"recorrente":false,"frequencia":null}
 "remarca pras 14h" → {"tipo":"editar_lembrete","titulo":"","nova_hora":"14:00","nova_data":null}
 "muda a reunião pra 16h" → {"tipo":"editar_lembrete","titulo":"reunião","nova_hora":"16:00","nova_data":null}
+"cria uma lista pra mim chamado Mercado" (sem itens ainda) → {"tipo":"lista_compras","nome":"Mercado","itens":[]}
+"cria uma lista chamada Mercado com os itens café, leite, bolacha" → {"tipo":"lista_compras","nome":"Mercado","itens":["café","leite","bolacha"]}
+"faz uma lista de compras: arroz, feijão, óleo" → {"tipo":"lista_compras","nome":null,"itens":["arroz","feijão","óleo"]}
+"cria uma lista" / "faz uma lista pra mim" (sem nome nem itens) → {"tipo":"lista_compras","nome":null,"itens":[]}
 "já peguei o 2 e o 3" → {"tipo":"lista_marcar","numeros":[2,3],"nomes":null,"lista":null}
 "peguei tudo" (com lista de compras recente no contexto, sem citar lembrete específico) → {"tipo":"lista_marcar","numeros":null,"nomes":null,"lista":null}
 "comprei tudo" / "consegui tudo" (mesmo contexto) → {"tipo":"lista_marcar","numeros":null,"nomes":null,"lista":null}
