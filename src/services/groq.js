@@ -1223,10 +1223,6 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       return FALLBACK_FIXO_MSGS[Math.floor(Math.random() * FALLBACK_FIXO_MSGS.length)];
     }
 
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('timeout')), 18000)
-    );
-
     // Se uma ação estruturada foi executada (lembrete criado, gasto registrado),
     // injeta isso no contexto como FATO CONFIRMADO. Assim a Clara responde com
     // personalidade ("Pode deixar, fedo! Às 14:10...") mas baseada no que o
@@ -1255,6 +1251,14 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
     if (respostaGeminiPrimario) { marcarProvider('gemini'); return filtrarResposta(respostaGeminiPrimario); }
 
     // ── GROQ KEY_2 (gratuita) — 2º na cascata ────────────────────────────
+    // Timeout criado AQUI (não antes do Gemini) — se for criado cedo demais
+    // e o Gemini demorar mais que 18s, o timer dispara sem nada pra capturar
+    // o reject, virando unhandled rejection que derruba o processo Node
+    // inteiro (bug observado em produção: timeout crashava o container
+    // mesmo já tendo enviado a resposta com sucesso via Gemini).
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 18000)
+    );
     let completion;
     try {
       completion = await Promise.race([
