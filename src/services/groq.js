@@ -1077,7 +1077,8 @@ async function tentarFallbackCascata(contexto, name, message, logPrefix = 'ModoD
 function filtrarResposta(t) {
   if (!t || typeof t !== 'string') return t;
   // Remove __BUSCAR:...__ se vazar na resposta — não deve aparecer pro usuário
-  t = t.replace(/__BUSCAR:[^_\n]*(?:__)?/gi, '').trim();
+  // Remove __BUSCAR:...__ e **BUSCAR:...** e variações de markdown — não deve aparecer pro usuário
+  t = t.replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '').trim();
   // PROTEÇÃO CONTRA VAZAMENTO DE INSTRUÇÃO INTERNA:
   // [AÇÃO]/[AÇÃO]: é uma marcação que só deveria existir no CONTEXTO que a
   // Clara recebe (prova de que algo realmente aconteceu no banco), nunca na
