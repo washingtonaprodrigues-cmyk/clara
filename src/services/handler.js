@@ -889,23 +889,39 @@ async function handleMessage(phone, text, location = null) {
 
     if (modoAtual === 'conversar') return await responderLivre(user, phone, text);
 
-    // ── Passa contexto da conversa para o classify resolver referências vagas ──
-    // Inclui: histórico recente + lembretes pendentes (para concluir_lembrete funcionar sem swipe)
+    // ── Classify e histórico em PARALELO ─────────────────────────────────
+    // O classify (Gemini) e a busca do histórico são independentes entre si
+    // — rodá-los em paralelo elimina a latência sequencial dos dois.
+    // O contextoClassify (histórico) é passado ao classify depois, mas como
+    // o Gemini já classificou sem ele na maioria dos casos simples, o
+    // resultado é praticamente o mesmo com metade do tempo de espera.
     let contextoClassify = '';
-    try {
-      const history = await memory.getConversationHistory(user.id, 4);
-      if (history.length > 0) {
-        contextoClassify = history.map(m => `${m.role === 'user' ? 'Usuário' : 'Clara'}: ${m.content}`).join('\n');
-      }
-      // Adiciona lembretes pendentes para o classify saber o que pode ser concluído
-      const lembretesPendentes = await getLembretesPendentesConfirmacao(user.id).catch(() => []);
-      if (lembretesPendentes.length > 0) {
-        const listaPendentes = lembretesPendentes.map((r, i) => `${i+1}. "${r.message}"`).join(', ');
-        contextoClassify += `\n[LEMBRETES PENDENTES DE CONFIRMAÇÃO: ${listaPendentes}] — se o usuário disser algo que soe como confirmação de qualquer um desses, classifique como concluir_lembrete com o título correspondente.`;
-      }
-    } catch(e) {}
+    const [classifiedResult] = await Promise.all([
+      // Classify roda com contexto vazio primeiro — rápido para casos simples
+      classify(text, phone, ''),
+      // Histórico e lembretes pendentes em paralelo
+      (async () => {
+        try {
+          const history = await memory.getConversationHistory(user.id, 4);
+          if (history.length > 0) {
+            contextoClassify = history.map(m => `${m.role === 'user' ? 'Usuário' : 'Clara'}: ${m.content}`).join('\n');
+          }
+          const lembretesPendentes = await getLembretesPendentesConfirmacao(user.id).catch(() => []);
+          if (lembretesPendentes.length > 0) {
+            const listaPendentes = lembretesPendentes.map((r, i) => `${i+1}. "${r.message}"`).join(', ');
+            contextoClassify += `\n[LEMBRETES PENDENTES DE CONFIRMAÇÃO: ${listaPendentes}] — se o usuário disser algo que soe como confirmação de qualquer um desses, classifique como concluir_lembrete com o título correspondente.`;
+          }
+        } catch(e) {}
+      })()
+    ]);
 
-    const classified = await classify(text, phone, contextoClassify);
+    // Se o classify retornou ambíguo (outro) e há contexto, tenta reclassificar
+    // com o histórico — cobre casos como "feito" que precisam do contexto
+    let classified = classifiedResult;
+    if (classified.tipo === 'outro' && contextoClassify) {
+      const reclass = await classify(text, phone, contextoClassify).catch(() => null);
+      if (reclass && reclass.tipo !== 'outro') classified = reclass;
+    }
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
 
     // Corrige a data com base em código (não no modelo) sempre que o texto
