@@ -51,10 +51,7 @@ async function _jaEnviadoBanco(phone, message, quotedText) {
     }).catch(() => null);
     if (existente) return true;
 
-    // Cria o lock
-    await prisma.memory.create({
-      data: { userId: user.id, type: 'msg_dedup_lock', content: chave }
-    }).catch(() => {});
+    // Não cria o lock aqui — só após envio bem-sucedido (ver sendMessage)
     return false;
   } catch {
     return false;
@@ -84,6 +81,18 @@ async function sendMessage(phone, message, delay = 400, quotedText = '') {
       { timeout: 15000, headers }
     );
     console.log(`✅ Enviado OK para ${phone}:`, response.data?.status || 'sem status');
+    // Cria o lock APÓS envio bem-sucedido — se o envio falhar (404/timeout),
+    // o lock não é criado e a próxima tentativa pode passar normalmente.
+    const { PrismaClient: PrismaDedup } = require('@prisma/client');
+    const prismaDedup = new PrismaDedup();
+    const chaveDedup = _hashEnvio(phone, message, quotedText);
+    const userDedup = await prismaDedup.user.findFirst({ where: { phone } }).catch(() => null);
+    if (userDedup) {
+      await prismaDedup.memory.create({
+        data: { userId: userDedup.id, type: 'msg_dedup_lock', content: chaveDedup }
+      }).catch(() => {});
+    }
+    await prismaDedup.$disconnect().catch(() => {});
     return response.data;
   } catch (error) {
     console.error(`❌ Erro sendMessage para ${phone}:`, error.response?.data || error.message);
