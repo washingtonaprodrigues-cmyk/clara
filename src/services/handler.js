@@ -343,8 +343,8 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       preferences._contexto = '';
       const resp = await freeResponse(text, history, preferences);
       if (resp === null) return;
-      if (resp && resp.includes('__BUSCAR:')) {
-        const buscaMatchSkip = resp.match(/__BUSCAR:(.+?)(__|\n|$)/);
+      if (resp && (resp.includes('__BUSCAR:') || resp.includes('BUSCAR:'))) {
+        const buscaMatchSkip = resp.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
         if (buscaMatchSkip) {
           const querySkip = buscaMatchSkip[1].trim();
           const tomSkip = preferences?.tom || 'carinhoso';
@@ -631,7 +631,8 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     if (!respStr) return;
 
     // ── Busca proativa: Clara sinalizou que quer pesquisar ──
-    const buscaMatch = respStr.match(/__BUSCAR:(.+?)(__|\n|$)/);
+    // Cobre __BUSCAR:query__ (padrão) e **BUSCAR:query** (Gemini às vezes gera com asteriscos)
+    const buscaMatch = respStr.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
     if (buscaMatch) {
       const query = buscaMatch[1].trim();
       // Avisa que vai pesquisar, no estilo da Clara
