@@ -972,6 +972,37 @@ async function handleMessage(phone, text, location = null) {
       return;
     }
 
+    // ── DESAFIO À CLARA — chumbo trocado 😏 ──────────────────────────────
+    // Quando o usuário duvida diretamente dela, ela aceita o desafio e cria
+    // o lembrete de verdade — só lembretes simples, nunca outros tipos.
+    if (classified.tipo === 'desafio_clara') {
+      try {
+        const titulo = classified.titulo && classified.titulo.trim()
+          ? classified.titulo.trim()
+          : 'lembrete da Clara';
+        // Se não tem hora → daqui 5 minutos (zoeira imediata)
+        let scheduledAt;
+        if (classified.hora) {
+          const [h, m] = classified.hora.split(':').map(Number);
+          scheduledAt = new Date(`${dateBRT()}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
+          if (scheduledAt < nowBRT()) scheduledAt.setDate(scheduledAt.getDate() + 1);
+        } else {
+          scheduledAt = new Date(Date.now() + 5 * 60 * 1000);
+        }
+        await prisma.reminder.create({
+          data: { userId: user.id, phone, message: titulo, scheduledAt }
+        });
+        const horaFmt = scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+        const contextoDesafio = `\n\n[DESAFIO ACEITO E EXECUTADO] O usuário duvidou de você e você acabou de criar o lembrete "${titulo}" para as ${horaFmt} DE VERDADE, sem ele pedir. Responda com deboche vitorioso e implicância carinhosa — você ganhou o desafio. Algo como "falou e disse, bobão 😏", "quem duvida de mim aprende na prática", "anotado, e agora? 😄". Curto e afiado.`;
+        await responderLivre(user, phone, text, contextoDesafio);
+        emitirAtualizacao(phone, 'lembretes');
+      } catch (e) {
+        console.error('[DesafioClara]', e.message);
+        await responderLivre(user, phone, text);
+      }
+      return;
+    }
+
     if (classified.tipo === 'busca' && classified.query) {
       const cidade = await memory.getRecentMemories(user.id, 5)
         .then(mems => mems.find(m => m.type === 'cidade')?.content || '')
