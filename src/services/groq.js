@@ -479,19 +479,29 @@ async function classify(message, phone = null, contexto = '') {
     if (ehErroConexao && geminiDisponivel && geminiDisponivel()) {
       try {
         const ctxFallback = contexto ? contexto.slice(-800) : '';
-        // Prompt mais direto e curto pro Flash-Lite que pode estar respondendo
-        const promptFallbackCurto = `Classifique a mensagem. Responda APENAS JSON.
-tipos: tarefa, gasto, busca, consulta, concluir_lembrete, outro
-busca = pergunta sobre preço, cotação, notícia, clima, fato externo.
-{"tipo":"busca","query":"texto"} ou {"tipo":"outro"}`;
+        const promptFallbackCurto = `Classifique a mensagem. Responda APENAS JSON, sem texto extra.
+tipos principais:
+- tarefa: {"tipo":"tarefa","titulo":"ação completa","hora":"HH:MM ou null","data":null,"antecedencia":0,"recorrente":false,"frequencia":null}
+- busca: {"tipo":"busca","query":"texto"}
+- outro: {"tipo":"outro"}
+
+IMPORTANTE: para tarefa, SEMPRE extraia o titulo completo da ação. Ex:
+"me lembra às 9 de trocar o presente na loja" → {"tipo":"tarefa","titulo":"trocar o presente na loja","hora":"09:00","data":null,"antecedencia":0,"recorrente":false,"frequencia":null}
+"me lembra de comprar remédio às 14h" → {"tipo":"tarefa","titulo":"comprar remédio","hora":"14:00","data":null,"antecedencia":0,"recorrente":false,"frequencia":null}`;
         const respFallback = await geminiFreeResponse([
           { role: 'system', content: promptFallbackCurto },
           { role: 'user', content: message }
-        ], { maxTokens: 60, temperature: 0.1 });
+        ], { maxTokens: 80, temperature: 0.1 });
         if (respFallback) {
           const limpo = respFallback.replace(/```json|```/g, '').trim();
           const parsed = JSON.parse(limpo);
-          console.log('[Classify] Resolvido via Gemini (fallback conexão):', parsed.tipo);
+          // Se retornou tarefa sem título, tenta extrair do texto original via regex
+          if (parsed.tipo === 'tarefa' && !parsed.titulo) {
+            const matchLembrete = message.match(/(?:me lembra[r]? (?:d[ae] )?|anota[r]? |me avisa[r]? (?:d[ae] )?)(.+?)(?:\s+às?\s+\d|$)/i);
+            if (matchLembrete) parsed.titulo = matchLembrete[1].trim();
+            else parsed.titulo = message.replace(/me lembra[r]?|às?\s+\d+h?|\d+:\d+|clara[,.]?/gi, '').trim();
+          }
+          console.log('[Classify] Resolvido via Gemini (fallback conexão):', parsed.tipo, parsed.titulo || '');
           // Se retornou 'outro' mas a mensagem claramente é busca, força busca
           if (parsed.tipo === 'outro') {
             const ehBuscaObvia = /quanto (custa|vale|é|está)|cotação|preço|hoje|clima|notícia|resultado|quem (é|foi|ganhou)|quando (é|foi|aconteceu)/i.test(message);
