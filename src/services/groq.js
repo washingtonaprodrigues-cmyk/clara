@@ -236,6 +236,17 @@ TIPOS e formato de saída:
 - outro: {"tipo":"outro"} — conversa, pergunta de conhecimento, saudação, qualquer coisa que não seja ação acima
 
 GATILHOS DE TAREFA (prioridade sobre conteúdo): "me lembra", "me avisa", "anota aí", "já anota", "bota/põe um lembrete", "não me deixa esquecer", "agenda", "marca", "daqui X min/horas", "às HH de". CONDICIONAL ("se quiser", "se puder") = NÃO é pedido = outro.
+
+DESAFIO À CLARA — AUTORIZAÇÃO IMPLÍCITA:
+Quando o usuário duvidar diretamente da Clara com frases como "duvido que", "aposto que não consegue", "vai que você faz", "você não vai fazer", "capaz que", "quero ver você" — e o contexto mencionar claramente um lembrete ou ação simples — classifique como desafio_clara:
+{"tipo":"desafio_clara","titulo":"o que foi desafiado","hora":"HH:MM ou null","data":null}
+- hora: extraia do contexto se mencionada (ex: "duvido que me lembre às 13:30" → hora "13:30"). Se não mencionada → null (sistema cria para daqui 5 min).
+- SOMENTE para lembretes simples. NUNCA para gastos, remédios, contatos.
+- Se o desafio for vago demais sem ação clara → classifique como outro.
+Exemplos:
+"duvido que faça essa zoeira" (contexto: lembrete de descanso às 13:30) → {"tipo":"desafio_clara","titulo":"continuar descansando","hora":"13:30","data":null}
+"aposto que você não me lembra disso" → {"tipo":"desafio_clara","titulo":"isso","hora":null,"data":null}
+"vai que você cria um lembrete agora" → {"tipo":"desafio_clara","titulo":"lembrete agora","hora":null,"data":null}
 TÍTULO: extraia a AÇÃO COMPLETA, que se entenda sozinha lendo na lista dias depois. Tire só o gatilho ("me lembra de", "não me deixa esquecer") e o horário — preserve o resto. "ver a água do carro"→"ver a água do carro" (NÃO corte pra "a água"); "ligar pro dentista"→"ligar pro dentista" (não só "dentista"); "pagar a conta de luz"→"pagar a conta de luz". Só encurte quando a referência for genuinamente vaga ("me lembra dessa reunião"→"reunião"). Prefira título claro a título curto.
 FORMATOS DE HORA (sempre converta pra HH:MM 24h): "umas 7:00"→07:00; "18 horas"/"umas 18 horas"/"às 18 horas"/"às 18h"/"18h"→18:00; "7 e meia"/"7:30"→07:30; "meio-dia"→12:00; "meia-noite"→00:00; "8 da noite"→20:00; "6 da tarde"→18:00; "9 da manhã"→09:00. NUNCA deixe hora:null quando o usuário disse um horário claro do dia.
 GATILHO vence saudação: "me lembra daqui 4 min de mandar um oi" = tarefa (titulo "mandar um oi"), não saudação.
