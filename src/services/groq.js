@@ -472,6 +472,27 @@ async function classify(message, phone = null, contexto = '') {
       }
     }
     console.error('Erro classify:', error.message);
+    // Erro de conexão/timeout (não rate limit) — tenta Gemini como último recurso
+    // antes de cair em 'outro', pra não perder a intenção do usuário (ex: busca
+    // sendo classificada como conversa por falha de rede no Groq).
+    const ehErroConexao = /premature close|network|timeout|ECONNRESET|ENOTFOUND/i.test(error.message);
+    if (ehErroConexao && geminiDisponivel && geminiDisponivel()) {
+      try {
+        const ctxFallback = contexto ? contexto.slice(-800) : '';
+        const promptFallback = CLASSIFY_PROMPT() + (ctxFallback ? `\n\nCONTEXTO:\n${ctxFallback}` : '');
+        const respFallback = await geminiFreeResponse([
+          { role: 'system', content: promptFallback },
+          { role: 'user', content: message }
+        ], { maxTokens: 200, temperature: 0.2 });
+        if (respFallback) {
+          const limpo = respFallback.replace(/```json|```/g, '').trim();
+          console.log('[Classify] Resolvido via Gemini (fallback conexão)');
+          return JSON.parse(limpo);
+        }
+      } catch (eFallback) {
+        console.error('[Classify] Gemini fallback conexão falhou:', eFallback.message);
+      }
+    }
     return { tipo: 'outro', resposta: 'Entendi!' };
   }
 }
