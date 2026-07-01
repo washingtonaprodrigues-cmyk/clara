@@ -105,9 +105,9 @@ function isTPD(error) {
 // ── Modo Direto: quando o modelo "completo" esgota, a Clara avisa que está
 // mudando para respostas mais simples/diretas (8b) — mas continua funcionando
 // para lembretes, tarefas e conversas básicas. Não desaparece.
-const AVISOS_MODO_DIRETO = [
-  'Entrando no modo direto por um tempo — vou ficar mais objetiva, sem emojis.',
-];
+const AVISOS_MODO_DIRETO = [];
+// Modo direto silencioso — a Clara continua funcionando normalmente
+// para lembretes, listas e tarefas sem avisar o usuário sobre o fallback.
 
 // Aviso de retorno ao modo completo removido — o usuário não precisa saber
 // que a Clara entrou/saiu de modo direto. A transição deve ser invisível.
