@@ -1594,6 +1594,12 @@ function detectarUrgencia(titulo) {
 }
 
 async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
+  // Guarda contra título vazio — acontece quando o classify retorna JSON incompleto
+  // por timeout/fallback fraco (ex: gemini-flash-latest com poucos tokens)
+  if (!classified.titulo || !classified.titulo.trim()) {
+    console.warn(`[salvarTarefa] Título vazio, ignorando criação do lembrete para ${phone}`);
+    return null;
+  }
   await memory.saveMemory(user.id, 'tarefa', classified.titulo, { data: classified.data, hora: classified.hora });
   let scheduledAt = null;
   if (originalText) { const relativo = calcularHorarioRelativo(originalText); if (relativo) { scheduledAt = relativo; } }
