@@ -402,16 +402,44 @@ EXEMPLOS:
 };
 
 async function classify(message, phone = null, contexto = '') {
-  try {
-    // Limita contexto para não exceder tokens do classify
-    const ctxLimitado = contexto ? contexto.slice(-800) : '';
-    // Usa o prompt ENXUTO (~1200 tokens) em vez do SYSTEM_PROMPT completo
-    // (~6000 tokens). Reduz o consumo de TPD em ~5x — antes cada classify
-    // queimava o limite diário rápido, agora rende muito mais.
-    const systemContent = ctxLimitado
-      ? CLASSIFY_PROMPT() + `\n\nCONTEXTO:\n${ctxLimitado}`
-      : CLASSIFY_PROMPT();
+  const ctxLimitado = contexto ? contexto.slice(-800) : '';
+  const systemContent = ctxLimitado
+    ? CLASSIFY_PROMPT() + `\n\nCONTEXTO:\n${ctxLimitado}`
+    : CLASSIFY_PROMPT();
 
+  // ── GEMINI COMO PRIMÁRIO NO CLASSIFY ─────────────────────────────────
+  // Gemini Flash entra primeiro — o Groq KEY_2 está com "Premature close"
+  // frequente, o que causava classify caindo em "outro" e perdendo a
+  // intenção do usuário (lembretes, buscas, tarefas). Com Gemini pago,
+  // o classify fica estável independente da saúde do Groq.
+  if (geminiDisponivel && geminiDisponivel() && !todosModelosEsgotados()) {
+    try {
+      const respGemini = await geminiFreeResponse([
+        { role: 'system', content: systemContent },
+        { role: 'user', content: message }
+      ], { maxTokens: 200, temperature: 0.2 });
+      if (respGemini) {
+        const limpo = respGemini.replace(/```json|```/g, '').trim();
+        const parsed = JSON.parse(limpo);
+        // Converte datas relativas (ex: "amanhã") para ISO
+        if (parsed.data && !/^\d{4}-\d{2}-\d{2}$/.test(parsed.data)) {
+          const { hojeISO, amanhaISO, mapa } = infoDatas();
+          const dataLower = parsed.data.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          if (dataLower === 'hoje') parsed.data = hojeISO;
+          else if (dataLower === 'amanha' || dataLower === 'amanhã') parsed.data = amanhaISO;
+          else if (mapa[dataLower]) parsed.data = mapa[dataLower];
+          else parsed.data = null;
+        }
+        console.log(`[Classify] Gemini: ${parsed.tipo}`);
+        return parsed;
+      }
+    } catch (eGemini) {
+      console.warn('[Classify] Gemini falhou, tentando Groq:', eGemini.message);
+    }
+  }
+
+  // ── GROQ — fallback quando Gemini falha ──────────────────────────────
+  try {
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,  // 8b: prompt enxuto cabe nos 6k TPM e é mais barato
       messages: [
@@ -501,7 +529,16 @@ IMPORTANTE: para tarefa, SEMPRE extraia o titulo completo da ação. Ex:
             if (matchLembrete) parsed.titulo = matchLembrete[1].trim();
             else parsed.titulo = message.replace(/me lembra[r]?|às?\s+\d+h?|\d+:\d+|clara[,.]?/gi, '').trim();
           }
-          console.log('[Classify] Resolvido via Gemini (fallback conexão):', parsed.tipo, parsed.titulo || '');
+          // Converte datas relativas que o Gemini pode retornar em português
+          // (ex: "amanhã", "hoje", "segunda") para ISO YYYY-MM-DD
+          if (parsed.data && !/^\d{4}-\d{2}-\d{2}$/.test(parsed.data)) {
+            const { hojeISO, amanhaISO, mapa } = infoDatas();
+            const dataLower = parsed.data.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            if (dataLower === 'hoje') parsed.data = hojeISO;
+            else if (dataLower === 'amanha' || dataLower === 'amanhã') parsed.data = amanhaISO;
+            else if (mapa[dataLower]) parsed.data = mapa[dataLower];
+            else parsed.data = null; // não conseguiu converter, deixa null
+          }
           // Se retornou 'outro' mas a mensagem claramente é busca, força busca
           if (parsed.tipo === 'outro') {
             const ehBuscaObvia = /quanto (custa|vale|é|está)|cotação|preço|hoje|clima|notícia|resultado|quem (é|foi|ganhou)|quando (é|foi|aconteceu)/i.test(message);
