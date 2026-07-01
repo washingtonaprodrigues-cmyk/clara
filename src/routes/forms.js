@@ -1549,6 +1549,32 @@ router.delete('/memoria/:id/:phone', async (req, res) => {
   }
 });
 
+// PATCH /memoria/:id/:phone  → edita o conteúdo de uma memória específica
+router.patch('/memoria/:id/:phone', async (req, res) => {
+  try {
+    const { content } = req.body;
+    if (!content || !content.trim()) return res.status(400).json({ error: 'Conteúdo não pode ser vazio' });
+
+    const user = await prisma.user.findUnique({ where: { phone: req.params.phone } });
+    if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
+
+    const mem = await prisma.memory.findFirst({
+      where: { id: req.params.id, userId: user.id }
+    });
+    if (!mem) return res.status(404).json({ error: 'Memória não encontrada' });
+
+    await prisma.memory.update({
+      where: { id: req.params.id },
+      data: { content: content.trim() }
+    });
+
+    res.json({ ok: true, atualizado: content.trim() });
+  } catch (e) {
+    console.error('[PATCH /memoria]', e.message);
+    res.status(500).json({ error: 'Erro ao editar memória' });
+  }
+});
+
 router.post('/memoria/:phone', async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { phone: req.params.phone } });
