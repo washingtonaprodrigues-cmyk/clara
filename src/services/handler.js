@@ -633,9 +633,9 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // ── Busca proativa: Clara sinalizou que quer pesquisar ──
     // Cobre __BUSCAR:query__ (padrão) e **BUSCAR:query** (Gemini às vezes gera com asteriscos)
     const buscaMatch = respStr.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
+
     if (buscaMatch) {
       const query = buscaMatch[1].trim();
-      // Avisa que vai pesquisar, no estilo da Clara
       const tom = preferences?.tom || 'carinhoso';
       const avisos = {
         carinhoso: `✨ Buscando pra gente…`,
