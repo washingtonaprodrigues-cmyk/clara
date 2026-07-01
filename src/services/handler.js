@@ -1,7 +1,7 @@
 // v2 - consulta direta sem LLM
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
-const { classify, extractPersonalInfo, extractPendenciaEmocional, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas } = require('./groq');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback } = require('./groq');
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
 // O classify() já recebe uma tabela com a data exata de cada dia da semana
@@ -665,6 +665,29 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     await memory.saveConversationMessage(user.id, 'user', text);
     await memory.saveConversationMessage(user.id, 'assistant', respStr);
     await sendMessage(phone, respStr);
+
+    // ── Busca automática quando a Clara indica incerteza ──────────────
+    // Se ela respondeu mas sinalizou que não tem certeza ("não sei ao certo",
+    // "não tenho certeza", "deixa eu verificar" etc.), busca automaticamente
+    // e manda o resultado logo depois — sem o usuário precisar pedir.
+    // Só dispara se a mensagem original parece uma pergunta de informação.
+    const indicaIncerteza = /não (sei|tenho certeza|consigo confirmar|lembro ao certo)|deixa eu verificar|preciso verificar|não estou certa|não estou segura|melhor confirmar|confirme com|verifique com/i.test(respStr);
+    const ehPerguntaInfo = /\?|como|qual|quais|quando|onde|quanto|o que é|me (conta|fala|explica|ajuda a|diz)|efeito|diferença|funciona|significa/i.test(text);
+    if (indicaIncerteza && ehPerguntaInfo && !preferences?._confirmacaoSeparada) {
+      (async () => {
+        try {
+          await new Promise(r => setTimeout(r, 1500));
+          const resultado = await searchWeb(text.trim(), '');
+          if (resultado && !isRespostaFallback(resultado)) {
+            await memory.saveConversationMessage(user.id, 'assistant', resultado).catch(() => {});
+            await sendMessage(phone, resultado);
+            console.log(`[BuscaIncerteza] Resultado enviado para ${phone}`);
+          }
+        } catch (e) {
+          console.error('[BuscaIncerteza] Erro:', e.message);
+        }
+      })();
+    }
 
     // ── Segunda mensagem: confirmação CRUA do lembrete ──
     // Quando o pedido criou um lembrete, a Clara responde de forma humana
