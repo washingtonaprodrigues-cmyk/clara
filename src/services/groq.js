@@ -479,15 +479,28 @@ async function classify(message, phone = null, contexto = '') {
     if (ehErroConexao && geminiDisponivel && geminiDisponivel()) {
       try {
         const ctxFallback = contexto ? contexto.slice(-800) : '';
-        const promptFallback = CLASSIFY_PROMPT() + (ctxFallback ? `\n\nCONTEXTO:\n${ctxFallback}` : '');
+        // Prompt mais direto e curto pro Flash-Lite que pode estar respondendo
+        const promptFallbackCurto = `Classifique a mensagem. Responda APENAS JSON.
+tipos: tarefa, gasto, busca, consulta, concluir_lembrete, outro
+busca = pergunta sobre preço, cotação, notícia, clima, fato externo.
+{"tipo":"busca","query":"texto"} ou {"tipo":"outro"}`;
         const respFallback = await geminiFreeResponse([
-          { role: 'system', content: promptFallback },
+          { role: 'system', content: promptFallbackCurto },
           { role: 'user', content: message }
-        ], { maxTokens: 200, temperature: 0.2 });
+        ], { maxTokens: 60, temperature: 0.1 });
         if (respFallback) {
           const limpo = respFallback.replace(/```json|```/g, '').trim();
-          console.log('[Classify] Resolvido via Gemini (fallback conexão)');
-          return JSON.parse(limpo);
+          const parsed = JSON.parse(limpo);
+          console.log('[Classify] Resolvido via Gemini (fallback conexão):', parsed.tipo);
+          // Se retornou 'outro' mas a mensagem claramente é busca, força busca
+          if (parsed.tipo === 'outro') {
+            const ehBuscaObvia = /quanto (custa|vale|é|está)|cotação|preço|hoje|clima|notícia|resultado|quem (é|foi|ganhou)|quando (é|foi|aconteceu)/i.test(message);
+            if (ehBuscaObvia) {
+              console.log('[Classify] Forçando busca por padrão óbvio');
+              return { tipo: 'busca', query: message };
+            }
+          }
+          return parsed;
         }
       } catch (eFallback) {
         console.error('[Classify] Gemini fallback conexão falhou:', eFallback.message);
