@@ -418,9 +418,13 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .mem-card-valor{font-size:13px;color:var(--text);line-height:1.5;word-break:break-word}
 .mem-card-meta{font-size:10px;color:var(--text3);margin-top:3px;text-transform:capitalize}
 .mem-card-del{width:24px;height:24px;background:none;border:none;cursor:pointer;color:var(--text3);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;opacity:0;margin-top:2px}
+.mem-card-edit{width:24px;height:24px;background:none;border:none;cursor:pointer;color:var(--text3);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;opacity:0;margin-top:2px}
 .mem-card:hover .mem-card-del{opacity:.5}
+.mem-card:hover .mem-card-edit{opacity:.5}
 .mem-card-del:hover{background:rgba(239,68,68,.1);color:#EF4444;opacity:1!important}
+.mem-card-edit:hover{background:rgba(124,92,255,.1);color:#7c5cff;opacity:1!important}
 .mem-card-del svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round}
+.mem-card-edit svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round}
 .mem-pendencia-card{background:var(--s2);border:1px solid rgba(245,158,11,.2);border-left:3px solid #F59E0B;border-radius:12px;padding:11px 12px;margin-bottom:6px;display:flex;align-items:flex-start;gap:10px;transition:all .15s}
 .mem-pendencia-card:hover{border-color:rgba(245,158,11,.4)}
 .mem-pendencia-icon{width:30px;height:30px;border-radius:8px;background:rgba(245,158,11,.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px}
@@ -1641,6 +1645,9 @@ function _renderMemoriasUI(){
           +'<div class="mem-card-valor">'+item.valor+'</div>'
           +'<div class="mem-card-meta"><span style="color:'+m.txt+';font-weight:600;font-size:10px">'+m.label+'</span>'+(hora?'&nbsp;&middot;&nbsp;'+hora:'')+'</div>'
           +'</div>'
+          +'<button class="mem-card-edit" data-mem-id="'+String(item.id||'')+'" data-mem-val="'+encodeURIComponent(item.valor||'')+'" title="Editar">'
+          +'<svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
+          +'</button>'
           +'<button class="mem-card-del" data-mem-id="'+String(item.id||'')+'" title="Esquecer">'
           +'<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>'
           +'</button></div>';
@@ -1658,6 +1665,12 @@ function _renderMemoriasUI(){
   el.querySelectorAll('[data-mem-id]').forEach(function(btn){
     btn.addEventListener('click',function(){deletarMemoria(this.dataset.memId);});
   });
+  el.querySelectorAll('.mem-card-edit').forEach(function(btn){
+    btn.addEventListener('click',function(e){
+      e.stopPropagation();
+      editarMemoria(this.dataset.memId, decodeURIComponent(this.dataset.memVal||''));
+    });
+  });
   el.querySelectorAll('[data-pend-id]').forEach(function(btn){
     btn.addEventListener('click',function(){encerrarPendencia(this.dataset.pendId);});
   });
@@ -1669,6 +1682,16 @@ async function deletarMemoria(id){
     var r=await fetch('/forms/memoria/'+id+'/'+phone,{method:'DELETE'});
     if(r.ok){showToast('Mem\u00f3ria removida');await renderMemorias();}
     else showToast('Erro ao remover');
+  }catch(e){showToast('Erro');}
+}
+
+async function editarMemoria(id, conteudoAtual){
+  const novo = prompt('Editar memória:', conteudoAtual);
+  if(!novo || novo.trim() === conteudoAtual) return;
+  try{
+    var r=await fetch('/forms/memoria/'+id+'/'+phone,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:novo.trim()})});
+    if(r.ok){showToast('Memória atualizada ✅');await renderMemorias();}
+    else showToast('Erro ao editar');
   }catch(e){showToast('Erro');}
 }
 
