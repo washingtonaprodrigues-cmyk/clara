@@ -1098,16 +1098,7 @@ async function tentarGeminiComPersonalidade(message, history, tom, name, context
     // respostas cortadas no meio de uma palavra ao bater o limite de tokens.
     const reforcoBrevidade = `IMPORTANTE: seja breve. Vá direto ao ponto, sem rodeios antes de responder o que foi pedido. Máximo 120 palavras no total, e SEMPRE termine com frase completa — nunca corte no meio.\n\n`;
 
-    // ── Reforço de tom para modo Sem Filtro (sarcástico) ──
-    // O Gemini tende a "amaciar" personalidades provocativas/sarcásticas
-    // mesmo recebendo a mesma instrução que o Groq segue à risca. Reforço
-    // específico aqui, só quando tom=sarcastico e só pro Gemini — não muda
-    // buildPersonality(), só insiste que o modelo realmente a cumpra.
-    const reforcoSemFiltro = tom === 'sarcastico'
-      ? `LEMBRETE DE TOM: você está no modo SEM FILTRO. Seja sarcástica, provocativa e zoeira DE VERDADE — não amacie nem fique excessivamente carinhosa ou emocional. Ironia afiada, humor ácido, brincadeiras na cara. Evite frases de acolhimento genérico tipo "como você se sente com isso?" a menos que o contexto realmente peça isso — prefira provocar, zoar, debochar.\n\n`
-      : '';
-
-    const sistemaCompleto = reforcoBrevidade + reforcoSemFiltro + buildPersonality(tom, name, false) + contexto;
+    const sistemaCompleto = reforcoBrevidade + buildPersonality(tom, name, false) + contexto;
     const msgs = [
       { role: 'system', content: sistemaCompleto },
       ...history.slice(-6),
