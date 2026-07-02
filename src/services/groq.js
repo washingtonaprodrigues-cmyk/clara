@@ -1160,8 +1160,11 @@ async function tentarFallbackCascata(contexto, name, message, logPrefix = 'ModoD
 function filtrarResposta(t) {
   if (!t || typeof t !== 'string') return t;
   // Remove __BUSCAR:...__ se vazar na resposta — não deve aparecer pro usuário
-  // Remove marcadores internos de contexto que o Gemini às vezes imprime literalmente
-  // Ex: [MEMÓRIA DO RELACIONAMENTO], [PERFIL PESSOAL], [AGENDA], [HORA ATUAL] etc.
+  // Remove marcadores internos de contexto que o Gemini às vezes imprime literalmente,
+  // incluindo o conteúdo formatado que vem logo depois (bullets, listas etc.)
+  // Ex: [MEMÓRIA DO RELACIONAMENTO]\n• Humor: ...\n• Expressões: ...\n\nResposta real
+  t = t.replace(/^\[[^\]]+\][\s\S]*?\n\n/gm, '').trim();
+  // Fallback: remove linhas isoladas de marcadores sem conteúdo depois
   t = t.replace(/^\[[A-ZÁÉÍÓÚÃÕÇÜ\s]+\]\s*\n?/gm, '').trim();
   // Remove __BUSCAR:...__ e **BUSCAR:...** e variações de markdown — não deve aparecer pro usuário
   t = t.replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '').trim();
