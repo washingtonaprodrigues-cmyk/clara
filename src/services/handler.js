@@ -451,10 +451,16 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           const horaBRT = d.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo', hour:'2-digit', minute:'2-digit'});
           return `• ${dStr} às ${horaBRT} — ${r.message}`;
         };
-        contexto += `\n\n[AGENDA]\n${lembretes.map(fmtLemb).join('\n')}`;
-      } else {
-        contexto += `\n\n[AGENDA]\nNenhum lembrete para hoje ou amanhã.`;
+        // ── AGENDA injetada com instrução restritiva ──────────────────────
+        // A Clara TEM a informação da agenda, mas NÃO deve mencionar itens
+        // proativamente em toda resposta — isso vira ruído e corta conversas.
+        // Só mencione um item da agenda se:
+        // 1. O usuário trouxer o assunto (saúde, amanhã, planos, o nome do compromisso)
+        // 2. For o único tópico da mensagem e fizer sentido orgânico
+        // 3. Nunca encerre uma resposta com "não esqueça de X" se X não foi mencionado
+        contexto += `\n\n[AGENDA — use apenas se o usuário trouxer o assunto, nunca mencione por iniciativa em toda resposta]\n${lembretes.map(fmtLemb).join('\n')}`;
       }
+      // Sem lembretes: não injeta nada — evita "Nenhum lembrete" desnecessário
 
       try {
         const textLower = (text||'').toLowerCase();
