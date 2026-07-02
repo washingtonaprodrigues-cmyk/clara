@@ -425,6 +425,14 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .mem-card-edit:hover{background:rgba(124,92,255,.1);color:#7c5cff;opacity:1!important}
 .mem-card-del svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round}
 .mem-card-edit svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round}
+.mem-rel-card{background:linear-gradient(135deg,rgba(124,92,255,.08),rgba(239,68,68,.06));border:1px solid rgba(124,92,255,.25);border-radius:14px;padding:14px 16px;margin-bottom:16px}
+.mem-rel-header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.mem-rel-icon{font-size:16px}
+.mem-rel-title{font-size:13px;font-weight:600;color:var(--text);flex:1}
+.mem-rel-actions{display:flex;gap:6px}
+.mem-rel-btn{background:none;border:none;cursor:pointer;font-size:13px;opacity:.5;transition:opacity .15s;padding:2px 4px;border-radius:6px}
+.mem-rel-btn:hover{opacity:1;background:rgba(124,92,255,.1)}
+.mem-rel-content{font-size:12px;color:var(--text2);line-height:1.6;white-space:pre-wrap;word-break:break-word}
 .mem-pendencia-card{background:var(--s2);border:1px solid rgba(245,158,11,.2);border-left:3px solid #F59E0B;border-radius:12px;padding:11px 12px;margin-bottom:6px;display:flex;align-items:flex-start;gap:10px;transition:all .15s}
 .mem-pendencia-card:hover{border-color:rgba(245,158,11,.4)}
 .mem-pendencia-icon{width:30px;height:30px;border-radius:8px;background:rgba(245,158,11,.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px}
@@ -1532,12 +1540,17 @@ async function renderMemorias(){
   if(!el)return;
   el.innerHTML='<div class="spin"></div>';
   try{
-    var r=await fetch('/forms/memorias/'+phone);
+    // Carrega memórias de perfil e resumo de relacionamento em paralelo
+    var [r, rRel] = await Promise.all([
+      fetch('/forms/memorias/'+phone),
+      fetch('/forms/relacionamento/'+phone)
+    ]);
     _memDados=await r.json();
+    var relData = await rRel.json().catch(()=>({content:null}));
     _memBuscaAtiva='';
     var si=document.getElementById('mem-search-input');
     if(si)si.value='';
-    _renderMemoriasUI();
+    _renderMemoriasUI(relData);
   }catch(e){
     el.innerHTML='<div class="mem-empty-state"><div class="mem-empty-brain">&#x1F9E0;</div><div class="mem-empty-title">Erro ao carregar</div><div class="mem-empty-sub">Tente novamente.</div></div>';
   }
@@ -1555,6 +1568,8 @@ function filtrarMemorias(){
   _renderMemoriasUI();
 }
 
+function escapeHtml(t){return(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
 function _fmtDataMem(iso){
   if(!iso)return'';
   var d=new Date(iso);
@@ -1567,7 +1582,7 @@ function _fmtDataMem(iso){
   return d.getDate()+' de '+meses[d.getMonth()];
 }
 
-function _renderMemoriasUI(){
+function _renderMemoriasUI(relData){
   var el=document.getElementById('memorias-body');
   if(!el||!_memDados)return;
   var cats=_memDados.categorias||{};
@@ -1582,6 +1597,18 @@ function _renderMemoriasUI(){
   if(numEl)numEl.textContent=totalTodos;
 
   var html='',temConteudo=false;
+
+  // ── Card de Memória do Relacionamento ──────────────────────────────
+  if((filtro==='todas'||filtro==='relacionamento') && relData && relData.content && !busca){
+    temConteudo=true;
+    html+='<div class="mem-rel-card">'
+      +'<div class="mem-rel-header"><span class="mem-rel-icon">💜</span><span class="mem-rel-title">Memória do Relacionamento</span>'
+      +'<div class="mem-rel-actions">'
+      +'<button class="mem-rel-btn mem-rel-edit" onclick="editarRelacionamento()" title="Editar">✏️</button>'
+      +'<button class="mem-rel-btn mem-rel-del" onclick="resetarRelacionamento()" title="Apagar">🗑️</button>'
+      +'</div></div>'
+      +'<div class="mem-rel-content" id="mem-rel-content">'+escapeHtml(relData.content)+'</div>'
+      +'</div>';
 
   // Assuntos em aberto — sempre no topo
   if(filtro==='todas'||filtro==='pendencias'){
@@ -1692,6 +1719,27 @@ async function editarMemoria(id, conteudoAtual){
     var r=await fetch('/forms/memoria/'+id+'/'+phone,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:novo.trim()})});
     if(r.ok){showToast('Memória atualizada ✅');await renderMemorias();}
     else showToast('Erro ao editar');
+  }catch(e){showToast('Erro');}
+}
+
+async function editarRelacionamento(){
+  var el=document.getElementById('mem-rel-content');
+  var atual=el?el.textContent:'';
+  var novo=prompt('Editar memória do relacionamento:\n(Corrija nomes, apelidos, detalhes errados)', atual);
+  if(!novo||novo.trim()===atual)return;
+  try{
+    var r=await fetch('/forms/relacionamento/'+phone,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:novo.trim()})});
+    if(r.ok){showToast('Relacionamento atualizado ✅');await renderMemorias();}
+    else showToast('Erro ao editar');
+  }catch(e){showToast('Erro');}
+}
+
+async function resetarRelacionamento(){
+  if(!confirm('Apagar toda a memória do relacionamento? A Clara vai reconstruir do zero nas próximas conversas.'))return;
+  try{
+    var r=await fetch('/forms/relacionamento/'+phone,{method:'DELETE'});
+    if(r.ok){showToast('Memória do relacionamento apagada');await renderMemorias();}
+    else showToast('Erro ao apagar');
   }catch(e){showToast('Erro');}
 }
 
