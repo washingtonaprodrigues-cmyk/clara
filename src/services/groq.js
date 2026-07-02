@@ -1166,8 +1166,10 @@ function filtrarResposta(t) {
   t = t.replace(/^\[[^\]]+\][\s\S]*?\n\n/gm, '').trim();
   // Fallback: remove linhas isoladas de marcadores (abertura e fechamento)
   t = t.replace(/^\[\/?\s*[A-ZÁÉÍÓÚÃÕÇÜ\s]+\]\s*\n?/gm, '').trim();
-  // Remove __BUSCAR:...__ e **BUSCAR:...** e variações de markdown — não deve aparecer pro usuário
-  t = t.replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '').trim();
+  // Remove linhas de confirmação de ação que o Gemini às vezes lista
+  // Ex: ": Lembrete "X" marcado como "Concluído"" ou ": Lembrete "X" foi removido."
+  t = t.replace(/^:?\s*Lembrete\s+".+?"\s+(marcado como|foi removido|concluído)[^\n]*/gim, '').trim();
+  t = t.replace(/^\s*:\s*Lembrete\b[^\n]*/gim, '').trim();
   // PROTEÇÃO CONTRA VAZAMENTO DE INSTRUÇÃO INTERNA:
   // [AÇÃO]/[AÇÃO]: é uma marcação que só deveria existir no CONTEXTO que a
   // Clara recebe (prova de que algo realmente aconteceu no banco), nunca na
