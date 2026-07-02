@@ -441,10 +441,45 @@ router.get('/relacionamento/:phone', async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
     res.json({
+      id: rel?.id || null,
       content: rel?.content || null,
       createdAt: rel?.createdAt || null,
       updatedAt: rel?.updatedAt || null
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PATCH /relacionamento/:phone → edita o resumo de relacionamento
+router.patch('/relacionamento/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const { content } = req.body;
+    if (!content || !content.trim()) return res.status(400).json({ error: 'Conteúdo vazio' });
+    const user = await memory.getOrCreateUser(phone);
+    const rel = await prisma.memory.findFirst({
+      where: { userId: user.id, type: 'relationship_summary' },
+      orderBy: { createdAt: 'desc' }
+    });
+    if (rel) {
+      await prisma.memory.update({ where: { id: rel.id }, data: { content: content.trim() } });
+    } else {
+      await prisma.memory.create({ data: { userId: user.id, type: 'relationship_summary', content: content.trim() } });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /relacionamento/:phone → apaga o resumo de relacionamento
+router.delete('/relacionamento/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const user = await memory.getOrCreateUser(phone);
+    await prisma.memory.deleteMany({ where: { userId: user.id, type: 'relationship_summary' } });
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
