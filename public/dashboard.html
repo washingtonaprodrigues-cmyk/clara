@@ -1550,6 +1550,7 @@ async function renderMemorias(){
     _memBuscaAtiva='';
     var si=document.getElementById('mem-search-input');
     if(si)si.value='';
+    window._lastRelData = relData;
     _renderMemoriasUI(relData);
   }catch(e){
     el.innerHTML='<div class="mem-empty-state"><div class="mem-empty-brain">&#x1F9E0;</div><div class="mem-empty-title">Erro ao carregar</div><div class="mem-empty-sub">Tente novamente.</div></div>';
@@ -1583,6 +1584,7 @@ function _fmtDataMem(iso){
 }
 
 function _renderMemoriasUI(relData){
+  relData = relData || window._lastRelData || null;
   var el=document.getElementById('memorias-body');
   if(!el||!_memDados)return;
   var cats=_memDados.categorias||{};
