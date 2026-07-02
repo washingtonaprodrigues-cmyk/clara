@@ -972,7 +972,25 @@ async function handleMessage(phone, text, location = null) {
       return;
     }
 
-    // ── DESAFIO À CLARA — chumbo trocado 😏 ──────────────────────────────
+    // ── SUGESTÃO DE LEMBRETE — pergunta antes de criar ───────────────────
+    // Quando a Clara detecta uma atividade futura específica sem pedido
+    // explícito, ela pergunta se o usuário quer criar um lembrete —
+    // em vez de criar automaticamente ou ignorar.
+    if (classified.tipo === 'sugerir_lembrete' && classified.titulo) {
+      const titulo = classified.titulo.trim();
+      // Salva pendência aguardando confirmação do usuário
+      const expira = Date.now() + 10 * 60 * 1000; // 10 min
+      await prisma.memory.create({
+        data: {
+          userId: user.id,
+          type: 'confirmacao_pendente',
+          content: JSON.stringify({ tipo: 'sugestao_lembrete_confirmacao', titulo, expira })
+        }
+      }).catch(() => {});
+      const ctx = `\n\n[SUGESTÃO] O usuário mencionou "${titulo}" como algo que precisa fazer, mas não pediu lembrete. Pergunte de forma natural e curta se quer que você crie um lembrete pra isso. Ex: "Quer que eu crie um lembrete pra ${titulo}?" — uma linha só, no seu tom.`;
+      await responderLivre(user, phone, text, ctx);
+      return;
+    }
     // Quando o usuário duvida diretamente dela, ela aceita o desafio e cria
     // o lembrete de verdade — só lembretes simples, nunca outros tipos.
     if (classified.tipo === 'desafio_clara') {
@@ -1987,6 +2005,59 @@ async function checkConfirmacaoPendente(user, phone, text) {
       } else {
         await sendMessage(phone, 'Esse local e sua casa ou seu trabalho?');
         await prisma.memory.create({ data: { userId: user.id, type: 'confirmacao_pendente', content: JSON.stringify({ ...dados, expira: Date.now() + 5 * 60 * 1000 }) } }).catch(() => {});
+      }
+      return;
+    }
+
+    // ── Sugestão de lembrete — turno 1: usuário respondeu se quer criar ──
+    if (dados.tipo === 'sugestao_lembrete_confirmacao') {
+      await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
+      const afirmativo = /^(sim|pode|quero|isso|s|ok|beleza|cria|cria sim|pode criar|bora|manda ver)\b/i.test(textNorm);
+      if (afirmativo) {
+        // Salva pendência aguardando o horário
+        const expira = Date.now() + 10 * 60 * 1000;
+        await prisma.memory.create({
+          data: {
+            userId: user.id,
+            type: 'confirmacao_pendente',
+            content: JSON.stringify({ tipo: 'sugestao_lembrete_hora', titulo: dados.titulo, expira })
+          }
+        }).catch(() => {});
+        const ctx = `\n\n[SUGESTÃO CONFIRMADA] O usuário quer criar o lembrete "${dados.titulo}". Pergunte que horas quer ser lembrado — de forma curta e natural. Ex: "Que horas?" ou "Qual horário?"`;
+        await responderLivre(user, phone, text, ctx);
+      } else {
+        // Não quer o lembrete — responde naturalmente e encerra
+        await responderLivre(user, phone, text, `\n\n[SUGESTÃO RECUSADA] O usuário não quer criar lembrete para "${dados.titulo}". Responda naturalmente, sem insistir.`);
+      }
+      return;
+    }
+
+    // ── Sugestão de lembrete — turno 2: usuário respondeu o horário ──
+    if (dados.tipo === 'sugestao_lembrete_hora') {
+      await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
+      // Tenta extrair hora da resposta
+      let horaFinal = '09:00';
+      const horaMatch = textNorm.match(/(\d{1,2})[h:]?(\d{0,2})/);
+      const naoSabe = /não sei|qualquer|tanto faz|você decide|pode ser|tanto faz/i.test(textNorm);
+      if (horaMatch && !naoSabe) {
+        const h = String(parseInt(horaMatch[1])).padStart(2, '0');
+        const m = String(parseInt(horaMatch[2] || '0')).padStart(2, '0');
+        horaFinal = `${h}:${m}`;
+      }
+      const hoje = dateBRT();
+      const scheduledAt = new Date(`${hoje}T${horaFinal}:00-03:00`);
+      if (scheduledAt < nowBRT()) scheduledAt.setDate(scheduledAt.getDate() + 1);
+      try {
+        await prisma.reminder.create({
+          data: { userId: user.id, phone, message: dados.titulo, scheduledAt }
+        });
+        const horaFmt = scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+        const avisoHora = naoSabe ? ` Coloquei pras ${horaFmt} então 😊` : '';
+        const ctx = `\n\n[LEMBRETE CRIADO] Lembrete "${dados.titulo}" criado para as ${horaFmt}.${avisoHora} Confirme de forma natural e curta.`;
+        await responderLivre(user, phone, text, ctx);
+        emitirAtualizacao(phone, 'lembretes');
+      } catch(e) {
+        await responderLivre(user, phone, text, `\n\n[ERRO] Não consegui criar o lembrete. Informe que houve um problema.`);
       }
       return;
     }
