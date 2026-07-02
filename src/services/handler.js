@@ -978,7 +978,42 @@ async function handleMessage(phone, text, location = null) {
       return;
     }
 
-    // ── SUGESTÃO DE LEMBRETE — pergunta antes de criar ───────────────────
+    // ── CONSULTA DE AGENDA INTERNA ────────────────────────────────────────
+    // Quando o usuário pergunta se ela criou algo ou quer verificar a agenda,
+    // busca no banco e responde com o que realmente existe — sem inventar.
+    if (classified.tipo === 'consulta_agenda') {
+      const query = (classified.query || text).toLowerCase();
+      const palavras = query.split(' ').filter(w => w.length > 3);
+      const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
+      const fimProxSemana = new Date(inicioHoje.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const lembretes = await prisma.reminder.findMany({
+        where: {
+          userId: user.id, sent: false, confirmed: false,
+          scheduledAt: { gte: inicioHoje, lte: fimProxSemana }
+        },
+        orderBy: { scheduledAt: 'asc' }, take: 10
+      }).catch(() => []);
+
+      // Filtra por palavras relevantes da query se houver
+      const relevantes = palavras.length > 0
+        ? lembretes.filter(r => palavras.some(p => r.message.toLowerCase().includes(p)))
+        : lembretes;
+
+      let ctxAgenda;
+      if (relevantes.length > 0) {
+        const lista = relevantes.map(r => {
+          const d = new Date(r.scheduledAt);
+          const dStr = d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: '2-digit' });
+          const hStr = d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+          return `• ${r.message} — ${dStr} às ${hStr}`;
+        }).join('\n');
+        ctxAgenda = `\n\n[CONSULTA AGENDA — RESULTADO REAL DO BANCO] Encontrei estes lembretes relacionados:\n${lista}\n\nInforme EXATAMENTE o que está aqui — não invente datas ou horários diferentes.`;
+      } else {
+        ctxAgenda = `\n\n[CONSULTA AGENDA — RESULTADO REAL DO BANCO] Não encontrei nenhum lembrete relacionado a "${query}" nos próximos 7 dias. Informe honestamente que não há nada cadastrado.`;
+      }
+      await responderLivre(user, phone, text, ctxAgenda);
+      return;
+    }
     // Quando a Clara detecta uma atividade futura específica sem pedido
     // explícito, ela pergunta se o usuário quer criar um lembrete —
     // em vez de criar automaticamente ou ignorar.
@@ -1484,7 +1519,11 @@ async function executeAction(user, phone, classified, originalText) {
       await memory.saveMemory(user.id, 'anotacao', classified.conteudo || classified.titulo || originalText, { titulo: classified.titulo });
       break;
     case 'tarefa':
-      await salvarTarefaSilenciosa(user, phone, classified, originalText);
+      const resultTarefa = await salvarTarefaSilenciosa(user, phone, classified, originalText);
+      if (resultTarefa?.duplicata) {
+        // Já existe — informa sem criar de novo
+        preferences._dicaAcao = `Já existe um lembrete para "${resultTarefa.lembreteTitulo}" às ${resultTarefa.horaExistente}. NÃO crie outro — informe que já está anotado e qual é o horário.`;
+      }
       break;
     case 'multiplas_tarefas':
       // Cria cada tarefa do array individualmente, reusando salvarTarefaSilenciosa
@@ -1726,6 +1765,26 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
     }
   }
   if (scheduledAt) {
+    // ── Verifica duplicata antes de criar ────────────────────────────────
+    // Se já existe lembrete com título similar no mesmo dia, não cria novo.
+    // Evita que a Clara crie duplicatas quando o usuário já tinha pedido antes
+    // ou quando ela mesma já criou e o usuário confirma ("você já criou").
+    const inicioDia = new Date(scheduledAt); inicioDia.setHours(0,0,0,0);
+    const fimDia = new Date(scheduledAt); fimDia.setHours(23,59,59,999);
+    const palavraChave = classified.titulo.split(' ').filter(w => w.length > 3)[0] || classified.titulo;
+    const duplicata = await prisma.reminder.findFirst({
+      where: {
+        userId: user.id, confirmed: false, sent: false,
+        scheduledAt: { gte: inicioDia, lte: fimDia },
+        message: { contains: palavraChave, mode: 'insensitive' }
+      }
+    }).catch(() => null);
+    if (duplicata) {
+      console.log(`[Reminder] Duplicata detectada para "${classified.titulo}" — não criou novo`);
+      const horaExist = new Date(duplicata.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+      return { duplicata: true, lembreteTitulo: duplicata.message, horaExistente: horaExist };
+    }
+
     const novoLembrete = await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
     if (detectarUrgencia(classified.titulo)) {
       await prisma.memory.create({ data: { userId: user.id, type: 'lembrete_urgente', content: novoLembrete.id } }).catch(() => {});
