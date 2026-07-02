@@ -573,15 +573,65 @@ async function transcribeAndProcess(phone, body) {
     const audioBuffer = Buffer.from(dlData.base64Data, 'base64');
     const mimeType = dlData.mimetype || 'audio/ogg';
     const ext = mimeType.includes('mp3') ? 'mp3' : 'ogg';
-    const Groq = require('groq-sdk');
-    const { toFile } = require('groq-sdk');
-    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-    const transcription = await groq.audio.transcriptions.create({
-      file: await toFile(audioBuffer, `audio.${ext}`, { type: mimeType }),
-      model: 'whisper-large-v3-turbo',
-      language: 'pt',
-    });
-    const texto = transcription.text?.trim();
+    const base64Audio = audioBuffer.toString('base64');
+
+    let texto = null;
+
+    // ── Gemini como primário — mais estável que Groq Whisper ──────────────
+    const GEMINI_KEY = process.env.GEMINI_API_KEY;
+    if (GEMINI_KEY) {
+      try {
+        const geminiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { text: 'Transcreva exatamente o que foi dito neste áudio em português brasileiro. Retorne APENAS a transcrição, sem comentários, sem pontuação excessiva, sem prefixos.' },
+                  { inlineData: { mimeType, data: base64Audio } }
+                ]
+              }],
+              generationConfig: { maxOutputTokens: 500, temperature: 0 }
+            })
+          }
+        );
+        if (geminiRes.ok) {
+          const geminiData = await geminiRes.json();
+          const candidato = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+          if (candidato && candidato.length > 1) {
+            texto = candidato;
+            console.log(`[Áudio] Transcrito via Gemini`);
+          }
+        } else {
+          console.warn('[Áudio] Gemini falhou:', geminiRes.status);
+        }
+      } catch (eGemini) {
+        console.warn('[Áudio] Gemini erro:', eGemini.message);
+      }
+    }
+
+    // ── Groq Whisper como fallback ────────────────────────────────────────
+    if (!texto) {
+      const Groq = require('groq-sdk');
+      const { toFile } = require('groq-sdk');
+      const chaves = [process.env.GROQ_API_KEY_2, process.env.GROQ_API_KEY].filter(Boolean);
+      for (const chave of chaves) {
+        try {
+          const groqInst = new Groq({ apiKey: chave });
+          const transcription = await groqInst.audio.transcriptions.create({
+            file: await toFile(audioBuffer, `audio.${ext}`, { type: mimeType }),
+            model: 'whisper-large-v3-turbo',
+            language: 'pt',
+          });
+          texto = transcription.text?.trim();
+          if (texto) { console.log(`[Áudio] Transcrito via Groq fallback`); break; }
+        } catch (eGroq) {
+          console.warn(`[Áudio] Groq fallback falhou:`, eGroq.message);
+        }
+      }
+    }
     if (!texto) {
       await sendMessage(phone, 'Não entendi o áudio 😕 Pode repetir digitando?');
       return;
