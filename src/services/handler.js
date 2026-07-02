@@ -1996,7 +1996,10 @@ async function checkConfirmacaoPendente(user, phone, text) {
       // "posso concluir todos, ou quer remarcar algum?" — diferente da
       // pendência de saúde, aqui a resposta precisa de uma AÇÃO real no
       // banco, não só uma reação em texto.
-      const afirmativo = /^(sim|pode|isso|s|ok|beleza|confirma|confirmado|concluir? tudo|pode concluir|todos?)\b/i.test(textNorm);
+      // Só confirma se a mensagem for curta e claramente afirmativa
+      // "Sim, te conto tudo depois" NÃO é confirmação de lembretes — é continuação de outra conversa
+      const msgCurta = textNorm.length < 30;
+      const afirmativo = msgCurta && /^(sim|pode|isso|s|ok|beleza|confirma|confirmado|concluir? tudo|pode concluir|todos?)\b/i.test(textNorm);
       if (afirmativo) {
         await prisma.reminder.updateMany({
           where: { id: { in: dados.reminderIds } },
