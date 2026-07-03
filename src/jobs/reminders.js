@@ -1467,6 +1467,56 @@ cron.schedule('* * * * *', async () => {
 
 // ═══════════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════
+// ACOMPANHAMENTO DE EPISÓDIOS DA VIDA — verifica a cada hora
+// Pergunta como foi um evento depois do tempo definido, de forma natural
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('0 * * * *', async () => {
+  if (!isOwner) return;
+  try {
+    const agora = new Date();
+    const episodios = await prisma.memory.findMany({
+      where: { type: 'episodio_vida' },
+      include: { user: true },
+      orderBy: { createdAt: 'asc' },
+      take: 50
+    });
+
+    for (const ep of episodios) {
+      if (!ep.user?.phone) continue;
+      let meta = {}; try { meta = JSON.parse(ep.metadata || '{}'); } catch {}
+      if (meta.perguntado) continue;
+      if (!meta.checkInAt || new Date(meta.checkInAt) > agora) continue;
+      if (!(await houveConversaRecente(ep.userId, 60 * 24))) continue; // ativo nos últimos 24h
+
+      // Marca como perguntado antes de disparar
+      await prisma.memory.update({
+        where: { id: ep.id },
+        data: { metadata: JSON.stringify({ ...meta, perguntado: true }) }
+      }).catch(() => {});
+
+      const ctx = `[ACOMPANHAMENTO DE EPISÓDIO] Há ${Math.round((agora - new Date(ep.createdAt)) / 86400000)} dia(s) você registrou: "${ep.content}". Pergunte como foi/está de forma natural e humana, integrada ao seu tom — não como formulário. Ex: "ei, e aquela ${ep.content.split(' ').slice(0,3).join(' ')}... como foi?" — curto e genuíno.`;
+
+      ;(async () => {
+        try {
+          const history = await memory.getConversationHistory(ep.userId, 4).catch(() => []);
+          const prefs = await memory.getUserPreferences(ep.userId).catch(() => ({}));
+          prefs._contexto = ctx;
+          prefs._skipSaveHistory = true;
+          const resposta = await Promise.race([
+            freeResponse('', history, prefs),
+            new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 10000))
+          ]).catch(() => null);
+          if (resposta && !isRespostaFallback(resposta)) {
+            await sendMessage(ep.user.phone, resposta);
+            console.log(`[Episódio] Acompanhamento enviado para ${ep.user.phone}: "${ep.content}"`);
+          }
+        } catch(e) { console.error('[Episódio] erro acompanhamento:', e.message); }
+      })();
+    }
+  } catch(e) { console.error('[Episódio] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
 // AVISO ANTECIPADO — 1h e 30min antes de compromissos/tarefas
 // Remédios NÃO entram aqui — só o alerta formal na hora certa.
 // Só dispara se o usuário estiver conversando ativamente (últimos 20min).
