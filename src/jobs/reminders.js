@@ -1459,6 +1459,68 @@ cron.schedule('* * * * *', async () => {
 }, { timezone: 'America/Sao_Paulo' });
 
 // ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
+// AVISO ANTECIPADO — 1h e 30min antes de compromissos/tarefas
+// Remédios NÃO entram aqui — só o alerta formal na hora certa.
+// Só dispara se o usuário estiver conversando ativamente (últimos 20min).
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('* * * * *', async () => {
+  if (!isOwner) return;
+  try {
+    const now = nowBRT();
+    const em30m = new Date(now.getTime() + 30 * 60 * 1000);
+    const em61m = new Date(now.getTime() + 61 * 60 * 1000);
+
+    const proximos = await prisma.reminder.findMany({
+      where: { sent: false, confirmed: false, scheduledAt: { gte: em30m, lte: em61m } },
+      include: { user: true }
+    });
+
+    for (const r of proximos) {
+      if (!r.user?.phone) continue;
+      const userId = r.user.id;
+      const phone = r.user.phone;
+      const minRestantes = Math.round((new Date(r.scheduledAt) - now) / 60000);
+      const janela = minRestantes <= 31 ? '30min' : '1h';
+
+      // Só avisa se há conversa ativa nos últimos 20 minutos
+      if (!(await houveConversaRecente(userId, 20))) continue;
+
+      // Verifica se já avisou nessa janela
+      const lockKey = `aviso_antecipado_${r.id}_${janela}`;
+      const jaAvisou = await prisma.memory.findFirst({
+        where: { userId, type: 'aviso_antecipado_lock', content: lockKey }
+      }).catch(() => null);
+      if (jaAvisou) continue;
+
+      await prisma.memory.create({
+        data: { userId, type: 'aviso_antecipado_lock', content: lockKey }
+      }).catch(() => {});
+
+      const horaBRT = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', {
+        timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'
+      });
+      const tempoTexto = janela === '1h' ? 'daqui uma hora' : 'daqui meia hora';
+      const ctx = `[AVISO ANTECIPADO] ${tempoTexto} você tem: "${r.message}" às ${horaBRT}. Mencione de forma MUITO natural e curta — como uma amiga que lembrou no meio da conversa. Uma frase só. Ex: "ah, e ${tempoTexto} você tem ${r.message}, vai se preparando!" — sem ser formal, sem cortar o assunto.`;
+
+      // Salva aviso pendente — será injetado na próxima resposta da Clara
+      // de forma natural, sem mensagem separada que corta a conversa.
+      const avisoTexto = `${r.message} às ${horaBRT} (${tempoTexto})`;
+      await prisma.memory.create({
+        data: { userId, type: 'aviso_pendente', content: avisoTexto }
+      }).catch(() => {});
+      console.log(`[AvisoAntecipado] Pendente salvo — ${phone}: ${r.message}`);
+    }
+
+    // Limpa locks com mais de 2h
+    await prisma.memory.deleteMany({
+      where: { type: 'aviso_antecipado_lock', createdAt: { lte: new Date(Date.now() - 2 * 60 * 60 * 1000) } }
+    }).catch(() => {});
+
+  } catch (e) { console.error('[AvisoAntecipado] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
 // MENSAGENS AGENDADAS PARA CONTATOS — a cada minuto
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('* * * * *', async () => {
