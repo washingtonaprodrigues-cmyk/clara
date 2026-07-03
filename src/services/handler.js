@@ -1,7 +1,7 @@
 // v2 - consulta direta sem LLM
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
-const { classify, extractPersonalInfo, extractPendenciaEmocional, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback } = require('./groq');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas } = require('./groq');
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
 // O classify() já recebe uma tabela com a data exata de cada dia da semana
@@ -77,9 +77,6 @@ const { tentarConsultaDireta } = require('./consultaDireta');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName, savePendencia, fecharPendenciaLembrete, salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao, salvarMemoriaAfetiva } = memory;
-
-// URL base do dashboard — usada para montar links diretos (ex: deep link de lista)
-const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://clara-production-949e.up.railway.app';
 
 // Substitui prisma.memory.upsert({ where: { userId_type: {...} } }) — esse
 // nome de campo composto só existe quando o model Memory tem
@@ -235,13 +232,13 @@ async function enviarMenu(phone) {
 async function executeListaAction(user, phone, classified) {
   try {
     const tipo = classified.tipo;
-    if (tipo === 'lista_compras' && ((classified.itens && classified.itens.length > 0) || classified.nome)) {
-      const itemsJson = (classified.itens || []).map((nome, i) => ({ id: i + 1, nome, done: false }));
+    if ((tipo === 'lista_compras') && classified.itens && classified.itens.length > 0) {
+      const itemsJson = classified.itens.map((nome, i) => ({ id: i + 1, nome, done: false }));
       const lista = await prisma.groceryList.create({
         data: { userId: user.id, name: classified.nome || '🛒 Lista de compras', items: JSON.stringify(itemsJson), done: false }
       });
       await memory.saveMemory(user.id, 'ultima_lista', lista.id);
-      return { acao: 'criada', listaId: lista.id, listaNome: lista.name, listaItems: itemsJson };
+      return { acao: 'criada', listaNome: lista.name, listaItems: itemsJson };
     }
     if (tipo === 'lista_buscar' || (tipo === 'lista_compras' && (!classified.itens || classified.itens.length === 0))) {
       const mems = await memory.getRecentMemories(user.id, 20);
@@ -264,7 +261,7 @@ async function executeListaAction(user, phone, classified) {
     if (tipo === 'lista_marcar') {
       const temNumeros = classified.numeros && classified.numeros.length > 0;
       const temNomes = classified.nomes && classified.nomes.length > 0;
-      const marcarTudo = !temNumeros && !temNomes; // "peguei tudo" — sem item específico citado
+      if (!temNumeros && !temNomes) return null;
       let lista = null;
       if (classified.lista) {
         const nomeLista = classified.lista.toLowerCase();
@@ -279,7 +276,6 @@ async function executeListaAction(user, phone, classified) {
       if (!lista) lista = await prisma.groceryList.findFirst({ where: { userId: user.id, done: false }, orderBy: { createdAt: 'desc' } });
       if (!lista) return null;
       let items = []; try { items = JSON.parse(lista.items); } catch {}
-      if (marcarTudo) items = items.map(i => ({ ...i, done: true }));
       if (temNumeros) items = items.map(i => classified.numeros.includes(i.id) ? { ...i, done: true } : i);
       if (temNomes) {
         items = items.map(i => {
@@ -343,31 +339,9 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       preferences._contexto = '';
       const resp = await freeResponse(text, history, preferences);
       if (resp === null) return;
-      if (resp && (resp.includes('__BUSCAR:') || resp.includes('BUSCAR:'))) {
-        const buscaMatchSkip = resp.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
-        if (buscaMatchSkip) {
-          const querySkip = buscaMatchSkip[1].trim();
-          const tomSkip = preferences?.tom || 'carinhoso';
-          const avisosSkip = {
-            carinhoso: `✨ Buscando pra gente…`,
-            direto: `🔍 Buscando.`,
-            divertido: `✨ Um segundinho, deixa eu dar uma garimpada!`,
-            sarcastico: `Tá bom, vou pesquisar porque obviamente você não vai fazer isso sozinho. 🙄`,
-          };
-          await sendMessage(phone, avisosSkip[tomSkip] || avisosSkip.carinhoso);
-          try {
-            const resultadoSkip = await searchWeb(querySkip, '');
-            if (resultadoSkip) {
-              await memory.saveConversationMessage(user.id, 'user', text);
-              await memory.saveConversationMessage(user.id, 'assistant', resultadoSkip);
-              await sendMessage(phone, resultadoSkip);
-            } else {
-              await sendMessage(phone, 'Pesquisei mas não encontrei nada útil sobre isso agora 😕');
-            }
-          } catch (eBuscaSkip) {
-            await sendMessage(phone, 'Não consegui pesquisar isso agora 😕 Tenta de novo?');
-          }
-        }
+      if (resp && resp.includes('__BUSCAR:')) {
+        // improvável em saudações, mas tratamos igual
+        await sendMessage(phone, 'Deixa eu pesquisar isso! 🔍');
         return;
       }
       await memory.saveConversationMessage(user.id, 'user', text);
@@ -375,32 +349,6 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       await sendMessage(phone, resp);
       return;
     }
-
-    // ── BLOCO 2: COLETA DE HORÁRIO DA PRIMEIRA INTERAÇÃO DO DIA ──────────
-    // Registra diariamente o horário em que o Washington manda a primeira
-    // mensagem. Após 7-14 dias, a média móvel substitui o fallback fixo do
-    // bom dia automático — fazendo a Clara aprender quando ele acorda de
-    // verdade. Roda em fire-and-forget (não bloqueia a resposta).
-    (async () => {
-      try {
-        const _now = nowBRT();
-        const _pad = n => String(n).padStart(2,'0');
-        const _hoje = `${_now.getFullYear()}-${_pad(_now.getMonth()+1)}-${_pad(_now.getDate())}`;
-        const _chave = `rotina_acorda:${_hoje}`;
-        // Só registra uma vez por dia
-        const jaRegistrou = await prisma.memory.findFirst({
-          where: { userId: user.id, type: 'rotina_acorda', content: { startsWith: _chave } }
-        }).catch(() => null);
-        if (!jaRegistrou) {
-          const _hm = `${_pad(_now.getHours())}:${_pad(_now.getMinutes())}`;
-          await prisma.memory.create({
-            data: { userId: user.id, type: 'rotina_acorda', content: `${_chave}:${_hm}` }
-          }).catch(() => {});
-          console.log(`[Rotina] Primeira interação ${user.phone}: ${_hoje} às ${_hm}`);
-        }
-      } catch (_e) { /* silencioso */ }
-    })();
-    // ── FIM BLOCO 2 ───────────────────────────────────────────────────────
 
     let contexto = '';
     try {
@@ -451,16 +399,10 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           const horaBRT = d.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo', hour:'2-digit', minute:'2-digit'});
           return `• ${dStr} às ${horaBRT} — ${r.message}`;
         };
-        // ── AGENDA injetada com instrução restritiva ──────────────────────
-        // A Clara TEM a informação da agenda, mas NÃO deve mencionar itens
-        // proativamente em toda resposta — isso vira ruído e corta conversas.
-        // Só mencione um item da agenda se:
-        // 1. O usuário trouxer o assunto (saúde, amanhã, planos, o nome do compromisso)
-        // 2. For o único tópico da mensagem e fizer sentido orgânico
-        // 3. Nunca encerre uma resposta com "não esqueça de X" se X não foi mencionado
-        contexto += `\n\n[AGENDA — use apenas se o usuário trouxer o assunto, nunca mencione por iniciativa em toda resposta]\n${lembretes.map(fmtLemb).join('\n')}`;
+        contexto += `\n\n[AGENDA]\n${lembretes.map(fmtLemb).join('\n')}`;
+      } else {
+        contexto += `\n\n[AGENDA]\nNenhum lembrete para hoje ou amanhã.`;
       }
-      // Sem lembretes: não injeta nada — evita "Nenhum lembrete" desnecessário
 
       try {
         const textLower = (text||'').toLowerCase();
@@ -637,11 +579,10 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     if (!respStr) return;
 
     // ── Busca proativa: Clara sinalizou que quer pesquisar ──
-    // Cobre __BUSCAR:query__ (padrão) e **BUSCAR:query** (Gemini às vezes gera com asteriscos)
-    const buscaMatch = respStr.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
-
+    const buscaMatch = respStr.match(/__BUSCAR:(.+?)(__|\n|$)/);
     if (buscaMatch) {
       const query = buscaMatch[1].trim();
+      // Avisa que vai pesquisar, no estilo da Clara
       const tom = preferences?.tom || 'carinhoso';
       const avisos = {
         carinhoso: `✨ Buscando pra gente…`,
@@ -671,29 +612,6 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     await memory.saveConversationMessage(user.id, 'user', text);
     await memory.saveConversationMessage(user.id, 'assistant', respStr);
     await sendMessage(phone, respStr);
-
-    // ── Busca automática quando a Clara indica incerteza ──────────────
-    // Se ela respondeu mas sinalizou que não tem certeza ("não sei ao certo",
-    // "não tenho certeza", "deixa eu verificar" etc.), busca automaticamente
-    // e manda o resultado logo depois — sem o usuário precisar pedir.
-    // Só dispara se a mensagem original parece uma pergunta de informação.
-    const indicaIncerteza = /não (sei|tenho certeza|consigo confirmar|lembro ao certo)|deixa eu verificar|preciso verificar|não estou certa|não estou segura|melhor confirmar|confirme com|verifique com/i.test(respStr);
-    const ehPerguntaInfo = /\?|como|qual|quais|quando|onde|quanto|o que é|me (conta|fala|explica|ajuda a|diz)|efeito|diferença|funciona|significa/i.test(text);
-    if (indicaIncerteza && ehPerguntaInfo && !preferences?._confirmacaoSeparada) {
-      (async () => {
-        try {
-          await new Promise(r => setTimeout(r, 1500));
-          const resultado = await searchWeb(text.trim(), '');
-          if (resultado && !isRespostaFallback(resultado)) {
-            await memory.saveConversationMessage(user.id, 'assistant', resultado).catch(() => {});
-            await sendMessage(phone, resultado);
-            console.log(`[BuscaIncerteza] Resultado enviado para ${phone}`);
-          }
-        } catch (e) {
-          console.error('[BuscaIncerteza] Erro:', e.message);
-        }
-      })();
-    }
 
     // ── Segunda mensagem: confirmação CRUA do lembrete ──
     // Quando o pedido criou um lembrete, a Clara responde de forma humana
@@ -895,39 +813,23 @@ async function handleMessage(phone, text, location = null) {
 
     if (modoAtual === 'conversar') return await responderLivre(user, phone, text);
 
-    // ── Classify e histórico em PARALELO ─────────────────────────────────
-    // O classify (Gemini) e a busca do histórico são independentes entre si
-    // — rodá-los em paralelo elimina a latência sequencial dos dois.
-    // O contextoClassify (histórico) é passado ao classify depois, mas como
-    // o Gemini já classificou sem ele na maioria dos casos simples, o
-    // resultado é praticamente o mesmo com metade do tempo de espera.
+    // ── Passa contexto da conversa para o classify resolver referências vagas ──
+    // Inclui: histórico recente + lembretes pendentes (para concluir_lembrete funcionar sem swipe)
     let contextoClassify = '';
-    const [classifiedResult] = await Promise.all([
-      // Classify roda com contexto vazio primeiro — rápido para casos simples
-      classify(text, phone, ''),
-      // Histórico e lembretes pendentes em paralelo
-      (async () => {
-        try {
-          const history = await memory.getConversationHistory(user.id, 4);
-          if (history.length > 0) {
-            contextoClassify = history.map(m => `${m.role === 'user' ? 'Usuário' : 'Clara'}: ${m.content}`).join('\n');
-          }
-          const lembretesPendentes = await getLembretesPendentesConfirmacao(user.id).catch(() => []);
-          if (lembretesPendentes.length > 0) {
-            const listaPendentes = lembretesPendentes.map((r, i) => `${i+1}. "${r.message}"`).join(', ');
-            contextoClassify += `\n[LEMBRETES PENDENTES DE CONFIRMAÇÃO: ${listaPendentes}] — se o usuário disser algo que soe como confirmação de qualquer um desses, classifique como concluir_lembrete com o título correspondente.`;
-          }
-        } catch(e) {}
-      })()
-    ]);
+    try {
+      const history = await memory.getConversationHistory(user.id, 4);
+      if (history.length > 0) {
+        contextoClassify = history.map(m => `${m.role === 'user' ? 'Usuário' : 'Clara'}: ${m.content}`).join('\n');
+      }
+      // Adiciona lembretes pendentes para o classify saber o que pode ser concluído
+      const lembretesPendentes = await getLembretesPendentesConfirmacao(user.id).catch(() => []);
+      if (lembretesPendentes.length > 0) {
+        const listaPendentes = lembretesPendentes.map((r, i) => `${i+1}. "${r.message}"`).join(', ');
+        contextoClassify += `\n[LEMBRETES PENDENTES DE CONFIRMAÇÃO: ${listaPendentes}] — se o usuário disser algo que soe como confirmação de qualquer um desses, classifique como concluir_lembrete com o título correspondente.`;
+      }
+    } catch(e) {}
 
-    // Se o classify retornou ambíguo (outro) e há contexto, tenta reclassificar
-    // com o histórico — cobre casos como "feito" que precisam do contexto
-    let classified = classifiedResult;
-    if (classified.tipo === 'outro' && contextoClassify) {
-      const reclass = await classify(text, phone, contextoClassify).catch(() => null);
-      if (reclass && reclass.tipo !== 'outro') classified = reclass;
-    }
+    const classified = await classify(text, phone, contextoClassify);
     console.log(`[${phone}] Tipo: ${classified.tipo}`);
 
     // Corrige a data com base em código (não no modelo) sempre que o texto
@@ -950,13 +852,8 @@ async function handleMessage(phone, text, location = null) {
       const listaResult = await executeListaAction(user, phone, classified);
       let contextoExtra = '';
       if (listaResult) {
-        const { acao, listaId, listaNome, listaItems, allDone, itemAdicionado } = listaResult;
-        if (acao === 'criada') {
-          const linkLista = listaId ? `${DASHBOARD_URL}/?lista=${listaId}` : '';
-          const temItens = listaItems.length > 0;
-          const descricaoItens = temItens ? ` com os itens: ${listaItems.map(i=>i.nome).join(', ')}` : ' (ainda vazia)';
-          contextoExtra = `\n\n[AÇÃO REALIZADA] Acabei de criar a lista "${listaNome}"${descricaoItens}. Confirme de forma animada.${temItens ? ' Não liste os itens pois aparecem separadamente.' : ' Pergunte o que ele quer adicionar, ou diga que pode mandar os itens quando quiser.'} ${linkLista ? `Inclua este link no final da sua resposta para o usuário poder ver/marcar a lista direto: ${linkLista}${temItens ? ' — e mencione que ele também pode simplesmente te dizer quais itens já pegou (ex: "peguei arroz e feijão") que você risca pra ele.' : '.'}` : ''}`;
-        }
+        const { acao, listaNome, listaItems, allDone, itemAdicionado } = listaResult;
+        if (acao === 'criada') contextoExtra = `\n\n[AÇÃO REALIZADA] Acabei de criar a lista "${listaNome}" com os itens: ${listaItems.map(i=>i.nome).join(', ')}. Confirme de forma animada. Não liste os itens pois aparecem separadamente.`;
         else if (acao === 'encontrada') contextoExtra = `\n\n[LISTA ENCONTRADA] Lista "${listaNome}" com: ${listaItems.map(i=>`${i.done?'✅':'⬜'} ${i.nome}`).join(', ')}. Apresente naturalmente.`;
         else if (acao === 'nenhuma') contextoExtra = `\n\n[SEM LISTA] Usuário não tem lista ativa. Informe e ofereça criar uma.`;
         else if (acao === 'marcada') contextoExtra = `\n\n[AÇÃO REALIZADA] Marquei itens na lista "${listaNome}".${allDone?' Todos concluídos! 🎉':''} Confirme.`;
@@ -975,90 +872,6 @@ async function handleMessage(phone, text, location = null) {
     if (CONTATO_TIPOS.includes(classified.tipo)) {
       await handleContatoAction(user, phone, classified);
       extractAndSavePersonalInfo(user.id, text).catch(() => {});
-      return;
-    }
-
-    // ── CONSULTA DE AGENDA INTERNA ────────────────────────────────────────
-    // Quando o usuário pergunta se ela criou algo ou quer verificar a agenda,
-    // busca no banco e responde com o que realmente existe — sem inventar.
-    if (classified.tipo === 'consulta_agenda') {
-      const query = (classified.query || text).toLowerCase();
-      const palavras = query.split(' ').filter(w => w.length > 3);
-      const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
-      const fimProxSemana = new Date(inicioHoje.getTime() + 7 * 24 * 60 * 60 * 1000);
-      const lembretes = await prisma.reminder.findMany({
-        where: {
-          userId: user.id, sent: false, confirmed: false,
-          scheduledAt: { gte: inicioHoje, lte: fimProxSemana }
-        },
-        orderBy: { scheduledAt: 'asc' }, take: 10
-      }).catch(() => []);
-
-      // Filtra por palavras relevantes da query se houver
-      const relevantes = palavras.length > 0
-        ? lembretes.filter(r => palavras.some(p => r.message.toLowerCase().includes(p)))
-        : lembretes;
-
-      let ctxAgenda;
-      if (relevantes.length > 0) {
-        const lista = relevantes.map(r => {
-          const d = new Date(r.scheduledAt);
-          const dStr = d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: '2-digit' });
-          const hStr = d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-          return `• ${r.message} — ${dStr} às ${hStr}`;
-        }).join('\n');
-        ctxAgenda = `\n\n[CONSULTA AGENDA — RESULTADO REAL DO BANCO] Encontrei estes lembretes relacionados:\n${lista}\n\nInforme EXATAMENTE o que está aqui — não invente datas ou horários diferentes.`;
-      } else {
-        ctxAgenda = `\n\n[CONSULTA AGENDA — RESULTADO REAL DO BANCO] Não encontrei nenhum lembrete relacionado a "${query}" nos próximos 7 dias. Informe honestamente que não há nada cadastrado.`;
-      }
-      await responderLivre(user, phone, text, ctxAgenda);
-      return;
-    }
-    // Quando a Clara detecta uma atividade futura específica sem pedido
-    // explícito, ela pergunta se o usuário quer criar um lembrete —
-    // em vez de criar automaticamente ou ignorar.
-    if (classified.tipo === 'sugerir_lembrete' && classified.titulo) {
-      const titulo = classified.titulo.trim();
-      // Salva pendência aguardando confirmação do usuário
-      const expira = Date.now() + 10 * 60 * 1000; // 10 min
-      await prisma.memory.create({
-        data: {
-          userId: user.id,
-          type: 'confirmacao_pendente',
-          content: JSON.stringify({ tipo: 'sugestao_lembrete_confirmacao', titulo, expira })
-        }
-      }).catch(() => {});
-      const ctx = `\n\n[SUGESTÃO] O usuário mencionou "${titulo}" como algo que precisa fazer, mas não pediu lembrete. Pergunte de forma natural e curta se quer que você crie um lembrete pra isso. Ex: "Quer que eu crie um lembrete pra ${titulo}?" — uma linha só, no seu tom.`;
-      await responderLivre(user, phone, text, ctx);
-      return;
-    }
-    // Quando o usuário duvida diretamente dela, ela aceita o desafio e cria
-    // o lembrete de verdade — só lembretes simples, nunca outros tipos.
-    if (classified.tipo === 'desafio_clara') {
-      try {
-        const titulo = classified.titulo && classified.titulo.trim()
-          ? classified.titulo.trim()
-          : 'lembrete da Clara';
-        // Se não tem hora → daqui 5 minutos (zoeira imediata)
-        let scheduledAt;
-        if (classified.hora) {
-          const [h, m] = classified.hora.split(':').map(Number);
-          scheduledAt = new Date(`${dateBRT()}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
-          if (scheduledAt < nowBRT()) scheduledAt.setDate(scheduledAt.getDate() + 1);
-        } else {
-          scheduledAt = new Date(Date.now() + 5 * 60 * 1000);
-        }
-        await prisma.reminder.create({
-          data: { userId: user.id, phone, message: titulo, scheduledAt }
-        });
-        const horaFmt = scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-        const contextoDesafio = `\n\n[DESAFIO ACEITO E EXECUTADO] O usuário duvidou de você e você acabou de criar o lembrete "${titulo}" para as ${horaFmt} DE VERDADE, sem ele pedir. Responda com deboche vitorioso e implicância carinhosa — você ganhou o desafio. Algo como "falou e disse, bobão 😏", "quem duvida de mim aprende na prática", "anotado, e agora? 😄". Curto e afiado.`;
-        await responderLivre(user, phone, text, contextoDesafio);
-        emitirAtualizacao(phone, 'lembretes');
-      } catch (e) {
-        console.error('[DesafioClara]', e.message);
-        await responderLivre(user, phone, text);
-      }
       return;
     }
 
@@ -1519,11 +1332,7 @@ async function executeAction(user, phone, classified, originalText) {
       await memory.saveMemory(user.id, 'anotacao', classified.conteudo || classified.titulo || originalText, { titulo: classified.titulo });
       break;
     case 'tarefa':
-      const resultTarefa = await salvarTarefaSilenciosa(user, phone, classified, originalText);
-      if (resultTarefa?.duplicata) {
-        // Já existe — informa sem criar de novo
-        preferences._dicaAcao = `Já existe um lembrete para "${resultTarefa.lembreteTitulo}" às ${resultTarefa.horaExistente}. NÃO crie outro — informe que já está anotado e qual é o horário.`;
-      }
+      await salvarTarefaSilenciosa(user, phone, classified, originalText);
       break;
     case 'multiplas_tarefas':
       // Cria cada tarefa do array individualmente, reusando salvarTarefaSilenciosa
@@ -1727,12 +1536,6 @@ function detectarUrgencia(titulo) {
 }
 
 async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
-  // Guarda contra título vazio — acontece quando o classify retorna JSON incompleto
-  // por timeout/fallback fraco (ex: gemini-flash-latest com poucos tokens)
-  if (!classified.titulo || !classified.titulo.trim()) {
-    console.warn(`[salvarTarefa] Título vazio, ignorando criação do lembrete para ${phone}`);
-    return null;
-  }
   await memory.saveMemory(user.id, 'tarefa', classified.titulo, { data: classified.data, hora: classified.hora });
   let scheduledAt = null;
   if (originalText) { const relativo = calcularHorarioRelativo(originalText); if (relativo) { scheduledAt = relativo; } }
@@ -1765,26 +1568,6 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
     }
   }
   if (scheduledAt) {
-    // ── Verifica duplicata antes de criar ────────────────────────────────
-    // Se já existe lembrete com título similar no mesmo dia, não cria novo.
-    // Evita que a Clara crie duplicatas quando o usuário já tinha pedido antes
-    // ou quando ela mesma já criou e o usuário confirma ("você já criou").
-    const inicioDia = new Date(scheduledAt); inicioDia.setHours(0,0,0,0);
-    const fimDia = new Date(scheduledAt); fimDia.setHours(23,59,59,999);
-    const palavraChave = classified.titulo.split(' ').filter(w => w.length > 3)[0] || classified.titulo;
-    const duplicata = await prisma.reminder.findFirst({
-      where: {
-        userId: user.id, confirmed: false, sent: false,
-        scheduledAt: { gte: inicioDia, lte: fimDia },
-        message: { contains: palavraChave, mode: 'insensitive' }
-      }
-    }).catch(() => null);
-    if (duplicata) {
-      console.log(`[Reminder] Duplicata detectada para "${classified.titulo}" — não criou novo`);
-      const horaExist = new Date(duplicata.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-      return { duplicata: true, lembreteTitulo: duplicata.message, horaExistente: horaExist };
-    }
-
     const novoLembrete = await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
     if (detectarUrgencia(classified.titulo)) {
       await prisma.memory.create({ data: { userId: user.id, type: 'lembrete_urgente', content: novoLembrete.id } }).catch(() => {});
@@ -2074,68 +1857,12 @@ async function checkConfirmacaoPendente(user, phone, text) {
       return;
     }
 
-    // ── Sugestão de lembrete — turno 1: usuário respondeu se quer criar ──
-    if (dados.tipo === 'sugestao_lembrete_confirmacao') {
-      await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
-      const afirmativo = /^(sim|pode|quero|isso|s|ok|beleza|cria|cria sim|pode criar|bora|manda ver)\b/i.test(textNorm);
-      if (afirmativo) {
-        // Salva pendência aguardando o horário
-        const expira = Date.now() + 10 * 60 * 1000;
-        await prisma.memory.create({
-          data: {
-            userId: user.id,
-            type: 'confirmacao_pendente',
-            content: JSON.stringify({ tipo: 'sugestao_lembrete_hora', titulo: dados.titulo, expira })
-          }
-        }).catch(() => {});
-        const ctx = `\n\n[SUGESTÃO CONFIRMADA] O usuário quer criar o lembrete "${dados.titulo}". Pergunte que horas quer ser lembrado — de forma curta e natural. Ex: "Que horas?" ou "Qual horário?"`;
-        await responderLivre(user, phone, text, ctx);
-      } else {
-        // Não quer o lembrete — responde naturalmente e encerra
-        await responderLivre(user, phone, text, `\n\n[SUGESTÃO RECUSADA] O usuário não quer criar lembrete para "${dados.titulo}". Responda naturalmente, sem insistir.`);
-      }
-      return;
-    }
-
-    // ── Sugestão de lembrete — turno 2: usuário respondeu o horário ──
-    if (dados.tipo === 'sugestao_lembrete_hora') {
-      await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
-      // Tenta extrair hora da resposta
-      let horaFinal = '09:00';
-      const horaMatch = textNorm.match(/(\d{1,2})[h:]?(\d{0,2})/);
-      const naoSabe = /não sei|qualquer|tanto faz|você decide|pode ser|tanto faz/i.test(textNorm);
-      if (horaMatch && !naoSabe) {
-        const h = String(parseInt(horaMatch[1])).padStart(2, '0');
-        const m = String(parseInt(horaMatch[2] || '0')).padStart(2, '0');
-        horaFinal = `${h}:${m}`;
-      }
-      const hoje = dateBRT();
-      const scheduledAt = new Date(`${hoje}T${horaFinal}:00-03:00`);
-      if (scheduledAt < nowBRT()) scheduledAt.setDate(scheduledAt.getDate() + 1);
-      try {
-        await prisma.reminder.create({
-          data: { userId: user.id, phone, message: dados.titulo, scheduledAt }
-        });
-        const horaFmt = scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-        const avisoHora = naoSabe ? ` Coloquei pras ${horaFmt} então 😊` : '';
-        const ctx = `\n\n[LEMBRETE CRIADO] Lembrete "${dados.titulo}" criado para as ${horaFmt}.${avisoHora} Confirme de forma natural e curta.`;
-        await responderLivre(user, phone, text, ctx);
-        emitirAtualizacao(phone, 'lembretes');
-      } catch(e) {
-        await responderLivre(user, phone, text, `\n\n[ERRO] Não consegui criar o lembrete. Informe que houve um problema.`);
-      }
-      return;
-    }
-
     if (dados.tipo === 'fechamento_pendentes') {
       // Resposta ao cron de Fechamento (18h, reminders.js) que perguntou
       // "posso concluir todos, ou quer remarcar algum?" — diferente da
       // pendência de saúde, aqui a resposta precisa de uma AÇÃO real no
       // banco, não só uma reação em texto.
-      // Só confirma se a mensagem for curta e claramente afirmativa
-      // "Sim, te conto tudo depois" NÃO é confirmação de lembretes — é continuação de outra conversa
-      const msgCurta = textNorm.length < 30;
-      const afirmativo = msgCurta && /^(sim|pode|isso|s|ok|beleza|confirma|confirmado|concluir? tudo|pode concluir|todos?)\b/i.test(textNorm);
+      const afirmativo = /^(sim|pode|isso|s|ok|beleza|confirma|confirmado|concluir? tudo|pode concluir|todos?)\b/i.test(textNorm);
       if (afirmativo) {
         await prisma.reminder.updateMany({
           where: { id: { in: dados.reminderIds } },
