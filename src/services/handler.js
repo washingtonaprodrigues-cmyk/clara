@@ -648,6 +648,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       const tom = preferences?.tom || 'carinhoso';
       const name = preferences?.name || '';
       const fedo = name || 'fedo';
+      console.log(`[Busca] tom=${tom} name=${name}`);
       const avisos = {
         carinhoso: [`✨ Pera aí que já busco pra gente!`, `Um segundo, ${fedo}! 🔍`, `Deixa eu dar uma olhada aqui! ✨`],
         direto: [`🔍 Buscando.`, `Já procuro.`, `Um segundo.`],
