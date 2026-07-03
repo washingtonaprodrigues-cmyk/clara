@@ -651,13 +651,10 @@ Resposta do usuário: ${message}`
       messages.push({ role: 'user', content: message });
     }
 
-    const completion = await groq.chat.completions.create({
-      model: MODEL_LEVE,
-      messages,
-      temperature: 0.1,
-      max_tokens: 150,
-    });
-    let text = completion.choices[0].message.content.trim();
+    // Usa Gemini em vez de Groq — evita 413 por payload grande no Groq
+    const respGemini = await geminiFreeResponse(messages, { maxTokens: 150, temperature: 0.1 }).catch(() => null);
+    if (!respGemini) return [];
+    let text = respGemini.trim();
     text = text.replace(/```/g, '').replace(/```/g, '').trim();
     const result = JSON.parse(text);
     return Array.isArray(result) ? result : [];
@@ -699,17 +696,12 @@ async function extractPendenciaEmocional(message) {
     if (!message || message.trim().length < 5) return null;
     if (!PENDENCIA_KEYWORDS.test(message)) return null;
 
-    const completion = await groq.chat.completions.create({
-      model: MODEL_LEVE,
-      messages: [
-        { role: 'system', content: EXTRACT_PENDENCIA_SYSTEM },
-        { role: 'user', content: message }
-      ],
-      temperature: 0.1,
-      max_tokens: 100,
-    });
-    let text = completion.choices[0].message.content.trim();
-    text = text.replace(/```/g, '').replace(/```/g, '').trim();
+    const respPend = await geminiFreeResponse([
+      { role: 'system', content: EXTRACT_PENDENCIA_SYSTEM },
+      { role: 'user', content: message }
+    ], { maxTokens: 100, temperature: 0.1 }).catch(() => null);
+    if (!respPend) return null;
+    let text = respPend.replace(/```json|```/g, '').trim();
     const result = JSON.parse(text);
     if (!result?.pendencia) return null;
 
