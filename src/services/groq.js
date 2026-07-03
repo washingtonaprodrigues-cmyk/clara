@@ -238,33 +238,10 @@ TIPOS e formato de saída:
 GATILHOS DE TAREFA (prioridade sobre conteúdo): "me lembra", "me avisa", "anota aí", "já anota", "bota/põe um lembrete", "não me deixa esquecer", "agenda", "marca", "daqui X min/horas", "às HH de". CONDICIONAL ("se quiser", "se puder") = NÃO é pedido = outro.
 
 NÃO É LEMBRETE — classifique como "outro":
-- Relatos do que o usuário vai fazer: "vou tomar café", "tenho que trocar a blusa", "preciso passar no mercado" (sem "me lembra" ou gatilho explícito) → sugerir_lembrete se for atividade futura específica e realizável, outro se for cotidiana/vaga
-- Planos informais com atividade específica futura: "amanhã vou trocar a blusa", "preciso levar o carro no mecânico" → sugerir_lembrete
-- Respostas sobre remédios já cadastrados: "vou tomar no horário", "ainda não tomei", "já tomei", "vou esperar o horário" → outro (o remédio já tem alerta automático, não criar lembrete duplicado)
-- Atividades cotidianas vagas sem pedido: tomar café, almoçar, dormir, descansar → outro (não sugere lembrete)
-
-SUGERIR LEMBRETE (sugerir_lembrete):
-Quando o usuário menciona uma atividade futura específica e realizável SEM gatilho explícito de lembrete. A Clara vai perguntar se quer criar um lembrete — não cria automaticamente.
-{"tipo":"sugerir_lembrete","titulo":"título do possível lembrete"}
-Exemplos:
-"tenho que trocar a blusa que comprei errado" → {"tipo":"sugerir_lembrete","titulo":"trocar a blusa na loja"}
-"preciso levar o carro no mecânico" → {"tipo":"sugerir_lembrete","titulo":"levar o carro no mecânico"}
-"amanhã tenho que pagar a conta" → {"tipo":"sugerir_lembrete","titulo":"pagar a conta"}
-"vou tomar café" → {"tipo":"outro"} (cotidiana, não sugere)
-"to pensando em comprar um tênis" → {"tipo":"outro"} (vago demais)
-
-DESAFIO À CLARA — AUTORIZAÇÃO IMPLÍCITA:
-APENAS quando o usuário usar exatamente: "duvido que", "aposto que não consegue", "capaz que faça" — com um objeto/ação CLARO e ESPECÍFICO mencionado (não vago). NUNCA ative por "vai que", "quero ver", "você não vai" ou frases curtas ambíguas.
-{"tipo":"desafio_clara","titulo":"o que foi desafiado","hora":"HH:MM ou null","data":null}
-- titulo deve ser ESPECÍFICO (ex: "continuar descansando", "me lembrar às 13:30"). NUNCA use títulos vagos como "fazer o que foi pedido", "isso" ou "lembrete agora".
-- hora: extraia do contexto se mencionada. Se não mencionada → null.
-- SOMENTE para lembretes simples. NUNCA para gastos, remédios, contatos.
-- Se o desafio for vago ou o título não puder ser extraído claramente → classifique como outro.
-Exemplos:
-"duvido que faça essa zoeira" (contexto: lembrete de descanso às 13:30) → {"tipo":"desafio_clara","titulo":"continuar descansando","hora":"13:30","data":null}
-"aposto que não consegue me lembrar do médico amanhã" → {"tipo":"desafio_clara","titulo":"médico amanhã","hora":null,"data":null}
-"vai que você cria um lembrete" (vago, sem objeto claro) → {"tipo":"outro"}
-"quero ver você fazer isso" (ambíguo) → {"tipo":"outro"}
+- Relatos do que o usuário vai fazer sem gatilho explícito: "vou tomar café", "tenho que trocar a blusa", "preciso passar no mercado", "querendo levar no zoológico", "pagar conta" → outro
+- Planos informais, intenções, vontades sem "me lembra", "anota", "agenda" → outro
+- Respostas sobre remédios já cadastrados: "vou tomar no horário", "ainda não tomei", "já tomei" → outro
+- Atividades cotidianas: tomar café, almoçar, dormir → outro
 TÍTULO: extraia a AÇÃO COMPLETA, que se entenda sozinha lendo na lista dias depois. Tire só o gatilho ("me lembra de", "não me deixa esquecer") e o horário — preserve o resto. "ver a água do carro"→"ver a água do carro" (NÃO corte pra "a água"); "ligar pro dentista"→"ligar pro dentista" (não só "dentista"); "pagar a conta de luz"→"pagar a conta de luz". Só encurte quando a referência for genuinamente vaga ("me lembra dessa reunião"→"reunião"). Prefira título claro a título curto.
 FORMATOS DE HORA (sempre converta pra HH:MM 24h): "umas 7:00"→07:00; "18 horas"/"umas 18 horas"/"às 18 horas"/"às 18h"/"18h"→18:00; "7 e meia"/"7:30"→07:30; "meio-dia"→12:00; "meia-noite"→00:00; "8 da noite"→20:00; "6 da tarde"→18:00; "9 da manhã"→09:00. NUNCA deixe hora:null quando o usuário disse um horário claro do dia.
 GATILHO vence saudação: "me lembra daqui 4 min de mandar um oi" = tarefa (titulo "mandar um oi"), não saudação.
@@ -311,9 +288,7 @@ REGRAS:
   - Isso é CRÍTICO: sem o título extraído da citação, o sistema cai num fallback que pode remarcar/cancelar o lembrete ERRADO (o mais recente, não o que foi citado) — sempre priorize extrair da citação quando ela existir.
 - Valor em dinheiro → gasto
 - Horário/data + intenção de CRIAR um novo lembrete/compromisso → tarefa
-- "você já criou isso?", "você criou?", "já tem esse lembrete?", "você anotou?", "tem algo sobre X na agenda?" → {"tipo":"consulta_agenda","query":"o que está sendo perguntado"}
-- "você já criou" / "já criei" dito pelo usuário afirmando que ela criou → {"tipo":"consulta_agenda","query":"verificar se lembrete existe"}
-- "já tem na agenda", "já está na agenda", "já tenho isso", "já está marcado" → {"tipo":"consulta_agenda","query":"verificar agenda"}
+- "você já criou?", "já tem na agenda?", "você anotou?" → outro (responde conversacionalmente)
 - CONDICIONAL NÃO É PEDIDO: se a mensagem contiver "se quiser", "se puder", "se der", "se quiser pode", "caso queira", "se tiver como" antes de mencionar criar/anotar algo, NÃO crie a tarefa — classifique como "outro". O usuário está oferecendo uma opção, não pedindo. Só crie quando houver intenção clara e direta ("me lembra", "anota", "cria um lembrete", "agenda", "marca") sem condicionais.
 - ANTECEDÊNCIA: se o usuário pedir para ser lembrado X minutos/horas ANTES de um compromisso, use "antecedencia" em minutos. Dois casos:
   1. Pede lembrete novo COM horário: "me lembra às 15h e 20 min antes" → {"tipo":"tarefa","titulo":"consulta","hora":"15:00","antecedencia":20}
