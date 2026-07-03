@@ -242,6 +242,7 @@ NÃO É LEMBRETE — classifique como "outro":
 - Planos informais, intenções, vontades sem "me lembra", "anota", "agenda" → outro
 - Respostas sobre remédios já cadastrados: "vou tomar no horário", "ainda não tomei", "já tomei" → outro
 - Atividades cotidianas: tomar café, almoçar, dormir → outro
+- Brincadeiras, zoeira, ameaças de mentira, humor: "vou te zoar", "vou te pegar", "vou te acordar cedo", "você vai ver", "tô indo dormir", "passei pra te zoar" → outro (nunca crie lembrete de brincadeira)
 TÍTULO: extraia a AÇÃO COMPLETA, que se entenda sozinha lendo na lista dias depois. Tire só o gatilho ("me lembra de", "não me deixa esquecer") e o horário — preserve o resto. "ver a água do carro"→"ver a água do carro" (NÃO corte pra "a água"); "ligar pro dentista"→"ligar pro dentista" (não só "dentista"); "pagar a conta de luz"→"pagar a conta de luz". Só encurte quando a referência for genuinamente vaga ("me lembra dessa reunião"→"reunião"). Prefira título claro a título curto.
 FORMATOS DE HORA (sempre converta pra HH:MM 24h): "umas 7:00"→07:00; "18 horas"/"umas 18 horas"/"às 18 horas"/"às 18h"/"18h"→18:00; "7 e meia"/"7:30"→07:30; "meio-dia"→12:00; "meia-noite"→00:00; "8 da noite"→20:00; "6 da tarde"→18:00; "9 da manhã"→09:00. NUNCA deixe hora:null quando o usuário disse um horário claro do dia.
 GATILHO vence saudação: "me lembra daqui 4 min de mandar um oi" = tarefa (titulo "mandar um oi"), não saudação.
