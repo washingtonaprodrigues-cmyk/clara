@@ -442,6 +442,13 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
 
         if (!podeEnviarAgora) continue;
 
+        // Não dispara bom dia se o usuário acabou de mandar mensagem
+        // nos últimos 2 minutos — evita colisão com a resposta do webhook
+        if (await houveConversaRecente(user.id, 2)) {
+          console.log(`[Bom dia] Mensagem recente detectada, aguardando próximo minuto para ${user.phone}`);
+          continue;
+        }
+
         const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
         const fimHoje = new Date(`${hoje}T23:59:59-03:00`);
         const [lembretesDoDia, eventos] = await Promise.all([
