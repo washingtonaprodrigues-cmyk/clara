@@ -724,6 +724,50 @@ async function extractPendenciaEmocional(message) {
   }
 }
 
+// ── extractEpisodio: captura eventos da vida do usuário que aconteceram
+// ou vão acontecer, para a Clara lembrar e acompanhar naturalmente.
+// Ex: consulta médica, festa da filha, viagem, resultado de exame, compra.
+// Diferente de pendência emocional (mal-estar) — é evento concreto da vida.
+const EPISODIO_KEYWORDS = /consult|médic|doctor|exame|resultado|receita|remédio novo|festa|aniversário|viagem|comprei|comprou|passei|fui|foi|chegou|chegaram|nasceu|formou|operou|cirurgi|internado|alta|aprovado|reprovado|consegui|perdi|ganhei|vendi|comprei/i;
+
+const EXTRACT_EPISODIO_SYSTEM = `Você extrai eventos concretos da vida do usuário para memória futura.
+Retorne JSON: {"episodio": true/false, "titulo": "resumo curto do evento", "tipo": "saude|familia|trabalho|financeiro|social|outro", "resultado": "positivo|negativo|neutro|pendente", "acompanhar_em_dias": 1-7}
+- episodio: true só se for evento concreto que aconteceu ou vai acontecer
+- titulo: máximo 60 chars, objetivo
+- resultado: como foi (positivo=boa notícia, negativo=problema, neutro=rotina, pendente=ainda vai acontecer)
+- acompanhar_em_dias: em quantos dias faz sentido perguntar como foi (ex: consulta hoje → 1 dia)
+Se não for evento concreto: {"episodio": false}
+Exemplos:
+"fui ao cardiologista, receitou Holmis e Landizin" → {"episodio":true,"titulo":"Consulta cardiologista — Holmis e Landizin receitados","tipo":"saude","resultado":"neutro","acompanhar_em_dias":3}
+"festa da Isis amanhã" → {"episodio":true,"titulo":"Festa da Isis","tipo":"familia","resultado":"pendente","acompanhar_em_dias":2}
+"comprei os remédios" → {"episodio":true,"titulo":"Comprou Holmis e Landizin","tipo":"saude","resultado":"positivo","acompanhar_em_dias":1}
+"tudo bem" → {"episodio":false}`;
+
+async function extractEpisodio(message) {
+  try {
+    if (!message || message.trim().length < 8) return null;
+    if (!EPISODIO_KEYWORDS.test(message)) return null;
+
+    const resposta = await geminiFreeResponse([
+      { role: 'system', content: EXTRACT_EPISODIO_SYSTEM },
+      { role: 'user', content: message }
+    ], { maxTokens: 120, temperature: 0.1 }).catch(() => null);
+
+    if (!resposta) return null;
+    const limpo = resposta.replace(/```json|```/g, '').trim();
+    const result = JSON.parse(limpo);
+    if (!result?.episodio) return null;
+    return {
+      titulo: (result.titulo || message).slice(0, 80),
+      tipo: result.tipo || 'outro',
+      resultado: result.resultado || 'neutro',
+      acompanharEmDias: Math.min(Math.max(parseInt(result.acompanhar_em_dias) || 3, 1), 7)
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
 // ── checkResolucaoPendencia: detecta se uma mensagem confirma que uma
 // pendência JÁ aberta foi resolvida ──
 // Diferente de extractPendenciaEmocional (que só roda se a mensagem bater
@@ -1555,6 +1599,7 @@ module.exports = {
   classify,
   extractPersonalInfo,
   extractPendenciaEmocional,
+  extractEpisodio,
   checkResolucaoPendencia,
   searchWeb: searchWebGroq,
   freeResponse,
