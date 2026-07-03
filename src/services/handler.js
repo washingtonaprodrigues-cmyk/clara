@@ -596,7 +596,23 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       }
 
       if (contexto) contexto = `\n\nUse as informações abaixo para responder com precisão:${contexto}`;
-      if (perfilPessoal) contexto += perfilPessoal;
+      // ── Conexão inteligente de dados ──────────────────────────────────
+      // Detecta quando a mensagem atual se conecta com dados que ela já tem
+      // Ex: falar de comida → conecta com remédios de triglicerídeos
+      //     falar de cansaço → conecta com remédio de tireoide
+      //     falar de amanhã → conecta com episódios pendentes
+      const conexoes = [];
+      if (/comida|gordura|pizza|hambúrguer|fritura|churrasco|doce|açúcar|álcool|cerveja|vinho/i.test(txtLow)) {
+        const medsTriglic = meds.filter(m => /triglic|colesterol|landizin|sinvastatina|atorvasta/i.test(m.name));
+        if (medsTriglic.length > 0) conexoes.push(`Usuário tem ${medsTriglic.map(m=>m.name).join(', ')} — pode ser relevante mencionar com leveza se fizer sentido`);
+      }
+      if (/cansado|cansaço|sono|dormindo|energia|disposto|ânimo/i.test(txtLow)) {
+        const medsTiroide = meds.filter(m => /tiroide|tireoide|levotirox|holmis/i.test(m.name));
+        if (medsTiroide.length > 0) conexoes.push(`Usuário tem ${medsTiroide.map(m=>m.name).join(', ')} para tireoide — pode conectar com cansaço se fizer sentido`);
+      }
+      if (conexoes.length > 0) {
+        contexto += `\n\n[CONEXÃO DE DADOS — use só se for natural e relevante]\n${conexoes.join('\n')}`;
+      }
 
       // ── Aviso antecipado pendente ─────────────────────────────────────
       // Se o cron detectou um lembrete próximo enquanto conversávamos,
