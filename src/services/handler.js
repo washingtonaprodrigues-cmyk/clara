@@ -675,7 +675,24 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     await memory.saveConversationMessage(user.id, 'assistant', respStr);
     await sendMessage(phone, respStr);
 
-    // ── Segunda mensagem: confirmação CRUA do lembrete ──
+    // ── Detecção de promessa de busca não executada ───────────────────
+    // Quando a Clara diz "deixa eu dar uma olhada", "vou pesquisar",
+    // "deixa eu verificar" etc. mas não gerou __BUSCAR:__, dispara a busca
+    // automaticamente com o texto original do usuário como query.
+    const prometeuBuscar = /deixa eu (dar uma olhada|pesquisar|verificar|checar|buscar)|vou (pesquisar|buscar|dar uma olhada|verificar)|deixa eu ver|um segundo que|rapidinho aqui/i.test(respStr);
+    if (prometeuBuscar && !buscaMatch) {
+      ;(async () => {
+        try {
+          await new Promise(r => setTimeout(r, 1500));
+          const resultado = await searchWeb(text.trim(), '');
+          if (resultado && !isRespostaFallback(resultado)) {
+            await memory.saveConversationMessage(user.id, 'assistant', resultado).catch(() => {});
+            await sendMessage(phone, resultado);
+            console.log(`[BuscaPrometida] Resultado enviado para ${phone}`);
+          }
+        } catch(e) { console.error('[BuscaPrometida] Erro:', e.message); }
+      })();
+    }
     // Quando o pedido criou um lembrete, a Clara responde de forma humana
     // (a mensagem acima) e LOGO EM SEGUIDA manda a confirmação estruturada,
     // literal (título + quando). Assim o usuário tem a conversa natural E um
