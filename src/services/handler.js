@@ -399,9 +399,11 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           const horaBRT = d.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo', hour:'2-digit', minute:'2-digit'});
           return `• ${dStr} às ${horaBRT} — ${r.message}`;
         };
-        contexto += `\n\n[AGENDA]\n${lembretes.map(fmtLemb).join('\n')}`;
+        // Instrução restritiva — a Clara TEM a agenda mas só menciona se o
+        // usuário trouxer o assunto. Nunca interrompe conversa com lembretes.
+        contexto += `\n\n[AGENDA — mencione SOMENTE se o usuário trouxer o assunto ou perguntar. Nunca puxe por iniciativa, especialmente de madrugada ou em conversa sobre outro assunto]\n${lembretes.map(fmtLemb).join('\n')}`;
       } else {
-        contexto += `\n\n[AGENDA]\nNenhum lembrete para hoje ou amanhã.`;
+        // Sem lembretes: não injeta nada desnecessário
       }
 
       try {
@@ -565,6 +567,20 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
       if (contexto) contexto = `\n\nUse as informações abaixo para responder com precisão:${contexto}`;
       if (perfilPessoal) contexto += perfilPessoal;
+
+      // ── Aviso antecipado pendente ─────────────────────────────────────
+      // Se o cron detectou um lembrete próximo enquanto conversávamos,
+      // injeta aqui para a Clara mencionar de forma natural na resposta,
+      // sem mandar mensagem separada que corta o clima.
+      const avisoPendente = await prisma.memory.findFirst({
+        where: { userId: user.id, type: 'aviso_pendente' },
+        orderBy: { createdAt: 'desc' }
+      }).catch(() => null);
+      if (avisoPendente) {
+        contexto += `\n\n[AVISO PENDENTE — mencione de passagem, no tom da conversa, sem cortar o assunto. Uma frase curta no meio ou fim da resposta. Ex: "...ah, e daqui pouco você tem ${avisoPendente.content}, não esquece! 😉". Depois apague da sua memória — não repita.] ${avisoPendente.content}`;
+        await prisma.memory.delete({ where: { id: avisoPendente.id } }).catch(() => {});
+      }
+
       if (contextoExtra) contexto += contextoExtra;
       preferences._contexto = contexto;
     } catch (e) {
