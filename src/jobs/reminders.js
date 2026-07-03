@@ -425,46 +425,17 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
         const ehDomingo = now.getDay() === 0;
 
         if (primeiroEvento) {
-          // Espera pelo menos 3 min depois do remédio/lembrete (não fica
-          // colado) e até 30 min (cobre o caso de o usuário demorar pra
-          // responder o remédio — ex: viu às 7:19, remédio era às 7:00).
+          // Espera de 3 a 5 minutos depois do disparo do evento — janela
+          // curta pra não ficar nem colado (robótico) nem atrasado demais.
           const minutosDesdeEvento = (now - primeiroEvento) / 60000;
           if (minutosDesdeEvento >= 3 && minutosDesdeEvento <= 30) {
             podeEnviarAgora = true;
           }
         } else {
-          // ── GATILHO DINÂMICO: média móvel de 14 dias (Bloco 2) ──
-          // Calcula a hora média em que o Washington manda a primeira mensagem
-          // nos últimos 14 dias. Se tiver >= 5 dias de dados, usa essa média
-          // + 8 min (mais natural, não parece alarme). Ignora outliers
-          // (< 5h ou > 11h). Se não tiver dados suficientes, cai no fixo
-          // (dia de semana: 7h; domingo: 9h).
-          let horaAlvo = ehDomingo ? 9 : 7;
-          let minutosAlvo = 0;
-          try {
-            const quatorze = new Date(now);
-            quatorze.setDate(quatorze.getDate() - 14);
-            const registros = await prisma.memory.findMany({
-              where: { userId: user.id, type: 'rotina_acorda', createdAt: { gte: quatorze } },
-              orderBy: { createdAt: 'desc' }, take: 14
-            }).catch(() => []);
-            // Extrai horários válidos (formato rotina_acorda:YYYY-MM-DD:HH:MM)
-            const horarios = registros
-              .map(r => { const m = (r.content || '').match(/:(\d{2}):(\d{2})$/); return m ? parseInt(m[1])*60 + parseInt(m[2]) : null; })
-              .filter(v => v !== null && v >= 5*60 && v <= 11*60); // 5h-11h
-            if (horarios.length >= 5) {
-              // Média simples + 8 min (pausa natural antes de aparecer)
-              const media = Math.round(horarios.reduce((a,b) => a+b, 0) / horarios.length) + 8;
-              horaAlvo = Math.floor(media / 60);
-              minutosAlvo = media % 60;
-              console.log(`[BomDia] Gatilho dinâmico ${user.phone}: ${horaAlvo}h${String(minutosAlvo).padStart(2,'0')} (${horarios.length} dias)`);
-            }
-          } catch (_e) { /* usa fallback fixo */ }
-          const hAtual = now.getHours(), mAtual = now.getMinutes();
-          const totalAtual = hAtual*60 + mAtual;
-          const totalAlvo = horaAlvo*60 + minutosAlvo;
-          // Janela de 6 minutos centrada no alvo
-          if (totalAtual >= totalAlvo && totalAtual < totalAlvo + 6) {
+          // ── FALLBACK por horário fixo (sem remédio/lembrete de manhã) ──
+          // Dia de semana: 7h. Domingo: 9h (deixa você dormir).
+          const horaAlvo = ehDomingo ? 9 : 7;
+          if (now.getHours() === horaAlvo && now.getMinutes() < 6) {
             podeEnviarAgora = true;
           }
         }
@@ -578,8 +549,7 @@ cron.schedule('0 18 * * *', async () => {
               })
             }
           }).catch(() => {});
-          const listaPendentes = pendentes.map(r => `• ${r.message}`).join('\n');
-          msg = `Hoje foram ${concluidos.length} item${concluidos.length > 1 ? 's' : ''} concluído${concluidos.length > 1 ? 's' : ''} 👏\n\nFicou${pendentes.length > 1 ? 'ram' : ''} pendente${pendentes.length > 1 ? 's' : ''}:\n${listaPendentes}\n\nRemarco pro mesmo horário amanhã ou você prefere concluir agora?`;
+          msg = `Hoje foram ${concluidos.length} item${concluidos.length > 1 ? 's' : ''} concluído${concluidos.length > 1 ? 's' : ''} 👏 Ficaram ${pendentes.length} pendente${pendentes.length > 1 ? 's' : ''} — posso remarcar tudo pro mesmo horário amanhã ou você prefere concluir agora?`;
         } else if (concluidos.length === 0 && pendentes.length > 0) {
           const ids = pendentes.map(r => r.id);
           await prisma.memory.create({
@@ -593,8 +563,7 @@ cron.schedule('0 18 * * *', async () => {
               })
             }
           }).catch(() => {});
-          const listaPendentes2 = pendentes.map(r => `• ${r.message}`).join('\n');
-          msg = `Nenhum item concluído hoje 😅 Ficou${pendentes.length > 1 ? 'ram' : ''} pendente${pendentes.length > 1 ? 's' : ''}:\n${listaPendentes2}\n\nRemarco tudo pro mesmo horário amanhã ou prefere concluir agora?`;
+          msg = `Ficaram ${pendentes.length} item${pendentes.length > 1 ? 's' : ''} pendente${pendentes.length > 1 ? 's' : ''} hoje — remarco tudo pro mesmo horário amanhã ou prefere concluir agora?`;
         }
 
         if (msg) {
@@ -1354,27 +1323,8 @@ cron.schedule('* * * * *', async () => {
           : `🔔 Você tem ${grupo.reminders.length} lembretes agora\n\n${grupo.reminders.map((r,i)=>`${i+1}. ${r.message}`).join('\n')}\n\n⏰ ${grupo.hora}\n\n${finalParaLembrete(grupo.reminders[0])}`;
       }
 
-      // ── Retry automático: até 3 tentativas com espera crescente ──
-      let lembreteEnviado = false;
-      for (let tentativa = 1; tentativa <= 3; tentativa++) {
-        try {
-          await sendMessage(grupo.phone, msg);
-          console.log(`[Reminder] ${grupo.phone} → ${grupo.reminders.length} lembrete(s) às ${grupo.hora} | instância ${INSTANCE_ID}${tentativa > 1 ? ` | tentativa ${tentativa}` : ''} | ids: ${grupo.reminders.map(r => r.id.slice(-6)).join(',')}`);
-          lembreteEnviado = true;
-          break;
-        } catch (eSend) {
-          console.warn(`[Reminder] Tentativa ${tentativa}/3 falhou para ${grupo.phone}: ${eSend.message}`);
-          if (tentativa < 3) await new Promise(r => setTimeout(r, tentativa * 15000));
-        }
-      }
-      if (!lembreteEnviado) {
-        // Todas as tentativas falharam — reverte sent:false pra tentar no próximo minuto
-        console.error(`[Reminder] TODAS as tentativas falharam para ${grupo.phone} — revertendo sent:false`);
-        await prisma.reminder.updateMany({
-          where: { id: { in: grupo.reminders.map(r => r.id) } },
-          data: { sent: false }
-        }).catch(() => {});
-      }
+      await sendMessage(grupo.phone, msg);
+      console.log(`[Reminder] ${grupo.phone} → ${grupo.reminders.length} lembrete(s) às ${grupo.hora} | enviado por instância ${INSTANCE_ID} | ids: ${grupo.reminders.map(r => r.id.slice(-6)).join(',')}`);
 
       // ── Limpa o lock IMEDIATAMENTE após enviar ──
       // O lock só existe pra impedir envio duplo durante o envio. Já que
@@ -1484,36 +1434,21 @@ cron.schedule('* * * * *', async () => {
         for (let i = 0; i < medsParaEnviar.length; i++) {
           const med = medsParaEnviar[i];
           const msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esquece de tomar certinho 😊\n\n💜 Restam ${med.remaining - 1} doses.`;
-
-          // ── Retry automático: até 3 tentativas com espera crescente ──
-          // Se a UazAPI retornar 404/erro de rede, tenta de novo antes de
-          // desistir — evita o usuário perder o lembrete de remédio por
-          // instabilidade momentânea de conexão (15s → 30s entre tentativas).
-          let enviado = false;
-          for (let tentativa = 1; tentativa <= 3; tentativa++) {
-            try {
-              await sendMessage(phone, msg);
-              console.log(`[Med] ${med.name} → ${phone}${tentativa > 1 ? ` (tentativa ${tentativa})` : ''}`);
-              enviado = true;
-              break;
-            } catch (eSend) {
-              console.warn(`[Med] Tentativa ${tentativa}/3 falhou para ${med.name} (${phone}): ${eSend.message}`);
-              if (tentativa < 3) await new Promise(r => setTimeout(r, tentativa * 15000));
-            }
-          }
-
-          if (!enviado) {
-            console.error(`[Med] TODAS as tentativas falharam para ${med.name} (${phone}) — desfazendo decremento e lock`);
+          try {
+            await sendMessage(phone, msg);
+            console.log(`[Med] ${med.name} → ${phone}`);
+          } catch (eSend) {
+            console.error(`[Med] Falha ao ENVIAR ${med.name} para ${phone} — desfazendo decremento e lock pra tentar de novo:`, eSend.message);
             await prisma.medication.updateMany({
               where: { id: med.id },
               data: { remaining: { increment: 1 } }
             }).catch(eRevert => console.error(`[Med] Falha ao desfazer decremento de ${med.name}:`, eRevert.message));
+            // Apaga o lock deste minuto pra permitir reenvio no próximo ciclo
             const lockKeyRevert = `${med.id}_${dateBRT(nowBRT())}_${minutoChave}`;
             await prisma.memory.deleteMany({
               where: { type: 'med_lock', content: lockKeyRevert }
             }).catch(() => {});
           }
-
           if (i < medsParaEnviar.length - 1) await new Promise(r => setTimeout(r, 3000));
         }
       } catch (e) {
@@ -1521,143 +1456,6 @@ cron.schedule('* * * * *', async () => {
       }
     }
   } catch (e) { console.error('[Med] Erro geral:', e.message); }
-}, { timezone: 'America/Sao_Paulo' });
-
-// ═══════════════════════════════════════════════════════════════════════
-// AVISO ANTECIPADO — 1h e 30min antes de lembretes e remédios
-//
-// Se o usuário estiver conversando ativamente, a Clara menciona o
-// compromisso de forma natural e integrada — uma vez por item por dia.
-// Na hora exata, o lembrete formal só dispara se não avisou antes.
-// Isso evita que o lembrete corte uma conversa no meio, e dá uma
-// sensação de parceira que lembra no momento certo, não de alarme.
-// ═══════════════════════════════════════════════════════════════════════
-cron.schedule('* * * * *', async () => {
-  try {
-    const now = nowBRT();
-    const em1h = new Date(now.getTime() + 60 * 60 * 1000);
-    const em30m = new Date(now.getTime() + 30 * 60 * 1000);
-    const em31m = new Date(now.getTime() + 31 * 60 * 1000);
-    const em61m = new Date(now.getTime() + 61 * 60 * 1000);
-
-    // Busca lembretes que vão disparar em ~1h ou ~30min
-    const proximos = await prisma.reminder.findMany({
-      where: {
-        sent: false, confirmed: false,
-        scheduledAt: { gte: em30m, lte: em61m }
-      },
-      include: { user: true }
-    });
-
-    for (const r of proximos) {
-      if (!r.user?.phone) continue;
-      const userId = r.user.id;
-      const phone = r.user.phone;
-      const minRestantes = Math.round((new Date(r.scheduledAt) - now) / 60000);
-      const janela = minRestantes <= 31 ? '30min' : '1h';
-
-      // Só avisa se há conversa ativa nos últimos 20 minutos
-      if (!(await houveConversaRecente(userId, 20))) continue;
-
-      // Verifica se já avisou sobre esse lembrete nessa janela
-      const lockKey = `aviso_antecipado_${r.id}_${janela}`;
-      const jaAvisou = await prisma.memory.findFirst({
-        where: { userId, type: 'aviso_antecipado_lock', content: lockKey }
-      }).catch(() => null);
-      if (jaAvisou) continue;
-
-      // Cria o lock para não avisar de novo nessa janela
-      await prisma.memory.create({
-        data: { userId, type: 'aviso_antecipado_lock', content: lockKey }
-      }).catch(() => {});
-
-      // Gera o aviso via IA — integrado e natural, não como mensagem de alarme
-      const horaBRT = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', {
-        timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'
-      });
-      const tempoTexto = janela === '1h' ? 'daqui uma hora' : 'daqui meia hora';
-      const ctx = `[AVISO ANTECIPADO] ${tempoTexto} você tem: "${r.message}" às ${horaBRT}. Mencione isso de forma MUITO natural e curta — como uma amiga que lembrou no meio da conversa. Uma frase só, integrada ao clima da conversa. Ex: "ah, e ${tempoTexto} você tem ${r.message}, vai se preparando!" — sem ser formal, sem cortar o assunto.`;
-
-      // Fire-and-forget com timeout — não bloqueia o cron
-      ;(async () => {
-        try {
-          const history = await memory.getConversationHistory(userId, 4).catch(() => []);
-          const prefs = await memory.getUserPreferences(userId).catch(() => ({}));
-          prefs._contexto = ctx;
-          prefs._skipSaveHistory = true;
-          const resposta = await Promise.race([
-            freeResponse('', history, prefs),
-            new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 10000))
-          ]).catch(() => null);
-          if (resposta && !isRespostaFallback(resposta)) {
-            await sendMessage(phone, resposta);
-            console.log(`[AvisoAntecipado] ${janela} antes — ${phone}: ${r.message}`);
-          }
-        } catch(e) { console.error('[AvisoAntecipado] erro:', e.message); }
-      })();
-    }
-
-    // Mesma lógica para remédios
-    const minsAtual = now.getHours() * 60 + now.getMinutes();
-    const meds = await prisma.medication.findMany({
-      where: { active: true, remaining: { gt: 0 } },
-      include: { user: true }
-    });
-
-    for (const med of meds) {
-      if (!med.scheduleTime || !med.user?.phone) continue;
-      const [mh, mm] = med.scheduleTime.split(':').map(Number);
-      const minsMed = mh * 60 + mm;
-      const diff = minsMed - minsAtual;
-      if (diff !== 60 && diff !== 30) continue;
-
-      const userId = med.user.id;
-      const phone = med.user.phone;
-      const janela = diff === 30 ? '30min' : '1h';
-
-      if (!(await houveConversaRecente(userId, 20))) continue;
-
-      const lockKey = `aviso_antecipado_med_${med.id}_${janela}`;
-      const jaAvisou = await prisma.memory.findFirst({
-        where: { userId, type: 'aviso_antecipado_lock', content: lockKey }
-      }).catch(() => null);
-      if (jaAvisou) continue;
-
-      await prisma.memory.create({
-        data: { userId, type: 'aviso_antecipado_lock', content: lockKey }
-      }).catch(() => {});
-
-      const tempoTexto = janela === '1h' ? 'daqui uma hora' : 'daqui meia hora';
-      const ctx = `[AVISO ANTECIPADO] ${tempoTexto} é hora do ${med.name} (às ${med.scheduleTime}). Mencione de forma natural e curta, integrada à conversa. Uma frase só. Ex: "ah, ${tempoTexto} é hora do seu ${med.name}, não esquece!"`;
-
-      // Fire-and-forget com timeout
-      ;(async () => {
-        try {
-          const history = await memory.getConversationHistory(userId, 4).catch(() => []);
-          const prefs = await memory.getUserPreferences(userId).catch(() => ({}));
-          prefs._contexto = ctx;
-          prefs._skipSaveHistory = true;
-          const resposta = await Promise.race([
-            freeResponse('', history, prefs),
-            new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 10000))
-          ]).catch(() => null);
-          if (resposta && !isRespostaFallback(resposta)) {
-            await sendMessage(phone, resposta);
-            console.log(`[AvisoAntecipado] ${janela} antes — ${phone}: ${med.name}`);
-          }
-        } catch(e) { console.error('[AvisoAntecipado] med erro:', e.message); }
-      })();
-    }
-
-    // Limpa locks de aviso antecipado com mais de 2h
-    await prisma.memory.deleteMany({
-      where: {
-        type: 'aviso_antecipado_lock',
-        createdAt: { lte: new Date(Date.now() - 2 * 60 * 60 * 1000) }
-      }
-    }).catch(() => {});
-
-  } catch (e) { console.error('[AvisoAntecipado] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
 // ═══════════════════════════════════════════════════════════════════════
