@@ -1,7 +1,7 @@
 // v2 - consulta direta sem LLM
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
-const { classify, extractPersonalInfo, extractPendenciaEmocional, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas } = require('./groq');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback } = require('./groq');
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
 // O classify() já recebe uma tabela com a data exata de cada dia da semana
@@ -464,6 +464,26 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       }
 
       if (relMemoria?.content) contexto += `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoria.content}`;
+
+      // ── Episódios recentes da vida do usuário ─────────────────────────
+      // Eventos concretos que aconteceram ou vão acontecer — informa o
+      // contexto de vida sem sobrecarregar (máx 3, pendentes primeiro)
+      try {
+        const episodios = await prisma.memory.findMany({
+          where: {
+            userId: user.id, type: 'episodio_vida',
+            createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+          },
+          orderBy: { createdAt: 'desc' }, take: 3
+        });
+        if (episodios.length > 0) {
+          const listaEp = episodios.map(e => {
+            let meta = {}; try { meta = JSON.parse(e.metadata || '{}'); } catch {}
+            return `• ${e.content}${meta.resultado === 'pendente' ? ' (ainda vai acontecer)' : ''}`;
+          }).join('\n');
+          contexto += `\n\n[CONTEXTO DE VIDA RECENTE — use naturalmente se relevante, nunca force]\n${listaEp}`;
+        }
+      } catch(e) {}
 
       // ── Pendência de saúde: traz à tona se fizer sentido na conversa ──
       // ── Pendência de saúde: só aparece no contexto se fizer sentido ──
@@ -2180,7 +2200,30 @@ async function extractAndSavePersonalInfo(userId, text) {
     }
   }
 
-  // ── Pendência emocional: mal-estar passageiro ou evento com resultado
+  // ── Memória episódica: eventos concretos da vida do usuário ──────────
+  // Ex: consulta médica, festa da filha, viagem — para acompanhar depois
+  try {
+    const episodio = await extractEpisodio(text);
+    if (episodio) {
+      const checkInAt = new Date(Date.now() + episodio.acompanharEmDias * 24 * 60 * 60 * 1000);
+      await prisma.memory.create({
+        data: {
+          userId,
+          type: 'episodio_vida',
+          content: episodio.titulo,
+          metadata: JSON.stringify({
+            tipo: episodio.tipo,
+            resultado: episodio.resultado,
+            checkInAt: checkInAt.toISOString(),
+            perguntado: false
+          })
+        }
+      }).catch(() => {});
+      console.log(`[Episódio] Salvo: "${episodio.titulo}" — acompanhar em ${episodio.acompanharEmDias}d`);
+    }
+  } catch (e) {
+    console.error('[extractEpisodio]', e.message);
+  }
   // incerto, pra Clara voltar a perguntar depois sozinha (ver cron
   // "PENDÊNCIAS EMOCIONAIS" em reminders.js) ──
   try {
