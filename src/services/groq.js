@@ -312,6 +312,7 @@ REGRAS:
 - Horário/data + intenção de CRIAR um novo lembrete/compromisso → tarefa
 - "você já criou isso?", "você criou?", "já tem esse lembrete?", "você anotou?", "tem algo sobre X na agenda?" → {"tipo":"consulta_agenda","query":"o que está sendo perguntado"}
 - "você já criou" / "já criei" dito pelo usuário afirmando que ela criou → {"tipo":"consulta_agenda","query":"verificar se lembrete existe"}
+- "já tem na agenda", "já está na agenda", "já tenho isso", "já está marcado" → {"tipo":"consulta_agenda","query":"verificar agenda"}
 - CONDICIONAL NÃO É PEDIDO: se a mensagem contiver "se quiser", "se puder", "se der", "se quiser pode", "caso queira", "se tiver como" antes de mencionar criar/anotar algo, NÃO crie a tarefa — classifique como "outro". O usuário está oferecendo uma opção, não pedindo. Só crie quando houver intenção clara e direta ("me lembra", "anota", "cria um lembrete", "agenda", "marca") sem condicionais.
 - ANTECEDÊNCIA: se o usuário pedir para ser lembrado X minutos/horas ANTES de um compromisso, use "antecedencia" em minutos. Dois casos:
   1. Pede lembrete novo COM horário: "me lembra às 15h e 20 min antes" → {"tipo":"tarefa","titulo":"consulta","hora":"15:00","antecedencia":20}
