@@ -657,10 +657,14 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       try {
         const resultado = await searchWeb(query, '');
         if (resultado) {
+          // Passa pelo freeResponse para ter o tom dela, não texto cru
+          const ctxBusca = `\n\n[RESULTADO DA PESQUISA]\n${resultado}\n\nPresente essas informações no seu tom natural — use o apelido do usuário, seja você mesma. Não comece com "Amigo".`;
+          const respostaFinal = await freeResponse('', history, { ...preferences, _contexto: ctxBusca }).catch(() => resultado);
+          const textoFinal = respostaFinal && !isRespostaFallback(respostaFinal) ? respostaFinal : resultado;
           await memory.saveConversationMessage(user.id, 'user', text);
-          await memory.saveConversationMessage(user.id, 'assistant', resultado);
-          await sendMessage(phone, resultado);
-          updateRelationshipSummary(user.id, history, resultado).catch(() => {});
+          await memory.saveConversationMessage(user.id, 'assistant', textoFinal);
+          await sendMessage(phone, textoFinal);
+          updateRelationshipSummary(user.id, history, textoFinal).catch(() => {});
         } else {
           await sendMessage(phone, 'Pesquisei mas não encontrei nada útil sobre isso agora 😕');
         }
@@ -676,9 +680,6 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     await sendMessage(phone, respStr);
 
     // ── Detecção de promessa de busca não executada ───────────────────
-    // Quando a Clara diz "deixa eu dar uma olhada", "vou pesquisar",
-    // "deixa eu verificar" etc. mas não gerou __BUSCAR:__, dispara a busca
-    // automaticamente com o texto original do usuário como query.
     const prometeuBuscar = /deixa eu (dar uma olhada|pesquisar|verificar|checar|buscar)|vou (pesquisar|buscar|dar uma olhada|verificar)|deixa eu ver|um segundo que|rapidinho aqui/i.test(respStr);
     if (prometeuBuscar && !buscaMatch) {
       ;(async () => {
@@ -686,8 +687,12 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           await new Promise(r => setTimeout(r, 1500));
           const resultado = await searchWeb(text.trim(), '');
           if (resultado && !isRespostaFallback(resultado)) {
-            await memory.saveConversationMessage(user.id, 'assistant', resultado).catch(() => {});
-            await sendMessage(phone, resultado);
+            // Passa pelo freeResponse para ter o tom dela, não texto cru
+            const ctxBusca = `\n\n[RESULTADO DA PESQUISA]\n${resultado}\n\nPresente essas informações no seu tom natural — use o apelido do usuário, seja você mesma. Não comece com "Amigo".`;
+            const respostaFinal = await freeResponse('', history, { ...preferences, _contexto: ctxBusca }).catch(() => resultado);
+            const textoFinal = respostaFinal && !isRespostaFallback(respostaFinal) ? respostaFinal : resultado;
+            await memory.saveConversationMessage(user.id, 'assistant', textoFinal).catch(() => {});
+            await sendMessage(phone, textoFinal);
             console.log(`[BuscaPrometida] Resultado enviado para ${phone}`);
           }
         } catch(e) { console.error('[BuscaPrometida] Erro:', e.message); }
