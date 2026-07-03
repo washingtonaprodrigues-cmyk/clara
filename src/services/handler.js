@@ -1357,9 +1357,31 @@ async function executeAction(user, phone, classified, originalText) {
     case 'anotacao':
       await memory.saveMemory(user.id, 'anotacao', classified.conteudo || classified.titulo || originalText, { titulo: classified.titulo });
       break;
-    case 'tarefa':
-      await salvarTarefaSilenciosa(user, phone, classified, originalText);
+    case 'tarefa': {
+      const resultTarefa = await salvarTarefaSilenciosa(user, phone, classified, originalText);
+      if (resultTarefa?.perguntarHora) {
+        // Salva pendência de coleta — aguarda data/hora do usuário
+        const expira = Date.now() + 15 * 60 * 1000; // 15 min
+        await prisma.memory.create({
+          data: {
+            userId: user.id,
+            type: 'confirmacao_pendente',
+            content: JSON.stringify({
+              tipo: 'coleta_lembrete',
+              titulo: resultTarefa.lembreteTitulo,
+              data: resultTarefa.lembreteData || null,
+              turno: resultTarefa.lembreteData ? 'hora' : 'data',
+              expira
+            })
+          }
+        }).catch(() => {});
+        // A Clara pergunta de forma natural no seu tom
+        const temData = !!resultTarefa.lembreteData;
+        const ctx = `\n\n[COLETA DE LEMBRETE] O usuário pediu pra lembrar de "${resultTarefa.lembreteTitulo}"${temData ? ` para ${resultTarefa.lembreteData}` : ''} mas não disse ${temData ? 'o horário' : 'quando'}. Responda naturalmente no seu tom e pergunte ${temData ? 'que horas' : 'quando e que horas'} — de forma humana, não robótica. Ex: "Que legal! A que horas vai ser?" ou "Pode deixar! Pra quando você quer que eu te lembre?" — varie conforme o contexto. NÃO crie o lembrete ainda.`;
+        preferences._dicaAcao = ctx;
+      }
       break;
+    }
     case 'multiplas_tarefas':
       // Cria cada tarefa do array individualmente, reusando salvarTarefaSilenciosa
       if (Array.isArray(classified.tarefas)) {
@@ -1578,6 +1600,12 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
     const [h, m] = classified.hora.split(':').map(Number);
     scheduledAt = new Date(`${dataUsada}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
     if (!classified.data && scheduledAt < nowBRT()) { scheduledAt.setDate(scheduledAt.getDate() + 1); }
+  }
+  // ── SEM HORA E SEM DATA — sempre pede o horário antes de criar ──
+  // Ex: "não me deixa esquecer de marcar os exames" → não tem hora nem data
+  // → retorna perguntarHora para a Clara perguntar quando quer ser lembrado
+  if (!scheduledAt && !classified.hora && !classified.data) {
+    return { perguntarHora: true, lembreteTitulo: classified.titulo, lembreteData: null };
   }
   // ── Tem DATA mas SEM HORA (ex: "no dia 24 tenho consulta") ──
   // Sinaliza para o chamador perguntar o horário ao usuário, em vez de
@@ -1880,6 +1908,74 @@ async function checkConfirmacaoPendente(user, phone, text) {
         await sendMessage(phone, 'Esse local e sua casa ou seu trabalho?');
         await prisma.memory.create({ data: { userId: user.id, type: 'confirmacao_pendente', content: JSON.stringify({ ...dados, expira: Date.now() + 5 * 60 * 1000 }) } }).catch(() => {});
       }
+      return;
+    }
+
+    // ── Coleta de lembrete em múltiplos turnos ────────────────────────────
+    if (dados.tipo === 'coleta_lembrete') {
+      await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
+
+      const titulo = dados.titulo;
+      let dataFinal = dados.data;
+      let horaFinal = null;
+
+      // Extrai data da resposta se ainda não tinha
+      if (!dataFinal) {
+        if (/hoje/i.test(textNorm)) dataFinal = dateBRT();
+        else if (/amanhã|amanha/i.test(textNorm)) {
+          const am = new Date(nowBRT()); am.setDate(am.getDate() + 1);
+          dataFinal = `${am.getFullYear()}-${String(am.getMonth()+1).padStart(2,'0')}-${String(am.getDate()).padStart(2,'0')}`;
+        } else {
+          // Tenta extrair dia do mês
+          const diaMatch = textNorm.match(/dia\s+(\d{1,2})|(\d{1,2})\s+de/);
+          if (diaMatch) {
+            const dia = parseInt(diaMatch[1] || diaMatch[2]);
+            const agora = nowBRT();
+            const tentativa = new Date(agora.getFullYear(), agora.getMonth(), dia);
+            if (tentativa < agora) tentativa.setMonth(tentativa.getMonth() + 1);
+            dataFinal = `${tentativa.getFullYear()}-${String(tentativa.getMonth()+1).padStart(2,'0')}-${String(tentativa.getDate()).padStart(2,'0')}`;
+          }
+        }
+      }
+
+      // Extrai hora da resposta
+      const horaMatch = textNorm.match(/(\d{1,2})[h:]\s*(\d{0,2})/);
+      const naoSabe = /não sei|qualquer|tanto faz|você decide|pode ser/i.test(textNorm);
+      if (horaMatch && !naoSabe) {
+        const h = String(parseInt(horaMatch[1])).padStart(2,'0');
+        const m = String(parseInt(horaMatch[2] || '0')).padStart(2,'0');
+        horaFinal = `${h}:${m}`;
+      }
+
+      // Se ainda falta informação, salva o que tem e pede o resto
+      if (!dataFinal || !horaFinal) {
+        const expira = Date.now() + 15 * 60 * 1000;
+        await prisma.memory.create({
+          data: {
+            userId: user.id, type: 'confirmacao_pendente',
+            content: JSON.stringify({ tipo: 'coleta_lembrete', titulo, data: dataFinal, turno: dataFinal ? 'hora' : 'data', expira })
+          }
+        }).catch(() => {});
+        const ctx = !dataFinal
+          ? `\n\n[COLETA] Usuário ainda não disse quando é "${titulo}". Pergunte a data de forma natural e curta.`
+          : `\n\n[COLETA] Usuário disse que é ${dataFinal} mas não disse o horário de "${titulo}". Pergunte que horas de forma natural — pode sugerir um horário inteligente ex: "às 16h pra dar tempo de se preparar?" dependendo do contexto.`;
+        preferences._dicaAcao = ctx;
+        await responderLivre(user, phone, text, '', false, null, null);
+        return;
+      }
+
+      // Tem tudo — cria o lembrete
+      const scheduledAt = new Date(`${dataFinal}T${horaFinal}:00-03:00`);
+      if (scheduledAt <= nowBRT()) scheduledAt.setDate(scheduledAt.getDate() + 1);
+
+      await prisma.reminder.create({ data: { userId: user.id, phone, message: titulo, scheduledAt } });
+      const horaFmt = scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+      const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: '2-digit' });
+
+      const confirmacao = `✅ Anotado! "${titulo}" — ${dataFmt} às ${horaFmt} ⏰`;
+      const ctx = `\n\n[LEMBRETE CRIADO] "${titulo}" para ${dataFmt} às ${horaFmt}. Confirme de forma natural e animada no seu tom.`;
+      await responderLivre(user, phone, text, ctx, false, null, confirmacao);
+      emitirAtualizacao(phone, 'lembretes');
       return;
     }
 
