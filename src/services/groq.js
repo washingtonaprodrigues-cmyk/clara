@@ -1190,7 +1190,8 @@ function filtrarResposta(t) {
   t = t.replace(/^[✅☑️]+\s*/gm, '').trim();
   // Remove confirmações de lembrete que vazam no início da resposta
   // Cobre: "Lembrete criado: X", "Lembrete criado para o usuário: X", "Lembrete criado! 🔔"
-  t = t.replace(/^(?:✅\s*)?Lembrete criado[^!\n]*[!.]?[^\n]*\n?/gim, '').trim();
+  // Cobre também: "Lembrete 'X' criado para DD/MM/YYYY às HH:MM"
+  t = t.replace(/^(?:✅\s*)?Lembrete(?:\s+["'][^"']+["'])?\s+criado[^\n]*\n?/gim, '').trim();
   // descrevendo o usuário/Clara em terceira pessoa antes de responder.
   // Ex: "Washington, depois de sorrir, elogiou a criatividade de Clara"
   // Ex: "*[Washington reagiu com alegria. Clara também 💜]*"
