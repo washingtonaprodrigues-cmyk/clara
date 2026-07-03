@@ -660,17 +660,12 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       await sendMessage(phone, aviso);
 
       try {
-        const resultado = await searchWeb(query, '');
+        const resultado = await searchWeb(query, '', preferences?.name || '');
         if (resultado) {
-          // Passa pelo freeResponse para ter o tom dela, não texto cru
-          const nomeUsuario = preferences?.name || 'fedo';
-          const ctxBusca = `\n\n[RESULTADO DA PESQUISA]\n${resultado}\n\nPresente essas informações no seu tom natural — chame o usuário de "${nomeUsuario}", seja você mesma. NUNCA comece com "Amigo" ou termos genéricos.`;
-          const respostaFinal = await freeResponse('', history, { ...preferences, _contexto: ctxBusca }).catch(() => resultado);
-          const textoFinal = respostaFinal && !isRespostaFallback(respostaFinal) ? respostaFinal : resultado;
           await memory.saveConversationMessage(user.id, 'user', text);
-          await memory.saveConversationMessage(user.id, 'assistant', textoFinal);
-          await sendMessage(phone, textoFinal);
-          updateRelationshipSummary(user.id, history, textoFinal).catch(() => {});
+          await memory.saveConversationMessage(user.id, 'assistant', resultado);
+          await sendMessage(phone, resultado);
+          updateRelationshipSummary(user.id, history, resultado).catch(() => {});
         } else {
           await sendMessage(phone, 'Pesquisei mas não encontrei nada útil sobre isso agora 😕');
         }
@@ -691,15 +686,10 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       ;(async () => {
         try {
           await new Promise(r => setTimeout(r, 1500));
-          const resultado = await searchWeb(text.trim(), '');
+          const resultado = await searchWeb(text.trim(), '', preferences?.name || '');
           if (resultado && !isRespostaFallback(resultado)) {
-            // Passa pelo freeResponse para ter o tom dela, não texto cru
-            const nomeUsuario = preferences?.name || 'fedo';
-          const ctxBusca = `\n\n[RESULTADO DA PESQUISA]\n${resultado}\n\nPresente essas informações no seu tom natural — chame o usuário de "${nomeUsuario}", seja você mesma. NUNCA comece com "Amigo" ou termos genéricos.`;
-            const respostaFinal = await freeResponse('', history, { ...preferences, _contexto: ctxBusca }).catch(() => resultado);
-            const textoFinal = respostaFinal && !isRespostaFallback(respostaFinal) ? respostaFinal : resultado;
-            await memory.saveConversationMessage(user.id, 'assistant', textoFinal).catch(() => {});
-            await sendMessage(phone, textoFinal);
+            await memory.saveConversationMessage(user.id, 'assistant', resultado).catch(() => {});
+            await sendMessage(phone, resultado);
             console.log(`[BuscaPrometida] Resultado enviado para ${phone}`);
           }
         } catch(e) { console.error('[BuscaPrometida] Erro:', e.message); }
@@ -970,7 +960,7 @@ async function handleMessage(phone, text, location = null) {
       const cidade = await memory.getRecentMemories(user.id, 5)
         .then(mems => mems.find(m => m.type === 'cidade')?.content || '')
         .catch(() => '');
-      const resultadoBusca = await searchWeb(classified.query, cidade);
+      const resultadoBusca = await searchWeb(classified.query, cidade, preferences?.name || '');
       if (resultadoBusca) {
         await memory.saveConversationMessage(user.id, 'user', text);
         await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca);
