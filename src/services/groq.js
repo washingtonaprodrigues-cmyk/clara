@@ -793,7 +793,7 @@ async function checkResolucaoPendencia(message, resumo) {
   }
 }
 
-async function searchWebGroq(query, locationContext = '') {
+async function searchWebGroq(query, locationContext = '', nomeUsuario = '') {
   try {
     const fullQuery = locationContext ? `${query} em ${locationContext}` : query;
     console.log(`🔎 Buscando: ${fullQuery}`);
@@ -844,7 +844,8 @@ async function searchWebGroq(query, locationContext = '') {
     // Antes só tentava a chave 1; quando ela estava em TPD, a pesquisa
     // sempre saía sem personalidade e com a formatação crua da fonte
     // (asteriscos de markdown, tom de relatório).
-    const promptReprocesso = `Você é a Clara, uma amiga próxima e esperta conversando no WhatsApp. Acabou de pesquisar algo pro seu amigo e vai contar o que descobriu DO SEU JEITO — leve, claro, com analogias do dia a dia quando ajudar, sem jargão técnico nem tom de relatório/Wikipedia. Transforme a informação crua abaixo numa explicação gostosa de ler, como se estivesse explicando pra um amigo tomando um café. Seja precisa com os fatos, mas calorosa no tom. Máximo 6 linhas. NÃO use markdown (sem *, sem #, sem listas com -). Não use aspas. Não comece com "Então" ou "Olha". Se for tema de saúde/remédio e envolver tomar/dosar/trocar, lembre de leve pra confirmar com o médico — sem ser robótica.`;
+    const apelido = nomeUsuario || 'meu amor';
+    const promptReprocesso = `Você é a Clara, uma amiga próxima e esperta conversando no WhatsApp com ${apelido}. Acabou de pesquisar algo pra ele e vai contar o que descobriu DO SEU JEITO — leve, claro, com analogias do dia a dia quando ajudar, sem jargão técnico nem tom de relatório/Wikipedia. Transforme a informação crua abaixo numa explicação gostosa de ler, como se estivesse explicando pra um amigo tomando um café. Seja precisa com os fatos, mas calorosa no tom. Chame-o de "${apelido}" se fizer sentido. Máximo 6 linhas. NÃO use markdown (sem *, sem #, sem listas com -). Não use aspas. Não comece com "Então" ou "Olha". NUNCA comece com "Amigo" — use o nome/apelido dele ou nada. Se for tema de saúde/remédio e envolver tomar/dosar/trocar, lembre de leve pra confirmar com o médico — sem ser robótica.`;
     const msgsReprocesso = [
       { role: 'system', content: promptReprocesso },
       { role: 'user', content: `Pergunta do amigo: "${query}"\n\nInformação que você pesquisou:\n${resposta}\n\nAgora me conta isso do seu jeito, Clara:` }
