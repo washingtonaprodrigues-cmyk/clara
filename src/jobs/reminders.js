@@ -1578,16 +1578,23 @@ cron.schedule('* * * * *', async () => {
       const tempoTexto = janela === '1h' ? 'daqui uma hora' : 'daqui meia hora';
       const ctx = `[AVISO ANTECIPADO] ${tempoTexto} você tem: "${r.message}" às ${horaBRT}. Mencione isso de forma MUITO natural e curta — como uma amiga que lembrou no meio da conversa. Uma frase só, integrada ao clima da conversa. Ex: "ah, e ${tempoTexto} você tem ${r.message}, vai se preparando!" — sem ser formal, sem cortar o assunto.`;
 
-      const history = await memory.getConversationHistory(userId, 4).catch(() => []);
-      const prefs = await memory.getUserPreferences(userId).catch(() => ({}));
-      prefs._contexto = ctx;
-      prefs._skipSaveHistory = true;
-
-      const resposta = await freeResponse('', history, prefs).catch(() => null);
-      if (resposta && !isRespostaFallback(resposta)) {
-        await sendMessage(phone, resposta);
-        console.log(`[AvisoAntecipado] ${janela} antes — ${phone}: ${r.message}`);
-      }
+      // Fire-and-forget com timeout — não bloqueia o cron
+      ;(async () => {
+        try {
+          const history = await memory.getConversationHistory(userId, 4).catch(() => []);
+          const prefs = await memory.getUserPreferences(userId).catch(() => ({}));
+          prefs._contexto = ctx;
+          prefs._skipSaveHistory = true;
+          const resposta = await Promise.race([
+            freeResponse('', history, prefs),
+            new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 10000))
+          ]).catch(() => null);
+          if (resposta && !isRespostaFallback(resposta)) {
+            await sendMessage(phone, resposta);
+            console.log(`[AvisoAntecipado] ${janela} antes — ${phone}: ${r.message}`);
+          }
+        } catch(e) { console.error('[AvisoAntecipado] erro:', e.message); }
+      })();
     }
 
     // Mesma lógica para remédios
@@ -1623,16 +1630,23 @@ cron.schedule('* * * * *', async () => {
       const tempoTexto = janela === '1h' ? 'daqui uma hora' : 'daqui meia hora';
       const ctx = `[AVISO ANTECIPADO] ${tempoTexto} é hora do ${med.name} (às ${med.scheduleTime}). Mencione de forma natural e curta, integrada à conversa. Uma frase só. Ex: "ah, ${tempoTexto} é hora do seu ${med.name}, não esquece!"`;
 
-      const history = await memory.getConversationHistory(userId, 4).catch(() => []);
-      const prefs = await memory.getUserPreferences(userId).catch(() => ({}));
-      prefs._contexto = ctx;
-      prefs._skipSaveHistory = true;
-
-      const resposta = await freeResponse('', history, prefs).catch(() => null);
-      if (resposta && !isRespostaFallback(resposta)) {
-        await sendMessage(phone, resposta);
-        console.log(`[AvisoAntecipado] ${janela} antes — ${phone}: ${med.name}`);
-      }
+      // Fire-and-forget com timeout
+      ;(async () => {
+        try {
+          const history = await memory.getConversationHistory(userId, 4).catch(() => []);
+          const prefs = await memory.getUserPreferences(userId).catch(() => ({}));
+          prefs._contexto = ctx;
+          prefs._skipSaveHistory = true;
+          const resposta = await Promise.race([
+            freeResponse('', history, prefs),
+            new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 10000))
+          ]).catch(() => null);
+          if (resposta && !isRespostaFallback(resposta)) {
+            await sendMessage(phone, resposta);
+            console.log(`[AvisoAntecipado] ${janela} antes — ${phone}: ${med.name}`);
+          }
+        } catch(e) { console.error('[AvisoAntecipado] med erro:', e.message); }
+      })();
     }
 
     // Limpa locks de aviso antecipado com mais de 2h
