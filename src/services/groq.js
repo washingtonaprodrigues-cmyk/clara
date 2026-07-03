@@ -240,6 +240,7 @@ GATILHOS DE TAREFA (prioridade sobre conteúdo): "me lembra", "me avisa", "anota
 NÃO É LEMBRETE — classifique como "outro":
 - Relatos do que o usuário vai fazer: "vou tomar café", "tenho que trocar a blusa", "preciso passar no mercado" (sem "me lembra" ou gatilho explícito) → sugerir_lembrete se for atividade futura específica e realizável, outro se for cotidiana/vaga
 - Planos informais com atividade específica futura: "amanhã vou trocar a blusa", "preciso levar o carro no mecânico" → sugerir_lembrete
+- Respostas sobre remédios já cadastrados: "vou tomar no horário", "ainda não tomei", "já tomei", "vou esperar o horário" → outro (o remédio já tem alerta automático, não criar lembrete duplicado)
 - Atividades cotidianas vagas sem pedido: tomar café, almoçar, dormir, descansar → outro (não sugere lembrete)
 
 SUGERIR LEMBRETE (sugerir_lembrete):
@@ -1210,9 +1211,9 @@ function filtrarResposta(t) {
   // separada (confirmacaoSeparada), não deve aparecer na resposta em texto.
   t = t.replace(/^[✅☑️]*\s*Anotado[!.]?\s*[""]?[^""\n]*[""]?\s*[⏰📌]?\s*\n?/gim, '').trim();
   t = t.replace(/^[✅☑️]+\s*/gm, '').trim();
-  // Remove confirmações robóticas soltas que o Gemini gera erroneamente
-  // Ex: "Lembrete criado! 🔔" ou "✅ Lembrete criado!" como resposta única
-  t = t.replace(/^Lembrete criado[!.]?\s*[🔔📌]?\s*$/gim, '').trim();
+  // Remove confirmações de lembrete que vazam no início da resposta
+  // Cobre: "Lembrete criado: X", "Lembrete criado para o usuário: X", "Lembrete criado! 🔔"
+  t = t.replace(/^(?:✅\s*)?Lembrete criado[^!\n]*[!.]?[^\n]*\n?/gim, '').trim();
   // descrevendo o usuário/Clara em terceira pessoa antes de responder.
   // Ex: "Washington, depois de sorrir, elogiou a criatividade de Clara"
   // Ex: "*[Washington reagiu com alegria. Clara também 💜]*"
