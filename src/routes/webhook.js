@@ -637,6 +637,17 @@ async function transcribeAndProcess(phone, body) {
       return;
     }
     console.log(`[Áudio] ${phone} transcrito: "${texto.slice(0, 80)}"`);
+
+    // Detecta se o áudio foi cortado no meio — termina sem pontuação
+    // e com palavras de continuação típicas de frase incompleta
+    const pareceCortado = texto.length < 40 &&
+      /\b(e|aí|então|mas|que|pra|para|né|tá|ta)\s*$/i.test(texto.trim());
+    if (pareceCortado) {
+      console.log(`[Áudio] Possível corte detectado: "${texto}"`);
+      await sendMessage(phone, 'Acho que o áudio cortou no meio 😕 Pode repetir ou digitar o resto?');
+      return;
+    }
+
     await handleMessage(phone, texto);
   } catch (e) {
     console.error('[Áudio] Erro:', e.message);
