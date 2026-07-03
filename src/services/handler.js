@@ -392,6 +392,14 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         }).catch(() => null)
       ]);
 
+      // ── Detecção de relevância por assunto da mensagem ───────────────────
+      const txtLow = (text||'').toLowerCase();
+      const falaDeAgenda = /hoje|amanhã|horário|quando|agenda|compromisso|reunião|consulta|médico|dentista|semana|mês/.test(txtLow);
+      const falaDeRemedio = /remédio|comprimido|tomar|dose|farmácia|medicamento|triglicere|toroide|holmis|landizin/.test(txtLow);
+      const faladeDinheiro = /dinheiro|gasto|gastei|saldo|orçamento|conta|pagar|pagamento|real|reais|r\$/.test(txtLow);
+      const falaDeLista = /lista|mercado|compras|item|comprar/.test(txtLow);
+      const ehManha = now.getHours() >= 6 && now.getHours() < 11;
+
       if (lembretes.length > 0) {
         const fmtLemb = (r) => {
           const d = new Date(r.scheduledAt);
@@ -399,16 +407,14 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           const horaBRT = d.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo', hour:'2-digit', minute:'2-digit'});
           return `• ${dStr} às ${horaBRT} — ${r.message}`;
         };
-        // Instrução restritiva — a Clara TEM a agenda mas só menciona se o
-        // usuário trouxer o assunto. Nunca interrompe conversa com lembretes.
-        contexto += `\n\n[AGENDA — mencione SOMENTE se o usuário trouxer o assunto ou perguntar. Nunca puxe por iniciativa, especialmente de madrugada ou em conversa sobre outro assunto]\n${lembretes.map(fmtLemb).join('\n')}`;
-      } else {
-        // Sem lembretes: não injeta nada desnecessário
+        // Injeta agenda só se relevante — evita Clara puxar compromissos em papo casual
+        if (falaDeAgenda || ehManha) {
+          contexto += `\n\n[AGENDA — mencione SOMENTE se o usuário trouxer o assunto ou perguntar. Nunca puxe por iniciativa em conversa sobre outro assunto]\n${lembretes.map(fmtLemb).join('\n')}`;
+        }
       }
 
       try {
-        const textLower = (text||'').toLowerCase();
-        if (/envi|mand|recado|contato|mostr|lista/.test(textLower)) {
+        if (/envi|mand|recado|contato|mostr|lista/.test(txtLow)) {
           const contatos = await getContacts(user.id);
           if (contatos.length > 0) {
             const listaCtx = contatos.map((c,i) => `${i+1}. ${c.name}${c.relation?` (${c.relation})`:''} — ${c.phone}`).join('\n');
@@ -417,7 +423,8 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         }
       } catch(e) {}
 
-      if (meds.length > 0) {
+      // Medicamentos — só injeta se falar de remédio ou for manhã (horário de tomar)
+      if (meds.length > 0 && (falaDeRemedio || ehManha)) {
         const fmtMed = (m) => {
           let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
           const proxima = times.find(t => t >= hm) || times[0] || '—';
@@ -427,7 +434,8 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         contexto += `\n\n[MEDICAMENTOS]\n${meds.map(fmtMed).join('\n')}`;
       }
 
-      if (preferences.saldo != null) {
+      // Financeiro — só injeta se falar de dinheiro
+      if (preferences.saldo != null && faladeDinheiro) {
         const saidas = gastos.filter(g => g.value > 0);
         const entradas = gastos.filter(g => g.value < 0);
         const totalGasto = saidas.reduce((a, g) => a + g.value, 0);
@@ -436,24 +444,24 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         contexto += `\n\n[FINANCEIRO]\nOrçamento: R$ ${preferences.saldo.toFixed(2)}\nGasto: R$ ${totalGasto.toFixed(2)}\nEntradas: R$ ${totalEntradas.toFixed(2)}\nSaldo: R$ ${restante.toFixed(2)}`;
       }
 
-      // Listas ativas — evita Clara inventar listas
-      try {
-        const listas = await prisma.groceryList.findMany({
-          where: { userId: user.id, done: false },
-          orderBy: { createdAt: 'desc' }, take: 5
-        });
-        if (listas.length > 0) {
-          const listaCtx = listas.map(l => {
-            let items = []; try { items = JSON.parse(l.items); } catch {}
-            const pendentes = items.filter(i => !i.done).map(i => i.nome).join(', ');
-            const done = items.filter(i => i.done).length;
-            return `• "${l.name}" — ${done}/${items.length} concluídos${pendentes ? ` | Pendentes: ${pendentes}` : ' ✅'}`;
-          }).join('\n');
-          contexto += `\n\n[LISTAS ATIVAS]\n${listaCtx}`;
-        } else {
-          contexto += `\n\n[LISTAS ATIVAS]\nNenhuma lista ativa.`;
-        }
-      } catch(e) {}
+      // Listas — só injeta se falar de lista/compras
+      if (falaDeLista) {
+        try {
+          const listas = await prisma.groceryList.findMany({
+            where: { userId: user.id, done: false },
+            orderBy: { createdAt: 'desc' }, take: 5
+          });
+          if (listas.length > 0) {
+            const listaCtx = listas.map(l => {
+              let items = []; try { items = JSON.parse(l.items); } catch {}
+              const pendentes = items.filter(i => !i.done).map(i => i.nome).join(', ');
+              const done = items.filter(i => i.done).length;
+              return `• "${l.name}" — ${done}/${items.length} concluídos${pendentes ? ` | Pendentes: ${pendentes}` : ' ✅'}`;
+            }).join('\n');
+            contexto += `\n\n[LISTAS ATIVAS]\n${listaCtx}`;
+          }
+        } catch(e) {}
+      }
 
       if (relMemoria?.content) contexto += `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoria.content}`;
 
