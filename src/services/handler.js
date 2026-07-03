@@ -473,7 +473,9 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       //    comportamento anterior — aparece quando checkInAt já venceu.
       const temAssuntoAberto = (perfilPessoal || '').includes('[ASSUNTOS EM ABERTO');
       let mostrarPendenciaSaude = false;
-      if (pendenciaSaude && !temAssuntoAberto) {
+      // Não injeta saúde em aberto se a mensagem atual é confirmação de remédio
+      const ehConfirmacaoRemedio = /^(tomado|tomei|já tomei|tomou|feito)\s*(fedo)?\.?$/i.test((text||'').trim());
+      if (pendenciaSaude && !temAssuntoAberto && !ehConfirmacaoRemedio) {
         const resumoLower = (pendenciaSaude.resumo || '').toLowerCase();
         const ehRemedio = /rem[eé]dio|medicamento|comp|dose|tomar/.test(resumoLower);
         if (ehRemedio) {
