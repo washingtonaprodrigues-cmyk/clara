@@ -646,19 +646,24 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       const query = buscaMatch[1].trim();
       // Avisa que vai pesquisar, no estilo da Clara
       const tom = preferences?.tom || 'carinhoso';
+      const name = preferences?.name || '';
+      const fedo = name || 'fedo';
       const avisos = {
-        carinhoso: `✨ Buscando pra gente…`,
-        direto: `🔍 Buscando.`,
-        divertido: `✨ Um segundinho, deixa eu dar uma garimpada!`,
-        sarcastico: `Tá bom, vou pesquisar porque obviamente você não vai fazer isso sozinho. 🙄`,
+        carinhoso: [`✨ Pera aí que já busco pra gente!`, `Um segundo, ${fedo}! 🔍`, `Deixa eu dar uma olhada aqui! ✨`],
+        direto: [`🔍 Buscando.`, `Já procuro.`, `Um segundo.`],
+        divertido: [`Espera que vou garimpar isso pra você! 😄`, `Deixa eu fuçar aqui! 🔍`, `Um segundo que já acho! ✨`],
+        sarcastico: [`Tá bom, ${fedo}… deixa eu ver porque você não ia achar sozinho mesmo. 🙄`, `Pera aí que vou buscar pra gente. 😏`, `Já procuro, ${fedo}. 🔍`],
       };
-      await sendMessage(phone, avisos[tom] || avisos.carinhoso);
+      const opcoes = avisos[tom] || avisos.carinhoso;
+      const aviso = opcoes[Math.floor(Math.random() * opcoes.length)];
+      await sendMessage(phone, aviso);
 
       try {
         const resultado = await searchWeb(query, '');
         if (resultado) {
           // Passa pelo freeResponse para ter o tom dela, não texto cru
-          const ctxBusca = `\n\n[RESULTADO DA PESQUISA]\n${resultado}\n\nPresente essas informações no seu tom natural — use o apelido do usuário, seja você mesma. Não comece com "Amigo".`;
+          const nomeUsuario = preferences?.name || 'fedo';
+          const ctxBusca = `\n\n[RESULTADO DA PESQUISA]\n${resultado}\n\nPresente essas informações no seu tom natural — chame o usuário de "${nomeUsuario}", seja você mesma. NUNCA comece com "Amigo" ou termos genéricos.`;
           const respostaFinal = await freeResponse('', history, { ...preferences, _contexto: ctxBusca }).catch(() => resultado);
           const textoFinal = respostaFinal && !isRespostaFallback(respostaFinal) ? respostaFinal : resultado;
           await memory.saveConversationMessage(user.id, 'user', text);
@@ -688,7 +693,8 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           const resultado = await searchWeb(text.trim(), '');
           if (resultado && !isRespostaFallback(resultado)) {
             // Passa pelo freeResponse para ter o tom dela, não texto cru
-            const ctxBusca = `\n\n[RESULTADO DA PESQUISA]\n${resultado}\n\nPresente essas informações no seu tom natural — use o apelido do usuário, seja você mesma. Não comece com "Amigo".`;
+            const nomeUsuario = preferences?.name || 'fedo';
+          const ctxBusca = `\n\n[RESULTADO DA PESQUISA]\n${resultado}\n\nPresente essas informações no seu tom natural — chame o usuário de "${nomeUsuario}", seja você mesma. NUNCA comece com "Amigo" ou termos genéricos.`;
             const respostaFinal = await freeResponse('', history, { ...preferences, _contexto: ctxBusca }).catch(() => resultado);
             const textoFinal = respostaFinal && !isRespostaFallback(respostaFinal) ? respostaFinal : resultado;
             await memory.saveConversationMessage(user.id, 'assistant', textoFinal).catch(() => {});
