@@ -793,13 +793,31 @@ cron.schedule('0,15,30 13 * * *', async () => proativaInteligente('almoco'), { t
 cron.schedule('30,45 19 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
 cron.schedule('*/15 20 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
 cron.schedule('0,15,30 21 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('0,30 22 * * *', async () => proativaInteligente('noite_tardia'), { timezone: 'America/Sao_Paulo' });
 async function proativaInteligente(periodo) {
   try {
     const users = await prisma.user.findMany({ where: { blocked: false } });
     const now = nowBRT();
     for (const user of users) {
       try {
-        const dayKey = `${periodo}_${dateBRT()}`;
+        // ── Noite tardia (22h): pula se há remédio na janela 21h30-22h30 ──
+        if (periodo === 'noite_tardia') {
+          const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
+          const hAtual = now.getHours() * 60 + now.getMinutes();
+          const temRemedioProximo = meds.some(m => {
+            let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
+            return times.some(t => {
+              const [h, min] = t.split(':').map(Number);
+              const hMed = h * 60 + min;
+              return Math.abs(hMed - hAtual) <= 30; // dentro de 30 min
+            });
+          });
+          if (temRemedioProximo) {
+            console.log(`[Proativa] Pulando noite_tardia para ${user.phone} — remédio próximo`);
+            continue;
+          }
+        }
+        const dayKey = `${periodo === 'noite_tardia' ? 'noite' : periodo}_${dateBRT()}`;
 
         // ── Já enviou hoje pra esse período? ──
         // Antes isso era decidido ANTES de processar (claim atômico), o
@@ -921,7 +939,10 @@ async function proativaInteligente(periodo) {
               where: { userId: user.id, type: 'proativa_moeda', content: { startsWith: moedaKey } }
             }).catch(() => null);
             if (!moeda) {
-              const skip = Math.random() > 0.5;
+              // Noite: 80% de chance (mais provável aparecer à noite)
+              // Manhã/almoço: 50% de chance
+              const limiteSkip = periodo === 'noite' ? 0.2 : 0.5;
+              const skip = Math.random() < limiteSkip;
               await prisma.memory.create({
                 data: { userId: user.id, type: 'proativa_moeda', content: `${moedaKey}:${skip ? 'skip' : 'ok'}` }
               }).catch(() => {});
@@ -966,13 +987,13 @@ Como uma amiga curiosa e presente, você pode:
 - Se não tiver nada específico, algo simples e genuíno sobre o almoço/dia
 TOM: leve, informal, como uma mensagem rápida entre amigos no almoço${curiosidadeAlmocoCtx}`;
           } else {
-            instrucao = `É noite — a pessoa relaxou, receptiva pra conversa mais pessoal.
-Como uma amiga que quer saber como foi o dia, você pode:
-- Se o contexto mencionar viagem, estrada, trânsito ou deslocamento hoje, pergunte se chegou bem — isso é mais natural que perguntar como foi o dia
-- Perguntar como foi o dia de forma genuína, especialmente se foi cheio
-- Retomar um assunto em aberto com curiosidade real
-- Comentar sobre algo concreto que aconteceu hoje (agenda, compromisso)
-TOM: acolhedor, curioso, como quem pergunta do dia de verdade — sem ser protocolar`;
+            instrucao = `É noite — depois das 20h a pessoa está mais relaxada e receptiva. É o horário mais humano pra conversa leve e genuína.
+Como uma amiga que tem vontade de saber como foi o dia:
+- Pode simplesmente aparecer com "e aí fedo, o que tá fazendo?" ou uma piada sobre o dia
+- Referenciar algo específico que aconteceu hoje (consulta, exame, trabalho, compromisso)
+- Retomar assunto em aberto com curiosidade real e tom leve
+- Às vezes só zoar ou mandar uma observação engraçada sobre algo que sabe da vida dela
+TOM: leve, à vontade, como conversa de fim de dia entre amigos — pode ser mais solta e bem-humorada que de manhã`;
           }
 
           // Busca humor do dia e localização para enriquecer o contexto
