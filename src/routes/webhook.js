@@ -526,6 +526,14 @@ Isso é sua casa ou seu trabalho? Assim eu aprendo seus endereços fixos 😊`;
       processImage(phone, body).catch(console.error);
       return res.json({ ok: true });
     }
+
+    // Mensagem sem texto mas com caption — provavelmente imagem com legenda
+    // que chegou num webhook separado sem o mediaType correto
+    if (!text && body.message?.caption) {
+      console.log('[Imagem] Caption detectada sem mediaType — tentando processImage');
+      processImage(phone, body).catch(console.error);
+      return res.json({ ok: true });
+    }
     if (['video','document'].includes(body.message?.mediaType) ||
         ['videoMessage','documentMessage'].includes(body.message?.messageType)) {
       sendMessage(phone, 'Por enquanto não consigo ver vídeos ou arquivos — mas foto e áudio eu já dou conta! 😊').catch(console.error);
