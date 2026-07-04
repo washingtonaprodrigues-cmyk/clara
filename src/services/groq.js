@@ -1201,8 +1201,9 @@ async function tentarFallbackCascata(contexto, name, message, logPrefix = 'ModoD
 // Filtro de saída — remove padrões banidos de qualquer resposta
 function filtrarResposta(t) {
   if (!t || typeof t !== 'string') return t;
-  // Remove __BUSCAR:...__ se vazar na resposta — não deve aparecer pro usuário
-  // Remove __BUSCAR:...__ e _BUSCAR:..._ (todas variações) que vazam na resposta
+  // Se a resposta É um marcador de busca (só isso), preserva — o handler precisa processar
+  if (/^[*_]{0,2}BUSCAR:[^*_\n]+[*_]{0,2}$/i.test(t.trim())) return t.trim();
+  // Remove __BUSCAR:...__ e variações que VAZAM junto de outro texto — não deve aparecer pro usuário
   t = t.replace(/_+BUSCAR:[^_\n]*_*/gi, '').trim();
   t = t.replace(/\*+BUSCAR:[^*\n]*\**/gi, '').trim();
   // Remove marcadores internos de contexto que o Gemini às vezes imprime literalmente,
