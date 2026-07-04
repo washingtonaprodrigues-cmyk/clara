@@ -409,7 +409,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         };
         // Injeta agenda só se relevante — evita Clara puxar compromissos em papo casual
         if (falaDeAgenda || ehManha) {
-          contexto += `\n\n[AGENDA — mencione SOMENTE se o usuário trouxer o assunto ou perguntar. Nunca puxe por iniciativa em conversa sobre outro assunto]\n${lembretes.map(fmtLemb).join('\n')}`;
+          contexto += `\n\n[AGENDA — USE COM EXTREMO CRITÉRIO. Só mencione se o usuário perguntar diretamente sobre agenda/horário NESTA mensagem. NUNCA puxe agenda no meio de conversa emocional, fofa, engraçada ou sobre família — mesmo que o assunto tenha sido mencionado antes. Se o clima é leve/pessoal, ignore completamente este bloco.]\n${lembretes.map(fmtLemb).join('\n')}`;
         }
       }
 
