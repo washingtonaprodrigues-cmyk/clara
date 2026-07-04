@@ -1414,7 +1414,25 @@ async function executeAction(user, phone, classified, originalText) {
       break;
     case 'tarefa': {
       const resultTarefa = await salvarTarefaSilenciosa(user, phone, classified, originalText);
-      if (resultTarefa?.perguntarHora) {
+      if (resultTarefa?.perguntarTitulo) {
+        // Título incompleto — pede o complemento de forma natural e zoeira
+        const expira = Date.now() + 15 * 60 * 1000;
+        await prisma.memory.create({
+          data: {
+            userId: user.id,
+            type: 'confirmacao_pendente',
+            content: JSON.stringify({
+              tipo: 'coleta_titulo',
+              tituloIncompleto: resultTarefa.tituloIncompleto,
+              data: classified.data,
+              hora: classified.hora,
+              expira
+            })
+          }
+        }).catch(() => {});
+        const ctx = `\n\n[TÍTULO INCOMPLETO] O usuário pediu um lembrete mas o título ficou incompleto: "${resultTarefa.tituloIncompleto}". Pergunte de forma natural e com seu jeito — ex: "Opa, cobrar quem? 😄" ou "Espera, ${resultTarefa.tituloIncompleto} quem? Não me deixa curiosa! 🤔" — curto, no seu tom, sem criar nada ainda.`;
+        preferences._dicaAcao = ctx;
+      } else if (resultTarefa?.perguntarHora) {
         // Salva pendência de coleta — aguarda data/hora do usuário
         const expira = Date.now() + 15 * 60 * 1000; // 15 min
         await prisma.memory.create({
@@ -1639,7 +1657,16 @@ function detectarUrgencia(titulo) {
 }
 
 async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
-  await memory.saveMemory(user.id, 'tarefa', classified.titulo, { data: classified.data, hora: classified.hora });
+  // ── Título incompleto — pede complemento antes de criar ──────────────
+  // Se o título termina em preposição ou artigo, ou é muito curto/vago,
+  // ela pergunta o complemento de forma natural em vez de criar "cobrar a"
+  const titulo = (classified.titulo || '').trim();
+  const terminaIncompleto = /\b(a|o|os|as|um|uma|de|do|da|dos|das|para|pro|pra|com|em|no|na|nos|nas|que|e|ou)\s*$/i.test(titulo);
+  const tituloVago = titulo.length < 5 || terminaIncompleto;
+  if (tituloVago) {
+    return { perguntarTitulo: true, tituloIncompleto: titulo };
+  }
+  await memory.saveMemory(user.id, 'tarefa', titulo, { data: classified.data, hora: classified.hora });
   let scheduledAt = null;
   if (originalText) { const relativo = calcularHorarioRelativo(originalText); if (relativo) { scheduledAt = relativo; } }
   if (!scheduledAt && classified.hora) {
@@ -1963,6 +1990,39 @@ async function checkConfirmacaoPendente(user, phone, text) {
         await sendMessage(phone, 'Esse local e sua casa ou seu trabalho?');
         await prisma.memory.create({ data: { userId: user.id, type: 'confirmacao_pendente', content: JSON.stringify({ ...dados, expira: Date.now() + 5 * 60 * 1000 }) } }).catch(() => {});
       }
+      return;
+    }
+
+    // ── Coleta de título incompleto ───────────────────────────────────────
+    if (dados.tipo === 'coleta_titulo') {
+      await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
+      // Usa a resposta do usuário como complemento do título
+      const tituloCompleto = dados.tituloIncompleto
+        ? `${dados.tituloIncompleto} ${text.trim()}`.trim()
+        : text.trim();
+      // Agora cria com o título completo
+      const classifiedCompleto = {
+        tipo: 'tarefa',
+        titulo: tituloCompleto,
+        data: dados.data || null,
+        hora: dados.hora || null,
+        antecedencia: 0,
+        recorrente: false,
+        frequencia: null
+      };
+      const resultFinal = await salvarTarefaSilenciosa(user, phone, classifiedCompleto, text);
+      if (resultFinal?.perguntarHora) {
+        const expira = Date.now() + 15 * 60 * 1000;
+        await prisma.memory.create({
+          data: {
+            userId: user.id, type: 'confirmacao_pendente',
+            content: JSON.stringify({ tipo: 'coleta_lembrete', titulo: tituloCompleto, data: dados.data, turno: 'hora', expira })
+          }
+        }).catch(() => {});
+        const ctx = `\n\n[COLETA] Lembrete "${tituloCompleto}" — ainda falta o horário. Pergunte que horas de forma natural.`;
+        preferences._dicaAcao = ctx;
+      }
+      await responderLivre(user, phone, text, preferences._dicaAcao ? '' : `\n\n[TÍTULO COMPLETADO] Lembrete "${tituloCompleto}" foi criado. Confirme naturalmente.`);
       return;
     }
 
