@@ -641,7 +641,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     if (!respStr) return;
 
     // ── Busca proativa: Clara sinalizou que quer pesquisar ──
-    const buscaMatch = respStr.match(/__BUSCAR:(.+?)(__|\n|$)/);
+    const buscaMatch = respStr.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
     if (buscaMatch) {
       const query = buscaMatch[1].trim();
       // Avisa que vai pesquisar, no estilo da Clara
@@ -681,12 +681,14 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     await sendMessage(phone, respStr);
 
     // ── Detecção de promessa de busca não executada ───────────────────
-    const prometeuBuscar = /deixa eu (dar uma olhada|pesquisar|verificar|checar|buscar)|vou (pesquisar|buscar|dar uma olhada|verificar)|deixa eu ver|um segundo que|rapidinho aqui/i.test(respStr);
+    const prometeuBuscar = /peraí que vou ver|deixa eu (dar uma olhada|pesquisar|verificar|checar|buscar)|vou (pesquisar|buscar|dar uma olhada|verificar)|deixa eu ver|um segundo que|rapidinho aqui/i.test(respStr);
     if (prometeuBuscar && !buscaMatch) {
+      // Tenta extrair query do texto do usuário (mais relevante que da resposta da IA)
+      const queryBusca = text.trim();
       ;(async () => {
         try {
           await new Promise(r => setTimeout(r, 1500));
-          const resultado = await searchWeb(text.trim(), '', preferences?.name || '');
+          const resultado = await searchWeb(queryBusca, '', preferences?.name || '');
           if (resultado && !isRespostaFallback(resultado)) {
             await memory.saveConversationMessage(user.id, 'assistant', resultado).catch(() => {});
             await sendMessage(phone, resultado);
