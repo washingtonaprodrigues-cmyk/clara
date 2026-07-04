@@ -793,31 +793,30 @@ cron.schedule('0,15,30 13 * * *', async () => proativaInteligente('almoco'), { t
 cron.schedule('30,45 19 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
 cron.schedule('*/15 20 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
 cron.schedule('0,15,30 21 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0,30 22 * * *', async () => proativaInteligente('noite_tardia'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('0,15,30,45 22 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
 async function proativaInteligente(periodo) {
   try {
     const users = await prisma.user.findMany({ where: { blocked: false } });
     const now = nowBRT();
     for (const user of users) {
       try {
-        // ── Noite tardia (22h): pula se há remédio na janela 21h30-22h30 ──
-        if (periodo === 'noite_tardia') {
-          const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
-          const hAtual = now.getHours() * 60 + now.getMinutes();
-          const temRemedioProximo = meds.some(m => {
-            let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
-            return times.some(t => {
-              const [h, min] = t.split(':').map(Number);
-              const hMed = h * 60 + min;
-              return Math.abs(hMed - hAtual) <= 30; // dentro de 30 min
-            });
+        // ── Respeita janela de remédio ────────────────────────────────
+        // Se há remédio nos próximos 20min ou nos últimos 20min, pula
+        // este ciclo — o próximo ciclo (15min depois) vai tentar de novo
+        // já fora da janela do remédio. Genérico para qualquer horário.
+        const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
+        const hAtual = now.getHours() * 60 + now.getMinutes();
+        const temRemedioNaJanela = meds.some(m => {
+          let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
+          return times.some(t => {
+            const [h, min] = t.split(':').map(Number);
+            const diff = Math.abs((h * 60 + min) - hAtual);
+            return diff <= 20;
           });
-          if (temRemedioProximo) {
-            console.log(`[Proativa] Pulando noite_tardia para ${user.phone} — remédio próximo`);
-            continue;
-          }
-        }
-        const dayKey = `${periodo === 'noite_tardia' ? 'noite' : periodo}_${dateBRT()}`;
+        });
+        if (temRemedioNaJanela) continue;
+
+        const dayKey = `${periodo}_${dateBRT()}`;
 
         // ── Já enviou hoje pra esse período? ──
         // Antes isso era decidido ANTES de processar (claim atômico), o
