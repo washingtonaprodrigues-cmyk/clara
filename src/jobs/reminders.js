@@ -442,10 +442,15 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
 
         if (!podeEnviarAgora) continue;
 
-        // Não dispara bom dia se o usuário acabou de mandar mensagem
-        // nos últimos 2 minutos — evita colisão com a resposta do webhook
-        if (await houveConversaRecente(user.id, 2)) {
-          console.log(`[Bom dia] Mensagem recente detectada, aguardando próximo minuto para ${user.phone}`);
+        // Não dispara bom dia se o usuário mandou mensagem nos últimos 5 min
+        // — exceto se a última mensagem foi uma confirmação de remédio
+        // (tomado, feito etc.) — nesse caso é exatamente a hora certa
+        // para o bom dia chegar como surpresa separada.
+        const recente = await memory.getConversationHistory(user.id, 2).catch(() => []);
+        const ultimaMsg = recente.filter(m => m.role === 'user').pop();
+        const foiConfirmacaoRemedio = ultimaMsg && /^(tomado|tomei|tomou|feito|já tomei|ok)\s*(fedo)?\s*\.?$/i.test((ultimaMsg.content || '').trim());
+        if (!foiConfirmacaoRemedio && await houveConversaRecente(user.id, 5)) {
+          console.log(`[Bom dia] Conversa em andamento, aguardando para ${user.phone}`);
           continue;
         }
 
