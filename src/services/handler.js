@@ -409,7 +409,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         };
         // Injeta agenda só se relevante — evita Clara puxar compromissos em papo casual
         if (falaDeAgenda || ehManha) {
-          contexto += `\n\n[AGENDA — USE COM EXTREMO CRITÉRIO. Só mencione se o usuário perguntar diretamente sobre agenda/horário NESTA mensagem. NUNCA puxe agenda no meio de conversa emocional, fofa, engraçada ou sobre família — mesmo que o assunto tenha sido mencionado antes. Se o clima é leve/pessoal, ignore completamente este bloco.]\n${lembretes.map(fmtLemb).join('\n')}`;
+          contexto += `\n\n[AGENDA — mencione SOMENTE se o usuário trouxer o assunto ou perguntar. Nunca puxe por iniciativa em conversa sobre outro assunto]\n${lembretes.map(fmtLemb).join('\n')}`;
         }
       }
 
@@ -1090,12 +1090,14 @@ async function handleMessage(phone, text, location = null) {
     let confirmacaoTarefa = classified.titulo
       ? `✅ Anotado! "${classified.titulo}" — vou te lembrar 😉`
       : '✅ Anotado! Vou te lembrar.';
-    if (classified.tipo === 'tarefa') {
+    if (classified.tipo === 'tarefa' && classified.hora) {
+      // Calcula o mesmo scheduledAt que salvarTarefaSilenciosa vai gravar,
+      // para dar uma confirmação com data/hora reais — igual ao formato
+      // "Pronto! '...' agendado pra DD/MM às HH:MM 📌" usado em outros fluxos
+      // (ex: checkConfirmacaoPendente, tipo hora_lembrete).
       try {
-        // Tenta calcular scheduledAt para mostrar hora na confirmação
-        // Cobre: hora explícita, data+hora, e horário relativo ("daqui 5 min")
         let scheduledAt = calcularHorarioRelativo(text);
-        if (!scheduledAt && classified.hora) {
+        if (!scheduledAt) {
           const hoje = dateBRT();
           let dataUsada = hoje;
           if (classified.data) {
@@ -1108,15 +1110,22 @@ async function handleMessage(phone, text, location = null) {
           scheduledAt = new Date(`${dataUsada}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
           if (!classified.data && scheduledAt < nowBRT()) { scheduledAt.setDate(scheduledAt.getDate() + 1); }
         }
-        if (scheduledAt) {
-          const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' });
-          const horaFmt = scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-          const ehHoje = scheduledAt.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) === nowBRT().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-          if (ehHoje) {
-            confirmacaoTarefa = `✅ Anotado! "${classified.titulo}" às ${horaFmt} ⏰`;
-          } else {
-            confirmacaoTarefa = `✅ Lembrete criado!\n\n📌 ${classified.titulo}\n🕒 ${dataFmt} às ${horaFmt}\n\nVou te avisar no horário certinho.`;
-          }
+        const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' });
+        const horaFmt = scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+
+        // Regra de confirmação: se o lembrete é pra HOJE, mostra só a hora
+        // (dizer a data de hoje é redundante e robótico). Se é pra outro dia,
+        // mostra data + hora. Em ambos os casos, SEMPRE devolve o que foi
+        // anotado (título + quando) — assim o usuário confere na hora que a
+        // Clara entendeu certo, sem depender do Dashboard.
+        // É texto PRONTO (não instrução): no fluxo normal serve de guia pra
+        // IA confirmar no tom; se cair em modo direto/fallback, vai assim
+        // mesmo — então tem que estar apresentável sozinho.
+        const ehHoje = scheduledAt.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) === nowBRT().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+        if (ehHoje) {
+          confirmacaoTarefa = `✅ Anotado! "${classified.titulo}" às ${horaFmt} ⏰`;
+        } else {
+          confirmacaoTarefa = `✅ Lembrete criado!\n\n📌 ${classified.titulo}\n🕒 ${dataFmt}, ${horaFmt}\n\nVou te avisar no horário certinho.`;
         }
       } catch (e) {
         // mantém fallback genérico em caso de erro de parsing
@@ -2078,10 +2087,7 @@ async function checkConfirmacaoPendente(user, phone, text) {
       const horaFmt = scheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
       const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: '2-digit' });
 
-      const ehHojeColeta = scheduledAt.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) === nowBRT().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-      const confirmacao = ehHojeColeta
-        ? `✅ Anotado! "${titulo}" às ${horaFmt} ⏰`
-        : `✅ Lembrete criado!\n\n📌 ${titulo}\n🕒 ${dataFmt} às ${horaFmt}\n\nVou te avisar no horário certinho.`;
+      const confirmacao = `✅ Anotado! "${titulo}" — ${dataFmt} às ${horaFmt} ⏰`;
       const ctx = `\n\n[LEMBRETE CRIADO] "${titulo}" para ${dataFmt} às ${horaFmt}. Confirme de forma natural e animada no seu tom.`;
       await responderLivre(user, phone, text, ctx, false, null, confirmacao);
       emitirAtualizacao(phone, 'lembretes');
