@@ -879,8 +879,10 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '') {
         console.error('[searchWeb] Gemini falhou ao reprocessar:', eReprocGem?.message);
       }
     }
-    if (traduzida && traduzida.length > 10) {
-      return filtrarResposta(apararRespostaCortada(traduzida));
+    if (traduzida && traduzida.length > 3) {
+      const filtrada = filtrarResposta(apararRespostaCortada(traduzida));
+      console.log(`[searchWeb] Reprocessado: ${filtrada?.length || 0} chars`);
+      if (filtrada && filtrada.length > 3) return filtrada;
     }
 
     // Última rede de segurança: se nada conseguiu reprocessar, ao menos
