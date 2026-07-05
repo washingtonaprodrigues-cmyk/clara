@@ -319,6 +319,16 @@ function formatarListaWhatsApp(listaResult) {
   return `🛒 *${listaNome}*\n\n${itens}\n\n_${done}/${listaItems.length} itens marcados_`;
 }
 
+// Monta o pedacinho de contexto relacional (apelidos, piadas internas, tom
+// da relação) usado pra deixar a busca soar "ela 100%" e não só a
+// personalidade base — a mesma memória usada no fluxo normal de conversa.
+async function buscarContextoRelacional(userId) {
+  try {
+    const relMemoria = await prisma.memory.findFirst({ where: { userId, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+    return relMemoria?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoria.content}` : '';
+  } catch { return ''; }
+}
+
 async function responderLivre(user, phone, text, contextoExtra = '', skipContext = false, acaoConfirmacao = null, confirmacaoSeparada = null) {
   try {
     const history = await memory.getConversationHistory(user.id, 10);
@@ -662,7 +672,8 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       try {
         const memAfetivaBusca = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
         const apelidoBusca = memAfetivaBusca?.apelido_usuario || preferences?.name || '';
-        const resultado = await searchWeb(query, '', apelidoBusca, preferences?.tom || 'carinhoso');
+        const contextoRelBusca = await buscarContextoRelacional(user.id);
+        const resultado = await searchWeb(query, '', apelidoBusca, preferences?.tom || 'carinhoso', contextoRelBusca);
         if (resultado) {
           await memory.saveConversationMessage(user.id, 'user', text);
           await memory.saveConversationMessage(user.id, 'assistant', resultado);
@@ -695,7 +706,8 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           const queryBusca = await extrairQueryBusca(text, respStr);
           const memAfetivaProm = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
           const apelidoProm = memAfetivaProm?.apelido_usuario || preferences?.name || '';
-          const resultado = await searchWeb(queryBusca, '', apelidoProm, preferences?.tom || 'carinhoso');
+          const contextoRelProm = await buscarContextoRelacional(user.id);
+          const resultado = await searchWeb(queryBusca, '', apelidoProm, preferences?.tom || 'carinhoso', contextoRelProm);
           if (resultado && !isRespostaFallback(resultado)) {
             await memory.saveConversationMessage(user.id, 'assistant', resultado).catch(() => {});
             await sendMessage(phone, resultado);
@@ -975,7 +987,8 @@ async function handleMessage(phone, text, location = null) {
       // fazia o modelo inventar um apelido próprio (ex: "Wash") do nada.
       const memAfetiva = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
       const apelidoReal = memAfetiva?.apelido_usuario || preferencesBusca?.name || '';
-      const resultadoBusca = await searchWeb(classified.query, cidade, apelidoReal, preferencesBusca?.tom || 'carinhoso');
+      const contextoRelBuscaClassify = await buscarContextoRelacional(user.id);
+      const resultadoBusca = await searchWeb(classified.query, cidade, apelidoReal, preferencesBusca?.tom || 'carinhoso', contextoRelBuscaClassify);
       if (resultadoBusca) {
         await memory.saveConversationMessage(user.id, 'user', text);
         await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca);
