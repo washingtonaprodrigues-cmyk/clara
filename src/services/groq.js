@@ -1314,7 +1314,7 @@ function filtrarResposta(t) {
   // descrevendo o usuário/Clara em terceira pessoa antes de responder.
   // Ex: "Washington, depois de sorrir, elogiou a criatividade de Clara"
   // Ex: "*[Washington reagiu com alegria. Clara também 💜]*"
-  t = t.replace(/^\*?\[?(Washington|Clara)[^\n]*\]?\*?\n?/gm, '').trim();
+  t = t.replace(/^\*?\[(Washington|Clara)[^\n]*\]\*?\n?/gm, '').trim();
   t = t.replace(/^(Washington|Clara)[^*\[\n]{5,200}(Clara|Washington)[^\n]*\n?/gm, '').trim();
   // (sim/não), (s/n), (sim ou não), [sim/não], sim/não? etc
   t = t.replace(/\s*[\(\[]\s*sim\s*\/\s*n[\xE3a]o\s*[\)\]]\s*/gi, '');
