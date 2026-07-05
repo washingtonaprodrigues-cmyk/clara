@@ -940,11 +940,18 @@ REGRA DE FUSO HORÁRIO: se a informação mencionar um horário e disser "horár
       if (filtrada && filtrada.length > 3) return filtrada;
     }
 
-    // Última rede de segurança: se nada conseguiu reprocessar, ao menos
-    // tira a formatação markdown crua antes de mandar pro usuário.
+    // Última rede de segurança: se as 3 tentativas de reprocessar (Gemini,
+    // Groq chave 1, chave 2) falharem, pelo menos garante que não sai um
+    // texto seco de relatório — envolve com a voz dela sem custo de API.
     resposta = resposta.replace(/[*_#`]/g, '');
-
-    return resposta;
+    const apelidoFallback = nomeUsuario || 'fedo';
+    const aberturasFallback = [
+      `Opa, ${apelidoFallback}! Achei isso aqui:\n\n`,
+      `Consegui, ${apelidoFallback}! Olha só:\n\n`,
+      `Aqui vai, ${apelidoFallback}:\n\n`,
+    ];
+    const abertura = aberturasFallback[Math.floor(Math.random() * aberturasFallback.length)];
+    return abertura + resposta;
 
   } catch (error) {
     console.error('Erro searchWebGroq:', error.message);
