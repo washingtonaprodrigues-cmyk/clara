@@ -233,7 +233,14 @@ TIPOS e formato de saída:
 - editar_lembrete / deletar_lembrete: {"tipo":"...","titulo":"x","data":null,"hora":null}
 - ajustar_remedio: {"tipo":"ajustar_remedio","nome":"x","operacao":"decrementar/ajustar","valor":N}
 - relatorio_financeiro / consulta_saldo: {"tipo":"..."}
+- busca: {"tipo":"busca","query":"texto da pergunta"} — pergunta factual externa que a Clara não sabe sem pesquisar (clima, notícia, preço, horário de jogo, endereço, telefone), ou pedido explícito ("pesquisa X", "busca X", "procura X", "confirma isso", "vê se isso tá certo")
 - outro: {"tipo":"outro"} — conversa, pergunta de conhecimento, saudação, qualquer coisa que não seja ação acima
+
+REGRAS DE BUSCA:
+- NUNCA classifique como busca: reações ao que já foi dito ("nossa", "sério?", "kkkk", "que louco", "e aí, o que acha?"), continuações de conversa, comentários sobre resultado de pesquisa anterior
+- Intenção pessoal/estado emocional ("acho que", "quero", "vou", "preciso", "tô com") → outro, NÃO busca
+- Decisão pessoal com dados que o PRÓPRIO usuário já deu (preços, opções que ele mesmo descreveu) → outro, NUNCA busca
+- Pedido explícito de conferir/pesquisar de novo algo que a Clara já disse (ex: "pesquisa de novo", "confirma isso", "tem certeza?", "vê se tá certo") → busca, usando o assunto em questão como query (não repita a dúvida, extraia o tema real)
 
 GATILHOS DE TAREFA (prioridade sobre conteúdo): "me lembra", "me avisa", "anota aí", "já anota", "bota/põe um lembrete", "não me deixa esquecer", "agenda", "marca", "daqui X min/horas", "às HH de". CONDICIONAL ("se quiser", "se puder") = NÃO é pedido = outro.
 
@@ -260,6 +267,8 @@ Exemplos:
 "gastei 50 no mercado" → {"tipo":"gasto","valor":50.0,"categoria":"mercado","descricao":"compras"}
 "deu certo" (com lembrete no contexto) → {"tipo":"concluir_lembrete","titulo":"<do contexto>"}
 "o que tenho amanhã?" → {"tipo":"consulta","sobre":"agenda amanhã","datas":["${amanhaISO}"]}
+"pesquisa o horário do jogo do Brasil hoje" → {"tipo":"busca","query":"horário jogo do Brasil hoje"}
+"tem certeza que é esse horário? pesquisa de novo" (Clara acabou de falar sobre horário de jogo) → {"tipo":"busca","query":"horário jogo do Brasil hoje"}
 "qual a diferença entre X e Y?" → {"tipo":"outro"}
 "oi clara tudo bem?" → {"tipo":"outro"}`;
 };
