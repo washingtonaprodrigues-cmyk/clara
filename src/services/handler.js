@@ -962,10 +962,11 @@ async function handleMessage(phone, text, location = null) {
     }
 
     if (classified.tipo === 'busca' && classified.query) {
+      const preferencesBusca = await memory.getUserPreference(user.id).catch(() => null);
       const cidade = await memory.getRecentMemories(user.id, 5)
         .then(mems => mems.find(m => m.type === 'cidade')?.content || '')
         .catch(() => '');
-      const resultadoBusca = await searchWeb(classified.query, cidade, preferences?.name || '');
+      const resultadoBusca = await searchWeb(classified.query, cidade, preferencesBusca?.name || '');
       if (resultadoBusca) {
         await memory.saveConversationMessage(user.id, 'user', text);
         await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca);
