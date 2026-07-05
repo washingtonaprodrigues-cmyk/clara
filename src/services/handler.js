@@ -650,8 +650,22 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     const respStr = typeof resp === 'string' ? resp : String(resp || '');
     if (!respStr) return;
 
+    // Mensagem realmente parece pedido de informação? (pergunta, "que
+    // horas", "quando", etc). Usado tanto pra tag BUSCAR quanto pra
+    // detecção de promessa de busca mais abaixo — evita ela mesma criar
+    // uma busca do nada em cima de comentário/comemoração sem pedido real.
+    const pareceuPedidoInfo = /\?|que horas|quando|onde fica|onde é|qual (é|o|a)|quanto (custa|é|vale)|quem (é|foi|ganhou|joga)/i.test(text);
+
     // ── Busca proativa: Clara sinalizou que quer pesquisar ──
     const buscaMatch = respStr.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
+    if (buscaMatch && !pareceuPedidoInfo) {
+      // Ignora a tag — manda a reação natural dela, só sem o pedaço da tag
+      const respSemTag = respStr.replace(buscaMatch[0], '').trim();
+      await memory.saveConversationMessage(user.id, 'user', text);
+      await memory.saveConversationMessage(user.id, 'assistant', respSemTag || respStr);
+      await sendMessage(phone, respSemTag || respStr);
+      return;
+    }
     if (buscaMatch) {
       const query = buscaMatch[1].trim();
       // Avisa que vai pesquisar, no estilo da Clara
@@ -703,7 +717,6 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // "quando", etc). Sem isso, uma frase de efeito dela tipo "deixa eu ver
     // que horas" numa resposta a um convite/comentário ("bora torcermos")
     // disparava busca escondida sem ninguém ter pedido nada.
-    const pareceuPedidoInfo = /\?|que horas|quando|onde fica|onde é|qual (é|o|a)|quanto (custa|é|vale)|quem (é|foi|ganhou|joga)/i.test(text);
     const prometeuBuscar = pareceuPedidoInfo && /peraí que vou ver|deixa eu (dar uma olhada|pesquisar|verificar|checar|buscar)|vou (pesquisar|buscar|dar uma olhada|verificar)|deixa eu ver|um segundo que|rapidinho aqui/i.test(respStr);
     if (prometeuBuscar && !buscaMatch) {
       ;(async () => {
