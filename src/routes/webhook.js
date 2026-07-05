@@ -164,7 +164,10 @@ async function handleSimpleResponse(phone, text, quotedText) {
   const user = await memory.getOrCreateUser(phone);
   const textLower = text.trim();
 
-  if (TOMEI_REMEDIO.some(r => r.test(textLower))) {
+  const ehTextoTomeiForte = TOMEI_REMEDIO.some(r => r.test(textLower));
+  const ehTextoAmbiguo = LEMBRETE_FEITO.some(r => r.test(textLower));
+
+  if (ehTextoTomeiForte || ehTextoAmbiguo) {
     const todasPendentesMems = await prisma.memory.findMany({
       where: { userId: user.id, type: 'confirmacao_pendente' },
       orderBy: { createdAt: 'desc' }
@@ -173,25 +176,36 @@ async function handleSimpleResponse(phone, text, quotedText) {
       .map(p => { try { const d = JSON.parse(p.content); return d.tipo === 'remedio_dose' ? { memoryId: p.id, ...d } : null; } catch { return null; } })
       .filter(Boolean);
 
+    const quotedLowerMed = (quotedText || '').toLowerCase();
+
     if (pendentesRemedio.length === 1) {
       const pendenteRemedio = pendentesRemedio[0];
-      const med = await prisma.medication.findUnique({ where: { id: pendenteRemedio.medId } }).catch(() => null);
-      if (med) {
-        const atualizado = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
-        await prisma.memory.delete({ where: { id: pendenteRemedio.memoryId } }).catch(() => {});
-        await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${atualizado.remaining} doses. 💊`, 400, quotedText);
-        return true;
+      // Texto tipo "tomei/tomado" é sinal forte o suficiente sozinho. Já um
+      // "feito"/"ok"/"pronto" é ambíguo (também usado pra concluir lembretes)
+      // — só assume remédio se a citação realmente aponta pro medicamento,
+      // senão deixa cair no fluxo de lembrete abaixo.
+      const primeiraPalavraMed = pendenteRemedio.medNome.toLowerCase().split(' ')[0];
+      const pareceCitarMedicamento = ehTextoTomeiForte
+        || quotedLowerMed.includes('medicamento')
+        || quotedLowerMed.includes(primeiraPalavraMed);
+      if (pareceCitarMedicamento) {
+        const med = await prisma.medication.findUnique({ where: { id: pendenteRemedio.medId } }).catch(() => null);
+        if (med) {
+          const atualizado = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
+          await prisma.memory.delete({ where: { id: pendenteRemedio.memoryId } }).catch(() => {});
+          await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${atualizado.remaining} doses. 💊`, 400, quotedText);
+          return true;
+        }
       }
     } else if (pendentesRemedio.length > 1) {
       const textoLower = textLower.toLowerCase();
-      const quotedLowerMed = (quotedText || '').toLowerCase();
       const match = pendentesRemedio.find(p => {
         const palavrasNome = p.medNome.toLowerCase().split(' ').filter(w => w.length > 3);
         return palavrasNome.some(w => quotedLowerMed.includes(w));
-      }) || pendentesRemedio.find(p => {
+      }) || (ehTextoTomeiForte ? pendentesRemedio.find(p => {
         const palavrasNome = p.medNome.toLowerCase().split(' ').filter(w => w.length > 3);
         return palavrasNome.some(w => textoLower.includes(w));
-      });
+      }) : null);
       if (match) {
         const med = await prisma.medication.findUnique({ where: { id: match.medId } }).catch(() => null);
         if (med) {
@@ -200,18 +214,23 @@ async function handleSimpleResponse(phone, text, quotedText) {
           await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${atualizado.remaining} doses. 💊`, 400, quotedText);
           return true;
         }
-      } else {
+      } else if (ehTextoTomeiForte || quotedLowerMed.includes('medicamento')) {
         const nomes = pendentesRemedio.map(p => `• ${p.medNome}`).join('\n');
         await sendMessage(phone, `Você tem mais de um remédio pendente agora:\n${nomes}\n\nQual deles você tomou? Me diz o nome 😊`);
         return true;
       }
     }
 
-    const med = await getRemedioRecente(user.id);
-    if (med) {
-      await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
-      await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${med.remaining - 1} doses. 💊`, 400, quotedText);
-      return true;
+    // Fallback por horário (sem pendência registrada) — só pra texto forte
+    // ("tomei"/"tomado"). Um "feito"/"ok" ambíguo sem pendência aberta não
+    // deve ser assumido como remédio, pra não roubar confirmação de lembrete.
+    if (ehTextoTomeiForte) {
+      const med = await getRemedioRecente(user.id);
+      if (med) {
+        await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
+        await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${med.remaining - 1} doses. 💊`, 400, quotedText);
+        return true;
+      }
     }
   }
 
