@@ -1688,6 +1688,41 @@ Se não houver nada que passe nos critérios, retorna APENAS: null`;
   } catch { return null; }
 }
 
+// Quando a Clara promete pesquisar algo ("peraí que vou ver...") sem dar uma
+// busca explícita, usar a mensagem inteira do usuário como termo de busca dá
+// resultado errado se ela tiver mais de um assunto misturado (ex: usuário fala
+// de café E do jogo do Brasil na mesma mensagem — buscar o texto todo trazia
+// resultado sobre café em vez do jogo). Essa função extrai só o assunto que
+// ELA prometeu, usando a resposta dela como guia principal.
+async function extrairQueryBusca(textoUsuario, respostaClara) {
+  try {
+    const msgs = [
+      { role: 'system', content: 'Extraia em poucas palavras o assunto que a Clara prometeu pesquisar, baseado na resposta dela (que é a fonte principal — é o que ela disse que ia checar). Responda APENAS com os termos de busca, sem explicação, sem aspas, sem pontuação extra.' },
+      { role: 'user', content: `Mensagem do usuário: "${textoUsuario}"\n\nResposta da Clara (prometendo pesquisar): "${respostaClara}"\n\nO que ela prometeu pesquisar?` }
+    ];
+
+    if (geminiDisponivel() && !todosModelosEsgotados()) {
+      try {
+        const resp = await geminiFreeResponse(msgs, { temperature: 0, maxTokens: 20 });
+        if (resp && resp.trim().length > 2) return resp.trim();
+      } catch (eGemini) {
+        console.error('[extrairQueryBusca] Gemini falhou, tentando Groq:', eGemini.message);
+      }
+    }
+
+    const completion = await groq.chat.completions.create({
+      model: MODEL_LEVE,
+      messages: msgs,
+      temperature: 0,
+      max_tokens: 20,
+    });
+    const resp = (completion.choices[0].message.content || '').trim();
+    return resp.length > 2 ? resp : textoUsuario;
+  } catch {
+    return textoUsuario;
+  }
+}
+
 module.exports = {
   classify,
   extractPersonalInfo,
@@ -1706,4 +1741,5 @@ module.exports = {
   detectarAssuntoEmAberto,
   isRespostaFallback,
   infoDatas,
+  extrairQueryBusca,
 };
