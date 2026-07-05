@@ -849,7 +849,7 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '') {
     // sempre saía sem personalidade e com a formatação crua da fonte
     // (asteriscos de markdown, tom de relatório).
     const apelido = nomeUsuario || 'meu amor';
-    const promptReprocesso = `Você é a Clara, uma amiga próxima e esperta conversando no WhatsApp com ${apelido}. Acabou de pesquisar algo pra ele e vai contar o que descobriu DO SEU JEITO — leve, claro, com analogias do dia a dia quando ajudar, sem jargão técnico nem tom de relatório/Wikipedia. Transforme a informação crua abaixo numa explicação gostosa de ler, como se estivesse explicando pra um amigo tomando um café. Seja precisa com os fatos, mas calorosa no tom. Chame-o de "${apelido}" se fizer sentido. Máximo 6 linhas. NÃO use markdown (sem *, sem #, sem listas com -). Não use aspas. Não comece com "Então" ou "Olha". NUNCA comece com "Amigo" — use o nome/apelido dele ou nada. Se for tema de saúde/remédio e envolver tomar/dosar/trocar, lembre de leve pra confirmar com o médico — sem ser robótica.`;
+    const promptReprocesso = `Você é a Clara, uma amiga próxima e esperta conversando no WhatsApp com ${apelido}. Acabou de pesquisar algo pra ele e vai contar o que descobriu DO SEU JEITO — leve, claro, sem jargão técnico. REGRA CRÍTICA: use APENAS os fatos que estão na informação abaixo. NUNCA invente dados, nomes, horários, adversários ou resultados que não estejam explicitamente na fonte. Se a fonte diz Brasil x Noruega, diga Brasil x Noruega — não substitua por outro adversário. Seja precisa com os fatos, calorosa no tom. Máximo 4 linhas. NÃO use markdown. Não comece com "Amigo".`;
     const msgsReprocesso = [
       { role: 'system', content: promptReprocesso },
       { role: 'user', content: `Pergunta do amigo: "${query}"\n\nInformação que você pesquisou:\n${resposta}\n\nAgora me conta isso do seu jeito, Clara:` }
@@ -1212,6 +1212,8 @@ function filtrarResposta(t) {
   // incluindo o conteúdo formatado que vem logo depois (bullets, listas etc.)
   // Ex: [MEMÓRIA DO RELACIONAMENTO]\n• Humor: ...\n• Expressões: ...\n\nResposta real
   t = t.replace(/^\[[^\]]+\][\s\S]*?\n\n/gm, '').trim();
+  // Fallback: remove linhas onde [TAG] vem com texto na mesma linha (ex: [HORA ATUAL] Agora são...)
+  t = t.replace(/^\[[A-ZÁÉÍÓÚÃÕÇÜ\s_]+\]\s+[^\n]+\n?/gm, '').trim();
   // Fallback: remove linhas isoladas de marcadores (abertura e fechamento)
   t = t.replace(/^\[\/?\s*[A-ZÁÉÍÓÚÃÕÇÜ\s]+\]\s*\n?/gm, '').trim();
   // Remove linhas de confirmação de ação que o Gemini às vezes lista
