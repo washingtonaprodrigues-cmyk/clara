@@ -992,25 +992,26 @@ async function handleMessage(phone, text, location = null) {
       const memAfetiva = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
       const apelidoReal = memAfetiva?.apelido_usuario || preferencesBusca?.name || '';
       const contextoRelBuscaClassify = await buscarContextoRelacional(user.id);
-
-      // Avisa que vai pesquisar ANTES de buscar — ela comenta/reage primeiro,
-      // igual nos outros fluxos de busca do app, em vez de sumir e só voltar
-      // com o resultado pronto do nada.
       const tomBuscaClassify = preferencesBusca?.tom || 'carinhoso';
-      const avisosClassify = apelidoReal ? {
-        carinhoso: [`✨ Pera aí que já busco pra gente!`, `Um segundo, ${apelidoReal}! 🔍`, `Deixa eu dar uma olhada aqui! ✨`],
-        direto: [`🔍 Buscando.`, `Já procuro.`, `Um segundo.`],
-        divertido: [`Espera que vou garimpar isso pra você! 😄`, `Deixa eu fuçar aqui! 🔍`, `Um segundo que já acho! ✨`],
-        sarcastico: [`Tá bom, ${apelidoReal}… deixa eu ver porque você não ia achar sozinho mesmo. 🙄`, `Pera aí que vou buscar pra gente. 😏`, `Já procuro, ${apelidoReal}. 🔍`],
-      } : {
-        carinhoso: [`✨ Pera aí que já busco pra gente!`, `Um segundo! 🔍`, `Deixa eu dar uma olhada aqui! ✨`],
-        direto: [`🔍 Buscando.`, `Já procuro.`, `Um segundo.`],
-        divertido: [`Espera que vou garimpar isso pra você! 😄`, `Deixa eu fuçar aqui! 🔍`, `Um segundo que já acho! ✨`],
-        sarcastico: [`Tá bom… deixa eu ver porque você não ia achar sozinho mesmo. 🙄`, `Pera aí que vou buscar pra gente. 😏`, `Já procuro. 🔍`],
-      };
-      const opcoesClassify = avisosClassify[tomBuscaClassify] || avisosClassify.carinhoso;
-      const avisoClassify = opcoesClassify[Math.floor(Math.random() * opcoesClassify.length)];
-      await sendMessage(phone, avisoClassify);
+
+      // Comentário genuíno ANTES de buscar — não uma frase pronta de lista,
+      // é ela reagindo de verdade ao ASSUNTO perguntado (curiosidade, piada,
+      // opinião, o que for do estilo dela) e terminando com a promessa
+      // natural de ir checar, tipo ela faria numa conversa normal.
+      const historicoBusca = await memory.getConversationHistory(user.id, 4).catch(() => []);
+      const comentarioPrevio = await freeResponse(text, historicoBusca, {
+        name: apelidoReal,
+        tom: tomBuscaClassify,
+        _contexto: contextoRelBuscaClassify + `\n\n[ANTES DE BUSCAR] A pessoa te perguntou algo que você precisa pesquisar pra responder com precisão — você AINDA NÃO SABE a resposta. Reaja/comente de forma natural sobre o ASSUNTO da pergunta (curiosidade, piada, opinião, do seu jeito) e termine avisando que vai checar agora (ex: "peraí que vou ver", "deixa eu confirmar"). NÃO responda a pergunta em si, NÃO invente a informação. Máximo 2 linhas.`,
+      }).catch(() => null);
+
+      if (comentarioPrevio && !isRespostaFallback(comentarioPrevio)) {
+        await sendMessage(phone, comentarioPrevio);
+        await memory.saveConversationMessage(user.id, 'assistant', comentarioPrevio).catch(() => {});
+      } else {
+        // Geração falhou — cai num aviso simples só pra não ficar em silêncio
+        await sendMessage(phone, apelidoReal ? `Pera aí, ${apelidoReal}! 🔍` : 'Pera aí! 🔍');
+      }
 
       const resultadoBusca = await searchWeb(classified.query, cidade, apelidoReal, tomBuscaClassify, contextoRelBuscaClassify);
       if (resultadoBusca) {
