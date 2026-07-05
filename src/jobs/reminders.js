@@ -1447,34 +1447,39 @@ cron.schedule('* * * * *', async () => {
             console.log(`[Med] ${med.name} corrida no lock — pulando`);
             continue;
           }
-          // Ganhou o lock: decrementa a dose
-          await prisma.medication.updateMany({
-            where: { id: med.id },
-            data: { remaining: { decrement: 1 } }
-          });
-          const atualizado = await prisma.medication.findUnique({ where: { id: med.id } });
-          medsParaEnviar.push({ ...med, remaining: (atualizado?.remaining ?? med.remaining - 1) + 1 });
+          // Ganhou o lock: NÃO decrementa aqui. O estoque só é decrementado
+          // quando a pessoa CONFIRMA que tomou (via WhatsApp em webhook.js
+          // ou pelo botão do Dashboard em forms.js) — decrementar no envio
+          // causava desconto em dobro e, principalmente, deixava de criar
+          // a pendência de confirmação abaixo, quebrando a confirmação padrão.
+          medsParaEnviar.push(med);
         }
 
         // Envia os remédios reivindicados (mensagem própria = swipe individual)
-        // IMPORTANTE: se o envio falhar (API fora, WS desconectado etc), a
-        // dose foi decrementada acima mas a mensagem nunca chegou — antes
-        // isso ficava perdido pra sempre (decremento já tinha sido feito
-        // e o registro não tentava de novo). Agora, em caso de falha,
-        // desfazemos o decremento — no próximo minuto, updatedAt já não é
-        // "deste minuto" pra mais ninguém, e o cron tenta reenviar.
         for (let i = 0; i < medsParaEnviar.length; i++) {
           const med = medsParaEnviar[i];
           const msg = `💊 Hora do medicamento!\n\n*${med.name}*\n⏰ ${minutoChave}\n\nNão esquece de tomar certinho 😊\n\n💜 Restam ${med.remaining - 1} doses.`;
           try {
             await sendMessage(phone, msg);
+            // Cria a pendência de confirmação — é o que faz "tomei"/"tomado"
+            // no WhatsApp (webhook.js) e o botão do Dashboard (forms.js)
+            // saberem qual remédio confirmar e decrementarem o estoque só
+            // nesse momento, em vez de caírem na resposta genérica da Clara.
+            await prisma.memory.create({
+              data: {
+                userId: med.userId,
+                type: 'confirmacao_pendente',
+                content: JSON.stringify({
+                  tipo: 'remedio_dose',
+                  medId: med.id,
+                  medNome: med.name,
+                  expira: Date.now() + 3 * 60 * 60 * 1000 // 3h pra confirmar
+                })
+              }
+            }).catch(() => {});
             console.log(`[Med] ${med.name} → ${phone}`);
           } catch (eSend) {
-            console.error(`[Med] Falha ao ENVIAR ${med.name} para ${phone} — desfazendo decremento e lock pra tentar de novo:`, eSend.message);
-            await prisma.medication.updateMany({
-              where: { id: med.id },
-              data: { remaining: { increment: 1 } }
-            }).catch(eRevert => console.error(`[Med] Falha ao desfazer decremento de ${med.name}:`, eRevert.message));
+            console.error(`[Med] Falha ao ENVIAR ${med.name} para ${phone} — apagando lock pra tentar de novo:`, eSend.message);
             // Apaga o lock deste minuto pra permitir reenvio no próximo ciclo
             const lockKeyRevert = `${med.id}_${dateBRT(nowBRT())}_${minutoChave}`;
             await prisma.memory.deleteMany({
@@ -1496,7 +1501,6 @@ cron.schedule('* * * * *', async () => {
 // Pergunta como foi um evento depois do tempo definido, de forma natural
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('0 * * * *', async () => {
-  if (!isOwner) return;
   try {
     const agora = new Date();
     const episodios = await prisma.memory.findMany({
@@ -1547,7 +1551,6 @@ cron.schedule('0 * * * *', async () => {
 // Só dispara se o usuário estiver conversando ativamente (últimos 20min).
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('* * * * *', async () => {
-  if (!isOwner) return;
   try {
     const now = nowBRT();
     const em30m = new Date(now.getTime() + 30 * 60 * 1000);
@@ -1609,7 +1612,6 @@ cron.schedule('* * * * *', async () => {
 // dispara no horário combinado com variação natural de ±5min
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('* * * * *', async () => {
-  if (!isOwner) return;
   try {
     const agora = nowBRT();
     const hora = agora.getHours();
@@ -1727,6 +1729,15 @@ cron.schedule('* * * * *', async () => {
     for (const p of pendentes) {
       try {
         let dados; try { dados = JSON.parse(p.content); } catch { continue; }
+        if (dados.tipo === 'remedio_dose' || dados.tipo === 'fechamento_pendentes') {
+          // Essas pendências não geram nenhuma ação automática ao expirar —
+          // só removemos a flag pra não ficar "aguardando confirmação" pra
+          // sempre no Dashboard quando a pessoa simplesmente não respondeu.
+          if (dados.expira && Date.now() > dados.expira) {
+            await prisma.memory.delete({ where: { id: p.id } }).catch(() => {});
+          }
+          continue;
+        }
         if (dados.tipo !== 'hora_lembrete') continue;
         if (Date.now() <= dados.expira) continue;
         const user = await prisma.user.findUnique({ where: { id: p.userId } }).catch(() => null);
