@@ -784,15 +784,26 @@ async function extractEpisodio(message) {
 async function checkResolucaoPendencia(message, resumo) {
   try {
     if (!message || message.trim().length < 2) return false;
+    const msgs = [
+      {
+        role: 'system',
+        content: `Existe um assunto em aberto: "${resumo}". Verifique se a mensagem do usuário indica claramente que isso JÁ passou, melhorou, foi resolvido ou terminou (ex: "passou", "já melhorei", "consegui", "deu tudo certo", "obrigado por perguntar, já tá bem"). Responda APENAS "sim" ou "nao" — "sim" só se for claro, "nao" se a mensagem for sobre outro assunto ou ambígua.`
+      },
+      { role: 'user', content: message }
+    ];
+
+    if (geminiDisponivel() && !todosModelosEsgotados()) {
+      try {
+        const respGemini = await geminiFreeResponse(msgs, { temperature: 0, maxTokens: 5 });
+        if (respGemini) return respGemini.trim().toLowerCase().startsWith('sim');
+      } catch (eGemini) {
+        console.error('[checkResolucaoPendencia] Gemini falhou, tentando Groq:', eGemini.message);
+      }
+    }
+
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
-      messages: [
-        {
-          role: 'system',
-          content: `Existe um assunto em aberto: "${resumo}". Verifique se a mensagem do usuário indica claramente que isso JÁ passou, melhorou, foi resolvido ou terminou (ex: "passou", "já melhorei", "consegui", "deu tudo certo", "obrigado por perguntar, já tá bem"). Responda APENAS "sim" ou "nao" — "sim" só se for claro, "nao" se a mensagem for sobre outro assunto ou ambígua.`
-        },
-        { role: 'user', content: message }
-      ],
+      messages: msgs,
       temperature: 0,
       max_tokens: 5,
     });
@@ -818,18 +829,30 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '') {
     if (data.answer) {
       const isEnglish = /\b(the|is|are|was|were|has|have|with|that|this|from|for)\b/i.test(data.answer);
       if (isEnglish) {
-        try {
-          const trad = await groq.chat.completions.create({
-            model: MODEL_LEVE,
-            messages: [
-              { role: 'system', content: 'Traduza para português brasileiro de forma natural. Retorne APENAS a tradução.' },
-              { role: 'user', content: data.answer }
-            ],
-            temperature: 0.1,
-            max_tokens: 150,
-          });
-          resposta = trad.choices[0].message.content.trim();
-        } catch(e) { resposta = data.answer; }
+        const msgsTrad = [
+          { role: 'system', content: 'Traduza para português brasileiro de forma natural. Retorne APENAS a tradução.' },
+          { role: 'user', content: data.answer }
+        ];
+        let traduzidaAnswer = null;
+        if (geminiDisponivel() && !todosModelosEsgotados()) {
+          try {
+            traduzidaAnswer = await geminiFreeResponse(msgsTrad, { temperature: 0.1, maxTokens: 150 });
+          } catch (eGemini) {
+            console.error('[searchWeb] Gemini falhou ao traduzir, tentando Groq:', eGemini.message);
+          }
+        }
+        if (!traduzidaAnswer) {
+          try {
+            const trad = await groq.chat.completions.create({
+              model: MODEL_LEVE,
+              messages: msgsTrad,
+              temperature: 0.1,
+              max_tokens: 150,
+            });
+            traduzidaAnswer = trad.choices[0].message.content.trim();
+          } catch(e) { traduzidaAnswer = data.answer; }
+        }
+        resposta = traduzidaAnswer;
       } else {
         resposta = data.answer;
       }
@@ -851,10 +874,8 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '') {
     // Reprocessa o resultado bruto no TOM DA CLARA — ela "conta" o que
     // descobriu como uma amiga esperta, não despeja um relatório técnico.
     // Recebe a pergunta original pra dar contexto à explicação.
-    // IMPORTANTE: tenta chave 1 → chave 2 → Gemini antes de desistir.
-    // Antes só tentava a chave 1; quando ela estava em TPD, a pesquisa
-    // sempre saía sem personalidade e com a formatação crua da fonte
-    // (asteriscos de markdown, tom de relatório).
+    // IMPORTANTE: tenta Gemini → chave 1 → chave 2 antes de desistir.
+    // Gemini primeiro porque é a chave paga e principal do app agora.
     const apelido = nomeUsuario || 'meu amor';
     const promptReprocesso = `Você é a Clara, uma amiga próxima e esperta conversando no WhatsApp com ${apelido}. Acabou de pesquisar algo pra ele e vai contar o que descobriu DO SEU JEITO — leve, claro, sem jargão técnico. REGRA CRÍTICA: use APENAS os fatos que estão na informação abaixo. NUNCA invente dados, nomes, horários, adversários ou resultados que não estejam explicitamente na fonte. Se a fonte diz Brasil x Noruega, diga Brasil x Noruega — não substitua por outro adversário. Seja precisa com os fatos, calorosa no tom. Máximo 4 linhas. NÃO use markdown. Não comece com "Amigo".`;
     const msgsReprocesso = [
@@ -863,27 +884,29 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '') {
     ];
 
     let traduzida = null;
-    try {
-      const respConversacional = await groq.chat.completions.create({
-        model: MODEL_FORTE,
-        messages: msgsReprocesso,
-        temperature: 0.7,
-        max_tokens: 400,
-      });
-      traduzida = respConversacional.choices[0].message.content.trim();
-    } catch (eReproc) {
-      console.error('[searchWeb] Chave 1 falhou ao reprocessar:', eReproc.message);
-      try {
-        traduzida = await tentarGroq2(msgsReprocesso, false);
-      } catch (eReproc2) {
-        console.error('[searchWeb] Chave 2 falhou ao reprocessar:', eReproc2?.message);
-      }
-    }
-    if (!traduzida && geminiDisponivel() && !todosModelosEsgotados()) {
+    if (geminiDisponivel() && !todosModelosEsgotados()) {
       try {
         traduzida = await geminiFreeResponse(msgsReprocesso, { temperature: 0.7, maxTokens: 400 });
       } catch (eReprocGem) {
-        console.error('[searchWeb] Gemini falhou ao reprocessar:', eReprocGem?.message);
+        console.error('[searchWeb] Gemini falhou ao reprocessar, tentando Groq:', eReprocGem?.message);
+      }
+    }
+    if (!traduzida) {
+      try {
+        const respConversacional = await groq.chat.completions.create({
+          model: MODEL_FORTE,
+          messages: msgsReprocesso,
+          temperature: 0.7,
+          max_tokens: 400,
+        });
+        traduzida = respConversacional.choices[0].message.content.trim();
+      } catch (eReproc) {
+        console.error('[searchWeb] Chave 1 falhou ao reprocessar:', eReproc.message);
+        try {
+          traduzida = await tentarGroq2(msgsReprocesso, false);
+        } catch (eReproc2) {
+          console.error('[searchWeb] Chave 2 falhou ao reprocessar:', eReproc2?.message);
+        }
       }
     }
     if (traduzida && traduzida.length > 3) {
@@ -1402,9 +1425,11 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       if (preferences?._acaoConfirmacao) {
         return preferences._acaoConfirmacao;
       }
-      // ── Groq chave 2 — primeira opção quando chave 1 está em TPD ──
-      // Mesma velocidade e personalidade do Groq. Só cai pro Gemini se
-      // a chave 2 também estiver esgotada ou indisponível.
+      // ── Gemini primeiro, igual ao resto do app ──
+      const respostaGemini = await tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone);
+      if (respostaGemini) { marcarProvider('gemini'); return filtrarResposta(respostaGemini); }
+
+      // Gemini indisponível/falhou — tenta Groq chave 2 antes de desistir
       if (groq2 && !_groq2EmTPD) {
         const msgs2 = [
           { role: 'system', content: buildPersonality(tom, name, false) + contexto },
@@ -1414,11 +1439,8 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         const respostaGroq2 = await tentarGroq2(msgs2, isCurta);
         if (respostaGroq2) { marcarProvider('groq2'); return filtrarResposta(respostaGroq2); }
       }
-      // Groq2 indisponível/esgotado — tenta Gemini com personalidade completa
-      const respostaGemini = await tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone);
-      if (respostaGemini) { marcarProvider('gemini'); return filtrarResposta(respostaGemini); }
 
-      // Gemini indisponível/falhou — cai pro modo "Direta" seco via
+      // Gemini e Groq2 falharam — cai pro modo "Direta" seco via
       // cascata Gemini (de novo, com prompt direto) → OpenRouter.
       const respostaModoDireto = await tentarFallbackCascata(contexto, name, message, 'ModoDireto', tom);
       if (respostaModoDireto) { marcarProvider('openrouter'); return respostaModoDireto; }
@@ -1539,10 +1561,8 @@ function isRespostaFallback(texto) {
 async function generateRelationshipSummary(recentMessages, currentSummary) {
   try {
     const msgs = recentMessages.map(m => (m.role === 'user' ? 'Washington' : 'Clara') + ': ' + m.content).join('\n');
-    const completion = await groq.chat.completions.create({
-      model: MODEL_FORTE,
-      messages: [
-        { role: 'system', content: `Você é a memória relacional da Clara, assistente pessoal do Washington.
+    const chatMsgs = [
+      { role: 'system', content: `Você é a memória relacional da Clara, assistente pessoal do Washington.
 IMPORTANTE: Washington é HOMEM. Pessoas que ele menciona (esposa, amigos, colegas) NÃO são apelidos dele nem seus — são terceiros na vida dele. Ex: "patroa", "amor", "mulher" = a ESPOSA do Washington, NUNCA um apelido pra chamá-lo. Nunca registre o nome/apelido de um terceiro como se fosse forma de tratar o Washington.
 
 Analise a conversa e atualize o resumo do relacionamento. Capture, em ORDEM DE PRIORIDADE:
@@ -1557,8 +1577,21 @@ Analise a conversa e atualize o resumo do relacionamento. Capture, em ORDEM DE P
 Seja como uma amiga próxima que anota o que importa para lembrar depois — principalmente os "códigos secretos" que tornam a relação única.
 Escreva em formato de notas curtas, naturais, em português. Máximo 6 linhas.
 Integre com o resumo anterior sem repetir — evolua ele, mas NUNCA descarte apelidos/emojis combinados já registrados, mesmo que não apareçam nesta conversa. Se o resumo anterior tiver registrado por engano um terceiro (ex: "patroa") como apelido do Washington, CORRIJA — passe a tratá-lo como a esposa dele.` },
-        { role: 'user', content: `Conversa recente:\n${msgs}\n\nResumo anterior:\n${currentSummary || 'Primeiro contato.'}` }
-      ],
+      { role: 'user', content: `Conversa recente:\n${msgs}\n\nResumo anterior:\n${currentSummary || 'Primeiro contato.'}` }
+    ];
+
+    if (geminiDisponivel() && !todosModelosEsgotados()) {
+      try {
+        const respGemini = await geminiFreeResponse(chatMsgs, { temperature: 0.4, maxTokens: 200 });
+        if (respGemini) return respGemini.trim();
+      } catch (eGemini) {
+        console.error('[generateRelationshipSummary] Gemini falhou, tentando Groq:', eGemini.message);
+      }
+    }
+
+    const completion = await groq.chat.completions.create({
+      model: MODEL_FORTE,
+      messages: chatMsgs,
       temperature: 0.4,
       max_tokens: 200,
     });
@@ -1571,12 +1604,23 @@ async function generateMemorySummary(memories, question) {
     const memoriesText = memories
       .map((m) => `[${m.type}] ${m.content}`)
       .join('\n');
+    const msgs = [
+      { role: 'system', content: `Clara com memória. Fale em primeira pessoa, seja concisa.` },
+      { role: 'user', content: `Memórias:\n${memoriesText}\n\nPergunta: ${question}` },
+    ];
+
+    if (geminiDisponivel() && !todosModelosEsgotados()) {
+      try {
+        const respGemini = await geminiFreeResponse(msgs, { temperature: 0.5, maxTokens: 120 });
+        if (respGemini) return respGemini.trim();
+      } catch (eGemini) {
+        console.error('[generateMemorySummary] Gemini falhou, tentando Groq:', eGemini.message);
+      }
+    }
+
     const completion = await groq.chat.completions.create({
       model: MODEL_LEVE,
-      messages: [
-        { role: 'system', content: `Clara com memória. Fale em primeira pessoa, seja concisa.` },
-        { role: 'user', content: `Memórias:\n${memoriesText}\n\nPergunta: ${question}` },
-      ],
+      messages: msgs,
       temperature: 0.5,
       max_tokens: 120,
     });
@@ -1594,11 +1638,7 @@ async function detectarAssuntoEmAberto(history) {
     const resumo = history.slice(-8).map(m =>
       `${m.role === 'user' ? 'Usuário' : 'Clara'}: ${m.content}`
     ).join('\n');
-    const completion = await groq.chat.completions.create({
-      model: MODEL_LEVE,
-      messages: [{
-        role: 'user',
-        content: `Analisa essa conversa. Verifica se ficou UM assunto PESSOAL relevante em aberto que merece acompanhamento real — ou seja, algo que a pessoa VIVEU ou VAI VIVER e que tem resultado incerto.
+    const promptTxt = `Analisa essa conversa. Verifica se ficou UM assunto PESSOAL relevante em aberto que merece acompanhamento real — ou seja, algo que a pessoa VIVEU ou VAI VIVER e que tem resultado incerto.
 
 CRITÉRIOS PARA SALVAR (todos devem ser verdadeiros):
 - É algo pessoal e emocional: saúde, consulta médica, resultado de exame, situação familiar, relacionamento, evento importante que vai acontecer, decisão difícil
@@ -1618,12 +1658,29 @@ ${resumo}
 Se houver algo que passa nesses critérios, retorna APENAS JSON sem markdown:
 {"assunto":"nome curto (2-4 palavras)","contexto":"o que aconteceu em 1 linha","como_retomar":"uma pergunta natural de amiga sobre isso"}
 
-Se não houver nada que passe nos critérios, retorna APENAS: null`
-      }],
-      temperature: 0,
-      max_tokens: 120,
-    });
-    const text = (completion.choices[0].message.content || '').trim();
+Se não houver nada que passe nos critérios, retorna APENAS: null`;
+    const msgs = [{ role: 'user', content: promptTxt }];
+
+    let text = null;
+    if (geminiDisponivel() && !todosModelosEsgotados()) {
+      try {
+        const respGemini = await geminiFreeResponse(msgs, { temperature: 0, maxTokens: 120 });
+        if (respGemini) text = respGemini.trim();
+      } catch (eGemini) {
+        console.error('[detectarAssuntoEmAberto] Gemini falhou, tentando Groq:', eGemini.message);
+      }
+    }
+
+    if (text === null) {
+      const completion = await groq.chat.completions.create({
+        model: MODEL_LEVE,
+        messages: msgs,
+        temperature: 0,
+        max_tokens: 120,
+      });
+      text = (completion.choices[0].message.content || '').trim();
+    }
+
     if (!text || text === 'null' || !text.startsWith('{')) return null;
     const parsed = JSON.parse(text);
     if (!parsed.assunto || !parsed.contexto || !parsed.como_retomar) return null;
