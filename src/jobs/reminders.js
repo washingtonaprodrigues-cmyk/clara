@@ -422,20 +422,17 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
           if (!primeiroEvento || dataMed < primeiroEvento) primeiroEvento = dataMed;
         }
 
-        const ehDomingo = now.getDay() === 0;
-
         if (primeiroEvento) {
-          // Espera de 3 a 5 minutos depois do disparo do evento — janela
+          // Espera de 3 a 10 minutos depois do disparo do evento — janela
           // curta pra não ficar nem colado (robótico) nem atrasado demais.
           const minutosDesdeEvento = (now - primeiroEvento) / 60000;
-          if (minutosDesdeEvento >= 3 && minutosDesdeEvento <= 30) {
+          if (minutosDesdeEvento >= 3 && minutosDesdeEvento <= 10) {
             podeEnviarAgora = true;
           }
         } else {
           // ── FALLBACK por horário fixo (sem remédio/lembrete de manhã) ──
-          // Dia de semana: 7h. Domingo: 9h (deixa você dormir).
-          const horaAlvo = ehDomingo ? 9 : 7;
-          if (now.getHours() === horaAlvo && now.getMinutes() < 6) {
+          // 8h todo santo dia, janela de até 10min pra disparar.
+          if (now.getHours() === 8 && now.getMinutes() < 10) {
             podeEnviarAgora = true;
           }
         }
