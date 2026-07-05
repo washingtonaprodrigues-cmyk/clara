@@ -660,7 +660,9 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       await sendMessage(phone, aviso);
 
       try {
-        const resultado = await searchWeb(query, '', preferences?.name || '');
+        const memAfetivaBusca = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+        const apelidoBusca = memAfetivaBusca?.apelido_usuario || preferences?.name || '';
+        const resultado = await searchWeb(query, '', apelidoBusca);
         if (resultado) {
           await memory.saveConversationMessage(user.id, 'user', text);
           await memory.saveConversationMessage(user.id, 'assistant', resultado);
@@ -691,7 +693,9 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           // quando ele misturava mais de um assunto na mesma mensagem
           // (ex: falou de café E do jogo do Brasil — a busca trazia café).
           const queryBusca = await extrairQueryBusca(text, respStr);
-          const resultado = await searchWeb(queryBusca, '', preferences?.name || '');
+          const memAfetivaProm = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+          const apelidoProm = memAfetivaProm?.apelido_usuario || preferences?.name || '';
+          const resultado = await searchWeb(queryBusca, '', apelidoProm);
           if (resultado && !isRespostaFallback(resultado)) {
             await memory.saveConversationMessage(user.id, 'assistant', resultado).catch(() => {});
             await sendMessage(phone, resultado);
@@ -966,7 +970,12 @@ async function handleMessage(phone, text, location = null) {
       const cidade = await memory.getRecentMemories(user.id, 5)
         .then(mems => mems.find(m => m.type === 'cidade')?.content || '')
         .catch(() => '');
-      const resultadoBusca = await searchWeb(classified.query, cidade, preferencesBusca?.name || '');
+      // Usa o apelido REAL que a Clara já usa pra ele (ex: "fedo"), não o
+      // nome formal cadastrado — passar só "Washington" pro reprocessamento
+      // fazia o modelo inventar um apelido próprio (ex: "Wash") do nada.
+      const memAfetiva = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+      const apelidoReal = memAfetiva?.apelido_usuario || preferencesBusca?.name || '';
+      const resultadoBusca = await searchWeb(classified.query, cidade, apelidoReal);
       if (resultadoBusca) {
         await memory.saveConversationMessage(user.id, 'user', text);
         await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca);
