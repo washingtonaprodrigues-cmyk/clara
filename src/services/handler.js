@@ -1,7 +1,7 @@
 // v2 - consulta direta sem LLM
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
-const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback } = require('./groq');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca } = require('./groq');
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
 // O classify() já recebe uma tabela com a data exata de cada dia da semana
@@ -683,11 +683,14 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // ── Detecção de promessa de busca não executada ───────────────────
     const prometeuBuscar = /peraí que vou ver|deixa eu (dar uma olhada|pesquisar|verificar|checar|buscar)|vou (pesquisar|buscar|dar uma olhada|verificar)|deixa eu ver|um segundo que|rapidinho aqui/i.test(respStr);
     if (prometeuBuscar && !buscaMatch) {
-      // Tenta extrair query do texto do usuário (mais relevante que da resposta da IA)
-      const queryBusca = text.trim();
       ;(async () => {
         try {
           await new Promise(r => setTimeout(r, 1500));
+          // Extrai o assunto que ela REALMENTE prometeu pesquisar — usar a
+          // mensagem inteira do usuário como query dava resultado errado
+          // quando ele misturava mais de um assunto na mesma mensagem
+          // (ex: falou de café E do jogo do Brasil — a busca trazia café).
+          const queryBusca = await extrairQueryBusca(text, respStr);
           const resultado = await searchWeb(queryBusca, '', preferences?.name || '');
           if (resultado && !isRespostaFallback(resultado)) {
             await memory.saveConversationMessage(user.id, 'assistant', resultado).catch(() => {});
