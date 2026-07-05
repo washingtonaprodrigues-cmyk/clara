@@ -1414,6 +1414,83 @@ async function executeAction(user, phone, classified, originalText) {
     case 'anotacao':
       await memory.saveMemory(user.id, 'anotacao', classified.conteudo || classified.titulo || originalText, { titulo: classified.titulo });
       break;
+    case 'chamada_combinada': {
+      const horaJaInformada = classified.hora;
+      let horaFinal = horaJaInformada;
+
+      if (!horaFinal) {
+        // Sem horário — calcula baseado na agenda (remédios + compromissos)
+        try {
+          const agora = nowBRT();
+          const hojeISO = dateBRT();
+          const hAtual = agora.getHours() * 60 + agora.getMinutes();
+
+          // Pega remédios do dia
+          const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
+          const horariosMeds = [];
+          for (const m of meds) {
+            let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
+            for (const t of times) {
+              const [h, min] = t.split(':').map(Number);
+              const hMin = h * 60 + min;
+              if (hMin > hAtual) horariosMeds.push(hMin); // só futuros hoje
+            }
+          }
+
+          // Pega próximo compromisso do dia
+          const proximoComp = await prisma.reminder.findFirst({
+            where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: new Date(`${hojeISO}T${String(agora.getHours()).padStart(2,'0')}:${String(agora.getMinutes()).padStart(2,'0')}:00-03:00`) } },
+            orderBy: { scheduledAt: 'asc' }
+          }).catch(() => null);
+
+          let horaBaseMin = null;
+
+          if (horariosMeds.length > 0) {
+            // Tem remédio — chama 30min depois do primeiro remédio futuro
+            const primeiroMed = Math.min(...horariosMeds);
+            horaBaseMin = primeiroMed + 30;
+          } else if (proximoComp) {
+            // Tem compromisso — chama 1h antes
+            const compMin = new Date(proximoComp.scheduledAt).getHours() * 60 + new Date(proximoComp.scheduledAt).getMinutes();
+            horaBaseMin = compMin - 60;
+          }
+
+          // Garante que está no range 20h-23h e tem pelo menos 1h de folga
+          if (!horaBaseMin || horaBaseMin < 20 * 60 || horaBaseMin > 23 * 60) {
+            horaBaseMin = 21 * 60; // padrão: 21h
+          }
+          if (horaBaseMin < hAtual + 60) {
+            horaBaseMin = hAtual + 60; // mínimo 1h a partir de agora
+          }
+
+          // Variação de ±15 min pra não parecer alarme
+          const variacao = Math.floor(Math.random() * 31) - 15;
+          horaBaseMin = Math.min(Math.max(horaBaseMin + variacao, hAtual + 30), 23 * 60);
+
+          const h = Math.floor(horaBaseMin / 60);
+          const m = horaBaseMin % 60;
+          horaFinal = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+        } catch(e) {
+          horaFinal = '21:00'; // fallback seguro
+        }
+      }
+
+      // Salva a chamada combinada
+      await prisma.memory.create({
+        data: {
+          userId: user.id,
+          type: 'chamada_combinada',
+          content: horaFinal,
+          metadata: JSON.stringify({ hora: horaFinal, expira: Date.now() + 24 * 60 * 60 * 1000 })
+        }
+      }).catch(() => {});
+
+      const foiSaudade = /saudade|quando sentir|quando quiser|quando der/i.test(originalText || text);
+      preferences._dicaAcao = foiSaudade
+        ? `\n\n[CHAMADA COMBINADA] Usuário disse pra chamar quando sentir saudade — você decidiu que vai chamar às ${horaFinal}. Responda de forma natural e carinhosa/zoeira conforme o tom, sem revelar que calculou o horário. Ex: "Pode deixar, uma hora dessas eu apareço 😏" — não mencione o horário exato, só confirme que vai aparecer.`
+        : `\n\n[CHAMADA COMBINADA] Usuário pediu pra ser chamado${horaJaInformada ? ` às ${horaFinal}` : ` — você escolheu às ${horaFinal}`}. Confirme de forma natural e animada. ${!horaJaInformada ? 'Como você calculou o horário, pode dizer algo como "combinado, apareço mais tarde 😉" sem revelar a hora exata.' : `Ex: "Combinado! Te chamo às ${horaFinal} 😏"`}`;
+      break;
+    }
     case 'tarefa': {
       const resultTarefa = await salvarTarefaSilenciosa(user, phone, classified, originalText);
       if (resultTarefa?.perguntarTitulo) {
