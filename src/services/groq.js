@@ -1307,17 +1307,34 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
 
     if (preferences?._systemOverride) {
       const _overrideMaxTokens = preferences?._maxTokens || 200;
+      // Injeta a personalidade da Clara ANTES do override, pra ela manter
+      // o tom dela (carinhoso, brincalhão, "fedo") mesmo numa boa noite curta.
+      // Sem isso o modelo escreve genérico/formal com "parabéns" e aspas.
+      const sistemaComAlma = buildPersonality(tom, name, false) + '\n\n' + preferences._systemOverride;
+      const msgsOverride = [
+        { role: 'system', content: sistemaComAlma },
+        { role: 'user', content: message }
+      ];
+
+      // Gemini primeiro — igual ao resto do app. Esse prompt (personalidade
+      // completa + instrução) costuma passar de 7-8 mil tokens, e o tier
+      // gratuito do Groq pro llama-3.1-8b-instant tem teto de 6000
+      // tokens/minuto: a chamada falhava SEMPRE (não era "throttling"
+      // passageiro, o pedido já nascia grande demais pro limite). Isso
+      // derrubava bom dia, boa noite e outras mensagens proativas.
+      if (geminiDisponivel() && !todosModelosEsgotados()) {
+        try {
+          const resposta = await geminiFreeResponse(msgsOverride, { temperature: 0.85, maxTokens: _overrideMaxTokens });
+          return filtrarResposta(apararRespostaCortada(resposta));
+        } catch (eGemini) {
+          console.error('[freeResponse-Override] Gemini falhou, tentando Groq:', eGemini.message);
+        }
+      }
+
       try {
-        // Injeta a personalidade da Clara ANTES do override, pra ela manter
-        // o tom dela (carinhoso, brincalhão, "fedo") mesmo numa boa noite curta.
-        // Sem isso o modelo escreve genérico/formal com "parabéns" e aspas.
-        const sistemaComAlma = buildPersonality(tom, name, false) + '\n\n' + preferences._systemOverride;
         const completion = await groq.chat.completions.create({
           model: MODEL_LEVE,
-          messages: [
-            { role: 'system', content: sistemaComAlma },
-            { role: 'user', content: message }
-          ],
+          messages: msgsOverride,
           temperature: 0.85,
           max_tokens: _overrideMaxTokens,
         });
