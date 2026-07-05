@@ -11,15 +11,19 @@ function getClient() {
   return _client;
 }
 
-async function webSearch(query) {
+async function webSearch(query, options = {}) {
   try {
     console.log(`🔎 Tavily: ${query}`);
     const tvly = getClient();
-    const response = await tvly.search(query, {
+    const searchOpts = {
       maxResults: 3,
       searchDepth: 'advanced',
       includeAnswer: true,
-    });
+    };
+    if (options.includeDomains && options.includeDomains.length > 0) {
+      searchOpts.includeDomains = options.includeDomains;
+    }
+    const response = await tvly.search(query, searchOpts);
     if (!response.results?.length) return null;
     const cleaned = response.results.map(result => ({
       title: result.title,
