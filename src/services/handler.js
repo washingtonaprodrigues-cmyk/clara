@@ -698,7 +698,13 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     await sendMessage(phone, respStr);
 
     // ── Detecção de promessa de busca não executada ───────────────────
-    const prometeuBuscar = /peraí que vou ver|deixa eu (dar uma olhada|pesquisar|verificar|checar|buscar)|vou (pesquisar|buscar|dar uma olhada|verificar)|deixa eu ver|um segundo que|rapidinho aqui/i.test(respStr);
+    // Só vale como promessa de busca de verdade se a MENSAGEM ORIGINAL do
+    // usuário tiver cara de pedido de informação (pergunta, "que horas",
+    // "quando", etc). Sem isso, uma frase de efeito dela tipo "deixa eu ver
+    // que horas" numa resposta a um convite/comentário ("bora torcermos")
+    // disparava busca escondida sem ninguém ter pedido nada.
+    const pareceuPedidoInfo = /\?|que horas|quando|onde fica|onde é|qual (é|o|a)|quanto (custa|é|vale)|quem (é|foi|ganhou|joga)/i.test(originalText || text);
+    const prometeuBuscar = pareceuPedidoInfo && /peraí que vou ver|deixa eu (dar uma olhada|pesquisar|verificar|checar|buscar)|vou (pesquisar|buscar|dar uma olhada|verificar)|deixa eu ver|um segundo que|rapidinho aqui/i.test(respStr);
     if (prometeuBuscar && !buscaMatch) {
       ;(async () => {
         try {
