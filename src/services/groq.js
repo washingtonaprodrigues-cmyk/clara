@@ -819,7 +819,21 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '') {
   try {
     const fullQuery = locationContext ? `${query} em ${locationContext}` : query;
     console.log(`🔎 Buscando: ${fullQuery}`);
-    const data = await webSearch(fullQuery);
+
+    // Perguntas de jogo/horário de partida são as que mais sofrem com fonte
+    // ruim (sites de aposta/prognóstico erram data, horário e até adversário).
+    // Nesses casos, restringe a busca a fontes brasileiras confiáveis.
+    const ehPerguntaDeJogo = /\b(jogo|joga|partida|horário do jogo|que horas.*joga|assistir|placar|campeonato|copa|seleção|brasileirão|libertadores)\b/i.test(fullQuery);
+    const dominiosEsportivos = ehPerguntaDeJogo
+      ? ['ge.globo.com', 'cnnbrasil.com.br', 'lance.com.br', 'espn.com.br', 'uol.com.br', 'olympics.com', 'cbf.com.br']
+      : undefined;
+
+    let data = await webSearch(fullQuery, { includeDomains: dominiosEsportivos });
+    if ((!data || !data.results || data.results.length === 0) && dominiosEsportivos) {
+      // Filtro de domínio pode ter sido restritivo demais pra essa busca
+      // específica — tenta de novo sem restrição em vez de desistir.
+      data = await webSearch(fullQuery);
+    }
     if (!data || !data.results || data.results.length === 0) {
       return "Não encontrei informações atualizadas. Pode tentar de outra forma?";
     }
