@@ -234,6 +234,7 @@ TIPOS e formato de saída:
 - ajustar_remedio: {"tipo":"ajustar_remedio","nome":"x","operacao":"decrementar/ajustar","valor":N}
 - relatorio_financeiro / consulta_saldo: {"tipo":"..."}
 - busca: {"tipo":"busca","query":"texto da pergunta"} — pergunta factual externa que a Clara não sabe sem pesquisar (clima, notícia, preço, horário de jogo, endereço, telefone), ou pedido explícito ("pesquisa X", "busca X", "procura X", "confirma isso", "vê se isso tá certo")
+- chamada_combinada: {"tipo":"chamada_combinada","hora":"HH:MM ou null"} — usuário pede pra ser chamado/avisado mais tarde ("me chama mais tarde", "me chama às 21h", "a gente se fala mais tarde", "me avisa mais tarde", "me chama quando sentir saudade"). hora=null se não especificou horário (sistema calcula), HH:MM se especificou. "te chamo mais tarde" dito pelo PRÓPRIO USUÁRIO sobre ele mesmo chamando a Clara → outro (não é pedido pra ela chamar)
 - outro: {"tipo":"outro"} — conversa, pergunta de conhecimento, saudação, qualquer coisa que não seja ação acima
 
 REGRAS DE BUSCA:
@@ -269,6 +270,9 @@ Exemplos:
 "o que tenho amanhã?" → {"tipo":"consulta","sobre":"agenda amanhã","datas":["${amanhaISO}"]}
 "pesquisa o horário do jogo do Brasil hoje" → {"tipo":"busca","query":"horário jogo do Brasil hoje"}
 "tem certeza que é esse horário? pesquisa de novo" (Clara acabou de falar sobre horário de jogo) → {"tipo":"busca","query":"horário jogo do Brasil hoje"}
+"me chama mais tarde" → {"tipo":"chamada_combinada","hora":null}
+"me chama às 21h" → {"tipo":"chamada_combinada","hora":"21:00"}
+"indo lá então, me chama mais tarde" → {"tipo":"chamada_combinada","hora":null}
 "qual a diferença entre X e Y?" → {"tipo":"outro"}
 "oi clara tudo bem?" → {"tipo":"outro"}`;
 };
