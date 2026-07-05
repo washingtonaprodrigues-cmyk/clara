@@ -1650,6 +1650,31 @@ cron.schedule('* * * * *', async () => {
       // Gera mensagem natural
       const userId = chamada.userId;
       const phone = chamada.user.phone;
+
+      // Não dispara se já houve bom dia ou proativa nos últimos 10 min
+      const proativaRecente = await prisma.memory.findFirst({
+        where: {
+          userId,
+          type: { in: ['bom_dia_enviado', 'boa_noite_enviado', 'proativa_lock'] },
+          createdAt: { gte: new Date(Date.now() - 10 * 60 * 1000) }
+        }
+      }).catch(() => null);
+      if (proativaRecente) {
+        console.log(`[ChamadaCombinada] Adiando 10min — proativa recente para ${phone}`);
+        // Readiciona com +10min pra tentar depois
+        await prisma.memory.create({
+          data: { userId, type: 'chamada_combinada', content: horaCombinada,
+            metadata: JSON.stringify({ hora: horaCombinada, expira: Date.now() + 30 * 60 * 1000 }) }
+        }).catch(() => {});
+        continue;
+      }
+
+      // Não dispara se usuário já conversou nos últimos 15 min — já está em papo
+      if (await houveConversaRecente(userId, 15)) {
+        console.log(`[ChamadaCombinada] Cancelando — usuário já está conversando com ${phone}`);
+        continue;
+      }
+
       const history = await memory.getConversationHistory(userId, 4).catch(() => []);
       const prefs = await memory.getUserPreference(userId).catch(() => ({}));
       const nome = prefs?.name || '';
