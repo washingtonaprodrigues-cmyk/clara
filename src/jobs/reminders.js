@@ -1603,6 +1603,74 @@ cron.schedule('* * * * *', async () => {
 }, { timezone: 'America/Sao_Paulo' });
 
 // ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
+// CHAMADA COMBINADA — verifica a cada minuto
+// Quando usuário pediu pra ser chamado (ou ela decidiu chamar),
+// dispara no horário combinado com variação natural de ±5min
+// ═══════════════════════════════════════════════════════════════════════
+cron.schedule('* * * * *', async () => {
+  if (!isOwner) return;
+  try {
+    const agora = nowBRT();
+    const hora = agora.getHours();
+
+    // Não chama de madrugada — só entre 7h e 23h
+    if (hora < 7 || hora >= 23) return;
+
+    const hAtual = `${String(agora.getHours()).padStart(2,'0')}:${String(agora.getMinutes()).padStart(2,'0')}`;
+
+    const chamadas = await prisma.memory.findMany({
+      where: { type: 'chamada_combinada' },
+      include: { user: true }
+    });
+
+    for (const chamada of chamadas) {
+      if (!chamada.user?.phone) continue;
+      let meta = {}; try { meta = JSON.parse(chamada.metadata || '{}'); } catch {}
+
+      // Verifica se expirou
+      if (meta.expira && Date.now() > meta.expira) {
+        await prisma.memory.delete({ where: { id: chamada.id } }).catch(() => {});
+        continue;
+      }
+
+      const horaCombinada = chamada.content || meta.hora;
+      if (!horaCombinada) continue;
+
+      // Verifica se está na janela de ±5min do horário combinado
+      const [hC, mC] = horaCombinada.split(':').map(Number);
+      const minCombinado = hC * 60 + mC;
+      const minAtual = agora.getHours() * 60 + agora.getMinutes();
+      const diff = Math.abs(minAtual - minCombinado);
+      if (diff > 5) continue; // fora da janela
+
+      // Deleta antes de disparar (evita duplicata)
+      await prisma.memory.delete({ where: { id: chamada.id } }).catch(() => {});
+
+      // Gera mensagem natural
+      const userId = chamada.userId;
+      const phone = chamada.user.phone;
+      const history = await memory.getConversationHistory(userId, 4).catch(() => []);
+      const prefs = await memory.getUserPreference(userId).catch(() => ({}));
+      const nome = prefs?.name || '';
+
+      const ctx = `[CHAMADA COMBINADA] Você combinou de chamar ${nome || 'o usuário'} agora (${horaCombinada}). Apareça de forma natural — pode ser curiosidade, uma piada, ou simplesmente aparecer. NÃO diga "passei para ver se você está bem" de forma genérica. Use o contexto da última conversa se souber de algo. Ex: "ei, tô por aqui 😏", "e aí fedo, lembrou de mim?", ou puxe algo específico que ficou pendente.`;
+
+      const resposta = await Promise.race([
+        freeResponse('', history, { ...prefs, _contexto: ctx }),
+        new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 10000))
+      ]).catch(() => null);
+
+      if (resposta && !isRespostaFallback(resposta)) {
+        await sendMessage(phone, resposta);
+        await memory.saveConversationMessage(userId, 'assistant', resposta).catch(() => {});
+        console.log(`[ChamadaCombinada] Disparada para ${phone} às ${hAtual}`);
+      }
+    }
+  } catch(e) { console.error('[ChamadaCombinada] Erro:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
 // MENSAGENS AGENDADAS PARA CONTATOS — a cada minuto
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('* * * * *', async () => {
