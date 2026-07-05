@@ -321,13 +321,11 @@ Exemplos:
 - "daqui a X minutos", "em X minutos", "daqui X horas", "daqui a pouco" são horários RELATIVOS válidos → tarefa com hora=null (o sistema calcula o horário real a partir do texto). NUNCA descarte a mensagem por o horário ser relativo em vez de absoluto.
 - Pergunta sobre horário/data de algo que JÁ EXISTE ("que horas eu tenho que...", "a que horas é...", "quando é...", "tenho algo às...") → consulta (NUNCA tarefa, NUNCA crie novo lembrete para perguntas)
 - Informação para guardar sem horário → anotacao
-- Pergunta EXPLÍCITA sobre clima/notícia/preço/lugar/telefone/fato externo que a Clara não pode saber sem pesquisar → busca
-- Palavra solta que é claramente uma solicitação de pesquisa (ex: "pesquisa X", "busca X", "procura X") → busca
-- NUNCA classifique como busca: reações ao que já foi dito ("nossa", "que louco", "incrível", "sério?", "não acredito"), continuações de conversa, comentários sobre o resultado de uma pesquisa anterior, frases curtas sem verbo de pedido que seguem uma resposta da Clara
-- Se a mensagem for um comentário/reação a algo que a Clara acabou de dizer → outro, NUNCA busca
-- Se a mensagem expressa intenção pessoal ou estado emocional ("acho que", "quero", "vou", "preciso", "tô com", "me sinto") → outro, NÃO busca
-- "Vale a pena?", "devo trocar?", "o que acha?" sobre algo da VIDA do usuário com números/comparação dados por ELE (preços, tempo, opções que ele mesmo descreveu) → SEMPRE outro, NUNCA busca. Isso é uma decisão pessoal para a Clara analisar com os dados que o próprio usuário já deu, não uma pesquisa na web. Só é busca se ele pedir explicitamente para pesquisar/buscar informação que NÃO foi fornecida por ele (ex: "qual a nota dessa academia no Google", "pesquisa academias perto de mim")
-- Conversa casual sobre o que o usuário vai fazer → outro, NÃO busca
+- BUSCA — critério RESTRITO, dois casos únicos:
+  1. PEDIDO EXPLÍCITO com palavra de comando: "pesquisa X", "busca X", "procura X", "me diz sobre X", "me fala de X", "quanto custa X", "onde fica X", "que horas é X", "quando é X", "sabe X?", "você sabe X?", "confirma X" → busca. Precisa ter intenção explícita de buscar informação externa.
+  2. INFORMAÇÃO AO VIVO que a Clara genuinamente não pode saber sem pesquisar: placar atual de jogo EM ANDAMENTO que o usuário ainda não informou, clima/temperatura agora, preço de mercado hoje, notícia de últimas horas ainda não mencionada. SOMENTE quando a pergunta deixa claro que ele quer saber algo que muda no tempo real e que ela não tem como responder da memória.
+  EM CASO DE DÚVIDA: classifique como "outro". A busca só vale quando o pedido é inequívoco.
+- NUNCA é busca: usuário informando/contando/atualizando Clara sobre algo ("hoje tá tendo jogo", "zero a zero", "o placar é 1 a 0", "cheguei", "passou o remédio"), reações ao que ela disse ("nossa", "sério?", "que louco"), comentários/opiniões, decisões pessoais com dados que ele mesmo deu, perguntas retóricas ou emocionais, conversa casual
 - Pergunta factual/geral que a Clara não pode responder com os dados do usuário (notícias, preços, fatos do mundo) → busca com {"query": "texto da pergunta"}
 - Usuário informa saldo/salário/orçamento → saldo
 - Consultar algo já guardado nos dados do usuário (lembretes, anotações, gastos) → consulta
