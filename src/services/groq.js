@@ -950,11 +950,14 @@ REGRA DE FUSO HORÁRIO: PRIMEIRO verifique se a informação já diz explicitame
     // Groq chave 1, chave 2) falharem, pelo menos garante que não sai um
     // texto seco de relatório — envolve com a voz dela sem custo de API.
     resposta = resposta.replace(/[*_#`]/g, '');
-    const apelidoFallback = nomeUsuario || 'fedo';
-    const aberturasFallback = [
-      `Opa, ${apelidoFallback}! Achei isso aqui:\n\n`,
-      `Consegui, ${apelidoFallback}! Olha só:\n\n`,
-      `Aqui vai, ${apelidoFallback}:\n\n`,
+    const aberturasFallback = nomeUsuario ? [
+      `Opa, ${nomeUsuario}! Achei isso aqui:\n\n`,
+      `Consegui, ${nomeUsuario}! Olha só:\n\n`,
+      `Aqui vai, ${nomeUsuario}:\n\n`,
+    ] : [
+      `Opa! Achei isso aqui:\n\n`,
+      `Consegui! Olha só:\n\n`,
+      `Aqui vai:\n\n`,
     ];
     const abertura = aberturasFallback[Math.floor(Math.random() * aberturasFallback.length)];
     return abertura + resposta;
