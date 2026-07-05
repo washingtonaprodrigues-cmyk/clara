@@ -385,6 +385,13 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
         const jaTem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'bom_dia_lock', content: hoje } }).catch(() => null);
         if (jaTem) continue;
 
+        // Não duplica com a proativa de manhã (proativaInteligente) — se ela
+        // já mandou uma saudação hoje, o bom dia dedicado não manda outra.
+        const proativaManhaJaEnviada = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'proativa_enviado_lock', content: `manha_${hoje}` }
+        }).catch(() => null);
+        if (proativaManhaJaEnviada) continue;
+
         let podeEnviarAgora = false;
 
         // ── GATILHO PROATIVO: ela começa sozinha, sem você falar ──
@@ -814,6 +821,19 @@ async function proativaInteligente(periodo) {
           });
         });
         if (temRemedioNaJanela) continue;
+
+        // ── Não duplica com o "Bom dia" dedicado ──
+        // A proativa de manhã e o cron de bom dia (mais abaixo) são dois
+        // sistemas diferentes que podem coincidir no mesmo minuto de janela
+        // (ex: 8h15 cai nos dois). Se o bom dia oficial já mandou hoje, a
+        // proativa de manhã não manda outra saudação por cima.
+        if (periodo === 'manha') {
+          const hojeBomDia = dateBRT();
+          const bomDiaJaEnviado = await prisma.memory.findFirst({
+            where: { userId: user.id, type: 'bom_dia_lock', content: hojeBomDia }
+          }).catch(() => null);
+          if (bomDiaJaEnviado) continue;
+        }
 
         const dayKey = `${periodo}_${dateBRT()}`;
 
