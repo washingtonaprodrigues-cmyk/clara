@@ -824,7 +824,7 @@ async function checkResolucaoPendencia(message, resumo) {
   }
 }
 
-async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomUsuario = 'carinhoso') {
+async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomUsuario = 'carinhoso', contextoRelacional = '') {
   try {
     const fullQuery = locationContext ? `${query} em ${locationContext}` : query;
     console.log(`🔎 Buscando: ${fullQuery}`);
@@ -904,7 +904,7 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomU
     const regrasBusca = `\n\nVocê acabou de pesquisar algo e vai contar o que descobriu DO SEU JEITO — leve, sem jargão técnico, sem soar como relatório. REGRA CRÍTICA: use APENAS os fatos que estão na informação pesquisada abaixo. NUNCA invente dados, nomes, horários, adversários ou resultados que não estejam explicitamente na fonte. Se a fonte diz Brasil x Noruega, diga Brasil x Noruega — não substitua por outro adversário. Máximo 4 linhas. NÃO use markdown.
 
 REGRA DE FUSO HORÁRIO: se a informação mencionar um horário e disser "horário local" (ou não deixar claro de qual país/fuso é), NÃO repasse como se já fosse horário de Brasília — isso confunde quem só vive no fuso daqui. Eventos sediados fora do Brasil (ex: Copa do Mundo 2026 nos EUA/México/Canadá) costumam informar horário local da sede, que pode ter várias horas de diferença. Se você souber converter com segurança (ex: sede claramente identificada), converta e diga que já converteu pra horário de Brasília. Se não tiver certeza do fuso de origem, informe o horário exatamente como está na fonte e avise explicitamente que pode não ser horário de Brasília, sugerindo conferir.`;
-    const promptReprocesso = buildPersonality(tomUsuario || 'carinhoso', nomeUsuario, false) + regrasBusca;
+    const promptReprocesso = buildPersonality(tomUsuario || 'carinhoso', nomeUsuario, false) + contextoRelacional + regrasBusca;
     const msgsReprocesso = [
       { role: 'system', content: promptReprocesso },
       { role: 'user', content: `Pergunta: "${query}"\n\nInformação que você pesquisou:\n${resposta}\n\nAgora me conta isso do seu jeito, Clara:` }
