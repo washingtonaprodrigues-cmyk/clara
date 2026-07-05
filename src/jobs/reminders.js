@@ -429,12 +429,14 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
           if (minutosDesdeEvento >= 3 && minutosDesdeEvento <= 10) {
             podeEnviarAgora = true;
           }
-        } else {
-          // ── FALLBACK por horário fixo (sem remédio/lembrete de manhã) ──
-          // 8h todo santo dia, janela de até 10min pra disparar.
-          if (now.getHours() === 8 && now.getMinutes() < 10) {
-            podeEnviarAgora = true;
-          }
+        }
+
+        // ── REDE DE SEGURANÇA — 8h, sempre, independente de ter tido evento ──
+        // Se tinha remédio/lembrete de manhã mas a janela de 3-10min falhou por
+        // qualquer motivo (rate limit, erro de API, etc), não fica sem bom dia
+        // o dia inteiro — 8h-8h10 garante que ela manda de qualquer jeito.
+        if (!podeEnviarAgora && now.getHours() === 8 && now.getMinutes() < 30) {
+          podeEnviarAgora = true;
         }
 
         if (!podeEnviarAgora) continue;
