@@ -1698,9 +1698,14 @@ cron.schedule('* * * * *', async () => {
 
       const history = await memory.getConversationHistory(userId, 4).catch(() => []);
       const prefs = await memory.getUserPreference(userId).catch(() => ({}));
-      const nome = prefs?.name || '';
+      const memAfetivaChamada = await memory.getMemoriaAfetiva(userId).catch(() => ({}));
+      const nome = memAfetivaChamada?.apelido_usuario || prefs?.name || '';
+      // Sem isso, ela perde acesso aos apelidos/piadas internas e às vezes
+      // chama pelo nome formal ou inventa um apelido do zero (ex: "Fofinho").
+      const relMemoriaChamada = await prisma.memory.findFirst({ where: { userId, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+      const contextoRelChamada = relMemoriaChamada?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoriaChamada.content}` : '';
 
-      const ctx = `[CHAMADA COMBINADA] Você combinou de chamar ${nome || 'o usuário'} agora (${horaCombinada}). Apareça de forma natural — pode ser curiosidade, uma piada, ou simplesmente aparecer. NÃO diga "passei para ver se você está bem" de forma genérica. Use o contexto da última conversa se souber de algo. Ex: "ei, tô por aqui 😏", "e aí fedo, lembrou de mim?", ou puxe algo específico que ficou pendente.`;
+      const ctx = `[CHAMADA COMBINADA] Você combinou de chamar ${nome || 'o usuário'} agora (${horaCombinada}). Apareça de forma natural — pode ser curiosidade, uma piada, ou simplesmente aparecer. NÃO diga "passei para ver se você está bem" de forma genérica. Use o contexto da última conversa se souber de algo. Ex: "ei, tô por aqui 😏", "e aí, lembrou de mim?", ou puxe algo específico que ficou pendente.${contextoRelChamada}`;
 
       const resposta = await Promise.race([
         freeResponse('', history, { ...prefs, _contexto: ctx }),
