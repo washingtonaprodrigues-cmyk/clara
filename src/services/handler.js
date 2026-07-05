@@ -657,13 +657,17 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       // Avisa que vai pesquisar, no estilo da Clara
       const tom = preferences?.tom || 'carinhoso';
       const name = preferences?.name || '';
-      const fedo = name || 'fedo';
       console.log(`[Busca] tom=${tom} name=${name}`);
-      const avisos = {
-        carinhoso: [`✨ Pera aí que já busco pra gente!`, `Um segundo, ${fedo}! 🔍`, `Deixa eu dar uma olhada aqui! ✨`],
+      const avisos = name ? {
+        carinhoso: [`✨ Pera aí que já busco pra gente!`, `Um segundo, ${name}! 🔍`, `Deixa eu dar uma olhada aqui! ✨`],
         direto: [`🔍 Buscando.`, `Já procuro.`, `Um segundo.`],
         divertido: [`Espera que vou garimpar isso pra você! 😄`, `Deixa eu fuçar aqui! 🔍`, `Um segundo que já acho! ✨`],
-        sarcastico: [`Tá bom, ${fedo}… deixa eu ver porque você não ia achar sozinho mesmo. 🙄`, `Pera aí que vou buscar pra gente. 😏`, `Já procuro, ${fedo}. 🔍`],
+        sarcastico: [`Tá bom, ${name}… deixa eu ver porque você não ia achar sozinho mesmo. 🙄`, `Pera aí que vou buscar pra gente. 😏`, `Já procuro, ${name}. 🔍`],
+      } : {
+        carinhoso: [`✨ Pera aí que já busco pra gente!`, `Um segundo! 🔍`, `Deixa eu dar uma olhada aqui! ✨`],
+        direto: [`🔍 Buscando.`, `Já procuro.`, `Um segundo.`],
+        divertido: [`Espera que vou garimpar isso pra você! 😄`, `Deixa eu fuçar aqui! 🔍`, `Um segundo que já acho! ✨`],
+        sarcastico: [`Tá bom… deixa eu ver porque você não ia achar sozinho mesmo. 🙄`, `Pera aí que vou buscar pra gente. 😏`, `Já procuro. 🔍`],
       };
       const opcoes = avisos[tom] || avisos.carinhoso;
       const aviso = opcoes[Math.floor(Math.random() * opcoes.length)];
