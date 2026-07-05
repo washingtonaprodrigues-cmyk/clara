@@ -662,7 +662,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       try {
         const memAfetivaBusca = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
         const apelidoBusca = memAfetivaBusca?.apelido_usuario || preferences?.name || '';
-        const resultado = await searchWeb(query, '', apelidoBusca);
+        const resultado = await searchWeb(query, '', apelidoBusca, preferences?.tom || 'carinhoso');
         if (resultado) {
           await memory.saveConversationMessage(user.id, 'user', text);
           await memory.saveConversationMessage(user.id, 'assistant', resultado);
@@ -695,7 +695,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           const queryBusca = await extrairQueryBusca(text, respStr);
           const memAfetivaProm = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
           const apelidoProm = memAfetivaProm?.apelido_usuario || preferences?.name || '';
-          const resultado = await searchWeb(queryBusca, '', apelidoProm);
+          const resultado = await searchWeb(queryBusca, '', apelidoProm, preferences?.tom || 'carinhoso');
           if (resultado && !isRespostaFallback(resultado)) {
             await memory.saveConversationMessage(user.id, 'assistant', resultado).catch(() => {});
             await sendMessage(phone, resultado);
@@ -975,7 +975,7 @@ async function handleMessage(phone, text, location = null) {
       // fazia o modelo inventar um apelido próprio (ex: "Wash") do nada.
       const memAfetiva = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
       const apelidoReal = memAfetiva?.apelido_usuario || preferencesBusca?.name || '';
-      const resultadoBusca = await searchWeb(classified.query, cidade, apelidoReal);
+      const resultadoBusca = await searchWeb(classified.query, cidade, apelidoReal, preferencesBusca?.tom || 'carinhoso');
       if (resultadoBusca) {
         await memory.saveConversationMessage(user.id, 'user', text);
         await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca);
