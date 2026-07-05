@@ -179,7 +179,7 @@ async function handleSimpleResponse(phone, text, quotedText) {
       if (med) {
         const atualizado = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
         await prisma.memory.delete({ where: { id: pendenteRemedio.memoryId } }).catch(() => {});
-        await sendMessage(phone, `✅ Ótimo! Marquei que você tomou o *${med.name}*. Restam ${atualizado.remaining} doses. 💊`, 400, quotedText);
+        await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${atualizado.remaining} doses. 💊`, 400, quotedText);
         return true;
       }
     } else if (pendentesRemedio.length > 1) {
@@ -197,7 +197,7 @@ async function handleSimpleResponse(phone, text, quotedText) {
         if (med) {
           const atualizado = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
           await prisma.memory.delete({ where: { id: match.memoryId } }).catch(() => {});
-          await sendMessage(phone, `✅ Ótimo! Marquei que você tomou o *${med.name}*. Restam ${atualizado.remaining} doses. 💊`, 400, quotedText);
+          await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${atualizado.remaining} doses. 💊`, 400, quotedText);
           return true;
         }
       } else {
@@ -210,7 +210,7 @@ async function handleSimpleResponse(phone, text, quotedText) {
     const med = await getRemedioRecente(user.id);
     if (med) {
       await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
-      await sendMessage(phone, `✅ Ótimo! Marquei que você tomou o *${med.name}*. Restam ${med.remaining - 1} doses. 💊`, 400, quotedText);
+      await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${med.remaining - 1} doses. 💊`, 400, quotedText);
       return true;
     }
   }
@@ -219,15 +219,7 @@ async function handleSimpleResponse(phone, text, quotedText) {
     const lembrete = await getLembretePendente(user.id, phone, quotedText);
     if (lembrete) {
       await prisma.reminder.update({ where: { id: lembrete.id }, data: { confirmed: true } });
-      const msgs = [
-        `Arrasou! ✅ "${lembrete.message}" marcado como concluído 💜`,
-        `Boa! ✅ "${lembrete.message}" tá feito então 😊`,
-        `Perfeito! ✅ Anotei que você concluiu "${lembrete.message}" 💜`,
-        `Isso! ✅ "${lembrete.message}" concluído com sucesso 🎉`,
-      ];
-      // Passa quotedText pra garantir que a resposta não seja bloqueada
-      // pelo dedup quando há múltiplos lembretes sendo confirmados em sequência
-      await sendMessage(phone, msgs[Math.floor(Math.random() * msgs.length)], 400, quotedText);
+      await sendMessage(phone, `✅ Feito! "${lembrete.message}" concluído.`, 400, quotedText);
       return true;
     }
   }
