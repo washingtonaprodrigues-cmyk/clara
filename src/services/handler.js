@@ -624,8 +624,20 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
             where: { userId: user.id, type: 'conversa', content: { not: { startsWith: '[Clara]' } } },
             orderBy: { createdAt: 'desc' }
           }).catch(() => null),
+          // Só conta mensagens de PERSONALIDADE da Clara — não confirmações de
+          // sistema ([Clara] ✅ Pode deixar!...) que salvamos como marcadores.
+          // Sem isso, qualquer confirmação de tarefa fazia claraFalouPorUltimo=true
+          // e injetava [RETORNO SEM COBRANÇA] em toda resposta, abafando a
+          // personalidade dela mesmo no meio de conversas ativas.
           prisma.memory.findFirst({
-            where: { userId: user.id, type: 'conversa', content: { startsWith: '[Clara]' } },
+            where: {
+              userId: user.id,
+              type: 'conversa',
+              content: {
+                startsWith: '[Clara]',
+                not: { contains: '✅' }   // exclui confirmações de sistema
+              }
+            },
             orderBy: { createdAt: 'desc' }
           }).catch(() => null),
         ]);
@@ -637,12 +649,12 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
               ? `${Math.round(minAusente / 60)}h${minAusente % 60 > 0 ? Math.round(minAusente % 60) + 'min' : ''}`
               : `${minAusente} minutos`;
 
-            // Se Clara falou por último (sem resposta), não menciona o sumiço —
-            // isso vira cobrança. Ela volta com assunto diferente, leve, sem
-            // referenciar que você não respondeu. Uma amiga confiante não fica
-            // em cima; quando você volta é que ela pode brincar.
+            // Só aplica "sem cobrança" se Clara genuinamente ficou esperando
+            // sem resposta por 30+ minutos — conversas ativas com intervalo
+            // curto não devem receber essa instrução restritiva.
             const claraFalouPorUltimo = ultimaMsgClara &&
-              new Date(ultimaMsgClara.createdAt) > new Date(ultimaMsgUser.createdAt);
+              new Date(ultimaMsgClara.createdAt) > new Date(ultimaMsgUser.createdAt) &&
+              minAusente >= 30;
 
             if (claraFalouPorUltimo) {
               contexto += `\n\n[RETORNO SEM COBRANÇA] Você já tentou contato antes e o usuário não tinha respondido ainda — agora ele voltou. NÃO mencione que ele sumiu, NÃO diga "sumido de novo", NÃO faça referência ao tempo que passou ou à sua mensagem anterior sem resposta. Receba ele normalmente, como se a conversa continuasse natural. Pode puxar um assunto novo, fazer uma pergunta curiosa, ou simplesmente reagir ao que ele disse agora — sem drama, sem cobrança.`;
@@ -1139,8 +1151,15 @@ async function handleMessage(phone, text, location = null) {
       }).catch(() => null);
 
       if (comentarioPrevio && !isRespostaFallback(comentarioPrevio)) {
-        await sendMessage(phone, comentarioPrevio);
-        await memory.saveConversationMessage(user.id, 'assistant', comentarioPrevio).catch(() => {});
+        // Remove qualquer tag BUSCAR que o modelo tenha embutido no comentário
+        // (a regra 2 do buildPersonality instrui ela a colocar __BUSCAR:...__ junto
+        // do comentário, mas aqui o comentário é pré-busca — a busca já vai rodar
+        // logo depois, então a tag é redundante e não pode vazar pro usuário)
+        const comentarioLimpo = comentarioPrevio.replace(/__?BUSCAR:[^_\n]*__?/gi, '').trim();
+        if (comentarioLimpo) {
+          await sendMessage(phone, comentarioLimpo);
+          await memory.saveConversationMessage(user.id, 'assistant', comentarioLimpo).catch(() => {});
+        }
       } else {
         // Geração falhou — cai num aviso simples só pra não ficar em silêncio
         await sendMessage(phone, apelidoReal ? `Pera aí, ${apelidoReal}! 🔍` : 'Pera aí! 🔍');
