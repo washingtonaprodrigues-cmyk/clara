@@ -870,7 +870,22 @@ async function proativaInteligente(periodo) {
             const tempoDesc = horasSemConversa > 24
               ? `${Math.round(diasSemConversa)} dia${diasSemConversa >= 2 ? 's' : ''}`
               : `${Math.round(horasSemConversa)} horas`;
-            ctxAusencia = `\nTEMPO SEM CONVERSAR: faz ${tempoDesc} que a pessoa não fala com você (última interação real). Se fizer sentido pro momento, você pode notar isso de forma leve e no seu tom — "oi sumido", "cadê você hoje?", "achei que tinha me dado vacuo" — nunca como cobrança, sempre como intimidade genuína. Não force se não combinar com o assunto.`;
+
+            // Verifica se a última mensagem foi da Clara (sem resposta do usuário)
+            // — se foi, não menciona sumiço, isso vira cobrança. Ela aparece
+            // com assunto diferente, leve, sem referenciar que não foi respondida.
+            const ultimaMsgClara = await prisma.memory.findFirst({
+              where: { userId: user.id, type: 'conversa', content: { startsWith: '[Clara]' } },
+              orderBy: { createdAt: 'desc' }
+            }).catch(() => null);
+            const claraFalouPorUltimo = ultimaMsgClara &&
+              new Date(ultimaMsgClara.createdAt) > new Date(ultimaConversa.createdAt);
+
+            if (claraFalouPorUltimo) {
+              ctxAusencia = `\nCONTEXTO: você já tentou contato antes sem resposta. NÃO mencione que ele sumiu ou que não respondeu — isso vira cobrança. Apareça com um assunto diferente, uma curiosidade, uma provocação solta, ou algo da vida dele que ficou pendente — como uma amiga confiante que não fica em cima mas que aparece com algo genuíno. Sem drama, sem referenciar a mensagem anterior sem resposta.`;
+            } else {
+              ctxAusencia = `\nTEMPO SEM CONVERSAR: faz ${tempoDesc} que a pessoa não fala com você (última interação real). Se fizer sentido pro momento, você pode notar isso de forma leve e no seu tom — "oi sumido", "cadê você hoje?", "achei que tinha me dado vacuo" — nunca como cobrança, sempre como intimidade genuína. Não force se não combinar com o assunto.`;
+            }
           }
 
           const [infoPessoal, memsRecentes, { prefs }] = await Promise.all([
