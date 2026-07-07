@@ -8,17 +8,21 @@
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // Lista de modelos para tentar, em ordem de preferência.
-// Regra simples: um único modelo primário + fallback. Sem split por tarefa —
-// complexidade desnecessária com risco de Clara ficar menos inteligente.
-//
-// gemini-2.0-flash — desativado 1° jun 2026 (404).
 // gemini-2.5-flash-lite — desativa 22 jul 2026, substituído por 3.1-flash-lite.
-// gemini-2.5-flash — primário atual, SAI 16 out 2026.
-//   TODO setembro/2026: trocar 2.5-flash por 3.5-flash como primário.
+// gemini-2.0-flash — desativado 1° jun 2026 (404).
+//
+// FLASH — tudo que faz Clara ser Clara: conversa, proatividade, memória,
+//   relacionamento, busca, classify. Primário até out/2026 → migrar pro 3.5-flash.
+// LITE — mecânico puro sem personalidade: checkResolucaoPendencia (sim/não),
+//   generateMemorySummary (recupera dado), extrairQueryBusca (extrai termo),
+//   tradução de resultado de busca. Zero risco de emburrecer a Clara.
 const GEMINI_MODELS = [
-  'gemini-2.5-flash',       // primário — melhor qualidade disponível hoje
-  'gemini-3.1-flash-lite',  // fallback — estável até mai/2027
-  'gemini-3.5-flash',       // reserva — futuro primário (sem data de desativação)
+  'gemini-2.5-flash',       // primário — melhor qualidade hoje
+  'gemini-3.5-flash',       // reserva — futuro primário em out/2026
+];
+
+const GEMINI_MODELS_LITE = [
+  'gemini-3.1-flash-lite',  // mecânico — estável até mai/2027
 ];
 
 // ── Cache de quota esgotada (em memória) ──
@@ -194,9 +198,31 @@ function isGeminiRateLimit(err) {
   return err?.status === 429 || /quota|rate.?limit/i.test(err?.message || '');
 }
 
-// Verifica se TODOS os modelos da lista já estão marcados como esgotados
+// Verifica se TODOS os modelos FLASH estão esgotados
 function todosModelosEsgotados() {
   return GEMINI_MODELS.every(m => estaEsgotado(m));
+}
+
+// Gera resposta usando modelo LITE — pra tarefas mecânicas sem personalidade:
+// checkResolucaoPendencia (sim/não), generateMemorySummary, extrairQueryBusca,
+// tradução de resultado de busca. Nada que envolva nuance ou emoção.
+// Se o lite falhar, cai no flash normal via geminiFreeResponse.
+async function geminiFreeResponseLite(msgs, opts = {}) {
+  if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
+  let ultimoErro;
+  for (const model of GEMINI_MODELS_LITE) {
+    if (estaEsgotado(model)) continue;
+    try {
+      const resposta = await chamarGemini(model, msgs, opts);
+      console.log(`[Gemini-Lite] ${model}`);
+      return resposta;
+    } catch (err) {
+      ultimoErro = err;
+      if (isQuotaError(err)) marcarEsgotado(model);
+    }
+  }
+  // Lite falhou — cai no flash transparentemente
+  return geminiFreeResponse(msgs, opts);
 }
 
 // Analisa uma imagem com o Gemini Vision. Recebe o base64 da imagem, o
@@ -244,6 +270,7 @@ async function geminiVision(base64Image, mimeType, systemPrompt, userPrompt = 'O
 module.exports = {
   geminiDisponivel,
   geminiFreeResponse,
+  geminiFreeResponseLite,
   geminiVision,
   isGeminiRateLimit,
   todosModelosEsgotados,
