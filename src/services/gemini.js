@@ -8,16 +8,17 @@
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // Lista de modelos para tentar, em ordem de preferência.
-// gemini-2.0-flash — desativado definitivamente em 1° jun 2026 (404).
-// gemini-flash-latest — alias instável (agora aponta pra 3.5-flash, mas
-//   retornava vazio durante a transição); preferimos IDs fixos e estáveis.
-// gemini-2.5-flash — primário atual; ATENÇÃO: anunciado para desativação
-//   em 16/out/2026. Pós-lançamento de agosto, planejar migração pro 3.5-flash.
+// Regra simples: um único modelo primário + fallback. Sem split por tarefa —
+// complexidade desnecessária com risco de Clara ficar menos inteligente.
+//
+// gemini-2.0-flash — desativado 1° jun 2026 (404).
+// gemini-2.5-flash-lite — desativa 22 jul 2026, substituído por 3.1-flash-lite.
+// gemini-2.5-flash — primário atual, SAI 16 out 2026.
+//   TODO setembro/2026: trocar 2.5-flash por 3.5-flash como primário.
 const GEMINI_MODELS = [
-  'gemini-2.5-flash',       // primário — estável, melhor custo/inteligência hoje
-  'gemini-2.5-flash-lite',  // fallback leve — mais rápido/barato
-  'gemini-3.5-flash',       // substituto do 2.5-flash (sem data de desativação anunciada)
-  'gemini-2.5-pro',         // último recurso — mais capaz, mais caro
+  'gemini-2.5-flash',       // primário — melhor qualidade disponível hoje
+  'gemini-3.1-flash-lite',  // fallback — estável até mai/2027
+  'gemini-3.5-flash',       // reserva — futuro primário (sem data de desativação)
 ];
 
 // ── Cache de quota esgotada (em memória) ──
@@ -188,19 +189,12 @@ async function geminiFreeResponse(msgs, opts = {}) {
   throw ultimoErro || new Error('Todos os modelos Gemini falharam');
 }
 
-// Identifica se o erro do Gemini é rate limit (429) — para também sinalizar
-// modo direto caso o Gemini também esgote
+// Identifica se o erro do Gemini é rate limit (429)
 function isGeminiRateLimit(err) {
   return err?.status === 429 || /quota|rate.?limit/i.test(err?.message || '');
 }
 
 // Verifica se TODOS os modelos da lista já estão marcados como esgotados
-// (cache até meia-noite UTC). Permite ao chamador (groq.js) pular a etapa
-// do Gemini inteira quando não há nenhum modelo "fresco" para tentar —
-// evita o pequeno overhead de entrar na função e iterar a lista toda
-// (mesmo que cada item individual já seja rápido por estar em cache),
-// reduzindo ainda mais a latência da cascata Groq → Gemini → OpenRouter
-// quando o Gemini está sabidamente fora de cota por todo o dia.
 function todosModelosEsgotados() {
   return GEMINI_MODELS.every(m => estaEsgotado(m));
 }
