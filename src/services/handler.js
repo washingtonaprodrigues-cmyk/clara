@@ -331,7 +331,7 @@ async function buscarContextoRelacional(userId) {
 
 async function responderLivre(user, phone, text, contextoExtra = '', skipContext = false, acaoConfirmacao = null, confirmacaoSeparada = null) {
   try {
-    const history = await memory.getConversationHistory(user.id, 10);
+    const history = await memory.getConversationHistory(user.id, 16);
     const preferences = await memory.getUserPreference(user.id);
     preferences._phone = phone;
 
@@ -584,7 +584,27 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         : horaBRTnum < 18 ? 'tarde'
         : horaBRTnum < 22 ? 'noite'
         : 'fim da noite';
-      contexto += `\n\n[HORA ATUAL] Agora são ${horaBRTfmt} (Brasília), período: ${periodoDia}. Use isso pra saudar corretamente — não diga "bom dia" à tarde nem "hora do almoço" de manhã.`;
+      contexto += `\n\n[HORA ATUAL] Agora são ${horaBRTfmt} (Brasília), período: ${periodoDia}. Use isso pra saudar corretamente — NUNCA diga "bom dia" se não for manhã (5h-11h), NUNCA "boa tarde" se não for tarde (12h-18h), NUNCA "boa noite" se não for noite (18h-22h). Às ${horaBRTfmt} o correto é: ${periodoDia === 'madrugada' || periodoDia === 'fim da noite' ? 'NÃO usar saudação de período — só conversa normal' : `"bom ${periodoDia === 'manhã' ? 'dia' : periodoDia === 'horário de almoço' ? 'dia ainda' : periodoDia === 'tarde' ? 'tarde' : 'noite'}"`}.`;
+
+      // Injeta tempo desde a última mensagem — ela pode usar isso naturalmente
+      // pra notar ausências ("saudade já?", "voltou!", "sumiu por X minutos")
+      // sem precisar esperar a proativa. A regra 15 (presença emocional) diz
+      // que ela pode fazer isso — mas só funciona se ela souber o quanto.
+      try {
+        const ultimaMsgUser = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'conversa', content: { not: { startsWith: '[Clara]' } } },
+          orderBy: { createdAt: 'desc' }
+        }).catch(() => null);
+        if (ultimaMsgUser) {
+          const minAusente = Math.round((Date.now() - new Date(ultimaMsgUser.createdAt).getTime()) / 60000);
+          if (minAusente >= 20) {
+            const tempoDesc = minAusente >= 60
+              ? `${Math.round(minAusente / 60)}h${minAusente % 60 > 0 ? Math.round(minAusente % 60) + 'min' : ''}`
+              : `${minAusente} minutos`;
+            contexto += `\n\n[AUSÊNCIA] Faz ${tempoDesc} desde a última mensagem. Você pode (não obrigatoriamente) notar isso de forma leve e no seu tom — "saudade já?", "sumiu ${tempoDesc}", "voltou!" — só quando soar natural pro clima da conversa. Nunca force se não combinar.`;
+          }
+        }
+      } catch(eAus) { /* silencioso */ }
 
       // ── BOM DIA EMENDADO (proativo na resposta) ──
       // Se é de manhã (5h-11h), esta é a PRIMEIRA mensagem do usuário no dia,
@@ -1061,7 +1081,7 @@ async function handleMessage(phone, text, location = null) {
       // é ela reagindo de verdade ao ASSUNTO perguntado (curiosidade, piada,
       // opinião, o que for do estilo dela) e terminando com a promessa
       // natural de ir checar, tipo ela faria numa conversa normal.
-      const historicoBusca = await memory.getConversationHistory(user.id, 4).catch(() => []);
+      const historicoBusca = await memory.getConversationHistory(user.id, 8).catch(() => []);
       const comentarioPrevio = await freeResponse(text, historicoBusca, {
         name: apelidoReal,
         tom: tomBuscaClassify,
