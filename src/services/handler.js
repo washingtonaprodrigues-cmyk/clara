@@ -588,20 +588,39 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
       // Injeta tempo desde a última mensagem — ela pode usar isso naturalmente
       // pra notar ausências ("saudade já?", "voltou!", "sumiu por X minutos")
-      // sem precisar esperar a proativa. A regra 15 (presença emocional) diz
-      // que ela pode fazer isso — mas só funciona se ela souber o quanto.
+      // MAS só quando você voltou a falar. Se ela já mandou algo sem resposta,
+      // mencionar sumiço vira cobrança — nesse caso ela muda de assunto.
       try {
-        const ultimaMsgUser = await prisma.memory.findFirst({
-          where: { userId: user.id, type: 'conversa', content: { not: { startsWith: '[Clara]' } } },
-          orderBy: { createdAt: 'desc' }
-        }).catch(() => null);
+        const [ultimaMsgUser, ultimaMsgClara] = await Promise.all([
+          prisma.memory.findFirst({
+            where: { userId: user.id, type: 'conversa', content: { not: { startsWith: '[Clara]' } } },
+            orderBy: { createdAt: 'desc' }
+          }).catch(() => null),
+          prisma.memory.findFirst({
+            where: { userId: user.id, type: 'conversa', content: { startsWith: '[Clara]' } },
+            orderBy: { createdAt: 'desc' }
+          }).catch(() => null),
+        ]);
+
         if (ultimaMsgUser) {
           const minAusente = Math.round((Date.now() - new Date(ultimaMsgUser.createdAt).getTime()) / 60000);
           if (minAusente >= 20) {
             const tempoDesc = minAusente >= 60
               ? `${Math.round(minAusente / 60)}h${minAusente % 60 > 0 ? Math.round(minAusente % 60) + 'min' : ''}`
               : `${minAusente} minutos`;
-            contexto += `\n\n[AUSÊNCIA] Faz ${tempoDesc} desde a última mensagem. Você pode (não obrigatoriamente) notar isso de forma leve e no seu tom — "saudade já?", "sumiu ${tempoDesc}", "voltou!" — só quando soar natural pro clima da conversa. Nunca force se não combinar.`;
+
+            // Se Clara falou por último (sem resposta), não menciona o sumiço —
+            // isso vira cobrança. Ela volta com assunto diferente, leve, sem
+            // referenciar que você não respondeu. Uma amiga confiante não fica
+            // em cima; quando você volta é que ela pode brincar.
+            const claraFalouPorUltimo = ultimaMsgClara &&
+              new Date(ultimaMsgClara.createdAt) > new Date(ultimaMsgUser.createdAt);
+
+            if (claraFalouPorUltimo) {
+              contexto += `\n\n[RETORNO SEM COBRANÇA] Você já tentou contato antes e o usuário não tinha respondido ainda — agora ele voltou. NÃO mencione que ele sumiu, NÃO diga "sumido de novo", NÃO faça referência ao tempo que passou ou à sua mensagem anterior sem resposta. Receba ele normalmente, como se a conversa continuasse natural. Pode puxar um assunto novo, fazer uma pergunta curiosa, ou simplesmente reagir ao que ele disse agora — sem drama, sem cobrança.`;
+            } else {
+              contexto += `\n\n[AUSÊNCIA] Faz ${tempoDesc} desde a última mensagem. Você pode (não obrigatoriamente) notar isso de forma leve e no seu tom — "saudade já?", "sumiu ${tempoDesc}", "voltou!" — só quando soar natural pro clima da conversa. Nunca force se não combinar.`;
+            }
           }
         }
       } catch(eAus) { /* silencioso */ }
@@ -691,7 +710,10 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
     // Garante que resp é string — o Gemini pode retornar objeto em casos de erro
     const respStr = typeof resp === 'string' ? resp : String(resp || '');
-    if (!respStr) return;
+    if (!respStr) {
+      console.error(`[${phone}] Resposta gerada mas vazia após freeResponse — não enviando`);
+      return;
+    }
 
     // Mensagem realmente parece pedido de informação? (pergunta, "que
     // horas", "quando", etc). Usado tanto pra tag BUSCAR quanto pra
