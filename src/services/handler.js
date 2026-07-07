@@ -730,7 +730,11 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           const memAfetivaProm = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
           const apelidoProm = memAfetivaProm?.apelido_usuario || preferences?.name || '';
           const contextoRelProm = await buscarContextoRelacional(user.id);
-          const resultado = await searchWeb(queryBusca, '', apelidoProm, preferences?.tom || 'carinhoso', contextoRelProm);
+          // Se o usuário estava CONTANDO algo (não perguntando), Clara buscou
+          // pra ela mesma ficar por dentro — usa modo 'participar' pra não
+          // explicar de volta pro usuário algo que ele mesmo já sabe.
+          const modoBusca = pareceuPedidoInfo ? 'informar' : 'participar';
+          const resultado = await searchWeb(queryBusca, '', apelidoProm, preferences?.tom || 'carinhoso', contextoRelProm, modoBusca);
           if (resultado && !isRespostaFallback(resultado)) {
             await memory.saveConversationMessage(user.id, 'assistant', resultado).catch(() => {});
             await sendMessage(phone, resultado);
