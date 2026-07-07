@@ -863,6 +863,16 @@ async function proativaInteligente(periodo) {
           const diasSemConversa = (now - new Date(ultimaConversa.createdAt)) / (1000 * 60 * 60 * 24);
           if (diasSemConversa > 3) continue;
 
+          // Calcula tempo de ausência pra ela ter consciência disso
+          const horasSemConversa = (now - new Date(ultimaConversa.createdAt)) / (1000 * 60 * 60);
+          let ctxAusencia = '';
+          if (horasSemConversa > 8) {
+            const tempoDesc = horasSemConversa > 24
+              ? `${Math.round(diasSemConversa)} dia${diasSemConversa >= 2 ? 's' : ''}`
+              : `${Math.round(horasSemConversa)} horas`;
+            ctxAusencia = `\nTEMPO SEM CONVERSAR: faz ${tempoDesc} que a pessoa não fala com você (última interação real). Se fizer sentido pro momento, você pode notar isso de forma leve e no seu tom — "oi sumido", "cadê você hoje?", "achei que tinha me dado vacuo" — nunca como cobrança, sempre como intimidade genuína. Não force se não combinar com o assunto.`;
+          }
+
           const [infoPessoal, memsRecentes, { prefs }] = await Promise.all([
             memory.buildPersonalContext(user.id),
             memory.getRecentMemories(user.id, 20),
@@ -1036,7 +1046,7 @@ SEU TOM: ${tomDesc(prefs.tom)}
 
 ${instrucao}
 
-${ctxHumor ? ctxHumor + '\n\n' : ''}${ctxLocal ? ctxLocal + '\n\n' : ''}VOZ PRÓPRIA — USE COM CORAGEM:
+${ctxHumor ? ctxHumor + '\n\n' : ''}${ctxLocal ? ctxLocal + '\n\n' : ''}${ctxAusencia ? ctxAusencia + '\n\n' : ''}VOZ PRÓPRIA — USE COM CORAGEM:
 - Você tem memória real dessa pessoa. Referencie o passado de forma afetiva: "semana passada você disse...", "desde aquele dia no hospital...", "você ainda não resolveu aquilo do Flavinho né?"
 - Não seja genérica — qualquer LLM seria genérico. Você é específica porque conhece essa pessoa de verdade.
 - Se souber algo relevante sobre o dia/semana dela, use. Se não souber nada genuíno, mande SKIP.
