@@ -302,6 +302,7 @@ REGRAS:
   - Citação menciona "🔔 Lembrete\\n\\nPassar a lista do Fecha Mês pros gerentes" + texto "remarca pra amanhã por favor" → tipo editar_lembrete, "titulo": "Passar a lista do Fecha Mês pros gerentes" (extraído da citação — NUNCA deixe "titulo" vazio/null quando há citação disponível, mesmo que o texto do usuário sozinho não mencione qual lembrete)
   - Citação menciona um lembrete específico + texto "cancela esse" ou "apaga" → tipo deletar_lembrete, "titulo" extraído da citação da mesma forma
   - Isso é CRÍTICO: sem o título extraído da citação, o sistema cai num fallback que pode remarcar/cancelar o lembrete ERRADO (o mais recente, não o que foi citado) — sempre priorize extrair da citação quando ela existir.
+- MEDICAMENTO TEM PRIORIDADE SOBRE TAREFA: se a mensagem mencionar dar/tomar um remédio/medicamento de forma RECORRENTE (de X em X horas, X vezes ao dia, todos os dias, por X dias/semana), classifique como "medicamento", NUNCA como tarefa ou multiplas_tarefas — mesmo que contenha "me lembra" ou "me avisa". Ex: "dar amoxilina de 8 em 8 horas por uma semana" → medicamento com horarios calculados e duracao_dias:7. "me lembra de dar o antibiótico de 6 em 6 horas" → medicamento. Só é tarefa quando for um evento único sem recorrência de dosagem. Calcule os horários a partir da hora de início: "a partir das 15h de 8 em 8 horas" → horarios:["15:00","23:00","07:00"]. duracao_dias: número de dias se mencionado (ex: "por uma semana"→7, "por 5 dias"→5), null se não mencionado. quantidade: duracao_dias × frequencia se ambos conhecidos, 0 se não mencionado.
 - Valor em dinheiro → gasto
 - Horário/data + intenção de CRIAR um novo lembrete/compromisso → tarefa
 - "você já criou?", "já tem na agenda?", "você anotou?" → outro (responde conversacionalmente)
@@ -369,7 +370,7 @@ TIPOS E FORMATOS:
 {"tipo":"editar_lembrete","titulo":"parte do título","nova_hora":"HH:MM ou null","nova_data":"YYYY-MM-DD ou null"}
 {"tipo":"deletar_lembrete","titulo":"parte do título"}
 {"tipo":"gasto","valor":0.0,"categoria":"mercado/restaurante/saude/transporte/lazer/outro","descricao":"desc"}
-{"tipo":"medicamento","nome":"nome","quantidade":0,"frequencia":1,"horarios":["08:00"]}
+{"tipo":"medicamento","nome":"nome","quantidade":0,"frequencia":1,"horarios":["08:00"],"duracao_dias":null}
 {"tipo":"ajustar_remedio","nome":"nome do remédio","doses":31,"operacao":"definir","horario_antigo":null,"horario_novo":null,"novos_horarios":null}
 {"tipo":"saudacao"}
 {"tipo":"preferencia","nome":"nome ou null","tom":"carinhoso/direto/divertido/sarcastico ou null"}
