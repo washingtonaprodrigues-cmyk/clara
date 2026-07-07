@@ -495,6 +495,29 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         }
       } catch(e) {}
 
+      // ── Conhecimento que Clara adquiriu pesquisando em sessões anteriores ──
+      // Quando ela pesquisou algo pra si mesma (modo 'participar'), guarda
+      // aqui. Nas próximas conversas, se o assunto aparecer, ela já sabe —
+      // não precisa anunciar que vai buscar como se fosse novidade.
+      try {
+        const conhecimentos = await prisma.memory.findMany({
+          where: {
+            userId: user.id,
+            type: 'conhecimento_adquirido',
+            createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 5
+        });
+        if (conhecimentos.length > 0) {
+          const lista = conhecimentos.map(c => {
+            let meta = {}; try { meta = JSON.parse(c.metadata || '{}'); } catch {}
+            return `• ${c.content}${meta.resumo ? ': ' + meta.resumo.slice(0, 120) : ''}`;
+          }).join('\n');
+          contexto += `\n\n[ASSUNTOS QUE JÁ PESQUISEI — já conheço, posso entrar na conversa direto]\n${lista}`;
+        }
+      } catch(e) {}
+
       // ── Pendência de saúde: traz à tona se fizer sentido na conversa ──
       // ── Pendência de saúde: só aparece no contexto se fizer sentido ──
       // IMPORTANTE: quando há pendência de saúde/evento, injeta agenda relacionada
@@ -735,6 +758,23 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           // explicar de volta pro usuário algo que ele mesmo já sabe.
           const modoBusca = pareceuPedidoInfo ? 'informar' : 'participar';
           const resultado = await searchWeb(queryBusca, '', apelidoProm, preferences?.tom || 'carinhoso', contextoRelProm, modoBusca);
+          // Modo 'participar': salva na memória de longa duração o que ela
+          // aprendeu — nas próximas sessões ela já sabe do assunto e não
+          // precisa anunciar que vai pesquisar de novo como se fosse novidade.
+          if (modoBusca === 'participar' && resultado && !isRespostaFallback(resultado)) {
+            await prisma.memory.create({
+              data: {
+                userId: user.id,
+                type: 'conhecimento_adquirido',
+                content: queryBusca,
+                metadata: JSON.stringify({
+                  resumo: resultado.slice(0, 300),
+                  dataAprendido: new Date().toISOString(),
+                  expira: Date.now() + 30 * 24 * 60 * 60 * 1000 // 30 dias
+                })
+              }
+            }).catch(() => {});
+          }
           if (resultado && !isRespostaFallback(resultado)) {
             await memory.saveConversationMessage(user.id, 'assistant', resultado).catch(() => {});
             await sendMessage(phone, resultado);
