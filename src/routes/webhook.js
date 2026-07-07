@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { handleMessage } = require('../services/handler');
+const { freeResponse } = require('../services/groq');
 const memory = require('../services/memory');
 const rateLimit = require('../services/rateLimit');
 const { PrismaClient } = require('@prisma/client');
@@ -88,20 +89,29 @@ const LEMBRETE_FEITO = [
 async function getLembretePendente(userId, phone, quotedText) {
   if (quotedText) {
     const quotedLower = quotedText.toLowerCase();
+    // Quando há citação, busca o dia inteiro (usuário pode responder horas
+    // depois — a janela de 15min era muito curta e fazia a confirmação
+    // cair no handler da IA, gerando resposta genérica "Boa, fedo!")
+    const hoje = new Date(nowBRT());
+    hoje.setHours(0, 0, 0, 0);
     const naoConcluidos = await prisma.reminder.findMany({
-      where: { OR: [{ userId, confirmed: false }, { phone, confirmed: false }] },
+      where: {
+        OR: [{ userId, confirmed: false }, { phone, confirmed: false }],
+        scheduledAt: { gte: hoje }
+      },
       orderBy: { scheduledAt: 'desc' }
     });
     const porCitacao = naoConcluidos.find(r => quotedLower.includes(r.message.toLowerCase()));
     if (porCitacao) return porCitacao;
   }
 
-  const quinze = new Date(nowBRT().getTime() - 15 * 60 * 1000);
+  // Sem citação — janela de 30min (era 15min, aumentado pra dar margem real)
+  const trintaMin = new Date(nowBRT().getTime() - 30 * 60 * 1000);
   const candidatos = await prisma.reminder.findMany({
     where: {
       OR: [
-        { userId, sent: true, confirmed: false, scheduledAt: { gte: quinze } },
-        { phone, sent: true, confirmed: false, scheduledAt: { gte: quinze } },
+        { userId, sent: true, confirmed: false, scheduledAt: { gte: trintaMin } },
+        { phone, sent: true, confirmed: false, scheduledAt: { gte: trintaMin } },
       ]
     },
     orderBy: { scheduledAt: 'desc' }
@@ -238,7 +248,35 @@ async function handleSimpleResponse(phone, text, quotedText) {
     const lembrete = await getLembretePendente(user.id, phone, quotedText);
     if (lembrete) {
       await prisma.reminder.update({ where: { id: lembrete.id }, data: { confirmed: true } });
+      // 1ª msg: confirmação do sistema — curta, neutra, sem personalidade
       await sendMessage(phone, `✅ Feito! "${lembrete.message}" concluído.`, 400, quotedText);
+      // 2ª msg: Clara sendo ela mesma — comentário natural sobre o que foi feito,
+      // separado da confirmação pra não misturar os dois tipos de mensagem.
+      // Roda em background (não bloqueia o webhook de retornar).
+      ;(async () => {
+        try {
+          await new Promise(r => setTimeout(r, 2000));
+          const prefs = await memory.getUserPreference(user.id).catch(() => ({}));
+          const memAfetiva = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+          const apelido = memAfetiva?.apelido_usuario || prefs?.name || '';
+          const relMemoria = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+          const contextoRel = relMemoria?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoria.content}` : '';
+          const history = await memory.getConversationHistory(user.id, 4).catch(() => []);
+          const comentario = await freeResponse(
+            `Acabei de confirmar que fiz: "${lembrete.message}"`,
+            history,
+            {
+              name: apelido,
+              tom: prefs?.tom || 'carinhoso',
+              _contexto: contextoRel + `\n\n[LEMBRETE CONCLUÍDO] O usuário acabou de confirmar que concluiu a tarefa "${lembrete.message}". Reaja de forma natural e curta — pode parabenizar, perguntar como foi, fazer uma piada sobre o assunto, o que for mais natural pro momento. Máximo 2 linhas. NÃO repita que a tarefa foi concluída (isso já foi dito na mensagem anterior).`
+            }
+          ).catch(() => null);
+          if (comentario) {
+            await sendMessage(phone, comentario);
+            await memory.saveConversationMessage(user.id, 'assistant', comentario).catch(() => {});
+          }
+        } catch(e) { console.error('[LembreteConfirm] Erro no comentário:', e.message); }
+      })();
       return true;
     }
   }
