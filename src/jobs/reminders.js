@@ -884,6 +884,7 @@ async function proativaInteligente(periodo) {
           if (diasSemConversa > 3) continue;
 
           // Contexto de ausência — só depois de 2h pra não parecer cobrança
+          const horasSemConversa = diasSemConversa * 24;
           let ctxAusencia = '';
           if (horasSemConversa >= 2) {
             const tempoDesc = horasSemConversa > 24
