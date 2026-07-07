@@ -268,7 +268,7 @@ async function handleSimpleResponse(phone, text, quotedText) {
             {
               name: apelido,
               tom: prefs?.tom || 'carinhoso',
-              _contexto: contextoRel + `\n\n[LEMBRETE CONCLUÍDO] O usuário acabou de confirmar que concluiu a tarefa "${lembrete.message}". Reaja de forma natural e curta — pode parabenizar, perguntar como foi, fazer uma piada sobre o assunto, o que for mais natural pro momento. Máximo 2 linhas. NÃO repita que a tarefa foi concluída (isso já foi dito na mensagem anterior).`
+              _contexto: contextoRel + `\n\n[LEMBRETE CONCLUÍDO] O usuário acabou de confirmar que concluiu a tarefa "${lembrete.message}". Reaja de forma natural e curta — pode parabenizar, perguntar como foi, fazer uma piada sobre o assunto, ou usar isso como gancho pra puxar um assunto pessoal relevante do contexto ("e aquela consulta que você tinha hoje, foi bem?"). Essa é uma chance de presença genuína, não só de acusar o recebimento. Máximo 2 linhas. NÃO repita que a tarefa foi concluída (isso já foi dito na mensagem anterior).`
             }
           ).catch(() => null);
           if (comentario) {
