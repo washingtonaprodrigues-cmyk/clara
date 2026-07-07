@@ -261,17 +261,15 @@ async function handleSimpleResponse(phone, text, quotedText) {
           const apelido = memAfetiva?.apelido_usuario || prefs?.name || '';
           const relMemoria = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
           const contextoRel = relMemoria?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoria.content}` : '';
-          const history = await memory.getConversationHistory(user.id, 4).catch(() => []);
-          const comentario = await freeResponse(
-            `Acabei de confirmar que fiz: "${lembrete.message}"`,
-            history,
-            {
-              name: apelido,
-              tom: prefs?.tom || 'carinhoso',
-              _contexto: contextoRel + `\n\n[LEMBRETE CONCLUÍDO] O usuário acabou de confirmar que concluiu a tarefa "${lembrete.message}". Reaja de forma natural e curta — pode parabenizar, perguntar como foi, fazer uma piada sobre o assunto, ou usar isso como gancho pra puxar um assunto pessoal relevante do contexto ("e aquela consulta que você tinha hoje, foi bem?"). Essa é uma chance de presença genuína, não só de acusar o recebimento. Máximo 2 linhas. NÃO repita que a tarefa foi concluída (isso já foi dito na mensagem anterior).`
-            }
-          ).catch(() => null);
-          if (comentario) {
+          const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('../services/gemini');
+          const { buildPersonality } = require('../services/groq');
+          if (!geminiDisponivel() || todosModelosEsgotados()) return;
+          const sistema = buildPersonality(prefs?.tom || 'carinhoso', apelido, false) + contextoRel + `\n\n[LEMBRETE CONCLUÍDO] O usuário acabou de confirmar que concluiu "${lembrete.message}". Reaja de forma natural e curta — parabenize, pergunte como foi, faça uma piada, ou use como gancho pra puxar algo relevante. Máximo 2 linhas. NÃO repita que a tarefa foi concluída.`;
+          const comentario = await geminiFreeResponse([
+            { role: 'system', content: sistema },
+            { role: 'user', content: `Acabei de confirmar que fiz: "${lembrete.message}"` }
+          ], { temperature: 0.85, maxTokens: 120 }).catch(() => null);
+          if (comentario && comentario.trim().length > 3) {
             await sendMessage(phone, comentario);
             await memory.saveConversationMessage(user.id, 'assistant', comentario).catch(() => {});
           }
