@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { handleMessage } = require('../services/handler');
-const { freeResponse } = require('../services/groq');
+const { freeResponse, buildPersonality } = require('../services/groq');
+const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('../services/gemini');
 const memory = require('../services/memory');
 const rateLimit = require('../services/rateLimit');
 const { PrismaClient } = require('@prisma/client');
@@ -261,8 +262,6 @@ async function handleSimpleResponse(phone, text, quotedText) {
           const apelido = memAfetiva?.apelido_usuario || prefs?.name || '';
           const relMemoria = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
           const contextoRel = relMemoria?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoria.content}` : '';
-          const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('../services/gemini');
-          const { buildPersonality } = require('../services/groq');
           if (!geminiDisponivel() || todosModelosEsgotados()) return;
           const sistema = buildPersonality(prefs?.tom || 'carinhoso', apelido, false) + contextoRel + `\n\n[LEMBRETE CONCLUÍDO] O usuário acabou de confirmar que concluiu "${lembrete.message}". Reaja de forma natural e curta — parabenize, pergunte como foi, faça uma piada, ou use como gancho pra puxar algo relevante. Máximo 2 linhas. NÃO repita que a tarefa foi concluída.`;
           const comentario = await geminiFreeResponse([
