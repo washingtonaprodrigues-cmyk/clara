@@ -1334,7 +1334,11 @@ function filtrarResposta(t) {
   // resposta da IA — isso é confirmação estruturada que já vai numa mensagem
   // separada (confirmacaoSeparada), não deve aparecer na resposta em texto.
   t = t.replace(/^[✅☑️]*\s*Anotado[!.]?\s*[""]?[^""\n]*[""]?\s*[⏰📌]?\s*\n?/gim, '').trim();
-  t = t.replace(/^[✅☑️]+\s*/gm, '').trim();
+  // Remove ✅ apenas quando aparece no INÍCIO de confirmações estruturadas
+  // (ex: "✅ Anotado! ...") — mas NÃO quando é a resposta inteira curta
+  // do Gemini que pode começar com emoji. Só remove se vier acompanhado
+  // de padrões de confirmação específicos que não devem aparecer na fala dela.
+  t = t.replace(/^[✅☑️]+\s*(?=Anotado|Lembrete|Registrado|Criado|Concluído|Feito!)/gm, '').trim();
   // Remove confirmações de lembrete que vazam no início da resposta
   // Cobre: "Lembrete criado: X", "Lembrete 'X' criado para DD/MM/YYYY às HH:MM"
   // Cobre também: "Lembrete para 'X' agendado para hoje às HH:MM"
