@@ -619,48 +619,20 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       // MAS só quando você voltou a falar. Se ela já mandou algo sem resposta,
       // mencionar sumiço vira cobrança — nesse caso ela muda de assunto.
       try {
-        const [ultimaMsgUser, ultimaMsgClara] = await Promise.all([
-          prisma.memory.findFirst({
-            where: { userId: user.id, type: 'conversa', content: { not: { startsWith: '[Clara]' } } },
-            orderBy: { createdAt: 'desc' }
-          }).catch(() => null),
-          // Só conta mensagens de PERSONALIDADE da Clara — não confirmações de
-          // sistema ([Clara] ✅ Pode deixar!...) que salvamos como marcadores.
-          // Sem isso, qualquer confirmação de tarefa fazia claraFalouPorUltimo=true
-          // e injetava [RETORNO SEM COBRANÇA] em toda resposta, abafando a
-          // personalidade dela mesmo no meio de conversas ativas.
-          prisma.memory.findFirst({
-            where: {
-              userId: user.id,
-              type: 'conversa',
-              content: {
-                startsWith: '[Clara]',
-                not: { contains: '✅' }   // exclui confirmações de sistema
-              }
-            },
-            orderBy: { createdAt: 'desc' }
-          }).catch(() => null),
-        ]);
+        const ultimaMsgUser = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'conversa', content: { not: { startsWith: '[Clara]' } } },
+          orderBy: { createdAt: 'desc' }
+        }).catch(() => null);
 
         if (ultimaMsgUser) {
           const minAusente = Math.round((Date.now() - new Date(ultimaMsgUser.createdAt).getTime()) / 60000);
-          if (minAusente >= 20) {
+          // Só nota ausência depois de 2h — menos que isso é conversa normal,
+          // não tem sentido chamar de sumido quem saiu pra almoçar.
+          if (minAusente >= 120) {
             const tempoDesc = minAusente >= 60
               ? `${Math.round(minAusente / 60)}h${minAusente % 60 > 0 ? Math.round(minAusente % 60) + 'min' : ''}`
               : `${minAusente} minutos`;
-
-            // Só aplica "sem cobrança" se Clara genuinamente ficou esperando
-            // sem resposta por 30+ minutos — conversas ativas com intervalo
-            // curto não devem receber essa instrução restritiva.
-            const claraFalouPorUltimo = ultimaMsgClara &&
-              new Date(ultimaMsgClara.createdAt) > new Date(ultimaMsgUser.createdAt) &&
-              minAusente >= 30;
-
-            if (claraFalouPorUltimo) {
-              contexto += `\n\n[RETORNO SEM COBRANÇA] Você já tentou contato antes e o usuário não tinha respondido ainda — agora ele voltou. NÃO mencione que ele sumiu, NÃO diga "sumido de novo", NÃO faça referência ao tempo que passou ou à sua mensagem anterior sem resposta. Receba ele normalmente, como se a conversa continuasse natural. Pode puxar um assunto novo, fazer uma pergunta curiosa, ou simplesmente reagir ao que ele disse agora — sem drama, sem cobrança.`;
-            } else {
-              contexto += `\n\n[AUSÊNCIA] Faz ${tempoDesc} desde a última mensagem. Você pode (não obrigatoriamente) notar isso de forma leve e no seu tom — "saudade já?", "sumiu ${tempoDesc}", "voltou!" — só quando soar natural pro clima da conversa. Nunca force se não combinar.`;
-            }
+            contexto += `\n\n[AUSÊNCIA — faz ${tempoDesc}] Se tiver assunto pendente ou contexto da vida dele pra puxar (episódio, o que estava acontecendo, algo que ele mencionou antes), use isso de forma natural e no seu tom — "e aí fedo, almoçou bem?", "e a macarronada da sogra, tava boa?" — sem mencionar que sumiu. Se não tiver assunto concreto, aí pode fazer um check-in leve e íntimo conforme o tom — "oi sumido, como tá por aí?", "cadê você?", "voltou!" — nunca como cobrança, sempre como intimidade. Não force se não combinar com o clima da conversa.`;
           }
         }
       } catch(eAus) { /* silencioso */ }
