@@ -2,6 +2,7 @@
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
 const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca } = require('./groq');
+const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('./gemini');
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
 // O classify() já recebe uma tabela com a data exata de cada dia da semana
@@ -317,6 +318,21 @@ function formatarListaWhatsApp(listaResult) {
   const itens = listaItems.map(i => `${i.done ? '✅' : '⬜'} ${i.id}. ${i.nome}`).join('\n');
   const done = listaItems.filter(i => i.done).length;
   return `🛒 *${listaNome}*\n\n${itens}\n\n_${done}/${listaItems.length} itens marcados_`;
+}
+
+// Gera um comentário de personalidade curto via Gemini puro — sem cascata
+// pra Groq. Usado nos backgrounds opcionais (pós-lembrete, pós-medicamento,
+// pós-multiplas_tarefas). Se Gemini falhar, retorna null silenciosamente —
+// esses comentários são opcionais; melhor não mandar do que mandar genérico.
+async function comentarioGemini(systemPrompt, userMessage, maxTokens = 150) {
+  try {
+    if (!geminiDisponivel() || todosModelosEsgotados()) return null;
+    const resp = await geminiFreeResponse([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage }
+    ], { temperature: 0.85, maxTokens });
+    return resp && resp.trim().length > 3 ? resp.trim() : null;
+  } catch { return null; }
 }
 
 // Monta o pedacinho de contexto relacional (apelidos, piadas internas, tom
@@ -1290,11 +1306,19 @@ async function handleMessage(phone, text, location = null) {
       }
     }
 
+    const medFreq = classified.frequencia || classified.horarios?.length || 1;
+    const medDur = classified.duracao_dias || null;
+    const medQtd = classified.quantidade || (medDur ? medDur * medFreq : 0);
+    const medHorarios = (classified.horarios || ['08:00']).join(', ');
+    let medConfirmacao = `✅ Medicamento cadastrado!\n\n💊 *${classified.nome || 'Remédio'}*\n⏰ Horários: ${medHorarios}`;
+    if (medDur) medConfirmacao += `\n📅 Duração: ${medDur} ${medDur === 1 ? 'dia' : 'dias'}`;
+    if (medQtd) medConfirmacao += `\n📦 Estoque: ${medQtd} doses`;
+
     const CONFIRMACOES_ACAO = {
       tarefa: confirmacaoTarefa,
       gasto: '✅ Gasto registrado!',
       entrada_financeira: '✅ Entrada registrada!',
-      medicamento: '✅ Medicamento cadastrado!',
+      medicamento: medConfirmacao,
       anotacao: '✅ Anotado!',
       ajustar_remedio: confirmacaoAjusteRemedio || '😕 Não encontrei esse remédio. Me diz o nome certinho?',
     };
@@ -1323,8 +1347,60 @@ async function handleMessage(phone, text, location = null) {
     // dizendo que criou tarefas que não foram processadas. A confirmação
     // lista exatamente o que foi gravado no banco.
     if (classified.tipo === 'multiplas_tarefas' && acaoConfirmacao) {
+      // 1ª msg: confirmação estruturada com a lista
       await sendMessage(phone, acaoConfirmacao);
+      // Salva marcador de conversa pra proativa não disparar por cima
+      await memory.saveConversationMessage(user.id, 'assistant', '[Clara] ' + acaoConfirmacao).catch(() => {});
       emitirAtualizacao(phone, 'lembretes');
+      // 2ª msg: Clara sendo ela — comentário natural sobre os lembretes,
+      // igual ao fluxo de tarefa única mas em background pra não atrasar.
+      ;(async () => {
+        try {
+          await new Promise(r => setTimeout(r, 1800));
+          const prefsMulti = await memory.getUserPreference(user.id).catch(() => ({}));
+          const memAfetivaMulti = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+          const apelidoMulti = memAfetivaMulti?.apelido_usuario || prefsMulti?.name || '';
+          const relMemMulti = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+          const ctxRelMulti = relMemMulti?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemMulti.content}` : '';
+          const { buildPersonality } = require('./groq');
+          const sistemaMulti = buildPersonality(prefsMulti?.tom || 'carinhoso', apelidoMulti, false) + ctxRelMulti + `\n\n[LEMBRETES CRIADOS] Você acabou de criar ${classified.tarefas?.length || 'vários'} lembretes. A confirmação estruturada já foi enviada. Reaja de forma natural e curta — comente, brinque, incentive. Máximo 2 linhas. NÃO liste os lembretes, NÃO repita que vai avisar.`;
+          const comentarioMulti = await comentarioGemini(sistemaMulti, text, 120);
+          if (comentarioMulti && !isRespostaFallback(comentarioMulti)) {
+            await sendMessage(phone, comentarioMulti);
+            await memory.saveConversationMessage(user.id, 'assistant', comentarioMulti).catch(() => {});
+          }
+        } catch(e) { console.error('[MultitaskComment] Erro:', e.message); }
+      })();
+      return;
+    }
+
+    if (classified.tipo === 'medicamento' && acaoConfirmacao) {
+      // 1ª msg: confirmação estruturada
+      await sendMessage(phone, acaoConfirmacao);
+      // Salva marcador pra proativa não disparar por cima
+      await memory.saveConversationMessage(user.id, 'assistant', '[Clara] medicamento cadastrado').catch(() => {});
+      emitirAtualizacao(phone, 'remedios');
+      // 2ª msg: Clara sendo ela — se não tem estoque cadastrado, pergunta
+      // sobre a embalagem de forma natural (comprimidos/ml), que é a
+      // informação certa pra controlar o estoque, não "quantas doses".
+      ;(async () => {
+        try {
+          await new Promise(r => setTimeout(r, 1800));
+          const prefsMed = await memory.getUserPreference(user.id).catch(() => ({}));
+          const memAfetivaMed = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+          const apelidoMed = memAfetivaMed?.apelido_usuario || prefsMed?.name || '';
+          const relMemMed = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+          const ctxRelMed = relMemMed?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemMed.content}` : '';
+          const temEstoque = !!(classified.quantidade || (classified.duracao_dias && medFreq));
+          const { buildPersonality } = require('./groq');
+          const sistemaMed = buildPersonality(prefsMed?.tom || 'carinhoso', apelidoMed, false) + ctxRelMed + `\n\n[MEDICAMENTO CADASTRADO] Você acabou de cadastrar ${classified.nome || 'um remédio'}. A confirmação estruturada já foi enviada. ${temEstoque ? 'Reaja de forma natural e curta — comente, incentive ou faça uma pergunta leve.' : 'Pergunte de forma natural quantos comprimidos ou ml vem na embalagem — pra controlar o estoque e avisar quando acabar. Não use a palavra "doses". Máximo 2 linhas.'}`;
+          const comentarioMed = await comentarioGemini(sistemaMed, text, 120);
+          if (comentarioMed && !isRespostaFallback(comentarioMed)) {
+            await sendMessage(phone, comentarioMed);
+            await memory.saveConversationMessage(user.id, 'assistant', comentarioMed).catch(() => {});
+          }
+        } catch(e) { console.error('[MedComment] Erro:', e.message); }
+      })();
       return;
     }
 
@@ -1747,7 +1823,19 @@ async function executeAction(user, phone, classified, originalText) {
       }
       break;
     case 'medicamento':
-      if (classified.nome) await memory.saveMedication(user.id, { nome: classified.nome, quantidade: classified.quantidade || 0, frequencia: classified.frequencia || 1, horarios: classified.horarios || ['08:00'] });
+      if (classified.nome) {
+        const freq = classified.frequencia || classified.horarios?.length || 1;
+        const durDias = classified.duracao_dias || null;
+        // Calcula estoque: duracao × frequencia, ou o que veio no classified
+        let qtd = classified.quantidade || 0;
+        if (!qtd && durDias && freq) qtd = durDias * freq;
+        await memory.saveMedication(user.id, {
+          nome: classified.nome,
+          quantidade: qtd,
+          frequencia: freq,
+          horarios: classified.horarios || ['08:00']
+        });
+      }
       break;
     case 'preferencia':
       if (classified.tom && typeof classified.tom === 'string' && classified.tom.trim()) {
