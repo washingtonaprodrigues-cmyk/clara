@@ -745,20 +745,26 @@ async function extractPendenciaEmocional(message) {
 // Diferente de pendência emocional (mal-estar) — é evento concreto da vida.
 const EPISODIO_KEYWORDS = /consult|médic|doctor|exame|resultado|receita|remédio novo|festa|aniversário|viagem|comprei|comprou|passei|fui|foi|chegou|chegaram|nasceu|formou|operou|cirurgi|internado|alta|aprovado|reprovado|consegui|perdi|ganhei|vendi|comprei|história|terror|conto|inventar|criar.*história|estava contando|ficou no meio|deixou pra depois|combinamos|próxima vez|continua|continuar|ficou pendente|prometeu|prometemos/i;
 
-const EXTRACT_EPISODIO_SYSTEM = `Você extrai eventos e momentos marcantes para memória futura — tanto eventos concretos de vida quanto experiências compartilhadas que ficaram pendentes.
+const EXTRACT_EPISODIO_SYSTEM = `Você extrai eventos da vida do usuário que aconteceram ou vão acontecer, para a Clara lembrar e acompanhar naturalmente.
 Retorne JSON: {"episodio": true/false, "titulo": "resumo curto", "tipo": "saude|familia|trabalho|financeiro|social|criativo|outro", "resultado": "positivo|negativo|neutro|pendente", "acompanhar_em_dias": 1-7}
-- episodio: true para eventos concretos E para experiências compartilhadas que ficaram no meio ou merecem continuidade
+- episodio: true para eventos concretos E para experiências compartilhadas que ficaram pendentes
 - tipo "criativo": histórias inventadas juntos, brincadeiras que ficaram pendentes, planos de jogar/assistir/criar algo
 - resultado "pendente": algo que começou mas não terminou, combinado pra continuar depois
-- acompanhar_em_dias: quando faz sentido retomar (história no meio → 1-2 dias)
+- acompanhar_em_dias: quando faz sentido retomar
+
+NÃO SALVAR — episodio: false obrigatório:
+- Conversas íntimas, flerte, provocações, mensagens de cunho sexual ou romântico — esses assuntos existem entre vocês mas NÃO viram episódio rastreado. A Clara só retoma se o usuário tocar no assunto primeiro.
+- Bate-papo casual, saudações, zoeiras sem evento concreto
+- Algo que já foi resolvido na conversa
+
 Se não for nada relevante: {"episodio": false}
 Exemplos:
 "fui ao cardiologista, receitou Holmis e Landizin" → {"episodio":true,"titulo":"Consulta cardiologista — Holmis e Landizin receitados","tipo":"saude","resultado":"neutro","acompanhar_em_dias":3}
 "festa da Isis amanhã" → {"episodio":true,"titulo":"Festa da Isis","tipo":"familia","resultado":"pendente","acompanhar_em_dias":2}
 "estava contando uma história de terror mas parou no meio" → {"episodio":true,"titulo":"História de terror — ficou no meio","tipo":"criativo","resultado":"pendente","acompanhar_em_dias":2}
-"combinamos de inventar uma história juntos" → {"episodio":true,"titulo":"Combinaram de criar história juntos","tipo":"criativo","resultado":"pendente","acompanhar_em_dias":1}
-"tudo bem" → {"episodio":false}
-"kkk que engraçado" → {"episodio":false}`;
+"me provocou a madrugada toda" → {"episodio":false}
+"conversa mais quente" → {"episodio":false}
+"tudo bem" → {"episodio":false}`;
 
 async function extractEpisodio(message) {
   try {
@@ -1705,6 +1711,7 @@ NÃO SALVAR se for:
 - Conversa trivial, saudação, bate-papo sem substância
 - Plano abstrato sem data/evento concreto ("quer criar rotina", "quer priorizar tarefas")
 - Pergunta respondida, pedido de informação atendido
+- Conversa íntima, flerte, provocação ou assunto de cunho sexual/romântico — esses assuntos existem naturalmente entre vocês mas NÃO viram pendência rastreada. Ela só retoma se o usuário trouxer primeiro.
 
 CONVERSA:
 ${resumo}
