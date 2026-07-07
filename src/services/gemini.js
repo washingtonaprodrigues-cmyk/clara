@@ -8,14 +8,16 @@
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // Lista de modelos para tentar, em ordem de preferência.
-// gemini-1.5-flash e gemini-1.5-flash-8b foram descontinuados (404).
-// gemini-2.0-flash retornou "limit: 0" no free tier para esta conta —
-// tentamos as versões 2.5 (atuais) primeiro, com 2.0 como último recurso.
+// gemini-2.0-flash — desativado definitivamente em 1° jun 2026 (404).
+// gemini-flash-latest — alias instável (agora aponta pra 3.5-flash, mas
+//   retornava vazio durante a transição); preferimos IDs fixos e estáveis.
+// gemini-2.5-flash — primário atual; ATENÇÃO: anunciado para desativação
+//   em 16/out/2026. Pós-lançamento de agosto, planejar migração pro 3.5-flash.
 const GEMINI_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
-  'gemini-flash-latest',
-  'gemini-2.0-flash',
+  'gemini-2.5-flash',       // primário — estável, melhor custo/inteligência hoje
+  'gemini-2.5-flash-lite',  // fallback leve — mais rápido/barato
+  'gemini-3.5-flash',       // substituto do 2.5-flash (sem data de desativação anunciada)
+  'gemini-2.5-pro',         // último recurso — mais capaz, mais caro
 ];
 
 // ── Cache de quota esgotada (em memória) ──
