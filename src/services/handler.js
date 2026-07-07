@@ -1,8 +1,7 @@
 // v2 - consulta direta sem LLM
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
-const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca } = require('./groq');
-const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('./gemini');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality } = require('./groq');
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
 // O classify() já recebe uma tabela com a data exata de cada dia da semana
@@ -1362,7 +1361,7 @@ async function handleMessage(phone, text, location = null) {
           const apelidoMulti = memAfetivaMulti?.apelido_usuario || prefsMulti?.name || '';
           const relMemMulti = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
           const ctxRelMulti = relMemMulti?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemMulti.content}` : '';
-          const { buildPersonality } = require('./groq');
+          
           const sistemaMulti = buildPersonality(prefsMulti?.tom || 'carinhoso', apelidoMulti, false) + ctxRelMulti + `\n\n[LEMBRETES CRIADOS] Você acabou de criar ${classified.tarefas?.length || 'vários'} lembretes. A confirmação estruturada já foi enviada. Reaja de forma natural e curta — comente, brinque, incentive. Máximo 2 linhas. NÃO liste os lembretes, NÃO repita que vai avisar.`;
           const comentarioMulti = await comentarioGemini(sistemaMulti, text, 120);
           if (comentarioMulti && !isRespostaFallback(comentarioMulti)) {
@@ -1392,7 +1391,7 @@ async function handleMessage(phone, text, location = null) {
           const relMemMed = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
           const ctxRelMed = relMemMed?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemMed.content}` : '';
           const temEstoque = !!(classified.quantidade || (classified.duracao_dias && medFreq));
-          const { buildPersonality } = require('./groq');
+          
           const sistemaMed = buildPersonality(prefsMed?.tom || 'carinhoso', apelidoMed, false) + ctxRelMed + `\n\n[MEDICAMENTO CADASTRADO] Você acabou de cadastrar ${classified.nome || 'um remédio'}. A confirmação estruturada já foi enviada. ${temEstoque ? 'Reaja de forma natural e curta — comente, incentive ou faça uma pergunta leve.' : 'Pergunte de forma natural quantos comprimidos ou ml vem na embalagem — pra controlar o estoque e avisar quando acabar. Não use a palavra "doses". Máximo 2 linhas.'}`;
           const comentarioMed = await comentarioGemini(sistemaMed, text, 120);
           if (comentarioMed && !isRespostaFallback(comentarioMed)) {
