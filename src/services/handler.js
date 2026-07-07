@@ -2,6 +2,7 @@
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
 const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality } = require('./groq');
+const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('./gemini');
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
 // O classify() já recebe uma tabela com a data exata de cada dia da semana
