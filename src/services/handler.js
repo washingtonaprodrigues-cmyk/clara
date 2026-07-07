@@ -322,17 +322,29 @@ function formatarListaWhatsApp(listaResult) {
 
 // Gera um comentário de personalidade curto via Gemini puro — sem cascata
 // pra Groq. Usado nos backgrounds opcionais (pós-lembrete, pós-medicamento,
-// pós-multiplas_tarefas). Se Gemini falhar, retorna null silenciosamente —
-// esses comentários são opcionais; melhor não mandar do que mandar genérico.
+// pós-multiplas_tarefas). Se Gemini falhar, espera 4s e tenta mais uma vez
+// antes de desistir — cobre casos de retorno vazio momentâneo.
 async function comentarioGemini(systemPrompt, userMessage, maxTokens = 150) {
-  try {
+  const tentarUmaVez = async () => {
     if (!geminiDisponivel() || todosModelosEsgotados()) return null;
     const resp = await geminiFreeResponse([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userMessage }
     ], { temperature: 0.85, maxTokens });
     return resp && resp.trim().length > 3 ? resp.trim() : null;
-  } catch { return null; }
+  };
+  try {
+    const resultado = await tentarUmaVez();
+    if (resultado) return resultado;
+    // Primeira tentativa retornou vazio — espera 4s e tenta de novo
+    await new Promise(r => setTimeout(r, 4000));
+    return await tentarUmaVez();
+  } catch {
+    try {
+      await new Promise(r => setTimeout(r, 4000));
+      return await tentarUmaVez();
+    } catch { return null; }
+  }
 }
 
 // Monta o pedacinho de contexto relacional (apelidos, piadas internas, tom
