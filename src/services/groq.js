@@ -232,6 +232,7 @@ TIPOS e formato de saída:
 - concluir_lembrete: {"tipo":"concluir_lembrete","titulo":"x"} — "já fiz", "deu certo", "feito", "resolvido" quando há lembrete no contexto
 - editar_lembrete / deletar_lembrete: {"tipo":"...","titulo":"x","data":null,"hora":null}
 - ajustar_remedio: {"tipo":"ajustar_remedio","nome":"x","operacao":"decrementar/ajustar","valor":N}
+- medicamento: {"tipo":"medicamento","nome":"x","quantidade":0,"frequencia":3,"horarios":["08:00","16:00","00:00"],"duracao_dias":7} — PRIORIDADE MÁXIMA sobre tarefa e multiplas_tarefas: quando a mensagem mencionar dar/tomar um remédio de forma RECORRENTE (de X em X horas, X vezes ao dia, por X dias), use este tipo MESMO que contenha "me lembra" ou "me avisa". Calcule os horários a partir da hora de início. Ex: "dar amoxilina a partir das 15h de 8 em 8 horas por uma semana" → medicamento com horarios:["15:00","23:00","07:00"], frequencia:3, duracao_dias:7
 - relatorio_financeiro / consulta_saldo: {"tipo":"..."}
 - busca: {"tipo":"busca","query":"texto da pergunta"} — pergunta factual externa que a Clara não sabe sem pesquisar (clima, notícia, preço, horário de jogo, endereço, telefone), ou pedido explícito ("pesquisa X", "busca X", "procura X", "confirma isso", "vê se isso tá certo")
 - chamada_combinada: {"tipo":"chamada_combinada","hora":"HH:MM ou null"} — usuário pede pra ser chamado/avisado mais tarde ("me chama mais tarde", "me chama às 21h", "a gente se fala mais tarde", "me avisa mais tarde", "me chama quando sentir saudade"). hora=null se não especificou horário (sistema calcula), HH:MM se especificou. "te chamo mais tarde" dito pelo PRÓPRIO USUÁRIO sobre ele mesmo chamando a Clara → outro (não é pedido pra ela chamar)
@@ -273,6 +274,8 @@ Exemplos:
 "me chama mais tarde" → {"tipo":"chamada_combinada","hora":null}
 "me chama às 21h" → {"tipo":"chamada_combinada","hora":"21:00"}
 "indo lá então, me chama mais tarde" → {"tipo":"chamada_combinada","hora":null}
+"dar amoxilina a partir das 15h de 8 em 8 horas por uma semana" → {"tipo":"medicamento","nome":"amoxilina","quantidade":21,"frequencia":3,"horarios":["15:00","23:00","07:00"],"duracao_dias":7}
+"me lembra de dar o antibiótico de 6 em 6 horas" → {"tipo":"medicamento","nome":"antibiótico","quantidade":0,"frequencia":4,"horarios":["06:00","12:00","18:00","00:00"],"duracao_dias":null}
 "qual a diferença entre X e Y?" → {"tipo":"outro"}
 "oi clara tudo bem?" → {"tipo":"outro"}`;
 };
@@ -1808,4 +1811,5 @@ module.exports = {
   isRespostaFallback,
   infoDatas,
   extrairQueryBusca,
+  buildPersonality,
 };
