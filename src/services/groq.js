@@ -1,6 +1,6 @@
 const Groq = require('groq-sdk');
 const { webSearch } = require('./search');
-const { geminiDisponivel, geminiFreeResponse, isGeminiRateLimit, todosModelosEsgotados } = require('./gemini');
+const { geminiDisponivel, geminiFreeResponse, geminiFreeResponseLite, isGeminiRateLimit, todosModelosEsgotados } = require('./gemini');
 const { openrouterDisponivel, openrouterFreeResponse, isOpenrouterRateLimit } = require('./openrouter');
 
 // ── Cascata de chaves Groq ────────────────────────────────────────────────
@@ -808,7 +808,7 @@ async function checkResolucaoPendencia(message, resumo) {
 
     if (geminiDisponivel() && !todosModelosEsgotados()) {
       try {
-        const respGemini = await geminiFreeResponse(msgs, { temperature: 0, maxTokens: 5 });
+        const respGemini = await geminiFreeResponseLite(msgs, { temperature: 0, maxTokens: 5 });
         if (respGemini) return respGemini.trim().toLowerCase().startsWith('sim');
       } catch (eGemini) {
         console.error('[checkResolucaoPendencia] Gemini falhou, tentando Groq:', eGemini.message);
@@ -864,7 +864,7 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomU
         let traduzidaAnswer = null;
         if (geminiDisponivel() && !todosModelosEsgotados()) {
           try {
-            traduzidaAnswer = await geminiFreeResponse(msgsTrad, { temperature: 0.1, maxTokens: 150 });
+            traduzidaAnswer = await geminiFreeResponseLite(msgsTrad, { temperature: 0.1, maxTokens: 150 });
           } catch (eGemini) {
             console.error('[searchWeb] Gemini falhou ao traduzir, tentando Groq:', eGemini.message);
           }
@@ -1653,7 +1653,7 @@ async function generateMemorySummary(memories, question) {
 
     if (geminiDisponivel() && !todosModelosEsgotados()) {
       try {
-        const respGemini = await geminiFreeResponse(msgs, { temperature: 0.5, maxTokens: 120 });
+        const respGemini = await geminiFreeResponseLite(msgs, { temperature: 0.5, maxTokens: 120 });
         if (respGemini) return respGemini.trim();
       } catch (eGemini) {
         console.error('[generateMemorySummary] Gemini falhou, tentando Groq:', eGemini.message);
@@ -1745,7 +1745,7 @@ async function extrairQueryBusca(textoUsuario, respostaClara) {
 
     if (geminiDisponivel() && !todosModelosEsgotados()) {
       try {
-        const resp = await geminiFreeResponse(msgs, { temperature: 0, maxTokens: 20 });
+        const resp = await geminiFreeResponseLite(msgs, { temperature: 0, maxTokens: 20 });
         if (resp && resp.trim().length > 2) return resp.trim();
       } catch (eGemini) {
         console.error('[extrairQueryBusca] Gemini falhou, tentando Groq:', eGemini.message);
