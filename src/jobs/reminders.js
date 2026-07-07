@@ -534,60 +534,80 @@ cron.schedule('0 18 * * *', async () => {
         const concluidos = todosHoje.filter(r => r.confirmed);
         const pendentes = todosHoje.filter(r => r.sent && !r.confirmed);
 
-        // Só envia se teve atividade hoje
         if (todosHoje.length === 0) continue;
 
-        const { prefs } = await getUserContext(user);
-        const nome = prefs.name ? ` ${prefs.name.split(' ')[0]}` : '';
+        // Doses de remédio tomadas hoje
+        const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
+        const dosesHoje = await prisma.memory.count({
+          where: { userId: user.id, type: 'med_confirmado', createdAt: { gte: inicioHoje, lte: fimHoje } }
+        }).catch(() => 0);
 
-        let msg = '';
-        if (concluidos.length > 0 && pendentes.length === 0) {
-          // Fechamento do dia — texto fixo no tom da Clara, sem coach/parabéns.
-          // Faz sentido pra fim de EXPEDIENTE (não fim do dia): a pessoa vai
-          // pra casa viver a noite, não dormir. Sem "mereceu descansar".
-          const variacoesFechamento = [
-            `Deu o dia${nome}! Tudo fechado por aqui, sem nada pendente 😊`,
-            `Encerrou tudo hoje${nome}! Agenda limpa, pode seguir tranquilo ✅`,
-            `Tudo certo por aqui! Você finalizou os ${concluidos.length} compromisso${concluidos.length > 1 ? 's' : ''} de hoje 💜`,
-            `Fim de expediente${nome}! Tudo em dia, nada ficou pra trás 😊`,
-            `Pronto, dia organizado e sem pendências${nome}! Bora pra noite 💪`,
-          ];
-          msg = variacoesFechamento[Math.floor(Math.random() * variacoesFechamento.length)];
-        } else if (concluidos.length > 0 && pendentes.length > 0) {
-          const ids = pendentes.map(r => r.id);
-          // Salva confirmação pendente pra remarcar
-          await prisma.memory.create({
-            data: {
-              userId: user.id,
-              type: 'confirmacao_pendente',
-              content: JSON.stringify({
-                tipo: 'fechamento_pendentes',
-                reminderIds: ids,
-                expira: Date.now() + 3 * 60 * 60 * 1000 // 3h pra responder
-              })
-            }
-          }).catch(() => {});
-          msg = `Hoje foram ${concluidos.length} item${concluidos.length > 1 ? 's' : ''} concluído${concluidos.length > 1 ? 's' : ''} 👏 Ficaram ${pendentes.length} pendente${pendentes.length > 1 ? 's' : ''} — posso remarcar tudo pro mesmo horário amanhã ou você prefere concluir agora?`;
-        } else if (concluidos.length === 0 && pendentes.length > 0) {
-          const ids = pendentes.map(r => r.id);
-          await prisma.memory.create({
-            data: {
-              userId: user.id,
-              type: 'confirmacao_pendente',
-              content: JSON.stringify({
-                tipo: 'fechamento_pendentes',
-                reminderIds: ids,
-                expira: Date.now() + 3 * 60 * 60 * 1000
-              })
-            }
-          }).catch(() => {});
-          msg = `Ficaram ${pendentes.length} item${pendentes.length > 1 ? 's' : ''} pendente${pendentes.length > 1 ? 's' : ''} hoje — remarco tudo pro mesmo horário amanhã ou prefere concluir agora?`;
+        // Primeiro lembrete de amanhã
+        const amanha = new Date(inicioHoje); amanha.setDate(amanha.getDate() + 1);
+        const depoisAmanha = new Date(amanha); depoisAmanha.setDate(depoisAmanha.getDate() + 1);
+        const proximoAmanha = await prisma.reminder.findFirst({
+          where: { userId: user.id, confirmed: false, scheduledAt: { gte: amanha, lt: depoisAmanha } },
+          orderBy: { scheduledAt: 'asc' }
+        }).catch(() => null);
+
+        // Primeiro remédio de amanhã
+        let primeiroRemedioAmanha = null;
+        for (const m of meds) {
+          let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
+          if (times.length) { primeiroRemedioAmanha = { nome: m.name, hora: times.sort()[0] }; break; }
         }
 
-        if (msg) {
+        const { prefs } = await getUserContext(user);
+        const memAfetiva = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+        const apelido = memAfetiva?.apelido_usuario || prefs?.name || '';
+
+        // Monta contexto com dados reais do dia pra Clara usar no tom dela
+        let dadosDia = [];
+        if (concluidos.length > 0) dadosDia.push(`${concluidos.length} compromisso${concluidos.length > 1 ? 's' : ''} concluído${concluidos.length > 1 ? 's' : ''}`);
+        if (dosesHoje > 0) dadosDia.push(`${dosesHoje} dose${dosesHoje > 1 ? 's' : ''} de remédio tomada${dosesHoje > 1 ? 's' : ''}`);
+        if (pendentes.length > 0) {
+          dadosDia.push(`${pendentes.length} item${pendentes.length > 1 ? 'ns' : ''} pendente${pendentes.length > 1 ? 's' : ''}`);
+          const ids = pendentes.map(r => r.id);
+          await prisma.memory.create({
+            data: { userId: user.id, type: 'confirmacao_pendente', content: JSON.stringify({ tipo: 'fechamento_pendentes', reminderIds: ids, expira: Date.now() + 3 * 60 * 60 * 1000 }) }
+          }).catch(() => {});
+        }
+
+        let amanhaCxt = '';
+        if (proximoAmanha) {
+          const h = new Date(proximoAmanha.scheduledAt);
+          const hStr = `${String(h.getHours()).padStart(2,'0')}:${String(h.getMinutes()).padStart(2,'0')}`;
+          amanhaCxt = `Amanhã tem "${proximoAmanha.message}" às ${hStr}.`;
+        } else if (primeiroRemedioAmanha) {
+          amanhaCxt = `Amanhã começa com ${primeiroRemedioAmanha.nome} às ${primeiroRemedioAmanha.hora}.`;
+        }
+
+        const systemFechamento = `Você é a Clara, parceira pessoal d${apelido ? 'o ' + apelido : 'o usuário'} no WhatsApp.
+SEU TOM: ${tomDesc(prefs.tom)}
+
+É 18h — fim de expediente. Chegue com o balanço do dia no SEU jeito, não como relatório.
+Dados do dia: ${dadosDia.join(', ') || 'sem atividade registrada'}.
+${amanhaCxt ? `Preview de amanhã: ${amanhaCxt}` : ''}
+${pendentes.length > 0 ? `Tem itens pendentes — pergunte se quer remarcar ou resolver agora.` : ''}
+
+REGRAS:
+- UMA mensagem, 2-3 linhas no máximo
+- Use os dados acima de forma natural, no seu tom — não liste, não faça tabela
+- Se tiver pendência, mencione de forma leve e ofereça resolver
+- Pode fazer um comentário seu, uma piada, mostrar que se importou com o dia
+- NUNCA diga "mereceu descansar", "bom trabalho", "parabéns" de forma genérica
+- NUNCA coloque a mensagem entre aspas`;
+
+        const msg = await freeResponse('Fechamento do dia.', [], {
+          _contexto: '', name: apelido || prefs.name, tom: prefs.tom || 'carinhoso',
+          _systemOverride: systemFechamento,
+          _maxTokens: 120
+        });
+
+        if (msg && !isRespostaFallback(msg) && msg.trim().length > 5) {
           await prisma.memory.create({ data: { userId: user.id, type: 'fechamento_dia_lock', content: lockKey } });
           await sendMessage(user.phone, msg);
-          console.log(`[Fechamento] ${user.phone} — ${concluidos.length} concluídos, ${pendentes.length} pendentes`);
+          console.log(`[Fechamento] ${user.phone} — ${concluidos.length} concluídos, ${pendentes.length} pendentes, ${dosesHoje} doses`);
         }
       } catch (e) { console.error(`[Fechamento] Erro ${user.phone}:`, e.message); }
     }
