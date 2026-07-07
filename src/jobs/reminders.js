@@ -1521,6 +1521,16 @@ cron.schedule('* * * * *', async () => {
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('0 * * * *', async () => {
   try {
+    // Limpeza de conhecimentos adquiridos expirados (30 dias)
+    const expiradosConhecimento = await prisma.memory.findMany({
+      where: { type: 'conhecimento_adquirido' }
+    });
+    for (const c of expiradosConhecimento) {
+      let meta = {}; try { meta = JSON.parse(c.metadata || '{}'); } catch {}
+      if (meta.expira && Date.now() > meta.expira) {
+        await prisma.memory.delete({ where: { id: c.id } }).catch(() => {});
+      }
+    }
     const agora = new Date();
     const episodios = await prisma.memory.findMany({
       where: { type: 'episodio_vida' },
@@ -1547,7 +1557,7 @@ cron.schedule('0 * * * *', async () => {
       ;(async () => {
         try {
           const history = await memory.getConversationHistory(ep.userId, 4).catch(() => []);
-          const prefs = await memory.getUserPreferences(ep.userId).catch(() => ({}));
+          const prefs = await memory.getUserPreference(ep.userId).catch(() => ({}));
           prefs._contexto = ctx;
           prefs._skipSaveHistory = true;
           const resposta = await Promise.race([
