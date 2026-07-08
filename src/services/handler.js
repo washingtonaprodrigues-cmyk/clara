@@ -2187,6 +2187,23 @@ async function editarLembrete(user, phone, classified, contextoClassify = '', or
     }
 
     let novoScheduledAt = new Date(encontrado.scheduledAt);
+    // Se classify não extraiu nova_hora, tenta extrair do texto diretamente
+    // ("pra 10 horas", "às 10", "10h", "10:00" etc.)
+    if (!classified.nova_hora && text) {
+      const textN = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const mHM = textN.match(/(\d{1,2})[:h](\d{2})/);
+      const mH = textN.match(/(\d{1,2})\s*h(?:oras?)?\b/);
+      const mAs = textN.match(/[a]s?\s+(\d{1,2})\b/);
+      const mPra = textN.match(/pr[ao]\s+(\d{1,2})\b/);
+      const m = mHM || mH || mAs || mPra;
+      if (m) {
+        let h = parseInt(mHM ? m[1] : m[1]);
+        let min = mHM ? parseInt(m[2]) : 0;
+        if (/tarde|noite/.test(textN) && h < 12) h += 12;
+        classified.nova_hora = `${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}`;
+      }
+    }
+
     if (classified.nova_hora) {
       const [h, m] = classified.nova_hora.split(':').map(Number);
       const dataBase = classified.nova_data || new Date(encontrado.scheduledAt).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
@@ -2201,7 +2218,7 @@ async function editarLembrete(user, phone, classified, contextoClassify = '', or
 
     const horaFormatada = novoScheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
     const dataFormatada = novoScheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short' });
-    await sendMessage(phone, `✅ Remarcado!\n\n📌 ${encontrado.message}\n🕒 ${dataFormatada} às ${horaFormatada}`);
+    await sendMessage(phone, `✅ Remarcado!\n\n📌 ${encontrado.message}\n🕐 ${dataFormatada} às ${horaFormatada}`);
 
   } catch(e) {
     console.error('[editarLembrete]', e.message);
