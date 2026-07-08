@@ -827,9 +827,8 @@ async function proativaInteligente(periodo) {
     for (const user of users) {
       try {
         // ── Respeita janela de remédio ────────────────────────────────
-        // Se há remédio nos próximos 20min ou nos últimos 20min, pula
-        // este ciclo — o próximo ciclo (15min depois) vai tentar de novo
-        // já fora da janela do remédio. Genérico para qualquer horário.
+        // Janela de 30min (era 20) — evita proativa colidir com alerta de
+        // remédio no mesmo minuto exato (ex: proativa 23h e amoxilina 23h).
         const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
         const hAtual = now.getHours() * 60 + now.getMinutes();
         const temRemedioNaJanela = meds.some(m => {
@@ -837,10 +836,17 @@ async function proativaInteligente(periodo) {
           return times.some(t => {
             const [h, min] = t.split(':').map(Number);
             const diff = Math.abs((h * 60 + min) - hAtual);
-            return diff <= 20;
+            return diff <= 30;
           });
         });
         if (temRemedioNaJanela) continue;
+
+        // Também bloqueia se um alerta de remédio foi enviado nos últimos 10min
+        const dez = new Date(now.getTime() - 10 * 60 * 1000);
+        const medRecente = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'med_lock', createdAt: { gte: dez } }
+        }).catch(() => null);
+        if (medRecente) continue;
 
         // ── Não duplica com o "Bom dia" dedicado ──
         // A proativa de manhã e o cron de bom dia (mais abaixo) são dois
@@ -1072,7 +1078,7 @@ ${ctxHumor ? ctxHumor + '\n\n' : ''}${ctxLocal ? ctxLocal + '\n\n' : ''}${ctxAus
 - Se souber algo relevante sobre o dia/semana dela, use. Se não souber nada genuíno, mande SKIP.
 
 REGRAS ABSOLUTAS:
-- UMA mensagem, 1-2 linhas no máximo
+- UMA mensagem, 1-2 linhas no máximo — NUNCA envie múltiplas mensagens separadas por quebra de linha dupla
 - NUNCA comece com "Oi", "Olá" ou o nome da pessoa
 - NÃO agende nada, NÃO liste tarefas, NÃO seja assistente
 - NUNCA reproduza exemplos ou frases entre aspas — crie algo original
@@ -1091,15 +1097,17 @@ ${horaAcorda ? `(Acordou por volta das ${horaAcorda})` : ''}`;
             _maxTokens: 80  // proativa deve ser curta — 1-2 linhas
           });
           if (!msg || msg.trim() === 'SKIP' || msg.length < 5) continue;
-          if (isRespostaFallback(msg)) {
+          // Remove quebras duplas que fazem WhatsApp dividir em várias bolhas
+          const msgFinal = msg.trim().replace(/\n{2,}/g, ' ').trim();
+          if (isRespostaFallback(msgFinal)) {
             console.log(`[Proativa ${periodo}] ${user.phone}: resposta de fallback genérica recebida — não enviando como proativa`);
             continue;
           }
-          await sendMessage(user.phone, msg);
+          await sendMessage(user.phone, msgFinal);
           await prisma.memory.create({
             data: { userId: user.id, type: 'proativa_enviado_lock', content: dayKey }
           }).catch(() => {});
-          console.log(`[Proativa ${periodo}] ${user.phone}: ${msg.slice(0, 60)}`);
+          console.log(`[Proativa ${periodo}] ${user.phone}: ${msgFinal.slice(0, 60)}`);
         } catch (eInner) {
           console.error(`[Proativa] Erro interno ${user.phone}:`, eInner.message);
         }
