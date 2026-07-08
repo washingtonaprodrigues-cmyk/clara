@@ -1302,7 +1302,7 @@ async function handleMessage(phone, text, location = null) {
         if (ehHoje) {
           confirmacaoTarefa = `✅ Anotado! "${classified.titulo}" às ${horaFmt} ⏰`;
         } else {
-          confirmacaoTarefa = `✅ Lembrete criado!\n\n📌 ${classified.titulo}\n🕒 ${dataFmt}, ${horaFmt}\n\nVou te avisar no horário certinho.`;
+          confirmacaoTarefa = `✅ Lembrete criado!\n\n📌 ${classified.titulo}\n🕐 ${dataFmt}, ${horaFmt}`;
         }
       } catch (e) {
         // mantém fallback genérico em caso de erro de parsing
@@ -1412,9 +1412,30 @@ async function handleMessage(phone, text, location = null) {
     // recebe a confirmação no contexto, pra não confirmar embutido e duplicar);
     // a confirmação estruturada é enviada logo depois dentro de responderLivre.
     if (classified.tipo === 'tarefa' && acaoConfirmacao) {
-      await responderLivre(user, phone, text, '', isSaudacao, null, acaoConfirmacao);
-      extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
+      // 1ª: confirmação do sistema (fatos, sem personalidade)
+      await sendMessage(phone, acaoConfirmacao);
+      await memory.saveConversationMessage(user.id, 'assistant', '[Clara] ' + acaoConfirmacao).catch(() => {});
       emitirAtualizacao(phone, 'lembretes');
+      // 2ª: Clara sendo ela — comenta sobre o lembrete, usa como gancho,
+      // aproveita assunto pendente se tiver. Roda em background.
+      ;(async () => {
+        try {
+          await new Promise(r => setTimeout(r, 1800));
+          const prefsTarefa = await memory.getUserPreference(user.id).catch(() => ({}));
+          const memAfetivaTarefa = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+          const apelidoTarefa = memAfetivaTarefa?.apelido_usuario || prefsTarefa?.name || '';
+          const relMemTarefa = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+          const ctxRelTarefa = relMemTarefa?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemTarefa.content}` : '';
+          const sistemaTarefa = buildPersonality(prefsTarefa?.tom || 'carinhoso', apelidoTarefa, false) + ctxRelTarefa +
+            `\n\n[LEMBRETE CRIADO] Você acabou de criar "${classified.titulo}"${classified.hora ? ` às ${classified.hora}` : ''}${classified.data ? ` em ${classified.data}` : ''}. A confirmação estruturada já foi enviada. Reaja de forma natural e no seu tom — pode comentar, fazer piada, usar como gancho pra assunto pendente ou simplesmente mostrar que se importa. Máximo 2 linhas. NÃO diga "vou te avisar", "não esquece", "anotei" — isso já foi dito.`;
+          const comentarioTarefa = await comentarioGemini(sistemaTarefa, text, 120);
+          if (comentarioTarefa && !isRespostaFallback(comentarioTarefa)) {
+            await sendMessage(phone, comentarioTarefa);
+            await memory.saveConversationMessage(user.id, 'assistant', comentarioTarefa).catch(() => {});
+          }
+        } catch(e) { console.error('[TarefaComment] Erro:', e.message); }
+      })();
+      extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
       return;
     }
 
