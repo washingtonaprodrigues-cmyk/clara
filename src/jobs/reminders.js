@@ -1134,6 +1134,7 @@ REGRAS ABSOLUTAS:
 - NÃO agende nada, NÃO liste tarefas, NÃO seja assistente
 - NUNCA reproduza exemplos ou frases entre aspas — crie algo original
 - NUNCA coloque sua mensagem entre aspas
+- NUNCA diga "Estou aqui", "pode contar comigo", "quer conversar?", "sobre algo em particular" — isso é carente e genérico, não é você
 - Se não tiver NADA genuíno pra dizer, responda APENAS: SKIP
 
 ${ctxPendencias ? ctxPendencias + '\n\n' : ''}CONTEXTO RECENTE:
