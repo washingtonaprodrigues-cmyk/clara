@@ -1371,8 +1371,11 @@ async function handleMessage(phone, text, location = null) {
           const apelidoMulti = memAfetivaMulti?.apelido_usuario || prefsMulti?.name || '';
           const relMemMulti = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
           const ctxRelMulti = relMemMulti?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemMulti.content}` : '';
-          
-          const sistemaMulti = buildPersonality(prefsMulti?.tom || 'carinhoso', apelidoMulti, false) + ctxRelMulti + `\n\n[LEMBRETES CRIADOS] Você acabou de criar ${classified.tarefas?.length || 'vários'} lembretes. A confirmação estruturada já foi enviada. Reaja de forma natural e curta — comente, brinque, incentive. Máximo 2 linhas. NÃO liste os lembretes, NÃO repita que vai avisar.`;
+          const histMulti = await memory.getConversationHistory(user.id, 8).catch(() => []);
+          const resumoHistMulti = histMulti.length > 0
+            ? `\n\n[CONVERSA ANTES DOS LEMBRETES]\n${histMulti.slice(-6).map(m => `${m.role === 'user' ? 'Ele' : 'Você'}: ${m.content}`).join('\n')}`
+            : '';
+          const sistemaMulti = buildPersonality(prefsMulti?.tom || 'carinhoso', apelidoMulti, false) + ctxRelMulti + resumoHistMulti + `\n\n[LEMBRETES CRIADOS] Ele criou ${classified.tarefas?.length || 'vários'} lembretes. Confirmação enviada. Continue a conversa naturalmente — priorize o que estava rolando antes se tiver assunto. O lembrete foi um aparte. Máximo 2 linhas. NÃO liste os lembretes, NÃO repita que vai avisar.`;
           const comentarioMulti = await comentarioGemini(sistemaMulti, text, 120);
           if (comentarioMulti && !isRespostaFallback(comentarioMulti)) {
             await sendMessage(phone, comentarioMulti);
@@ -1422,8 +1425,10 @@ async function handleMessage(phone, text, location = null) {
       await sendMessage(phone, acaoConfirmacao);
       await memory.saveConversationMessage(user.id, 'assistant', '[Clara] ' + acaoConfirmacao).catch(() => {});
       emitirAtualizacao(phone, 'lembretes');
-      // 2ª: Clara sendo ela — comenta sobre o lembrete, usa como gancho,
-      // aproveita assunto pendente se tiver. Roda em background.
+      // 2ª: Clara sendo ela — tem acesso ao histórico recente da conversa,
+      // então pode finalizar um assunto que estava rolando antes do lembrete,
+      // ou usar o lembrete como gancho natural se fizer sentido. Não precisa
+      // comentar sobre o lembrete — pode simplesmente continuar a conversa.
       ;(async () => {
         try {
           await new Promise(r => setTimeout(r, 1800));
@@ -1432,8 +1437,12 @@ async function handleMessage(phone, text, location = null) {
           const apelidoTarefa = memAfetivaTarefa?.apelido_usuario || prefsTarefa?.name || '';
           const relMemTarefa = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
           const ctxRelTarefa = relMemTarefa?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemTarefa.content}` : '';
-          const sistemaTarefa = buildPersonality(prefsTarefa?.tom || 'carinhoso', apelidoTarefa, false) + ctxRelTarefa +
-            `\n\n[LEMBRETE CRIADO] Você acabou de criar "${classified.titulo}"${classified.hora ? ` às ${classified.hora}` : ''}${classified.data ? ` em ${classified.data}` : ''}. A confirmação estruturada já foi enviada. Reaja de forma natural e no seu tom — pode comentar, fazer piada, usar como gancho pra assunto pendente ou simplesmente mostrar que se importa. Máximo 2 linhas. NÃO diga "vou te avisar", "não esquece", "anotei" — isso já foi dito.`;
+          const histTarefa = await memory.getConversationHistory(user.id, 8).catch(() => []);
+          const resumoHistorico = histTarefa.length > 0
+            ? `\n\n[CONVERSA RECENTE ANTES DO LEMBRETE]\n${histTarefa.slice(-6).map(m => `${m.role === 'user' ? 'Ele' : 'Você'}: ${m.content}`).join('\n')}`
+            : '';
+          const sistemaTarefa = buildPersonality(prefsTarefa?.tom || 'carinhoso', apelidoTarefa, false) + ctxRelTarefa + resumoHistorico +
+            `\n\n[LEMBRETE CRIADO] No meio da conversa ele criou o lembrete "${classified.titulo}"${classified.hora ? ` às ${classified.hora}` : ''}. A confirmação já foi enviada como sistema. Agora você pode: (a) continuar o assunto que estava rolando antes do lembrete, como uma conversa humana faria — o lembrete foi um aparte, não o fim do papo; (b) ou usar o lembrete como gancho natural SE for algo interessante de comentar. Priorize a continuidade da conversa. Máximo 2 linhas. NÃO diga "vou te avisar", "não esquece", "anotei".`;
           const comentarioTarefa = await comentarioGemini(sistemaTarefa, text, 120);
           if (comentarioTarefa && !isRespostaFallback(comentarioTarefa)) {
             await sendMessage(phone, comentarioTarefa);
