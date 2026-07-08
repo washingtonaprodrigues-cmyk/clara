@@ -395,14 +395,14 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
         let podeEnviarAgora = false;
 
         // ── GATILHO PROATIVO: ela começa sozinha, sem você falar ──
-        // O cron é o caminho "você ainda não interagiu hoje" — se você mandar
-        // mensagem primeiro, o bom dia vem emendado na RESPOSTA (handler.js),
-        // e o bom_dia_lock já estará marcado, então este cron nem chega aqui.
+        // Dois caminhos pra detectar que você acordou:
         //
-        // Sinal de "acordou" sem depender de mensagem: o primeiro
-        // remédio/lembrete da manhã (5h-11h). Ela espera de 3 a 5 minutos
-        // depois do disparo e manda o bom dia — não colado (robótico), mas
-        // como quem "lembrou de você" logo depois.
+        // 1. CONFIRMOU o remédio/lembrete → bom dia 5 min depois da confirmação
+        //    (você claramente acordou, o bom dia chega natural)
+        //
+        // 2. NÃO confirmou em 20 min após o disparo → bom dia de qualquer jeito
+        //    (talvez ainda não viu, mas vai ver o bom dia junto)
+
         const inicioJanela = new Date(now); inicioJanela.setHours(5, 0, 0, 0);
         const fimJanela = new Date(now); fimJanela.setHours(11, 0, 0, 0);
 
@@ -430,18 +430,33 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
         }
 
         if (primeiroEvento) {
-          // Espera de 3 a 10 minutos depois do disparo do evento — janela
-          // curta pra não ficar nem colado (robótico) nem atrasado demais.
           const minutosDesdeEvento = (now - primeiroEvento) / 60000;
-          if (minutosDesdeEvento >= 3 && minutosDesdeEvento <= 10) {
+
+          // Caminho 1: confirmou? bom dia 5 min depois da confirmação
+          const ultimaConfirmacao = await prisma.memory.findFirst({
+            where: {
+              userId: user.id,
+              type: 'conversa',
+              content: { not: { startsWith: '[Clara]' } },
+              createdAt: { gte: primeiroEvento }
+            },
+            orderBy: { createdAt: 'desc' }
+          }).catch(() => null);
+
+          if (ultimaConfirmacao) {
+            const minDesdeConfirmacao = (now - new Date(ultimaConfirmacao.createdAt)) / 60000;
+            if (minDesdeConfirmacao >= 5 && minDesdeConfirmacao <= 20) {
+              podeEnviarAgora = true;
+            }
+          }
+
+          // Caminho 2: não confirmou em 20 min → bom dia de qualquer jeito
+          if (!podeEnviarAgora && minutosDesdeEvento >= 20 && minutosDesdeEvento <= 35) {
             podeEnviarAgora = true;
           }
         }
 
-        // ── REDE DE SEGURANÇA — 8h, sempre, independente de ter tido evento ──
-        // Se tinha remédio/lembrete de manhã mas a janela de 3-10min falhou por
-        // qualquer motivo (rate limit, erro de API, etc), não fica sem bom dia
-        // o dia inteiro — 8h-8h10 garante que ela manda de qualquer jeito.
+        // ── REDE DE SEGURANÇA — 8h-8h30 ──
         if (!podeEnviarAgora && now.getHours() === 8 && now.getMinutes() < 30) {
           podeEnviarAgora = true;
         }
