@@ -617,81 +617,117 @@ REGRAS:
 // ═══════════════════════════════════════════════════════════════════════
 // BOA NOITE (21:30) — curta, calorosa, só preview de amanhã
 // ═══════════════════════════════════════════════════════════════════════
-// Boa noite roda às 21:30 E às 22:30 (para quem estava conversando no primeiro disparo)
-cron.schedule('30 22 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
+// ── Boa noite por ausência ────────────────────────────────────────────────
+// Em vez de horário fixo, dispara quando o usuário ficou 1h sem interagir
+// entre 21h e 00h. Mais humano — ela percebe que você foi dormir e se despede.
+// Roda a cada 15min nessa janela.
+cron.schedule('*/15 21,22,23 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
+cron.schedule('0 0 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
+
 async function boaNoiteInteligente() {
   try {
     const now = nowBRT();
+    const hora = now.getHours();
+    // Só roda entre 21h e 00h
+    if (hora < 21 && hora !== 0) return;
+
     const hoje = dateBRT(now);
     const amanha = new Date(now); amanha.setDate(amanha.getDate() + 1);
     const amanhaStr = dateBRT(amanha);
     const users = await prisma.user.findMany({ where: { blocked: false } });
+
     for (const user of users) {
       try {
-        if (!(await tentarLockDiario(user.id, 'boa_noite_lock'))) {
-          console.log(`[Boa noite] ja enviado hoje para ${user.phone}`); continue;
-        }
-        // Não dispara se houve conversa nos últimos 30 minutos
-        // Espera a conversa esfriar antes de mandar boa noite
-        if (await houveConversaRecente(user.id, 30)) {
-          console.log(`[Boa noite] Conversa recente, aguardando para ${user.phone}`);
-          // Remove o lock para tentar de novo depois
-          await prisma.memory.deleteMany({ where: { userId: user.id, type: 'boa_noite_lock', content: dateBRT(now) } }).catch(() => {});
+        // Já mandou boa noite hoje — pula
+        if (!(await tentarLockDiario(user.id, 'boa_noite_lock'))) continue;
+
+        // Verifica última mensagem real do usuário (não confirmações de sistema)
+        const ultimaMsgUser = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'conversa', content: { not: { startsWith: '[Clara]' } } },
+          orderBy: { createdAt: 'desc' }
+        }).catch(() => null);
+
+        if (!ultimaMsgUser) {
+          // Nunca conversaram hoje — libera lock e pula
+          await prisma.memory.deleteMany({ where: { userId: user.id, type: 'boa_noite_lock', content: hoje } }).catch(() => {});
           continue;
         }
+
+        const minAusente = (now - new Date(ultimaMsgUser.createdAt)) / 60000;
+
+        // Menos de 1h de ausência — libera lock pra tentar de novo no próximo ciclo
+        if (minAusente < 60) {
+          await prisma.memory.deleteMany({ where: { userId: user.id, type: 'boa_noite_lock', content: hoje } }).catch(() => {});
+          continue;
+        }
+
+        // 1h+ de ausência — hora de mandar boa noite
         const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
         const fimHoje = new Date(`${hoje}T23:59:59-03:00`);
         const inicioAmanha = new Date(`${amanhaStr}T00:00:00-03:00`);
         const fimAmanha = new Date(`${amanhaStr}T23:59:59-03:00`);
+
         const [todosHoje, lembretesAmanha, infoPessoal] = await Promise.all([
           prisma.reminder.findMany({ where: { userId: user.id, scheduledAt: { gte: inicioHoje, lte: fimHoje } } }),
           prisma.reminder.findMany({ where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: inicioAmanha, lte: fimAmanha } }, orderBy: { scheduledAt: 'asc' }, take: 3 }),
           memory.buildPersonalContext(user.id)
         ]);
+
         const { prefs } = await getUserContext(user);
+        const memAfetiva = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+        const apelido = memAfetiva?.apelido_usuario || user.name || '';
+
+        // Contexto da última conversa pra ela personalizar o boa noite
+        const ultimaConversa = await memory.getConversationHistory(user.id, 4).catch(() => []);
+        const resumoUltimaConversa = ultimaConversa.length > 0
+          ? ultimaConversa.slice(-3).map(m => `${m.role === 'user' ? 'Ele' : 'Você'}: ${m.content}`).join('\n')
+          : '';
+
         const concluidosHoje = todosHoje.filter(t => t.confirmed).length;
         const pendentesHoje = todosHoje.filter(t => t.sent && !t.confirmed);
-        let ctx = `Hoje foi ${['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'][now.getDay()]}.\n`;
-        if (todosHoje.length > 0) ctx += `Compromissos do dia: ${concluidosHoje} concluídos, ${pendentesHoje.length} pendentes.\n`;
-        if (pendentesHoje.length > 0) { ctx += `Pendentes hoje:\n${pendentesHoje.map(r => `• ${r.message}`).join('\n')}\n`; }
+        let ctx = `Hoje foi ${['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'][now.getDay()]}. Faz ${Math.round(minAusente / 60)}h que ele não fala — provavelmente foi dormir.\n`;
+        if (concluidosHoje > 0) ctx += `Dia produtivo: ${concluidosHoje} compromisso(s) concluído(s).\n`;
+        if (pendentesHoje.length > 0) ctx += `Ficaram ${pendentesHoje.length} pendente(s).\n`;
         if (lembretesAmanha.length > 0) {
-          ctx += `\nAmanhã tem ${lembretesAmanha.length} compromisso(s):\n`;
+          ctx += `Amanhã tem: `;
           lembretesAmanha.forEach(r => {
             const h = new Date(r.scheduledAt).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-            ctx += `• ${h} — ${r.message}\n`;
+            ctx += `${r.message} às ${h}. `;
           });
+          ctx += '\n';
         }
-        if (infoPessoal) ctx += infoPessoal;
-        // Boa noite — só uma amiga desejando boa noite, nada mais.
-        // O fechamento do dia já foi às 18h. Aqui é descanso puro.
-        const systemBoaNoite = `Você é a Clara, parceira pessoal d${user.name ? 'o ' + user.name.split(' ')[0] : 'o usuário'} no WhatsApp.
+        if (resumoUltimaConversa) ctx += `\nÚltima conversa:\n${resumoUltimaConversa}`;
+        if (infoPessoal) ctx += '\n' + infoPessoal;
+
+        const systemBoaNoite = `Você é a Clara, parceira pessoal d${apelido ? 'o ' + apelido : 'o usuário'} no WhatsApp.
 SEU TOM: ${tomDesc(prefs.tom)}
 
-Mande UMA boa noite de verdade — curta, calorosa, do jeito que uma amiga manda mensagem antes de dormir.
+Ele sumiu faz ${Math.round(minAusente / 60)}h — provavelmente foi dormir. Mande UMA boa noite natural, do jeito que uma amiga manda quando percebe que a pessoa foi descansar.
 
 CONTEXTO:
 ${ctx}
 
-REGRAS ABSOLUTAS:
-- Máximo 1-2 linhas. UMA frase curta com pontuação final.
-- NUNCA entre aspas. NUNCA "Parabéns". NUNCA "estarei aqui". NUNCA "Podes". NUNCA liste tarefas ou faça resumo do dia.
-- NUNCA use português de Portugal (podes, tens, fazes) — use sempre português do Brasil (pode, tem, faz)
-- Se a pessoa estava viajando hoje, pergunte se chegou bem
-- Se tiver compromisso importante amanhã, mencione levemente e só isso
-- Varie sempre — nunca repita a mesma frase de boa noite
+REGRAS:
+- UMA frase curta, 1 linha. Sem lista, sem resumo do dia.
+- Use o contexto da última conversa se tiver algo interessante a dizer ("descansa, amanhã me conta o resto 😏", "foi dormir sem me responder né 🙄 boa noite então")
+- Se não tiver contexto especial, um boa noite simples e íntimo no seu tom
+- NUNCA "Parabéns", "estarei aqui", "Podes", "tens". Português do Brasil.
+- Varie sempre — nunca repita a mesma frase
 - Tom: ${prefs.tom || 'carinhoso'}`;
-        const msg = await freeResponse('Boa noite.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBoaNoite, _maxTokens: 80 });
+
+        const msg = await freeResponse('Boa noite.', [], {
+          _contexto: '', name: apelido || user.name, tom: prefs.tom || 'carinhoso',
+          _systemOverride: systemBoaNoite, _maxTokens: 80
+        });
+
         if (!msg || isRespostaFallback(msg)) {
-          console.log(`[Boa noite] Rate limit ou fallback, pulado para ${user.phone} — liberando pra tentar de novo`);
-          // Libera o lock pra próxima tentativa do dia poder tentar de novo
-          // (antes, uma falha aqui consumia a única tentativa do dia e o
-          // boa noite simplesmente não saía — Washington pediu que esse
-          // nunca pode falhar).
-          await prisma.memory.deleteMany({ where: { userId: user.id, type: 'boa_noite_lock', content: dateBRT(now) } }).catch(() => {});
+          // Falha — libera lock pra próxima tentativa
+          await prisma.memory.deleteMany({ where: { userId: user.id, type: 'boa_noite_lock', content: hoje } }).catch(() => {});
           continue;
         }
+
         await sendMessage(user.phone, msg);
-        console.log(`[Boa noite] Enviado para ${user.phone}`);
+        console.log(`[Boa noite] ${user.phone} — ${Math.round(minAusente)}min ausente — ${msg.slice(0, 60)}`);
       } catch (e) { console.error(`[Boa noite] Erro ${user.phone}:`, e.message); }
     }
   } catch (e) { console.error('[Boa noite] Erro geral:', e.message); }
