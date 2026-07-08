@@ -1230,8 +1230,14 @@ async function handleMessage(phone, text, location = null) {
         }
       }).catch(() => {});
       const dataFmt = new Date(`${classified.data}T12:00:00-03:00`).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-      await sendMessage(phone, `Anotado: "${classified.titulo}" no dia ${dataFmt} 📌\n\nQue horas devo colocar esse lembrete? Se não souber, me diz que eu deixo às 09:00 provisoriamente 😊`);
-      await memory.saveMemory(user.id, 'tarefa', classified.titulo, { data: classified.data, hora: null });
+      // Pergunta de horário no tom dela — não como sistema
+      await freeResponse(`Preciso perguntar o horário pro lembrete "${classified.titulo}" no dia ${dataFmt}.`, [], {
+        name: prefs?.name, tom: prefs?.tom || 'carinhoso',
+        _contexto: `[SEM HORÁRIO] Você acabou de tentar criar o lembrete "${classified.titulo}" pro dia ${dataFmt} mas sem horário definido. Pergunte de forma natural e no seu tom qual horário colocar. Se a pessoa não souber, diga pra te passar quando souber que você ajusta. NÃO sugira horário provisório. Máximo 1-2 linhas.`,
+        _maxTokens: 80
+      }).then(async (resp) => {
+        if (resp) await sendMessage(phone, resp);
+      }).catch(() => sendMessage(phone, `Que horas vai ser "${classified.titulo}" no dia ${dataFmt}? Me diz quando souber 😊`));
       extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
       return;
     }
@@ -2500,30 +2506,43 @@ async function checkConfirmacaoPendente(user, phone, text) {
     }
 
     if (dados.tipo === 'hora_lembrete') {
-      // Tenta extrair um horário do texto (ex: "10h", "14:30", "10 da manhã", "2 da tarde")
+      // Tenta extrair horário — captura "10h", "14:30", "às 8", "8 da manhã" etc.
       let horaEscolhida = null;
-      const matchHM = textNorm.match(/(\d{1,2})[:h](\d{2})/);
-      const matchH = textNorm.match(/(\d{1,2})\s*h(?:oras)?\b/);
-      const matchNum = !matchHM && !matchH ? textNorm.match(/^(\d{1,2})$/) : null;
+      const matchHM = textNorm.match(/(d{1,2})[:h](d{2})/);
+      const matchH = textNorm.match(/(d{1,2})s*h(?:oras)?b/);
+      const matchAs = textNorm.match(/[àa]s?s+(d{1,2})b/);
+      const matchNum = (!matchHM && !matchH && !matchAs) ? textNorm.match(/^[^0-9]*(d{1,2})[^0-9]*$/) : null;
       if (matchHM) {
         horaEscolhida = `${String(parseInt(matchHM[1])).padStart(2,'0')}:${matchHM[2]}`;
-      } else if (matchH || matchNum) {
-        let h = parseInt((matchH || matchNum)[1]);
-        if (/tarde/.test(textNorm) && h < 12) h += 12;
-        else if (/noite/.test(textNorm) && h < 12) h += 12;
+      } else if (matchH) {
+        let h = parseInt(matchH[1]);
+        if (/tarde|noite/.test(textNorm) && h < 12) h += 12;
+        horaEscolhida = `${String(h).padStart(2,'0')}:00`;
+      } else if (matchAs) {
+        let h = parseInt(matchAs[1]);
+        if (/tarde|noite/.test(textNorm) && h < 12) h += 12;
+        horaEscolhida = `${String(h).padStart(2,'0')}:00`;
+      } else if (matchNum) {
+        let h = parseInt(matchNum[1]);
+        if (/tarde|noite/.test(textNorm) && h < 12) h += 12;
         horaEscolhida = `${String(h).padStart(2,'0')}:00`;
       }
 
-      // Se não souber / não informou hora → usa 09:00 provisório
-      const naoSabe = /nao sei|não sei|qualquer|tanto faz|vc escolhe|voce escolhe|decide voce|sei nao/.test(textNorm);
+      // Se não souber → aguarda, não sugere horário provisório
+      const naoSabe = /nao sei|não sei|qualquer|tanto faz|vc escolhe|voce escolhe|decide voce|sei nao|quando souber|te aviso|depois/.test(textNorm);
 
       if (!horaEscolhida && !naoSabe) {
-        // Não entendeu a resposta — pede de novo, mantendo o pendente
-        await sendMessage(phone, 'Não entendi o horário 😅 Pode me dizer assim: "10h" ou "14:30"? Ou diga "não sei" que eu deixo às 09:00.');
+        await sendMessage(phone, 'Não entendi o horário 😅 Me diz assim: "10h" ou "14:30", que eu anoto na hora.');
         return true;
       }
 
-      const horaFinal = horaEscolhida || '09:00';
+      const horaFinal = horaEscolhida || null;
+      if (!horaFinal) {
+        // Não sabe ainda — mantém a pendência ativa pra quando souber
+        await sendMessage(phone, `Tudo bem! Quando souber o horário, me fala que eu anoto "${dados.titulo}" certinho 😊`);
+        return true;
+      }
+
       const [h, m] = horaFinal.split(':').map(Number);
       const scheduledAt = new Date(`${dados.data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
 
@@ -2535,11 +2554,7 @@ async function checkConfirmacaoPendente(user, phone, text) {
       }
 
       const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-      if (!horaEscolhida) {
-        await sendMessage(phone, `✅ Combinado! Deixei "${dados.titulo}" pra ${dataFmt} às 09:00 (provisório) — se descobrir o horário certo depois, me avisa que eu remarco 😊`);
-      } else {
-        await sendMessage(phone, `✅ Pronto! "${dados.titulo}" agendado pra ${dataFmt} às ${horaFinal} 📌`);
-      }
+      await sendMessage(phone, `✅ Pronto! "${dados.titulo}" agendado pra ${dataFmt} às ${horaFinal} 📌`);
       return true;
     }
 
