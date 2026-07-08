@@ -249,6 +249,10 @@ async function handleSimpleResponse(phone, text, quotedText) {
     const lembrete = await getLembretePendente(user.id, phone, quotedText);
     if (lembrete) {
       await prisma.reminder.update({ where: { id: lembrete.id }, data: { confirmed: true } });
+      // Salva como conversa pra houveConversaRecente bloquear proativas
+      // (sem isso, "Tomado fedo" não aparecia no histórico e a proativa
+      // de manhã achava que você estava sumido e mandava mensagem carente)
+      await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
       // 1ª msg: confirmação do sistema — curta, neutra, sem personalidade
       await sendMessage(phone, `✅ Feito! "${lembrete.message}" concluído.`, 400, quotedText);
       // 2ª msg: Clara sendo ela mesma — comentário natural sobre o que foi feito,
