@@ -1230,6 +1230,9 @@ Como uma amiga curiosa e presente, você pode:
 - Comentar algo que você sugeriu e a pessoa não respondeu ainda
 - Se não tiver nada específico, algo simples e genuíno sobre o almoço/dia
 TOM: leve, informal, como uma mensagem rápida entre amigos no almoço${curiosidadeAlmocoCtx}`;
+          } else if (periodo === 'tarde_contexto') {
+            instrucao = `É tarde — você aparece porque lembrou da pessoa, não porque o relógio mandou. Se tiver assunto do dia em aberto, puxa de forma natural e curiosa. Se não tiver assunto concreto, entrada mínima: um emoji, "e aí fedo?", "saudade" — curto e genuíno. NUNCA explique por que está chegando agora. Se não tiver NADA genuíno, responda SKIP.
+TOM: espontâneo, como quem lembrou da pessoa no meio das coisas`;
           } else {
             instrucao = `É noite — depois das 20h a pessoa está mais relaxada e receptiva. É o horário mais humano pra conversa leve e genuína.
 Como uma amiga que tem vontade de saber como foi o dia:
