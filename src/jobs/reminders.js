@@ -878,12 +878,96 @@ cron.schedule('0 8 * * *', async () => {
 // janela só seguem adiante se a anterior não mandou nada.
 // Manhã: 08:00–09:30 | Almoço: 11:30–13:30 | Noite: 19:30–21:30
 // ── Proativa NOTURNA (20h-21h30) ─────────────────────────────────────────
-// Única proativa agendada do dia além do bom dia. Puxa o assunto mais
-// recente do dia ou algo genuíno. Máx 1 por dia.
-// Manhã e almoço foram removidos — bom dia cobre a manhã, e proativas
-// aleatórias de almoço geravam mensagens genéricas sem contexto real.
+// Proativa agendada principal. Puxa o assunto mais recente do dia.
 cron.schedule('*/15 20 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
 cron.schedule('0,15,30 21 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+
+// ── Proativa de TARDE por contexto (13h-17h) ─────────────────────────────
+// Não é almoço fixo — só dispara se passou 4h+ sem conversa E tem assunto
+// genuíno do dia. Sem assunto → SKIP honesto. Cobre dias agitados onde
+// a pessoa falou bastante de manhã e sumiu.
+cron.schedule('0 13,14,15,16,17 * * *', async () => proativaInteligente('tarde_contexto'), { timezone: 'America/Sao_Paulo' });
+
+// ── Gatilho de DESPEDIDA (a cada 15min) ──────────────────────────────────
+// Detecta "depois eu te conto", "até mais tarde", "te falo mais tarde" etc.
+// na última mensagem. Se detectar, agenda um toque 2-3h depois pra retomar.
+cron.schedule('*/15 * * * *', async () => {
+  try {
+    const now = nowBRT();
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    for (const user of users) {
+      try {
+        const lockKey = `despedida_processada_${dateBRT()}`;
+        // Verifica última mensagem do usuário (não de Clara)
+        const ultimaMsg = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'conversa', content: { not: { startsWith: '[Clara]' } } },
+          orderBy: { createdAt: 'desc' }
+        }).catch(() => null);
+        if (!ultimaMsg) continue;
+
+        const msgId = ultimaMsg.id;
+        const jaProcessou = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'despedida_lock', content: String(msgId) }
+        }).catch(() => null);
+        if (jaProcessou) continue;
+
+        // Detecta gatilho de despedida com interesse em continuar
+        const temGatilho = /depois (eu te conto|te falo|cont|falo)|até (mais tarde|logo|depois|então)|te (conto|falo|chamo) (mais tarde|depois|logo)|volto (já|depois|mais tarde)|já (volto|venho)|saindo agora|to saindo|preciso ir|tenho que ir|vou (lá|saindo|indo)/i.test(ultimaMsg.content || '');
+        if (!temGatilho) continue;
+
+        // Salva pra processar — dispara 2-3h depois
+        const minDelay = 120 + Math.floor(Math.random() * 60); // 2h a 3h
+        const horaDisparo = new Date(new Date(ultimaMsg.createdAt).getTime() + minDelay * 60000);
+
+        // Ainda não chegou na hora?
+        if (now < horaDisparo) continue;
+
+        // Já foi? marca como processado
+        await prisma.memory.create({
+          data: { userId: user.id, type: 'despedida_lock', content: String(msgId) }
+        }).catch(() => {});
+
+        // Verifica se já conversaram depois (não precisa mais puxar)
+        const conversouDepois = await prisma.memory.findFirst({
+          where: {
+            userId: user.id, type: 'conversa',
+            content: { not: { startsWith: '[Clara]' } },
+            createdAt: { gt: ultimaMsg.createdAt }
+          }
+        }).catch(() => null);
+        if (conversouDepois) continue;
+
+        // Também não puxar se tiver conversa recente dos últimos 15 min
+        if (await houveConversaRecente(user.id, 15)) continue;
+
+        // Gera mensagem puxando o assunto que ficou em aberto
+        const { prefs } = await getUserContext(user);
+        const memAfetiva = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+        const apelido = memAfetiva?.apelido_usuario || user.name || '';
+        const histRecente = await memory.getConversationHistory(user.id, 6).catch(() => []);
+        const resumoHist = histRecente.slice(-4).map(m =>
+          `${m.role === 'user' ? 'Ele' : 'Você'}: ${m.content}`
+        ).join('\n');
+        const relMem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+        const ctxRel = relMem?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMem.content}` : '';
+
+        const systemDespedida = buildPersonality(prefs?.tom || 'carinhoso', apelido, false) + ctxRel +
+          `\n\n[GATILHO DE DESPEDIDA] Ele disse "${ultimaMsg.content}" e foi embora. Faz ${Math.round(minDelay/60)}h. Você quer saber como foi — apareça de forma natural e curiosa, puxando o que ficou em aberto. Pode ser curto como "e aí, voltou?" ou mais específico se souber o assunto. NÃO mencione que ele disse que ia embora. Máximo 1-2 linhas.\n\nCONTEXTO RECENTE:\n${resumoHist}`;
+
+        const msg = await freeResponse('E aí?', [], {
+          name: apelido, tom: prefs?.tom || 'carinhoso',
+          _systemOverride: systemDespedida, _maxTokens: 80
+        });
+
+        if (msg && !isRespostaFallback(msg)) {
+          await sendMessage(user.phone, msg);
+          await memory.saveConversationMessage(user.id, 'assistant', msg).catch(() => {});
+          console.log(`[Despedida] ${user.phone}: ${msg.slice(0, 60)}`);
+        }
+      } catch(e) { console.error(`[Despedida] Erro ${user.phone}:`, e.message); }
+    }
+  } catch(e) { console.error('[Despedida] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
 async function proativaInteligente(periodo) {
   try {
     const users = await prisma.user.findMany({ where: { blocked: false } });
@@ -926,13 +1010,30 @@ async function proativaInteligente(periodo) {
         }
 
         // ── Noturna: máx 1 por dia ──────────────────────────────────────
-        // Bom dia + noturna = 2 proativas agendadas por dia. Só dispara
-        // a noturna uma vez, mesmo que o cron tente várias vezes na janela.
         if (periodo === 'noite') {
           const noturnaHoje = await prisma.memory.findFirst({
             where: { userId: user.id, type: 'proativa_noturna_lock', content: dateBRT() }
           }).catch(() => null);
           if (noturnaHoje) continue;
+        }
+
+        // ── Tarde por contexto: só dispara se 4h+ de ausência ──────────
+        // Sem ausência longa, não há motivo pra aparecer — o SKIP honesto
+        // vai filtrar qualquer tentativa sem assunto genuíno de qualquer forma,
+        // mas a verificação de ausência aqui evita nem tentar.
+        if (periodo === 'tarde_contexto') {
+          const ultimaMsgTarde = await prisma.memory.findFirst({
+            where: { userId: user.id, type: 'conversa', content: { not: { startsWith: '[Clara]' } } },
+            orderBy: { createdAt: 'desc' }
+          }).catch(() => null);
+          if (!ultimaMsgTarde) continue;
+          const horasAusente = (now - new Date(ultimaMsgTarde.createdAt)) / (1000 * 60 * 60);
+          if (horasAusente < 4) continue;
+          // Também máx 1 por dia pra não virar almoço fixo
+          const tardeHoje = await prisma.memory.findFirst({
+            where: { userId: user.id, type: 'proativa_tarde_lock', content: dateBRT() }
+          }).catch(() => null);
+          if (tardeHoje) continue;
         }
 
         const dayKey = `${periodo}_${dateBRT()}`;
@@ -1197,10 +1298,15 @@ ${horaAcorda ? `(Acordou por volta das ${horaAcorda})` : ''}`;
           await prisma.memory.create({
             data: { userId: user.id, type: 'proativa_enviado_lock', content: dayKey }
           }).catch(() => {});
-          // Lock de 1 por dia pra noturna
+          // Lock de 1 por dia pra noturna e tarde_contexto
           if (periodo === 'noite') {
             await prisma.memory.create({
               data: { userId: user.id, type: 'proativa_noturna_lock', content: dateBRT() }
+            }).catch(() => {});
+          }
+          if (periodo === 'tarde_contexto') {
+            await prisma.memory.create({
+              data: { userId: user.id, type: 'proativa_tarde_lock', content: dateBRT() }
             }).catch(() => {});
           }
           console.log(`[Proativa ${periodo}] ${user.phone}: ${msgFinal.slice(0, 60)}`);
