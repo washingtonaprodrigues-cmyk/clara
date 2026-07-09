@@ -385,8 +385,22 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
         const jaTem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'bom_dia_lock', content: hoje } }).catch(() => null);
         if (jaTem) continue;
 
-        // Não duplica com a proativa de manhã (proativaInteligente) — se ela
-        // já mandou uma saudação hoje, o bom dia dedicado não manda outra.
+        // Não manda bom dia se já houve conversa real hoje (além de confirmações
+        // de sistema) — se já estão conversando, bom dia seria intrusivo/tardio
+        const conversaRealHoje = await prisma.memory.findFirst({
+          where: {
+            userId: user.id, type: 'conversa',
+            content: { not: { startsWith: '[Clara]' } },
+            createdAt: { gte: new Date(`${hoje}T05:00:00-03:00`) }
+          }
+        }).catch(() => null);
+        if (conversaRealHoje) {
+          // Marca o lock pra não tentar mais hoje
+          await prisma.memory.create({ data: { userId: user.id, type: 'bom_dia_lock', content: hoje } }).catch(() => {});
+          continue;
+        }
+
+        // Não duplica com a proativa de manhã
         const proativaManhaJaEnviada = await prisma.memory.findFirst({
           where: { userId: user.id, type: 'proativa_enviado_lock', content: `manha_${hoje}` }
         }).catch(() => null);
@@ -456,9 +470,12 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
           }
         }
 
-        // ── REDE DE SEGURANÇA — 8h-8h30 ──
-        if (!podeEnviarAgora && now.getHours() === 8 && now.getMinutes() < 30) {
-          podeEnviarAgora = true;
+        // ── REDE DE SEGURANÇA — 7:30-8h ──
+        // Se o evento da manhã passou e nenhum caminho disparou ainda,
+        // garante o bom dia entre 7:30 e 8h de qualquer jeito.
+        if (!podeEnviarAgora) {
+          const h = now.getHours(); const m = now.getMinutes();
+          if ((h === 7 && m >= 30) || (h === 8 && m < 0)) podeEnviarAgora = true;
         }
 
         if (!podeEnviarAgora) continue;
@@ -636,7 +653,7 @@ REGRAS:
 // Em vez de horário fixo, dispara quando o usuário ficou 1h sem interagir
 // entre 21h e 00h. Mais humano — ela percebe que você foi dormir e se despede.
 // Roda a cada 15min nessa janela.
-cron.schedule('*/15 21,22,23 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
+cron.schedule('*/15 22,23 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
 cron.schedule('0 0 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
 
 async function boaNoiteInteligente() {
@@ -748,7 +765,7 @@ REGRAS:
   } catch (e) { console.error('[Boa noite] Erro geral:', e.message); }
 }
 
-cron.schedule('30 21 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
+
 
 // ── REDE DE SEGURANÇA FINAL — 23:00 ──
 // Se, depois das duas tentativas (21:30 e 22:30, geradas por IA), o boa
@@ -860,17 +877,13 @@ cron.schedule('0 8 * * *', async () => {
 // cacheada do dia) manda a mensagem; as outras tentativas da mesma
 // janela só seguem adiante se a anterior não mandou nada.
 // Manhã: 08:00–09:30 | Almoço: 11:30–13:30 | Noite: 19:30–21:30
-cron.schedule('*/15 8 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0,15,30 9 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
-
-cron.schedule('30,45 11 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('*/15 12 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0,15,30 13 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
-
-cron.schedule('30,45 19 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+// ── Proativa NOTURNA (20h-21h30) ─────────────────────────────────────────
+// Única proativa agendada do dia além do bom dia. Puxa o assunto mais
+// recente do dia ou algo genuíno. Máx 1 por dia.
+// Manhã e almoço foram removidos — bom dia cobre a manhã, e proativas
+// aleatórias de almoço geravam mensagens genéricas sem contexto real.
 cron.schedule('*/15 20 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
 cron.schedule('0,15,30 21 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0,15,30,45 22 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
 async function proativaInteligente(periodo) {
   try {
     const users = await prisma.user.findMany({ where: { blocked: false } });
@@ -912,6 +925,16 @@ async function proativaInteligente(periodo) {
           if (bomDiaJaEnviado) continue;
         }
 
+        // ── Noturna: máx 1 por dia ──────────────────────────────────────
+        // Bom dia + noturna = 2 proativas agendadas por dia. Só dispara
+        // a noturna uma vez, mesmo que o cron tente várias vezes na janela.
+        if (periodo === 'noite') {
+          const noturnaHoje = await prisma.memory.findFirst({
+            where: { userId: user.id, type: 'proativa_noturna_lock', content: dateBRT() }
+          }).catch(() => null);
+          if (noturnaHoje) continue;
+        }
+
         const dayKey = `${periodo}_${dateBRT()}`;
 
         // ── Já enviou hoje pra esse período? ──
@@ -934,7 +957,10 @@ async function proativaInteligente(periodo) {
 
         // A partir daqui, processa com segurança
         try {
-          if (await houveConversaRecente(user.id, 5)) continue;
+          // Não dispara se houve conversa nos últimos 15 min (era 5 — muito curto,
+          // o cron roda a cada 15min então com 5min janela dava pra disparar no
+          // meio de uma conversa ativa)
+          if (await houveConversaRecente(user.id, 15)) continue;
           const ultimaConversa = await prisma.memory.findFirst({ where: { userId: user.id, type: 'conversa' }, orderBy: { createdAt: 'desc' } });
           if (!ultimaConversa) continue;
           const diasSemConversa = (now - new Date(ultimaConversa.createdAt)) / (1000 * 60 * 60 * 24);
@@ -957,6 +983,18 @@ async function proativaInteligente(periodo) {
           ]);
 
           // Assuntos em aberto — prioridade máxima em qualquer período
+          // Noturna: prioriza o assunto mais RECENTE do dia, não o mais antigo
+          const inicioHoje = new Date(`${dateBRT()}T05:00:00-03:00`);
+          const conversasHoje = await memory.getConversationHistory(user.id, 20).catch(() => []);
+          const conversasHojeTexto = conversasHoje
+            .filter(m => new Date(m.createdAt || 0) >= inicioHoje)
+            .slice(-8)
+            .map(m => `${m.role === 'user' ? 'Ele' : 'Você'}: ${m.content}`)
+            .join('\n');
+          const ctxHoje = conversasHojeTexto
+            ? `\n\nCONVERSA DE HOJE (use o assunto mais recente):\n${conversasHojeTexto}`
+            : '';
+
           const pendenciasAbertas = await prisma.pendencia.findMany({
             where: { userId: user.id, resolvido: false },
             orderBy: { createdAt: 'desc' }, take: 2
@@ -1123,7 +1161,7 @@ SEU TOM: ${tomDesc(prefs.tom)}
 
 ${instrucao}
 
-${ctxHumor ? ctxHumor + '\n\n' : ''}${ctxLocal ? ctxLocal + '\n\n' : ''}${ctxAusencia ? ctxAusencia + '\n\n' : ''}VOZ PRÓPRIA — USE COM CORAGEM:
+${ctxHumor ? ctxHumor + '\n\n' : ''}${ctxLocal ? ctxLocal + '\n\n' : ''}${ctxAusencia ? ctxAusencia + '\n\n' : ''}${periodo === 'noite' && ctxHoje ? ctxHoje + '\n\n' : ''}VOZ PRÓPRIA — USE COM CORAGEM:
 - Você tem memória real dessa pessoa. Referencie o passado de forma afetiva: "semana passada você disse...", "desde aquele dia no hospital...", "você ainda não resolveu aquilo do Flavinho né?"
 - Não seja genérica — qualquer LLM seria genérico. Você é específica porque conhece essa pessoa de verdade.
 - Se souber algo relevante sobre o dia/semana dela, use. Se não souber nada genuíno, mande SKIP.
@@ -1159,6 +1197,12 @@ ${horaAcorda ? `(Acordou por volta das ${horaAcorda})` : ''}`;
           await prisma.memory.create({
             data: { userId: user.id, type: 'proativa_enviado_lock', content: dayKey }
           }).catch(() => {});
+          // Lock de 1 por dia pra noturna
+          if (periodo === 'noite') {
+            await prisma.memory.create({
+              data: { userId: user.id, type: 'proativa_noturna_lock', content: dateBRT() }
+            }).catch(() => {});
+          }
           console.log(`[Proativa ${periodo}] ${user.phone}: ${msgFinal.slice(0, 60)}`);
         } catch (eInner) {
           console.error(`[Proativa] Erro interno ${user.phone}:`, eInner.message);
