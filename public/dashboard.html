@@ -345,6 +345,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .fin-hist-section{padding:12px 16px 6px;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px}
 .fin-hist-item{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--border);transition:background .1s;position:relative;background:transparent;touch-action:pan-y;transition:transform .2s ease}
 .fin-hist-item:hover{background:var(--s2)}
+.fin-check{width:22px;height:22px;border-radius:7px;border:1.5px solid var(--border2);background:none;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s;padding:0}
+.fin-check:hover{border-color:var(--green)}
+.fin-check.checked{background:var(--green);border-color:var(--green)}
+.fin-check.checked::after{content:'✓';color:#fff;font-size:13px;font-weight:700}
+.fin-hist-item.fin-pago .fin-hist-name{text-decoration:line-through;color:var(--text3)}
+.fin-hist-item.fin-pago .fin-hist-val{opacity:.5}
 .fin-hist-item:last-child{border-bottom:none}
 .fin-hist-info{flex:1;min-width:0}
 .fin-hist-name{font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -981,7 +987,7 @@ select option{background:var(--s2)}
 <div class="overlay" id="m-lembrete"><div class="modal"><div class="modal-title">Novo lembrete</div><div class="mf"><label>O que lembrar?</label><textarea id="ml-titulo" placeholder="Descreva o lembrete..."></textarea></div><div class="mf-row"><div class="mf"><label>Data</label><input type="date" id="ml-data"/></div><div class="mf"><label>Horário</label><input type="time" id="ml-hora"/></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-lembrete')">Cancelar</button><button class="btn-save" id="sl-btn" onclick="saveLembrete()">Criar</button></div></div></div>
 <div class="overlay" id="m-remedio"><div class="modal"><div class="modal-title">Cadastrar medicamento</div><div class="mf"><label>Nome</label><input type="text" id="mr-nome" placeholder="Ex: Nebivolol 5mg"/></div><div class="mf-row"><div class="mf"><label>Dose</label><input type="text" id="mr-dose" placeholder="1 comprimido"/></div><div class="mf"><label>A cada</label><div class="mf-select-wrap"><select id="mr-int"><option value="4">4h</option><option value="6">6h</option><option value="8">8h</option><option value="12" selected>12h</option><option value="24">24h</option></select></div></div></div><div class="mf-row"><div class="mf"><label>Dias</label><input type="number" id="mr-dias" placeholder="30" min="1"/></div><div class="mf"><label>Primeira dose</label><input type="time" id="mr-inicio"/></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-remedio')">Cancelar</button><button class="btn-save" id="sr-btn" onclick="saveRemedio()">Cadastrar</button></div></div></div>
 <div class="overlay" id="m-entrada"><div class="modal"><div class="modal-title">💰 Registrar entrada</div><div class="mf"><label>Descrição</label><input type="text" id="me-desc" placeholder="Ex: Salário, freelance, pensão..."/></div><div class="mf-row"><div class="mf"><label>Valor (R$)</label><input type="number" id="me-val" placeholder="0,00" step="0.01" min="0"/></div><div class="mf"><label>Data</label><input type="date" id="me-data"/></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-entrada')">Cancelar</button><button class="btn-save" id="se-btn" onclick="saveEntrada()">Registrar</button></div></div></div>
-<div class="overlay" id="m-gasto"><div class="modal"><div class="modal-title">Registrar gasto</div><div class="mf"><label>Descrição</label><input type="text" id="mg-desc" placeholder="Ex: Mercado, combustível..."/></div><div class="mf-row"><div class="mf"><label>Valor (R$)</label><input type="number" id="mg-val" placeholder="0,00" step="0.01" min="0"/></div><div class="mf"><label>Data</label><input type="date" id="mg-data"/></div></div><div class="mf"><label>Categoria</label><div class="mf-select-wrap"><select id="mg-cat"><option value="alimentacao">🍔 Alimentação</option><option value="mercado">🛒 Mercado</option><option value="transporte">🚗 Transporte</option><option value="saude">💊 Saúde</option><option value="lazer">🎮 Lazer</option><option value="moradia">🏠 Moradia</option><option value="educacao">📚 Educação</option><option value="outro">📦 Outro</option></select></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-gasto')">Cancelar</button><button class="btn-save" id="sg-btn" onclick="saveGasto()">Registrar</button></div></div></div>
+<div class="overlay" id="m-gasto"><div class="modal"><div class="modal-title">Registrar gasto</div><div class="mf"><label>Descrição</label><input type="text" id="mg-desc" placeholder="Ex: Mercado, combustível..."/></div><div class="mf-row"><div class="mf"><label>Valor (R$)</label><input type="number" id="mg-val" placeholder="0,00" step="0.01" min="0"/></div><div class="mf"><label>Data</label><input type="date" id="mg-data"/></div></div><div class="mf"><label>Categoria</label><div class="mf-select-wrap"><select id="mg-cat"><option value="alimentacao">🍔 Alimentação</option><option value="mercado">🛒 Mercado</option><option value="transporte">🚗 Transporte</option><option value="saude">💊 Saúde</option><option value="lazer">🎮 Lazer</option><option value="cartao">💳 Cartão de crédito</option><option value="moradia">🏠 Moradia</option><option value="educacao">📚 Educação</option><option value="outro">📦 Outro</option></select></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-gasto')">Cancelar</button><button class="btn-save" id="sg-btn" onclick="saveGasto()">Registrar</button></div></div></div>
 <div class="overlay" id="m-cofre"><div class="modal"><div class="modal-title">Novo segredo</div><div class="mf"><label>Tipo</label><div class="mf-select-wrap"><select id="ct" onchange="updateCofreFields()"><option value="senha">🔑 Senha / Login</option><option value="cartao">💳 Cartão</option><option value="nota">📝 Nota secreta</option><option value="outro">📦 Outro</option></select></div></div><div class="mf"><label>Nome</label><input type="text" id="cn" placeholder="Ex: Gmail, Netflix..."/></div><div id="cf-senha"><div class="mf"><label>Email/Usuário</label><input type="text" id="ce" placeholder="seu@email.com"/></div><div class="mf"><label>Senha</label><input type="password" id="cs-pw" placeholder="••••••••"/></div><div class="mf"><label>URL</label><input type="text" id="cu" placeholder="https://..."/></div></div><div id="cf-cartao" style="display:none"><div class="mf"><label>Número</label><input type="text" id="cc-num" placeholder="•••• •••• •••• ••••"/></div><div class="mf-row"><div class="mf"><label>Validade</label><input type="text" id="cc-val" placeholder="MM/AA"/></div><div class="mf"><label>CVV</label><input type="password" id="cc-cvv" placeholder="•••"/></div></div></div><div id="cf-nota" style="display:none"><div class="mf"><label>Conteúdo</label><textarea id="cn-txt" placeholder="Nota secreta..."></textarea></div></div><div id="cf-outro" style="display:none"><div class="mf"><label>Conteúdo</label><textarea id="co-txt" placeholder="Informação importante..."></textarea></div></div><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('m-cofre')">Cancelar</button><button class="btn-save" id="sc-btn" onclick="saveCofre()">Salvar</button></div></div></div>
 <div class="clara-thinking" id="clara-thinking">
   <div class="ct-stars">
@@ -1010,8 +1016,8 @@ let phone='',privateMode=false,currentNav='chat';
 let allRem=[],allMeds=[],allGastos=[],allListas=[];
 let currentMood='carinhoso',remViewDate=new Date(),authTab='login';
 let pollInterval=null,sidebarCollapsed=false,currentSaldo=null;
-const CAT_ICONS={alimentacao:'🍔',mercado:'🛒',transporte:'🚗',saude:'💊',lazer:'🎮',moradia:'🏠',educacao:'📚',entrada:'💰',outro:'📦'};
-const CAT_BG={alimentacao:'rgba(245,158,11,.12)',mercado:'rgba(16,185,129,.12)',transporte:'rgba(59,130,246,.12)',saude:'rgba(239,68,68,.12)',lazer:'rgba(168,85,247,.12)',moradia:'rgba(236,72,153,.12)',educacao:'rgba(6,182,212,.12)',entrada:'rgba(34,197,94,.12)',outro:'rgba(107,114,128,.12)'};
+const CAT_ICONS={alimentacao:'🍔',mercado:'🛒',transporte:'🚗',saude:'💊',lazer:'🎮',cartao:'💳',moradia:'🏠',educacao:'📚',entrada:'💰',outro:'📦'};
+const CAT_BG={alimentacao:'rgba(245,158,11,.12)',mercado:'rgba(16,185,129,.12)',transporte:'rgba(59,130,246,.12)',saude:'rgba(239,68,68,.12)',lazer:'rgba(168,85,247,.12)',moradia:'rgba(236,72,153,.12)',educacao:'rgba(6,182,212,.12)',cartao:'rgba(139,92,246,.12)',entrada:'rgba(34,197,94,.12)',outro:'rgba(107,114,128,.12)'};
 const MED_COLORS=['rgba(139,92,246,.15)','rgba(59,130,246,.15)','rgba(16,185,129,.15)','rgba(245,158,11,.15)','rgba(239,68,68,.15)'];
 const MED_TEXT=['#C4B5FD','#93C5FD','#6EE7B7','#FCD34D','#FCA5A5'];
 const pad=n=>String(n).padStart(2,'0');
@@ -1472,13 +1478,15 @@ function renderFin(){
     const isEntrada=g.value<0;
     const absVal=Math.abs(g.value);
     const name=g.description&&g.description!==g.category?g.description:(g.category.charAt(0).toUpperCase()+g.category.slice(1));
+    const isPago=finPagoGet(g.id);
     const wrap=document.createElement('div');wrap.className='fin-hist-wrap';
     const bg=document.createElement('div');bg.className='fin-hist-delete-bg';bg.innerHTML='🗑️';
-    const item=document.createElement('div');item.className='fin-hist-item';
+    const item=document.createElement('div');item.className='fin-hist-item'+(isPago?' fin-pago':'');
     item.innerHTML=
+      (isEntrada?'':'<button class="fin-check'+(isPago?' checked':'')+'" title="Marcar como pago" data-check-id="'+g.id+'"></button>')+
       '<div class="fin-hist-info">'+
         '<div class="fin-hist-name">'+name+'</div>'+
-        '<div class="fin-hist-cat">'+(isEntrada?'💰 Entrada':((CAT_ICONS[g.category]||'📦')+' '+(g.category.charAt(0).toUpperCase()+g.category.slice(1))))+'</div>'+
+        '<div class="fin-hist-cat">'+(isEntrada?'💰 Entrada':((CAT_ICONS[g.category]||'📦')+' '+(g.category.charAt(0).toUpperCase()+g.category.slice(1)))+(isPago?' · <span style="color:var(--green)">pago</span>':''))+'</div>'+
       '</div>'+
       '<div class="fin-hist-right">'+
         '<div class="fin-hist-val '+(isEntrada?'pos':'neg')+'">'+(isEntrada?'+':'-')+brl(absVal)+'</div>'+
@@ -1502,9 +1510,33 @@ function renderFin(){
     // Attach delete button event
     const delBtnEl = item.querySelector('.fin-del-btn');
     if(delBtnEl) delBtnEl.addEventListener('click', function(e){e.stopPropagation();delGasto(g.id,wrap);});
+    // Attach pago checkbox event
+    const checkEl = item.querySelector('.fin-check');
+    if(checkEl) checkEl.addEventListener('click', function(e){e.stopPropagation();finPagoToggle(g.id);});
     wrap.appendChild(bg);wrap.appendChild(item);container.appendChild(wrap);
   });
   hist.innerHTML='';hist.appendChild(container);
+}
+// ── Controle visual de "pago" — sincronizado via backend ──
+// Persiste no banco (campo Expense.pago), então fica igual no celular e no PC.
+// Não afeta cálculos de saldo — é só um marcador de acompanhamento.
+function finPagoGet(id){
+  const g=allGastos.find(x=>x.id===id);
+  return g?!!g.pago:false;
+}
+async function finPagoToggle(id){
+  const g=allGastos.find(x=>x.id===id);
+  if(!g)return;
+  const novo=!g.pago;
+  g.pago=novo; // otimista — atualiza já e renderiza
+  renderFin();
+  try{
+    await fetch('/forms/gasto-pago/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pago:novo})});
+  }catch{
+    g.pago=!novo; // reverte se falhar
+    renderFin();
+    showToast('Erro ao salvar ⚠️');
+  }
 }
 async function delGasto(id,wrapEl){
   try{
