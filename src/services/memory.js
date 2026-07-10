@@ -73,21 +73,23 @@ const PERSONAL_INFO_TYPE = 'info_pessoal';
 // Categorias do perfil rico — usadas pelo extractPersonalInfo (groq.js)
 // e exibidas no Dashboard > Memórias com labels amigáveis
 const CATEGORIAS_PERFIL = {
-  familia:         { label: '👨‍👩‍👧 Família',          emoji: '👨‍👩‍👧' },
-  relacionamento:  { label: '❤️ Relacionamento',     emoji: '❤️' },
-  filhos:          { label: '👶 Filhos',              emoji: '👶' },
-  trabalho:        { label: '💼 Trabalho',            emoji: '💼' },
-  hobbies:         { label: '🎯 Hobbies',             emoji: '🎯' },
-  entretenimento:  { label: '🎬 Entretenimento',      emoji: '🎬' },
-  alimentacao:     { label: '🍔 Alimentação',         emoji: '🍔' },
-  metas:           { label: '🎯 Metas',               emoji: '🎯' },
-  personalidade:   { label: '✨ Personalidade',       emoji: '✨' },
-  saude:           { label: '💊 Saúde',               emoji: '💊' },
-  datas:           { label: '📅 Datas importantes',   emoji: '📅' },
-  rotina:          { label: '⏰ Rotina',              emoji: '⏰' },
-  objetivos:       { label: '🚀 Objetivos',           emoji: '🚀' },
-  outro:           { label: '📌 Informações gerais',  emoji: '📌' },
-  relacionamento_clara: { label: '💜 Relação com a Clara', emoji: '💜' },
+  familia:              { label: '👨‍👩‍👧 Família',                  emoji: '👨‍👩‍👧' },
+  relacionamento:       { label: '❤️ Relacionamento',             emoji: '❤️' },
+  filhos:               { label: '👶 Filhos',                     emoji: '👶' },
+  trabalho:             { label: '💼 Trabalho',                   emoji: '💼' },
+  hobbies:              { label: '🎯 Hobbies',                    emoji: '🎯' },
+  entretenimento:       { label: '🎬 Entretenimento',             emoji: '🎬' },
+  alimentacao:          { label: '🍔 Alimentação',                emoji: '🍔' },
+  metas:                { label: '🎯 Metas',                      emoji: '🎯' },
+  personalidade:        { label: '✨ Personalidade',              emoji: '✨' },
+  saude:                { label: '💊 Saúde (dele)',               emoji: '💊' },
+  saude_familia:        { label: '🏥 Saúde da Família',          emoji: '🏥' },
+  datas:                { label: '📅 Datas importantes',          emoji: '📅' },
+  rotina:               { label: '⏰ Rotina',                     emoji: '⏰' },
+  objetivos:            { label: '🚀 Objetivos',                  emoji: '🚀' },
+  referencias_compartilhadas: { label: '🤝 Referências & Piadas', emoji: '🤝' },
+  relacionamento_clara: { label: '💜 Relação com a Clara',        emoji: '💜' },
+  outro:                { label: '📌 Informações gerais',         emoji: '📌' },
 };
 
 // Campos que a Clara ainda não conhece e pode perguntar organicamente.
