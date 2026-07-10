@@ -267,7 +267,7 @@ async function handleSimpleResponse(phone, text, quotedText) {
           const relMemoria = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
           const contextoRel = relMemoria?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoria.content}` : '';
           if (!geminiDisponivel() || todosModelosEsgotados()) return;
-          const sistema = buildPersonality(prefs?.tom || 'carinhoso', apelido, false) + contextoRel + `\n\n[LEMBRETE CONCLUÍDO] O usuário acabou de confirmar que concluiu "${lembrete.message}". Reaja de forma natural e curta — parabenize, pergunte como foi, faça uma piada, ou use como gancho pra puxar algo relevante. Máximo 2 linhas. NÃO repita que a tarefa foi concluída.`;
+          const sistema = buildPersonality(prefs?.tom || 'carinhoso', apelido, false) + contextoRel + `\n\n[LEMBRETE CONCLUÍDO] O usuário acabou de confirmar que concluiu "${lembrete.message}". Reaja de forma natural e curta — parabenize, pergunte como foi, faça uma piada, ou use como gancho pra algo relevante. Máximo 2 linhas. NÃO repita que a tarefa foi concluída. NÃO diga bom dia nem saudação de período — o bom dia vem separado.`;
           const comentario = await geminiFreeResponse([
             { role: 'system', content: sistema },
             { role: 'user', content: `Acabei de confirmar que fiz: "${lembrete.message}"` }
