@@ -1100,22 +1100,13 @@ async function proativaInteligente(periodo) {
             getUserContext(user)
           ]);
 
-          // Perfil pessoal acumulativo nas proativas
+          // Perfil pessoal — usa buildPersonalContext do memory.js (mesmo do Dashboard)
           let ctxPerfil = '';
           try {
-            const perfisCats = await prisma.memory.findMany({
-              where: { userId: user.id, type: 'perfil_pessoal' }
-            }).catch(() => []);
-            const agora60 = Date.now();
-            const linhas = [];
-            for (const p of perfisCats) {
-              let meta = {}; try { meta = JSON.parse(p.metadata || '{}'); } catch {}
-              if (meta.expira && meta.expira < agora60) continue;
-              if (!meta.texto) continue;
-              const label = { familia: 'FAMÍLIA', trabalho: 'TRABALHO', gostos: 'GOSTOS', rotina: 'ROTINA', referencias: 'REFERÊNCIAS', saude_familia: 'SAÚDE' }[p.content] || p.content;
-              linhas.push(`${label}: ${meta.texto}`);
+            const perfilCompleto = await memory.buildPersonalContext(user.id).catch(() => null);
+            if (perfilCompleto && perfilCompleto.trim().length > 10) {
+              ctxPerfil = `\n\n[QUEM ELE É]\n${perfilCompleto}`;
             }
-            if (linhas.length > 0) ctxPerfil = `\n\n[QUEM ELE É]\n${linhas.join('\n')}`;
           } catch {}
 
           // Gap 2: estado emocional/tópico do dia
