@@ -568,8 +568,24 @@ async function getPendenciasAbertas(userId) {
     .filter(p => !p.encerrado && (agora - new Date(p.criadoEm).getTime()) < EXPIRY_MS);
 }
 
-async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_retomar }) {
+// Pendências cujo prazo já venceu — é a HORA de fechar o ciclo. Ex: você disse
+// "até domingo vai o remédio da Isis", chegou segunda → essa pendência fica
+// "pronta pra retomar" e a proativa prioriza ela ("e aí, a Isis melhorou?").
+// Tem prioridade sobre pendências sem prazo, porque é um follow-up esperado.
+async function getPendenciasProntasPraRetomar(userId) {
+  const abertas = await getPendenciasAbertas(userId);
+  const agora = Date.now();
+  return abertas.filter(p => p.retomar_apos && new Date(p.retomar_apos).getTime() <= agora);
+}
+
+async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_retomar, prazo }) {
   const existentes = await getPendenciasAbertas(userId);
+
+  // Converte o prazo em texto ("domingo", "terça") numa data real de retomada.
+  // A Clara guarda isso pra voltar no assunto LOGO DEPOIS do prazo, fechando o
+  // ciclo naturalmente ("e aí, a Isis terminou o antibiótico?"). Se não houver
+  // prazo, fica null e o comportamento é o de antes (respiro até reabrir).
+  const retomarApos = prazo ? calcularDataPrazo(prazo) : null;
 
   // Atualiza se já existe assunto parecido
   const mesmoAssunto = existentes.find(p =>
@@ -579,7 +595,7 @@ async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_reto
   if (mesmoAssunto) {
     await prisma.memory.update({
       where: { id: mesmoAssunto.id },
-      data: { content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false }) }
+      data: { content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false, retomar_apos: retomarApos || mesmoAssunto.retomar_apos || null }) }
     }).catch(() => {});
     return;
   }
@@ -593,9 +609,45 @@ async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_reto
   }
 
   await prisma.memory.create({
-    data: { userId, type: 'pendencia_conversa', content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false }) }
+    data: { userId, type: 'pendencia_conversa', content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false, retomar_apos: retomarApos }) }
   }).catch(() => {});
-  console.log(`[Pendência] Salva: "${assunto}"`);
+  console.log(`[Pendência] Salva: "${assunto}"${retomarApos ? ` (retomar após ${retomarApos})` : ''}`);
+}
+
+// Converte um prazo em texto ("domingo", "semana que vem", "terça") numa data
+// ISO de retomada. Simples e tolerante — se não entender, retorna null (aí a
+// pendência só volta quando o usuário reabrir, comportamento seguro de antes).
+function calcularDataPrazo(prazo) {
+  try {
+    const p = String(prazo).toLowerCase().trim();
+    const agora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    const diasSemana = { domingo: 0, segunda: 1, terça: 2, terca: 2, quarta: 3, quinta: 4, sexta: 5, sábado: 6, sabado: 6 };
+
+    // "semana que vem" → +7 dias
+    if (/semana que vem|próxima semana|proxima semana/.test(p)) {
+      const d = new Date(agora); d.setDate(d.getDate() + 7); return d.toISOString();
+    }
+    // "amanhã" → +1
+    if (/amanh[ãa]/.test(p)) {
+      const d = new Date(agora); d.setDate(d.getDate() + 1); return d.toISOString();
+    }
+    // dia da semana nomeado → próxima ocorrência (+1 dia depois pra fechar o ciclo)
+    for (const [nome, idx] of Object.entries(diasSemana)) {
+      if (p.includes(nome)) {
+        const d = new Date(agora);
+        let delta = (idx - d.getDay() + 7) % 7;
+        if (delta === 0) delta = 7; // se é hoje, pega a próxima semana
+        d.setDate(d.getDate() + delta + 1); // +1 pra retomar DEPOIS do prazo
+        return d.toISOString();
+      }
+    }
+    // "X dias" → +X
+    const mDias = p.match(/(\d+)\s*dias?/);
+    if (mDias) {
+      const d = new Date(agora); d.setDate(d.getDate() + parseInt(mDias[1]) + 1); return d.toISOString();
+    }
+    return null;
+  } catch { return null; }
 }
 
 async function fecharPendencia(userId, pendenciaId) {
@@ -829,7 +881,7 @@ module.exports = {
   saveExpense, getMonthExpenses,
   saveContact, getContacts, findContactByName,
   savePendencia,
-  getPendenciasAbertas, salvarOuAtualizarPendencia, fecharPendencia, fecharPendenciasPorResolucao, fecharPendenciaLembrete,
+  getPendenciasAbertas, getPendenciasProntasPraRetomar, salvarOuAtualizarPendencia, fecharPendencia, fecharPendenciasPorResolucao, fecharPendenciaLembrete,
   salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao,
   salvarMemoriaAfetiva, getMemoriaAfetiva,
   salvarResumoRelacionamento, getResumoRelacionamento,
