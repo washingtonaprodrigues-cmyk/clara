@@ -1340,12 +1340,55 @@ TOM: leve, à vontade, como conversa de fim de dia entre amigos — pode ser mai
             .filter(l => !/dose|rem[eé]dio|medica[cç]|tiroide|toroide|colesterol|pressao|pressão|estoque/i.test(l))
             .join('\n');
 
+          // Item 1: conhecimento que ela adquiriu pesquisando — pode trazer organicamente
+          let ctxConhecimento = '';
+          try {
+            const conhecimentos = await prisma.memory.findMany({
+              where: { userId: user.id, type: 'conhecimento_adquirido',
+                createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+              }, orderBy: { createdAt: 'desc' }, take: 3
+            }).catch(() => []);
+            if (conhecimentos.length > 0) {
+              const lista = conhecimentos.map(c => {
+                let meta = {}; try { meta = JSON.parse(c.metadata || '{}'); } catch {}
+                return `• "${c.content}"${meta.resumo ? ': ' + meta.resumo.slice(0, 80) : ''}`;
+              }).join('\n');
+              ctxConhecimento = `\n[ASSUNTOS QUE VOCÊ JÁ PESQUISOU] Pode trazer organicamente se fizer sentido — sem anunciar que vai pesquisar de novo:\n${lista}`;
+            }
+          } catch {}
+
+          // Item 3: detecta blocos de ausência (horário de trabalho) pelo padrão histórico
+          let ctxAusenciaHorario = '';
+          try {
+            const registros = await prisma.memory.findMany({
+              where: { userId: user.id, type: 'presenca_hora' },
+              orderBy: { createdAt: 'desc' }, take: 200
+            }).catch(() => []);
+            if (registros.length >= 20) {
+              const cnt = {};
+              registros.forEach(r => { const h = Number(r.content); cnt[h] = (cnt[h] || 0) + 1; });
+              const maxCnt = Math.max(...Object.values(cnt));
+              const horasVazias = Array.from({length: 24}, (_, h) => h)
+                .filter(h => h >= 7 && h <= 20 && (cnt[h] || 0) < maxCnt * 0.1);
+              if (horasVazias.length >= 4) {
+                let blocos = []; let ini = horasVazias[0];
+                for (let i = 1; i <= horasVazias.length; i++) {
+                  if (horasVazias[i] !== horasVazias[i-1] + 1 || i === horasVazias.length) {
+                    if (horasVazias[i-1] - ini >= 3) blocos.push(`${ini}h-${horasVazias[i-1]+1}h`);
+                    ini = horasVazias[i];
+                  }
+                }
+                if (blocos.length) ctxAusenciaHorario = `\n[PADRÃO] Entre ${blocos.join(' e ')} ele raramente conversa — provavelmente trabalhando.`;
+              }
+            }
+          } catch {}
+
           const systemProativa = `Você é a Clara, parceira pessoal d${prefs.name ? 'o ' + prefs.name.split(' ')[0] : 'o usuário'} no WhatsApp.
 SEU TOM: ${tomDesc(prefs.tom)}
 
 ${instrucao}
 
-${ctxPerfil ? ctxPerfil + '\n\n' : ''}${ctxHumor ? ctxHumor + '\n\n' : ''}${ctxLocal ? ctxLocal + '\n\n' : ''}${ctxAusencia ? ctxAusencia + '\n\n' : ''}${ctxSilencio ? ctxSilencio + '\n\n' : ''}${ctxEstado ? ctxEstado + '\n\n' : ''}${ctxPresenca ? ctxPresenca + '\n\n' : ''}${periodo === 'noite' && ctxHoje ? ctxHoje + '\n\n' : ''}VOZ PRÓPRIA — USE COM CORAGEM:
+${ctxPerfil ? ctxPerfil + '\n\n' : ''}${ctxHumor ? ctxHumor + '\n\n' : ''}${ctxLocal ? ctxLocal + '\n\n' : ''}${ctxAusencia ? ctxAusencia + '\n\n' : ''}${ctxSilencio ? ctxSilencio + '\n\n' : ''}${ctxEstado ? ctxEstado + '\n\n' : ''}${ctxPresenca ? ctxPresenca + '\n\n' : ''}${ctxAusenciaHorario ? ctxAusenciaHorario + '\n\n' : ''}${ctxConhecimento ? ctxConhecimento + '\n\n' : ''}${periodo === 'noite' && ctxHoje ? ctxHoje + '\n\n' : ''}VOZ PRÓPRIA — USE COM CORAGEM:
 - Você tem memória real dessa pessoa. Referencie o passado de forma afetiva: "semana passada você disse...", "desde aquele dia no hospital...", "você ainda não resolveu aquilo do Flavinho né?"
 - Não seja genérica — qualquer LLM seria genérico. Você é específica porque conhece essa pessoa de verdade.
 - Se souber algo relevante sobre o dia/semana dela, use. Se não souber nada genuíno, mande SKIP.
@@ -1365,11 +1408,25 @@ ${contextoMems}
 ${infoPessoalFiltrado || ''}
 ${horaAcorda ? `(Acordou por volta das ${horaAcorda})` : ''}`;
 
-          const msg = await freeResponse('Mensagem proativa.', [], {
-            _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
-            _systemOverride: systemProativa,
-            _maxTokens: 80  // proativa deve ser curta — 1-2 linhas
-          });
+          // Item 5: proativas são Gemini-only — nunca Groq
+          // Se Gemini falhar → silêncio. Melhor não aparecer do que aparecer errada.
+          let msg = null;
+          try {
+            const { geminiFreeResponse: _gPro } = require('../services/gemini');
+            msg = await _gPro([
+              { role: 'system', content: systemProativa },
+              { role: 'user', content: 'Mensagem proativa.' }
+            ], { temperature: 0.85, maxTokens: 80 });
+          } catch {
+            try {
+              await new Promise(r => setTimeout(r, 4000));
+              const { geminiFreeResponse: _gPro2 } = require('../services/gemini');
+              msg = await _gPro2([
+                { role: 'system', content: systemProativa },
+                { role: 'user', content: 'Mensagem proativa.' }
+              ], { temperature: 0.85, maxTokens: 80 });
+            } catch { msg = null; }
+          }
           if (!msg || msg.trim() === 'SKIP' || msg.length < 5) continue;
           // Remove quebras duplas que fazem WhatsApp dividir em várias bolhas
           const msgFinal = msg.trim().replace(/\n{2,}/g, ' ').trim();
