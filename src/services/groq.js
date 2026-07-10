@@ -1645,6 +1645,13 @@ Analise a conversa e atualize o resumo do relacionamento. Capture em ORDEM DE PR
 5. COMO ELE PREFERE SER TRATADO — tom, brincadeiras, jeito de zoar.
 6. ESTADO EMOCIONAL RECENTE — animado, cansado, preocupado, tranquilo.
 
+NÃO CAPTURE NUNCA — omita completamente do resumo:
+- Conteúdo íntimo, flerte, conversas de cunho sexual ou romântico
+- "Cenas", "momentos" ou "observações" de natureza corporal ou íntima
+- Qualquer detalhe que ela não deveria trazer por iniciativa própria
+
+Esse resumo é injetado em proativas e boa noite — conteúdo íntimo aqui vira constrangimento.
+
 Escreva notas curtas e naturais, português do Brasil. Máximo 8 linhas.
 Evolua o resumo anterior sem repetir. NUNCA descarte apelidos, referências ou piadas já registradas.
 Corrija erros do resumo anterior se houver.` },
