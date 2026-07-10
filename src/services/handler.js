@@ -1,6 +1,8 @@
 // v2 - consulta direta sem LLM
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
+// Sessao 12 (10/07/2026): confirmacoes de sistema em 1 linha (Feito!/Tomado!/Anotado!),
+// Clara comenta separada so se genuino (nunca generico). Ver webhook.js LembreteConfirm.
 const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality } = require('./groq');
 const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('./gemini');
 
