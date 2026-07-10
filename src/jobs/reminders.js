@@ -2110,12 +2110,39 @@ cron.schedule('* * * * *', async () => {
 
       const ctx = `[CHAMADA COMBINADA] Você combinou de chamar ${nome || 'o usuário'} agora (${horaCombinada}). Apareça de forma natural — retome o assunto que ficou pendente, use o contexto abaixo. NÃO apareça genérica. NÃO diga "passei pra ver se você está bem".${ctxCombinado}${ctxEstadoChamada}${contextoRelChamada}`;
 
-      const resposta = await Promise.race([
-        freeResponse('', history, { ...prefs, _contexto: ctx }),
-        new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 10000))
-      ]).catch(() => null);
+      // Tenta gerar mensagem contextual — com retry e fallback simples
+      // Se Gemini falhar em ambas as tentativas, manda uma mensagem curta
+      // no tom dela em vez de silêncio total (você estava esperando ela chegar)
+      let resposta = null;
+      try {
+        resposta = await Promise.race([
+          freeResponse('', history, { ...prefs, _contexto: ctx }),
+          new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 10000))
+        ]);
+      } catch {}
 
-      if (resposta && !isRespostaFallback(resposta)) {
+      if (!resposta || isRespostaFallback(resposta)) {
+        // Retry após 4s
+        await new Promise(r => setTimeout(r, 4000));
+        try {
+          resposta = await Promise.race([
+            freeResponse('', history, { ...prefs, _contexto: ctx }),
+            new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000))
+          ]);
+        } catch {}
+      }
+
+      if (!resposta || isRespostaFallback(resposta)) {
+        // Fallback — mensagem simples no tom dela, nunca silêncio
+        // Você estava esperando, ela não pode simplesmente não aparecer
+        const fallbacks = nome
+          ? [`e aí, ${nome}? 😏`, `oi ${nome}! voltei 😄`, `${nome}... chegou a hora 😏`]
+          : [`e aí? 😏`, `oi! voltei 😄`, `chegou a hora 😏`];
+        resposta = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+        console.log(`[ChamadaCombinada] Fallback simples para ${phone} — Gemini falhou`);
+      }
+
+      if (resposta) {
         await sendMessage(phone, resposta);
         await memory.saveConversationMessage(userId, 'assistant', resposta).catch(() => {});
         console.log(`[ChamadaCombinada] Disparada para ${phone} às ${hAtual}`);
