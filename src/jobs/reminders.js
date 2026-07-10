@@ -110,7 +110,30 @@ async function sendMessage(phone, msg, delay) {
   );
 }
 
-const { freeResponse, isRespostaFallback } = require('../services/groq');
+const { freeResponse, isRespostaFallback, buildPersonality } = require('../services/groq');
+const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('../services/gemini');
+
+// ── Helper centralizado de retry Gemini ──────────────────────────────────
+// Usado em TODOS os pontos críticos: bom dia, boa noite, proativas,
+// episódios, fechamento, despedida. Se Gemini retornar vazio, espera
+// e tenta de novo — até 3 tentativas com 5s entre elas.
+// Mensagens CRÍTICAS (bom dia, boa noite, chamada_combinada) recebem
+// um fallback simples se todas as tentativas falharem — nunca silêncio.
+// Mensagens OPCIONAIS (proativas, episódios) recebem null → SKIP.
+async function geminiRetry(systemPrompt, userMsg, opts = {}, { maxTentativas = 3, delayMs = 5000, fallback = null } = {}) {
+  if (!geminiDisponivel() || todosModelosEsgotados()) return fallback;
+  for (let i = 0; i < maxTentativas; i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, delayMs));
+    try {
+      const resp = await geminiFreeResponse([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMsg }
+      ], { temperature: opts.temperature || 0.8, maxTokens: opts.maxTokens || 120 });
+      if (resp && resp.trim().length > 3) return resp.trim();
+    } catch {}
+  }
+  return fallback; // null pra opcionais, string simples pra críticos
+}
 const memory = require('../services/memory');
 const { getHumorDia, getLocalizacao, getCamposDesconhecidos, getProximaCuriosidade, salvarResumoRelacionamento, getResumoRelacionamento, getMemoriaAfetiva } = memory;
 const { PrismaClient } = require('@prisma/client');
@@ -330,12 +353,7 @@ REGRAS:
 - Siga o SEU tom normal — se for mais sem filtro/direto, não force "fofura"; se o assunto for sério, não force humor.
 - Se o assunto já parecia encerrado/resolvido na conversa, ou se você não tem nada genuíno e novo pra acrescentar, responda APENAS: SKIP`;
 
-        const msg = await freeResponse('continuar a conversa', [], {
-          name: prefs.name,
-          tom: prefs.tom || 'carinhoso',
-          _systemOverride: systemContinuidade,
-          _maxTokens: 120,
-        });
+        const msg = await geminiRetry(systemContinuidade, 'continuar a conversa', { temperature: 0.8, maxTokens: 150 }, { maxTentativas: 3, delayMs: 5000, fallback: null });
 
         if (!msg || msg.trim() === 'SKIP' || msg.length < 5 || isRespostaFallback(msg)) continue;
 
@@ -528,10 +546,13 @@ REGRAS:
 - NUNCA poética, NUNCA entre aspas, máximo 1 emoji, nunca repita a mesma frase de outro dia.
 - NUNCA use português de Portugal (podes, tens) — só português do Brasil.`;
 
-        const msg = await freeResponse('Bom dia.', [], { _contexto: memoriaContexto || '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBomDia, _maxTokens: 100 });
-        if (!msg || isRespostaFallback(msg)) { console.log(`[Bom dia] Rate limit ou fallback genérico, pulado para ${user.phone}`); continue; }
+        const msg = await geminiRetry(systemBomDia, 'Bom dia.', { temperature: 0.8, maxTokens: 100 }, {
+          maxTentativas: 3, delayMs: 5000,
+          fallback: `Bom dia${user.name ? ', ' + user.name.split(' ')[0] : ''}! 😊`
+        });
+        if (!msg || isRespostaFallback(msg)) { console.log(`[Bom dia] Falhou, pulado para ${user.phone}`); continue; }
 
-        if (!(await tentarLockDiario(user.id, 'bom_dia_lock'))) continue; // alguém já mandou enquanto gerávamos
+        if (!(await tentarLockDiario(user.id, 'bom_dia_lock'))) continue;
 
         await sendMessage(user.phone, msg);
         console.log(`[Bom dia] ${user.phone}: ${msg}`);
@@ -630,10 +651,8 @@ REGRAS:
 - NUNCA diga "mereceu descansar", "bom trabalho", "parabéns" de forma genérica
 - NUNCA coloque a mensagem entre aspas`;
 
-        const msg = await freeResponse('Fechamento do dia.', [], {
-          _contexto: '', name: apelido || prefs.name, tom: prefs.tom || 'carinhoso',
-          _systemOverride: systemFechamento,
-          _maxTokens: 120
+        const msg = await geminiRetry(systemFechamento, 'Fechamento do dia.', { temperature: 0.8, maxTokens: 120 }, {
+          maxTentativas: 3, delayMs: 5000, fallback: null
         });
 
         if (msg && !isRespostaFallback(msg) && msg.trim().length > 5) {
@@ -654,7 +673,6 @@ REGRAS:
 // entre 21h e 00h. Mais humano — ela percebe que você foi dormir e se despede.
 // Roda a cada 15min nessa janela.
 cron.schedule('*/15 22,23 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0 0 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
 
 async function boaNoiteInteligente() {
   try {
@@ -747,13 +765,12 @@ REGRAS:
 - Varie sempre — nunca repita a mesma frase
 - Tom: ${prefs.tom || 'carinhoso'}`;
 
-        const msg = await freeResponse('Boa noite.', [], {
-          _contexto: '', name: apelido || user.name, tom: prefs.tom || 'carinhoso',
-          _systemOverride: systemBoaNoite, _maxTokens: 80
+        const msg = await geminiRetry(systemBoaNoite, 'Boa noite.', { temperature: 0.8, maxTokens: 80 }, {
+          maxTentativas: 3, delayMs: 5000,
+          fallback: `Boa noite${apelido ? ', ' + apelido : ''}! 💜`
         });
 
         if (!msg || isRespostaFallback(msg)) {
-          // Falha — libera lock pra próxima tentativa
           await prisma.memory.deleteMany({ where: { userId: user.id, type: 'boa_noite_lock', content: hoje } }).catch(() => {});
           continue;
         }
@@ -837,10 +854,8 @@ cron.schedule('0 8 * * *', async () => {
               if (linhasRelacionadas.length > 0) {
                 const prefs = await memory.getUserPreference(user.id).catch(() => null);
                 const quando = diffDias === 0 ? 'hoje' : 'amanhã';
-                msg = await freeResponse(`Aviso de aniversário de ${ev.personName}.`, [], {
-                  _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso',
-                  _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''} Tom: ${prefs?.tom || 'carinhoso'}. É ${quando} o aniversário de ${ev.personName}. O que você sabe: ${linhasRelacionadas.join('; ')}. Envie uma mensagem curta (1-2 linhas) avisando e mencionando naturalmente esse detalhe pessoal. NÃO liste como tópicos.`
-                }).catch(() => null);
+                const _sysAniv = `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''} Tom: ${prefs?.tom || 'carinhoso'}. É ${quando} o aniversário de ${ev.personName}. O que você sabe: ${linhasRelacionadas.join('; ')}. Envie uma mensagem curta (1-2 linhas) avisando e mencionando naturalmente esse detalhe pessoal. NÃO liste como tópicos.`;
+                msg = await geminiRetry(_sysAniv, `Aviso de aniversário.`, { temperature: 0.8, maxTokens: 100 }, { maxTentativas: 3, delayMs: 5000, fallback: null });
                 if (msg && isRespostaFallback(msg)) msg = null;
               }
             } catch (e) { console.error(`[Datas] Erro memórias ${ev.personName}:`, e.message); }
@@ -954,10 +969,7 @@ cron.schedule('*/15 * * * *', async () => {
         const systemDespedida = buildPersonality(prefs?.tom || 'carinhoso', apelido, false) + ctxRel +
           `\n\n[GATILHO DE DESPEDIDA] Ele disse "${ultimaMsg.content}" e foi embora. Faz ${Math.round(minDelay/60)}h. Você quer saber como foi — apareça de forma natural e curiosa, puxando o que ficou em aberto. Pode ser curto como "e aí, voltou?" ou mais específico se souber o assunto. NÃO mencione que ele disse que ia embora. Máximo 1-2 linhas.\n\nCONTEXTO RECENTE:\n${resumoHist}`;
 
-        const msg = await freeResponse('E aí?', [], {
-          name: apelido, tom: prefs?.tom || 'carinhoso',
-          _systemOverride: systemDespedida, _maxTokens: 80
-        });
+        const msg = await geminiRetry(systemDespedida, 'E aí?', { temperature: 0.85, maxTokens: 80 }, { maxTentativas: 3, delayMs: 5000, fallback: null });
 
         if (msg && !isRespostaFallback(msg)) {
           await sendMessage(user.phone, msg);
@@ -1507,10 +1519,7 @@ cron.schedule('30 9 * * 0', async () => {
           ? `- "${i.categoria}" costuma ter gastos por volta do dia ${i.diaAproximado}.`
           : `- Gasto com "${i.categoria}" este mês: R$ ${i.valorAtual.toFixed(2)}, ${i.percentual}% acima da média (R$ ${i.valorMedio.toFixed(2)}).`
         ).join('\n');
-        const msg = await freeResponse('Mensagem de radar/padrões.', [], {
-          _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso',
-          _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''} Tom: ${prefs?.tom || 'carinhoso'}. Padrões notados:\n${insightsTexto}\nEnvie UMA mensagem natural (2-3 linhas) comentando como observação genuína. NÃO use tópicos. NÃO termine com saudação de período.`
-        });
+        const msg = await geminiRetry(systemRadar || '', 'Mensagem de radar.', { temperature: 0.8, maxTokens: 120 }, { maxTentativas: 3, delayMs: 5000, fallback: null });
         if (!msg || isRespostaFallback(msg)) continue;
         await sendMessage(user.phone, msg);
         await prisma.memory.create({ data: { userId: user.id, type: 'radar_lock', content: lockKey } });
@@ -1542,10 +1551,8 @@ cron.schedule('0 17 * * 5', async () => {
         const totalGasto = gastosSemana.reduce((a, g) => a + g.value, 0);
         const infoPessoal = await memory.buildPersonalContext(user.id);
         const ctx = `É sexta-feira à tarde.\n${tarefasSemana.length > 0 ? `Essa semana o usuário concluiu ${tarefasSemana.length} compromisso(s)${totalGasto > 0 ? ` e registrou R$ ${totalGasto.toFixed(2)} em gastos` : ''}.` : ''}\n${infoPessoal}`;
-        const msg = await freeResponse('Envie mensagem de sexta.', [], {
-          _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
-          _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} Envie uma mensagem de sexta-feira calorosa e breve (2-3 linhas). NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.\n${ctx}`
-        });
+        const _sysSexta = `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} Envie uma mensagem de sexta-feira calorosa e breve (2-3 linhas). NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.\n${ctx}`;
+        const msg = await geminiRetry(_sysSexta, 'Envie mensagem de sexta.', { temperature: 0.8, maxTokens: 120 }, { maxTentativas: 3, delayMs: 5000, fallback: null });
         if (!msg || isRespostaFallback(msg)) { console.log(`[Sexta] Rate limit ou fallback, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
         await marcarEnviadoHoje(user.id, 'sexta_enviado');
@@ -1575,10 +1582,8 @@ cron.schedule('0 19 * * 0', async () => {
           memory.buildPersonalContext(user.id)
         ]);
         const ctx = `É domingo à noite, véspera de uma nova semana.\n${lembretesSemana.length > 0 ? `Próximos compromissos:\n${lembretesSemana.map(r => `• ${r.message}`).join('\n')}` : 'Sem compromissos agendados para a semana.'}\n${infoPessoal}`;
-        const msg = await freeResponse('Envie mensagem de domingo.', [], {
-          _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
-          _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} Envie uma mensagem de domingo à noite — tranquila, motivadora e breve (2-3 linhas). NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.\n${ctx}`
-        });
+        const _sysDom = `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} Envie uma mensagem de domingo à noite — tranquila, motivadora e breve (2-3 linhas). NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.\n${ctx}`;
+        const msg = await geminiRetry(_sysDom, 'Envie mensagem de domingo.', { temperature: 0.8, maxTokens: 120 }, { maxTentativas: 3, delayMs: 5000, fallback: null });
         if (!msg || isRespostaFallback(msg)) { console.log(`[Domingo] Rate limit ou fallback, pulado para ${user.phone}`); continue; }
         await sendMessage(user.phone, msg);
         console.log(`[Domingo] Enviado para ${user.phone}`);
@@ -1604,10 +1609,9 @@ cron.schedule('0 9 * * *', async () => {
         if (diasSemConversa < 5 || diasSemConversa > 7) continue;
         const { prefs } = await getUserContext(user);
         const infoPessoal = await memory.buildPersonalContext(user.id);
-        const msg = await freeResponse('Mensagem para usuário que sumiu.', [], {
-          _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
-          _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} O usuário não conversa com você há ${diasSemConversa} dias. Envie uma mensagem curta e genuína perguntando como ele está — sem ser dramática, sem cobrar. Máx 2 linhas. Tom: ${prefs.tom || 'carinhoso'}.\n${infoPessoal}`
-        });
+        const systemSumiu = `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} O usuário não conversa com você há ${diasSemConversa} dias. Envie uma mensagem curta e genuína perguntando como ele está — sem ser dramática, sem cobrar. Máx 2 linhas. Tom: ${prefs.tom || 'carinhoso'}.
+${infoPessoal}`;
+        const msg = await geminiRetry(systemSumiu, 'Mensagem para usuário que sumiu.', { temperature: 0.8, maxTokens: 100 }, { maxTentativas: 3, delayMs: 5000, fallback: null });
         if (!msg || isRespostaFallback(msg)) continue;
         await sendMessage(user.phone, msg);
         await prisma.memory.create({ data: { userId: user.id, type: 'sumico_lock', content: lockKey } });
@@ -1924,7 +1928,17 @@ cron.schedule('0 * * * *', async () => {
       let meta = {}; try { meta = JSON.parse(ep.metadata || '{}'); } catch {}
       if (meta.perguntado) continue;
       if (!meta.checkInAt || new Date(meta.checkInAt) > agora) continue;
-      if (!(await houveConversaRecente(ep.userId, 60 * 24))) continue; // ativo nos últimos 24h
+      if (!(await houveConversaRecente(ep.userId, 60 * 24))) continue;
+
+      // FILTRO: nunca acompanhar episódios íntimos/eróticos
+      // Esses episódios não deviam ter sido salvos (extractEpisodio tem a regra),
+      // mas se chegaram ao banco antes do fix, deleta silenciosamente
+      const ehIntimo = /erotica|erótica|íntim|intim|espelho|observando|cena quente|romance|flerte|sexo|desejo/i.test(ep.content);
+      if (ehIntimo) {
+        await prisma.memory.delete({ where: { id: ep.id } }).catch(() => {});
+        console.log(`[Episódio] Deletado episódio íntimo: "${ep.content}"`);
+        continue;
+      }
 
       // Marca como perguntado antes de disparar
       await prisma.memory.update({
@@ -1938,14 +1952,36 @@ cron.schedule('0 * * * *', async () => {
         try {
           const history = await memory.getConversationHistory(ep.userId, 4).catch(() => []);
           const prefs = await memory.getUserPreference(ep.userId).catch(() => ({}));
-          prefs._contexto = ctx;
-          prefs._skipSaveHistory = true;
-          const resposta = await Promise.race([
-            freeResponse('', history, prefs),
-            new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 10000))
-          ]).catch(() => null);
-          if (resposta && !isRespostaFallback(resposta)) {
+          const memAfetivaEp = await memory.getMemoriaAfetiva(ep.userId).catch(() => ({}));
+          const apelidoEp = memAfetivaEp?.apelido_usuario || prefs?.name || '';
+          const relMemEp = await prisma.memory.findFirst({ where: { userId: ep.userId, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+          const ctxRelEp = relMemEp?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemEp.content}` : '';
+
+          // Gemini-only — se falhar → silêncio, nunca Groq
+          // O Groq não tem contexto relacional e gera respostas genéricas/erradas
+          const { geminiFreeResponse: _gEp, geminiDisponivel: _gdEp, todosModelosEsgotados: _tmeEp } = require('../services/gemini');
+          if (!_gdEp() || _tmeEp()) return;
+
+          const sistemaEp = buildPersonality(prefs?.tom || 'carinhoso', apelidoEp, false) + ctxRelEp + '\n\n' + ctx;
+          let resposta = null;
+          try {
+            resposta = await _gEp([
+              { role: 'system', content: sistemaEp },
+              { role: 'user', content: 'Mensagem de acompanhamento.' }
+            ], { temperature: 0.8, maxTokens: 100 });
+          } catch {
+            await new Promise(r => setTimeout(r, 4000));
+            try {
+              resposta = await _gEp([
+                { role: 'system', content: sistemaEp },
+                { role: 'user', content: 'Mensagem de acompanhamento.' }
+              ], { temperature: 0.8, maxTokens: 100 });
+            } catch { resposta = null; }
+          }
+
+          if (resposta && !isRespostaFallback(resposta) && resposta.trim().length > 5) {
             await sendMessage(ep.user.phone, resposta);
+            await memory.saveConversationMessage(ep.userId, 'assistant', resposta).catch(() => {});
             console.log(`[Episódio] Acompanhamento enviado para ${ep.user.phone}: "${ep.content}"`);
           }
         } catch(e) { console.error('[Episódio] erro acompanhamento:', e.message); }
@@ -2239,7 +2275,7 @@ Envie UMA mensagem curta (1-2 linhas) como parceira presente:
 - Ofereça ajuda específica para aquele contexto
 - NÃO use "lembrete" ou "aviso" — seja natural
 - NUNCA termine com "boa sorte" ou saudação de período`;
-        const msg = await freeResponse('Mensagem de parceira.', [], { _contexto: '', name: nome, tom: prefs?.tom || 'carinhoso', _systemOverride: systemParceira });
+        const msg = await geminiRetry(systemParceira, 'Mensagem de parceira.', { temperature: 0.8, maxTokens: 120 }, { maxTentativas: 3, delayMs: 5000, fallback: null });
         if (!msg || msg.length < 5 || isRespostaFallback(msg)) continue;
         await sendMessage(user.phone, msg);
         console.log(`[Parceira] ${user.phone} → "${r.message}" em 30min`);
