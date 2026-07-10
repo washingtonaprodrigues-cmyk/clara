@@ -786,7 +786,7 @@ async function extractEpisodio(message) {
       titulo: (result.titulo || message).slice(0, 80),
       tipo: result.tipo || 'outro',
       resultado: result.resultado || 'neutro',
-      acompanharEmDias: Math.min(Math.max(parseInt(result.acompanhar_em_dias) || 3, 1), 7)
+      acompanharEmDias: Math.min(Math.max(parseInt(result.acompanhar_em_dias) || 3, 1), 90)
     };
   } catch (e) {
     return null;
@@ -1653,7 +1653,7 @@ Corrija erros do resumo anterior se houver.` },
 
     if (geminiDisponivel() && !todosModelosEsgotados()) {
       try {
-        const respGemini = await geminiFreeResponse(chatMsgs, { temperature: 0.4, maxTokens: 250 });
+        const respGemini = await geminiFreeResponse(chatMsgs, { temperature: 0.4, maxTokens: 500 });
         if (respGemini) return respGemini.trim();
       } catch (eGemini) {
         console.error('[generateRelationshipSummary] Gemini falhou, tentando Groq:', eGemini.message);
@@ -1664,7 +1664,7 @@ Corrija erros do resumo anterior se houver.` },
       model: MODEL_FORTE,
       messages: chatMsgs,
       temperature: 0.4,
-      max_tokens: 250,
+      max_tokens: 500,
     });
     return completion.choices[0].message.content.trim();
   } catch(e) { return currentSummary || ''; }
