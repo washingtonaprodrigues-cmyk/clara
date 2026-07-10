@@ -1221,41 +1221,46 @@ function apararRespostaCortada(texto) {
 // Retorna o texto da resposta, ou null se o Gemini falhar/indisponível.
 async function tentarGeminiComPersonalidade(message, history, tom, name, contexto, phone) {
   if (!geminiDisponivel()) return null;
-  // Se todos os modelos já estão sabidamente esgotados (cache até meia-
-  // noite UTC), retorna null direto, sem montar o prompt nem chamar
-  // geminiFreeResponse — pula a etapa inteira, indo direto pro próximo
-  // fallback (OpenRouter) o mais rápido possível.
   if (todosModelosEsgotados()) {
     console.log('[GeminiSubstituto] Todos os modelos esgotados — pulando etapa inteira');
     return null;
   }
-  try {
-    // Reforço de brevidade no INÍCIO do prompt — o Gemini tende a ser mais
-    // "verboso" antes de chegar ao ponto do que o Groq 70b com a mesma
-    // instrução só no final (regra 6/6b de buildPersonality), o que causava
-    // respostas cortadas no meio de uma palavra ao bater o limite de tokens.
-    const reforcoBrevidade = `Vá direto ao ponto. SEMPRE termine com frase completa — nunca corte no meio. Em conversas casuais seja natural, não contenha o que tem a dizer.\n\n`;
 
-    // Reforço situacional — só no modo sarcástico, calibrado pelo clima
+  const tentarUmaVez = async () => {
+    const reforcoBrevidade = `Vá direto ao ponto. SEMPRE termine com frase completa — nunca corte no meio. Em conversas casuais seja natural, não contenha o que tem a dizer.\n\n`;
     const reforcoSituacional = tom === 'sarcastico'
       ? `REFORÇO DE TOM: quando o clima for de brincadeira, provocação ou intimidade — vá fundo. Ironia afiada, flerte com charme, deboche carinhoso. Não amacie nesses momentos. Se o assunto virar sério, muda o tom naturalmente.\n\n`
       : '';
-
     const sistemaCompleto = reforcoBrevidade + reforcoSituacional + buildPersonality(tom, name, false) + contexto;
     const msgs = [
       { role: 'system', content: sistemaCompleto },
       ...history.slice(-12),
       { role: 'user', content: message }
     ];
-    const resposta = await geminiFreeResponse(msgs, {
+    return geminiFreeResponse(msgs, {
       temperature: tom === 'sarcastico' ? 0.9 : 0.7,
       maxTokens: 600,
     });
+  };
+
+  try {
+    const resposta = await tentarUmaVez();
     console.log(`[GeminiSubstituto] Gemini respondeu para ${phone || '?'}`);
     return apararRespostaCortada(resposta);
   } catch (eGem) {
-    console.error('[GeminiSubstituto] Gemini falhou:', eGem.message);
-    return null;
+    // Gap 3: Gemini retornou vazio ou falhou — retry após 4s antes de cair
+    // pro Groq. O outputTokens=0 com finishReason=STOP é falha momentânea,
+    // não estrutural — geralmente resolve na segunda tentativa.
+    console.error(`[GeminiSubstituto] Gemini falhou (tentativa 1): ${eGem.message} — retry em 4s`);
+    try {
+      await new Promise(r => setTimeout(r, 4000));
+      const resposta2 = await tentarUmaVez();
+      console.log(`[GeminiSubstituto] Gemini respondeu na retry para ${phone || '?'}`);
+      return apararRespostaCortada(resposta2);
+    } catch (eGem2) {
+      console.error(`[GeminiSubstituto] Gemini falhou (tentativa 2): ${eGem2.message} — caindo pro Groq`);
+      return null;
+    }
   }
 }
 
@@ -1629,26 +1634,26 @@ async function generateRelationshipSummary(recentMessages, currentSummary) {
     const msgs = recentMessages.map(m => (m.role === 'user' ? 'Washington' : 'Clara') + ': ' + m.content).join('\n');
     const chatMsgs = [
       { role: 'system', content: `Você é a memória relacional da Clara, assistente pessoal do Washington.
-IMPORTANTE: Washington é HOMEM. Pessoas que ele menciona (esposa, amigos, colegas) NÃO são apelidos dele nem seus — são terceiros na vida dele. Ex: "patroa", "amor", "mulher" = a ESPOSA do Washington, NUNCA um apelido pra chamá-lo. Nunca registre o nome/apelido de um terceiro como se fosse forma de tratar o Washington.
+IMPORTANTE: Washington é HOMEM. "patroa", "amor", "mulher" = ESPOSA DELE, nunca apelido pra ele.
 
-Analise a conversa e atualize o resumo do relacionamento. Capture, em ORDEM DE PRIORIDADE:
-1. APELIDOS e CÓDIGOS PRÓPRIOS — apelidos criados ENTRE Clara e Washington (ex: ele a chama de "Clarita", ela o chama de "fedo"), e emojis com significado combinado (ex: 🙄 = provocação). ATENÇÃO: só conta como apelido se for claramente um termo que UM usa pra chamar o OUTRO — não uma pessoa que o Washington citou de passagem.
-2. PESSOAS NA VIDA DELE (registre SEPARADO, como terceiros, nunca como apelido): esposa (a "patroa"/"amor"), filhos, colegas (ex: Vinicius), etc. — anote quem é quem pra ela lembrar com naturalidade ("como foi o filme com a patroa?").
-3. Como Washington se sente hoje (humor, estresse, animação)
-4. Assuntos que ele mencionou (trabalho, família, planos)
-5. Como ele prefere ser tratado (tom, brincadeiras, jeito de zoar)
-6. Piadas internas e expressões recorrentes dele
-7. O que aconteceu de importante na vida dele recentemente
+Analise a conversa e atualize o resumo do relacionamento. Capture em ORDEM DE PRIORIDADE:
 
-Seja como uma amiga próxima que anota o que importa para lembrar depois — principalmente os "códigos secretos" que tornam a relação única.
-Escreva em formato de notas curtas, naturais, em português. Máximo 6 linhas.
-Integre com o resumo anterior sem repetir — evolua ele, mas NUNCA descarte apelidos/emojis combinados já registrados, mesmo que não apareçam nesta conversa. Se o resumo anterior tiver registrado por engano um terceiro (ex: "patroa") como apelido do Washington, CORRIJA — passe a tratá-lo como a esposa dele.` },
+1. APELIDOS E CÓDIGOS — entre Clara e Washington ("fedo", "Clarita", emojis combinados). Só conta se UM usa pra chamar o OUTRO.
+2. PESSOAS NA VIDA DELE — esposa (patroa), filhos (Isis), colegas, amigos — quem é quem pra ela lembrar naturalmente.
+3. REFERÊNCIAS COMPARTILHADAS — personagens de novela/série/filme associados a eles em brincadeiras, piadas internas que viraram linguagem. ISSO É MEMÓRIA PERMANENTE — nunca descarte.
+4. HIGHLIGHTS DO DIA — o que aconteceu de marcante nesta conversa: onde foi, o que fez, como estava o humor, algo que ficou pendente pra próxima vez.
+5. COMO ELE PREFERE SER TRATADO — tom, brincadeiras, jeito de zoar.
+6. ESTADO EMOCIONAL RECENTE — animado, cansado, preocupado, tranquilo.
+
+Escreva notas curtas e naturais, português do Brasil. Máximo 8 linhas.
+Evolua o resumo anterior sem repetir. NUNCA descarte apelidos, referências ou piadas já registradas.
+Corrija erros do resumo anterior se houver.` },
       { role: 'user', content: `Conversa recente:\n${msgs}\n\nResumo anterior:\n${currentSummary || 'Primeiro contato.'}` }
     ];
 
     if (geminiDisponivel() && !todosModelosEsgotados()) {
       try {
-        const respGemini = await geminiFreeResponse(chatMsgs, { temperature: 0.4, maxTokens: 200 });
+        const respGemini = await geminiFreeResponse(chatMsgs, { temperature: 0.4, maxTokens: 250 });
         if (respGemini) return respGemini.trim();
       } catch (eGemini) {
         console.error('[generateRelationshipSummary] Gemini falhou, tentando Groq:', eGemini.message);
@@ -1659,7 +1664,7 @@ Integre com o resumo anterior sem repetir — evolua ele, mas NUNCA descarte ape
       model: MODEL_FORTE,
       messages: chatMsgs,
       temperature: 0.4,
-      max_tokens: 200,
+      max_tokens: 250,
     });
     return completion.choices[0].message.content.trim();
   } catch(e) { return currentSummary || ''; }
