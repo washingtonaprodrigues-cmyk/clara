@@ -902,6 +902,74 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
     updateRelationshipSummary(user.id, history, respStr).catch(() => {});
 
+    // Item 4: resumo de fim de sessão
+    // Se a mensagem atual veio depois de 2h+ de silêncio, significa que
+    // a sessão anterior encerrou. Gera um resumo mais rico dessa sessão
+    // antes de começar a nova — captura o que aconteceu de importante,
+    // referências compartilhadas, humor, highlights — pra ela lembrar
+    // entre sessões.
+    ;(async () => {
+      try {
+        const ultimaMsgAnterior = await prisma.memory.findFirst({
+          where: {
+            userId: user.id, type: 'conversa',
+            content: { not: { startsWith: '[Clara]' } },
+            createdAt: { lt: new Date(Date.now() - 100) } // antes da atual
+          },
+          orderBy: { createdAt: 'desc' }
+        }).catch(() => null);
+
+        if (!ultimaMsgAnterior) return;
+        const minGap = (Date.now() - new Date(ultimaMsgAnterior.createdAt).getTime()) / 60000;
+        if (minGap < 120) return; // menos de 2h → mesma sessão, não consolida
+
+        // Sessão anterior encerrou — consolida o que aconteceu
+        const lockSessao = `sessao_resumo_${new Date(ultimaMsgAnterior.createdAt).toISOString().slice(0,13)}`;
+        const jaConsolidou = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'sessao_resumo_lock', content: lockSessao }
+        }).catch(() => null);
+        if (jaConsolidou) return;
+
+        await prisma.memory.create({
+          data: { userId: user.id, type: 'sessao_resumo_lock', content: lockSessao }
+        }).catch(() => {});
+
+        // Busca mensagens da sessão anterior (até 2h antes da última msg)
+        const fimSessao = new Date(ultimaMsgAnterior.createdAt);
+        const inicioSessao = new Date(fimSessao.getTime() - 3 * 60 * 60 * 1000);
+        const msgsSessao = await prisma.memory.findMany({
+          where: { userId: user.id, type: 'conversa', createdAt: { gte: inicioSessao, lte: fimSessao } },
+          orderBy: { createdAt: 'asc' }, take: 20
+        }).catch(() => []);
+
+        if (msgsSessao.length < 3) return;
+
+        const textoSessao = msgsSessao.map(m => {
+          const isClara = m.content.startsWith('[Clara]');
+          return `${isClara ? 'Clara' : 'Ele'}: ${m.content.replace('[Clara]', '').trim()}`;
+        }).join('\n');
+
+        // Usa o generateRelationshipSummary com foco em highlights da sessão
+        const current = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'relationship_summary' },
+          orderBy: { createdAt: 'desc' }
+        }).catch(() => null);
+
+        const novoResumo = await generateRelationshipSummary(
+          msgsSessao.map(m => ({
+            role: m.content.startsWith('[Clara]') ? 'assistant' : 'user',
+            content: m.content.replace('[Clara]', '').trim()
+          })),
+          current?.content || ''
+        );
+
+        if (novoResumo) {
+          await upsertMemoryPorTipo(user.id, 'relationship_summary', novoResumo).catch(() => {});
+          console.log(`[SessãoResumo] ${user.id} — sessão de ${msgsSessao.length} msgs consolidada`);
+        }
+      } catch {}
+    })();
+
     // ── Detecção de assunto em aberto (fire-and-forget) ──────────────
     // Roda após a resposta, sem adicionar latência. Se a conversa gerou
     // um assunto relevante não resolvido (saúde, trabalho, evento esperado),
