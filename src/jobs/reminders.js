@@ -1109,7 +1109,40 @@ async function proativaInteligente(periodo) {
             }
           } catch {}
 
-          // Gap 2: estado emocional/tópico do dia
+          // Gap 1: reação inteligente ao silêncio do dia
+          // Se o usuário só interagiu cedo (remédio/bom dia) e sumiu o dia
+          // todo, a noturna deve chegar diferente — reconhece o dia corrido
+          let ctxSilencio = '';
+          if (periodo === 'noite' || periodo === 'tarde_contexto') {
+            try {
+              const inicioHoje5h = new Date(`${dateBRT()}T05:00:00-03:00`);
+              const msgsDia = await prisma.memory.findMany({
+                where: {
+                  userId: user.id, type: 'conversa',
+                  content: { not: { startsWith: '[Clara]' } },
+                  createdAt: { gte: inicioHoje5h }
+                },
+                orderBy: { createdAt: 'asc' }
+              }).catch(() => []);
+
+              if (msgsDia.length > 0) {
+                const primeiraMsgHora = new Date(msgsDia[0].createdAt).getHours();
+                const ultimaMsgHora = new Date(msgsDia[msgsDia.length - 1].createdAt).getHours();
+                const hAtual = now.getHours();
+                const horasSemFalar = hAtual - ultimaMsgHora;
+
+                if (primeiraMsgHora <= 9 && ultimaMsgHora <= 10 && horasSemFalar >= 8) {
+                  // Falou só de manhã cedo e sumiu o dia todo
+                  ctxSilencio = `\n\n[DIA CORRIDO] Ele só apareceu de manhã cedo (por volta das ${primeiraMsgHora}h) e sumiu o resto do dia — faz ${horasSemFalar}h sem falar. Provavelmente foi um dia corrido. Chegue reconhecendo isso de forma leve e natural — "dia corrido?", "sobreviveu ao dia?", "sumiu geral hein" — sem cobrar, com leveza.`;
+                } else if (msgsDia.length <= 3 && horasSemFalar >= 5) {
+                  // Poucas mensagens e longo silêncio
+                  ctxSilencio = `\n\n[DIA QUIETO] Poucas mensagens hoje (${msgsDia.length}) e faz ${horasSemFalar}h em silêncio. Pode reconhecer isso de forma natural se combinar com o clima.`;
+                }
+              }
+            } catch {}
+          }
+
+          // Gap 2: estado emocional + highlights do dia pra memória entre sessões
           const estadoDoDia = await prisma.memory.findFirst({
             where: { userId: user.id, type: 'estado_do_dia' }
           }).catch(() => null);
@@ -1127,7 +1160,7 @@ async function proativaInteligente(periodo) {
             const contagem = {};
             registrosPresenca.forEach(r => { const h = Number(r.content); contagem[h] = (contagem[h] || 0) + 1; });
             const horasMaisAtivas = Object.entries(contagem).sort((a,b) => b[1]-a[1]).slice(0,3).map(([h]) => `${h}h`).join(', ');
-            ctxPresenca = `\n\n[ROTINA] As horas que ele mais conversa são: ${horasMaisAtivas}. Use isso pra calibrar expectativas — se é madrugada e ele raramente conversa nesse horário, é mais especial ele estar aqui.`;
+            ctxPresenca = `\n\n[ROTINA DELE] As horas que ele mais conversa: ${horasMaisAtivas}. Se é um horário incomum, pode ser que algo aconteceu — esteja atenta.`;
           }
 
           // Assuntos em aberto — prioridade máxima em qualquer período
@@ -1312,7 +1345,7 @@ SEU TOM: ${tomDesc(prefs.tom)}
 
 ${instrucao}
 
-${ctxPerfil ? ctxPerfil + '\n\n' : ''}${ctxHumor ? ctxHumor + '\n\n' : ''}${ctxLocal ? ctxLocal + '\n\n' : ''}${ctxAusencia ? ctxAusencia + '\n\n' : ''}${ctxEstado ? ctxEstado + '\n\n' : ''}${ctxPresenca ? ctxPresenca + '\n\n' : ''}${periodo === 'noite' && ctxHoje ? ctxHoje + '\n\n' : ''}VOZ PRÓPRIA — USE COM CORAGEM:
+${ctxPerfil ? ctxPerfil + '\n\n' : ''}${ctxHumor ? ctxHumor + '\n\n' : ''}${ctxLocal ? ctxLocal + '\n\n' : ''}${ctxAusencia ? ctxAusencia + '\n\n' : ''}${ctxSilencio ? ctxSilencio + '\n\n' : ''}${ctxEstado ? ctxEstado + '\n\n' : ''}${ctxPresenca ? ctxPresenca + '\n\n' : ''}${periodo === 'noite' && ctxHoje ? ctxHoje + '\n\n' : ''}VOZ PRÓPRIA — USE COM CORAGEM:
 - Você tem memória real dessa pessoa. Referencie o passado de forma afetiva: "semana passada você disse...", "desde aquele dia no hospital...", "você ainda não resolveu aquilo do Flavinho né?"
 - Não seja genérica — qualquer LLM seria genérico. Você é específica porque conhece essa pessoa de verdade.
 - Se souber algo relevante sobre o dia/semana dela, use. Se não souber nada genuíno, mande SKIP.
