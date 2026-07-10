@@ -403,19 +403,33 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
         const jaTem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'bom_dia_lock', content: hoje } }).catch(() => null);
         if (jaTem) continue;
 
-        // Não manda bom dia se já houve conversa real hoje (além de confirmações
-        // de sistema) — se já estão conversando, bom dia seria intrusivo/tardio
-        const conversaRealHoje = await prisma.memory.findFirst({
+        // Verifica conversas desde às 5h hoje
+        // - Se houve conversa real (não confirmação de remédio/lembrete) → lock e stop
+        // - Se só houve confirmações → bom dia chega 5-10 min depois (ela "viu que você acordou")
+        // - Se nenhuma conversa → bom dia na janela normal (7:30-8h ou pela rotina)
+        const conversasHoje = await prisma.memory.findMany({
           where: {
             userId: user.id, type: 'conversa',
             content: { not: { startsWith: '[Clara]' } },
             createdAt: { gte: new Date(`${hoje}T05:00:00-03:00`) }
+          },
+          orderBy: { createdAt: 'desc' }
+        }).catch(() => []);
+
+        if (conversasHoje.length > 0) {
+          const ehConfirmacao = c => /^(tomado|tomei|tomou|feito|já tomei|ok|feito fedo|pronto)[.! ]*(fedo)?[.!]?$/i.test((c.content || '').trim());
+          const temConversaReal = conversasHoje.some(c => !ehConfirmacao(c));
+          if (temConversaReal) {
+            // Já estava conversando de verdade — lock e stop
+            await prisma.memory.create({ data: { userId: user.id, type: 'bom_dia_lock', content: hoje } }).catch(() => {});
+            continue;
           }
-        }).catch(() => null);
-        if (conversaRealHoje) {
-          // Marca o lock pra não tentar mais hoje
-          await prisma.memory.create({ data: { userId: user.id, type: 'bom_dia_lock', content: hoje } }).catch(() => {});
-          continue;
+          // Só confirmações — espera 5+ min desde a última pra não chegar em cima
+          const minDesdeUltima = (Date.now() - new Date(conversasHoje[0].createdAt).getTime()) / 60000;
+          if (minDesdeUltima < 5) {
+            console.log(`[Bom dia] Aguardando 5min após confirmação para ${user.phone} (${Math.round(minDesdeUltima)}min)`);
+            continue;
+          }
         }
 
         // Não duplica com a proativa de manhã
