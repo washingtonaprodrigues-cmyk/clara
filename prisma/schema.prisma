@@ -101,6 +101,7 @@ model Expense {
   value       Float
   category    String
   description String?
+  pago        Boolean   @default(false)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime?
 
