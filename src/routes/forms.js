@@ -166,6 +166,21 @@ router.delete('/gasto/:id', async (req, res) => {
   }
 });
 
+// ====================== MARCAR GASTO COMO PAGO/NÃO PAGO ======================
+// Controle visual sincronizado entre dispositivos (celular + PC).
+// Não afeta cálculos de saldo — é só um marcador de acompanhamento.
+router.put('/gasto-pago/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { pago } = req.body;
+    await prisma.expense.update({ where: { id }, data: { pago: !!pago } });
+    res.json({ ok: true, pago: !!pago });
+  } catch (e) {
+    console.error('Erro PUT gasto-pago:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====================== PONTO: GET ======================
 router.get('/pontos/:phone', async (req, res) => {
   try {
