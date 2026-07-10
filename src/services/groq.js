@@ -599,47 +599,44 @@ const EXTRACT_SYSTEM = `Extrator de informações pessoais para a Clara 3.0. Ret
 CATEGORIAS DISPONÍVEIS:
 - familia: pais, irmãos, avós, parentes
 - relacionamento: cônjuge/namorado(a), tempo juntos, aniversário de relacionamento
-- filhos: nomes, idades, aniversários dos filhos
+- filhos: nomes, idades, aniversários, personalidade, situação atual dos filhos
 - trabalho: empresa, cargo, área, chefe, colegas importantes, horários, projetos
 - hobbies: esportes praticados, passatempos, atividades de lazer
-- entretenimento: séries, filmes, músicas, times de futebol, jogos, livros
+- entretenimento: séries, novelas, filmes, músicas, times de futebol, jogos, livros — inclua personagens favoritos, episódios marcantes, tramas acompanhadas
 - alimentacao: comidas favoritas, restrições alimentares, alergias
 - metas: objetivos de vida, financeiros, profissionais, pessoais
 - personalidade: signo, introvertido/extrovertido, jeito de ser
-- saude: condições, medicamentos, hábitos de saúde
+- saude: condições, medicamentos e rotina de saúde DELE
+- saude_familia: saúde de familiares (filhos, esposa, etc) — inclua quem, o que, situação atual, remédios
 - datas: aniversários (próprio ou de outros), datas comemorativas importantes
-- rotina: horários habituais, hábitos diários
-- relacionamento: cônjuge, esposa, esposo, namorado(a), parceiro(a) — salve como "conjuge" com o nome se mencionado
+- rotina: horários habituais, hábitos diários, onde vai com frequência
+- referencias_compartilhadas: apelidos inventados juntos, personagens de série/novela/filme associados a ele ou à Clara em brincadeiras, piadas internas que viraram linguagem entre vocês, comparações engraçadas recorrentes — ISSO É OURO, capture com precisão
 - outro: qualquer informação pessoal relevante que não se encaixa acima
 
 REGRAS:
 - Extraia APENAS o que o usuário declarou explicitamente. NUNCA deduza.
-- NUNCA invente ou infira nomes de pessoas (filhos, cônjuge, parentes). Se o nome não foi dito diretamente pelo usuário, não extraia — deixe o campo sem nome. Ex: "minha filha está mal" → não cria entrada nenhuma (nenhum fato estável foi declarado).
-- Para filhos: chave = "filho_[nome]" ou "filha_[nome]", inclua idade/aniversário se mencionado
-- Para relacionamento: chave = "conjuge" com nome + detalhes
+- NUNCA invente nomes de pessoas. Se o nome não foi dito, não extraia.
+- Para filhos: chave = "filho_[nome]" ou "filha_[nome]"
+- Para saude_familia: chave = "saude_[nome_familiar]", inclua situação atual e remédios
+- Para referencias_compartilhadas: chave = "ref_[assunto]", capture o máximo de contexto
+- Para entretenimento/novela: se criaram brincadeira com personagens, salve em referencias_compartilhadas também
 - Para trabalho: chave específica = "empresa", "cargo", "chefe", "colega_[nome]"
-- Para entretenimento: chave específica = "time_futebol", "serie_favorita", "filme_favorito", "musica_genero"
-- Para datas: inclua dia/mês no valor quando mencionado
 - NUNCA extraia nome/apelido do usuário como info_pessoal
 
 EXEMPLOS:
 "minha filha se chama Beatriz, faz 7 anos amanhã" → [{"chave":"filha_beatriz","valor":"Filha Beatriz, 7 anos","categoria":"filhos"}]
-"minha filha está com febre" → [] (NÃO extraia — nenhum nome ou fato estável foi declarado)
-"minha filha está bem, obrigado" → [] (NÃO extraia — reação passageira, sem nome nem dado permanente)
+"a Isis está com tosse, dando amoxilina de 8 em 8 horas" → [{"chave":"saude_isis","valor":"Isis (filha) com tosse — tomando amoxilina 8/8h","categoria":"saude_familia"}]
+"a Isis melhorou, tosse foi embora" → [{"chave":"saude_isis","valor":"Isis (filha) — tosse que teve em jul/2026 sarou","categoria":"saude_familia"}]
 "sou casado com a Maria há 10 anos" → [{"chave":"conjuge","valor":"Casado com Maria há 10 anos","categoria":"relacionamento"}]
 "trabalho na empresa X como gerente de vendas" → [{"chave":"empresa","valor":"Empresa X"},{"chave":"cargo","valor":"Gerente de vendas","categoria":"trabalho"}]
-"meu chefe se chama Vinicius" → [{"chave":"chefe","valor":"Chefe: Vinicius","categoria":"trabalho"}]
 "torço pro Corinthians" → [{"chave":"time_futebol","valor":"Torce pro Corinthians","categoria":"entretenimento"}]
-"adoro filme de suspense e investigação policial" → [{"chave":"gosto_filmes","valor":"Gosta de suspense e investigação policial","categoria":"entretenimento"}]
-"minha comida favorita é pizza" → [{"chave":"comida_favorita","valor":"Comida favorita: pizza","categoria":"alimentacao"}]
-"quero juntar 50 mil reais esse ano" → [{"chave":"meta_financeira","valor":"Meta: juntar R$ 50 mil em 2026","categoria":"metas"}]
-"sou de escorpião" → [{"chave":"signo","valor":"Signo: Escorpião","categoria":"personalidade"}]
-"aniversário da minha esposa é dia 15 de março" → [{"chave":"aniversario_conjuge","valor":"Aniversário da esposa: 15 de março","categoria":"datas"}]
-"pode me chamar de ela, sou mulher" → [{"chave":"genero","valor":"ela","categoria":"outro"}]
+"você me chama de galã da novela X, você é a protagonista" → [{"chave":"ref_novela_personagens","valor":"Washington = galã [nome] da novela X, Clara = protagonista [nome] — brincadeira recorrente","categoria":"referencias_compartilhadas"}]
+"você me chamou de fofinho ontem" → [{"chave":"ref_apelido_especial","valor":"Clara inventou apelido 'fofinho' em contexto carinhoso","categoria":"referencias_compartilhadas"}]
+"toda sexta vou ao mercado com a patroa" → [{"chave":"rotina_sexta","valor":"Sextas: mercado com a esposa","categoria":"rotina"}]
 "oi" → []`;
 
 // Palavras-chave que indicam info pessoal — evita chamar o Groq à toa
-const PERSONAL_KEYWORDS = /minha|meu|meus|minhas|moro|trabalho|sou|tenho|família|filh|esposa|marido|pai|mãe|irmão|irmã|namorad|saúde|remédio|doença|objetivo|meta|aniversário|nasci|adoro|gosto|prefiro|odeio|n[ãa]o gosto|fã de|curto|amo (?!você|vc)|torço|torce|time|cargo|empresa|chefe|casad|signo|filho|filha|namorad|hobby|série|serie|comida favorita|alergi|restrição/i;
+const PERSONAL_KEYWORDS = /minha|meu|meus|minhas|moro|trabalho|sou|tenho|família|filh|esposa|marido|pai|mãe|irmão|irmã|namorad|saúde|remédio|doença|objetivo|meta|aniversário|nasci|adoro|gosto|prefiro|odeio|n[ãa]o gosto|fã de|curto|amo (?!você|vc)|torço|torce|time|cargo|empresa|chefe|casad|signo|filho|filha|namorad|hobby|série|serie|novela|comida favorita|alergi|restrição|personagem|me chamou|você me chama|piada|brincadeira|apelido|galã|protagonista|vilão|herói|rotina|toda (semana|segunda|terça|quarta|quinta|sexta|sábado|domingo)/i;
 
 // ── extractPersonalInfo: extrai informações pessoais da mensagem do usuário ──
 // ultimaPerguntaClara: última mensagem da Clara (opcional) — permite entender
@@ -1848,5 +1845,4 @@ module.exports = {
   infoDatas,
   extrairQueryBusca,
   buildPersonality,
-  extractMemoriaRelacional,
 };
