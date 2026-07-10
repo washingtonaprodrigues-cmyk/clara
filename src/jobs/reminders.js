@@ -1241,7 +1241,20 @@ async function proativaInteligente(periodo) {
             orderBy: { createdAt: 'desc' }, take: 2
           }).catch(() => []);
           const temAssuntoRecente = conversasHojeTexto.length > 30;
-          const ctxPendencias = pendenciasAbertas.length > 0
+
+          // PRAZO VENCIDO: pendências de conversa onde o usuário deu um prazo
+          // ("até domingo vai o remédio da Isis") e esse prazo já passou. É a
+          // HORA de fechar o ciclo — tem prioridade e fura o respiro, porque é
+          // um follow-up esperado, não uma repetição. Ex: chegou segunda →
+          // "e aí fedo, a Isis melhorou daquela tosse?"
+          const prontasPraRetomar = await memory.getPendenciasProntasPraRetomar(user.id).catch(() => []);
+          const ctxPrazoVencido = prontasPraRetomar.length > 0
+            ? `[FECHAR O CICLO — PRIORIDADE] O usuário mencionou que isso teria desfecho por agora. Chegou a hora de perguntar como ficou, de forma natural e carinhosa (não robótica):\n${prontasPraRetomar.map(p => `- ${p.assunto}: ${p.contexto} → ${p.como_retomar}`).join('\n')}\nEssa é a melhor coisa pra puxar agora. Pergunte como resolveu.`
+            : '';
+
+          const ctxPendencias = ctxPrazoVencido
+            ? ctxPrazoVencido
+            : pendenciasAbertas.length > 0
             ? `ASSUNTOS EM ABERTO (do passado — use SÓ se NÃO houver assunto mais recente e atual rolando; senão deixe quieto, você já demonstrou que se importa):\n${pendenciasAbertas.map(p => `- ${p.assunto}: ${p.contexto} → ${p.como_retomar}`).join('\n')}${temAssuntoRecente ? '\n\n[ATENÇÃO] Há um assunto MAIS RECENTE na conversa de hoje. Priorize ELE. Não volte num assunto antigo se já tem algo atual — seria repetitivo e daria impressão de que você não acompanha o presente.' : ''}`
             : '';
 
@@ -1499,11 +1512,18 @@ ${horaAcorda ? `(Acordou por volta das ${horaAcorda})` : ''}`;
           await prisma.memory.create({
             data: { userId: user.id, type: 'proativa_enviado_lock', content: dayKey }
           }).catch(() => {});
+          // Fechar o ciclo: se ela acabou de perguntar sobre uma pendência de
+          // prazo vencido, encerra ela — o follow-up foi feito. Se o usuário
+          // responder algo novo, vira conversa normal; não precisa repetir.
+          if (prontasPraRetomar.length > 0) {
+            await memory.fecharPendencia(user.id, prontasPraRetomar[0].id).catch(() => {});
+            console.log(`[Proativa] Ciclo fechado: "${prontasPraRetomar[0].assunto}" (prazo venceu, perguntou)`);
+          }
           // Respiro de pendências: se havia pendência aberta E não tinha assunto
           // recente competindo, provavelmente ela usou como gancho — marca como
           // perguntada pra não repetir o mesmo tema logo em seguida. Volta ao
           // radar naturalmente só se o usuário reabrir o assunto.
-          if (pendenciasAbertas.length > 0 && !temAssuntoRecente) {
+          else if (pendenciasAbertas.length > 0 && !temAssuntoRecente) {
             await prisma.pendencia.update({
               where: { id: pendenciasAbertas[0].id },
               data: { perguntado: true }
