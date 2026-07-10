@@ -1793,6 +1793,41 @@ async function extrairQueryBusca(textoUsuario, respostaClara) {
   }
 }
 
+// ── Memória Relacional Acumulativa ────────────────────────────────────────
+// Extrai fatos importantes sobre o usuário da conversa e retorna um objeto
+// com categorias pra fazer merge no perfil permanente. Uma amiga íntima
+// vai acumulando esse conhecimento naturalmente ao longo do tempo.
+// Roda em background após cada conversa — silencioso, sem impactar a resposta.
+async function extractMemoriaRelacional(conversaTexto) {
+  try {
+    const resp = await geminiFreeResponseLite([
+      { role: 'system', content: `Você extrai fatos importantes sobre o usuário desta conversa pra construir um perfil pessoal permanente. Retorne JSON com APENAS os campos que tiverem informação nova — ignore campos sem dados novos.
+
+Formato:
+{
+  "familia": "texto livre com fatos sobre esposa, filhos, pais, irmãos — nome, idade, personalidade, situação atual",
+  "trabalho": "texto livre sobre emprego, colegas, patrão, rotina profissional",
+  "gostos": "texto livre sobre filmes, novelas, comida, hobbies, música, esporte",
+  "rotina": "texto livre sobre horários, hábitos, padrões do dia",
+  "referencias": "texto livre sobre apelidos inventados juntos, personagens de novela/filme associados, piadas internas, brincadeiras que viraram linguagem de vocês",
+  "saude_familia": "texto livre sobre situações de saúde atuais (dele ou família) com data aproximada"
+}
+
+REGRAS:
+- Só inclua campos com informação NOVA e CONCRETA
+- Nunca invente — só extraia o que foi dito explicitamente
+- Se não tiver nada relevante em nenhuma categoria: {"nada": true}
+- Máximo 2-3 linhas por campo
+- Referências compartilhadas são OURO: se criaram um apelido, associaram ele a um personagem, tiveram uma piada específica — capture exatamente isso` },
+      { role: 'user', content: conversaTexto }
+    ], { temperature: 0.2, maxTokens: 400 });
+
+    if (!resp || resp.includes('"nada": true')) return null;
+    const clean = resp.replace(/```json|```/g, '').trim();
+    return JSON.parse(clean);
+  } catch { return null; }
+}
+
 module.exports = {
   classify,
   extractPersonalInfo,
@@ -1813,4 +1848,5 @@ module.exports = {
   infoDatas,
   extrairQueryBusca,
   buildPersonality,
+  extractMemoriaRelacional,
 };
