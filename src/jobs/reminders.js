@@ -1930,6 +1930,7 @@ cron.schedule('0 * * * *', async () => {
       }
     }
     const agora = new Date();
+    const hoje = dateBRT(agora);
     const episodios = await prisma.memory.findMany({
       where: { type: 'episodio_vida' },
       include: { user: true },
@@ -1937,12 +1938,22 @@ cron.schedule('0 * * * *', async () => {
       take: 50
     });
 
+    // Agrupa por userId — máx 1 acompanhamento por usuário por dia
+    const jaDisparouHoje = new Set();
+
     for (const ep of episodios) {
       if (!ep.user?.phone) continue;
       let meta = {}; try { meta = JSON.parse(ep.metadata || '{}'); } catch {}
       if (meta.perguntado) continue;
       if (!meta.checkInAt || new Date(meta.checkInAt) > agora) continue;
       if (!(await houveConversaRecente(ep.userId, 60 * 24))) continue;
+
+      // Máx 1 episódio por usuário por dia — evita disparar vários pendentes seguidos
+      if (jaDisparouHoje.has(ep.userId)) continue;
+      const lockEp = await prisma.memory.findFirst({
+        where: { userId: ep.userId, type: 'episodio_acomp_lock', content: hoje }
+      }).catch(() => null);
+      if (lockEp) { jaDisparouHoje.add(ep.userId); continue; }
 
       // FILTRO: nunca acompanhar episódios íntimos/eróticos
       // Esses episódios não deviam ter sido salvos (extractEpisodio tem a regra),
@@ -1996,6 +2007,11 @@ cron.schedule('0 * * * *', async () => {
           if (resposta && !isRespostaFallback(resposta) && resposta.trim().length > 5) {
             await sendMessage(ep.user.phone, resposta);
             await memory.saveConversationMessage(ep.userId, 'assistant', resposta).catch(() => {});
+            // Marca lock diário — só 1 episódio por dia por usuário
+            await prisma.memory.create({
+              data: { userId: ep.userId, type: 'episodio_acomp_lock', content: hoje }
+            }).catch(() => {});
+            jaDisparouHoje.add(ep.userId);
             console.log(`[Episódio] Acompanhamento enviado para ${ep.user.phone}: "${ep.content}"`);
           }
         } catch(e) { console.error('[Episódio] erro acompanhamento:', e.message); }
@@ -2384,6 +2400,10 @@ cron.schedule('0 3 * * *', async () => {
     if (pendencias.length) {
       await prisma.memory.deleteMany({ where: { id: { in: pendencias.map(p => p.id) } } });
     }
+    // Limpa locks de acompanhamento de episódios com mais de 1 dia
+    await prisma.memory.deleteMany({
+      where: { type: 'episodio_acomp_lock', createdAt: { lt: new Date(Date.now() - 26 * 60 * 60 * 1000) } }
+    }).catch(() => {});
     const pendenciasEncerradas = await prisma.memory.findMany({ where: { type: 'pendencia_conversa', createdAt: { lt: ontem } } });
     for (const p of pendenciasEncerradas) {
       try { const d = JSON.parse(p.content); if (d.encerrado) await prisma.memory.delete({ where: { id: p.id } }); } catch {}
