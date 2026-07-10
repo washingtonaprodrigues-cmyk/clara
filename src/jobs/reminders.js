@@ -686,14 +686,19 @@ REGRAS:
 // Em vez de horário fixo, dispara quando o usuário ficou 1h sem interagir
 // entre 21h e 00h. Mais humano — ela percebe que você foi dormir e se despede.
 // Roda a cada 15min nessa janela.
-cron.schedule('*/15 22,23 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
+// Boa noite puro (23h-00h): só entra se a chamada de assunto (20-22h45) não
+// virou conversa. É o fechamento curto e carinhoso — "boa noite, durma bem" —
+// sem puxar assunto, sem gancho, sem usar remédio como trigger.
+cron.schedule('*/15 23 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
+cron.schedule('0 0 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
 
 async function boaNoiteInteligente() {
   try {
     const now = nowBRT();
     const hora = now.getHours();
-    // Só roda entre 21h e 00h
-    if (hora < 21 && hora !== 0) return;
+    // Só roda entre 23h e 00h — a chamada de assunto (20-22h45) tem prioridade
+    // antes disso. Aqui é só o boa noite puro de fechamento.
+    if (hora !== 23 && hora !== 0) return;
 
     const hoje = dateBRT(now);
     const amanha = new Date(now); amanha.setDate(amanha.getDate() + 1);
@@ -719,8 +724,10 @@ async function boaNoiteInteligente() {
 
         const minAusente = (now - new Date(ultimaMsgUser.createdAt)) / 60000;
 
-        // Menos de 1h de ausência — libera lock pra tentar de novo no próximo ciclo
-        if (minAusente < 60) {
+        // Menos de 30min de ausência — ainda pode estar conversando, espera
+        // o próximo ciclo. Como agora roda 23h+, 30min já é sinal de que
+        // recolheu (a chamada de assunto das 20-22h45 já teve sua chance).
+        if (minAusente < 30) {
           await prisma.memory.deleteMany({ where: { userId: user.id, type: 'boa_noite_lock', content: hoje } }).catch(() => {});
           continue;
         }
@@ -803,13 +810,15 @@ REGRAS:
 // noite ainda não saiu por algum motivo (rate limit total, erro etc),
 // manda uma mensagem fixa — sem IA, não tem como falhar. Boa noite é o
 // único disparo que Washington pediu pra NUNCA faltar.
+// Roda 23h45 — bem no fim, depois do boa noite inteligente (23h-23h45) ter
+// tido todas as chances. Só dispara se nada saiu ainda hoje.
 const BOA_NOITE_GARANTIDA = [
   'Boa noite! Descansa bem 💜',
   'Boa noite, durma bem 😊',
   'Por hoje é só. Boa noite!',
   'Boa noite! Até amanhã 💜',
 ];
-cron.schedule('0 23 * * *', async () => {
+cron.schedule('45 23 * * *', async () => {
   try {
     const hoje = dateBRT(nowBRT());
     const users = await prisma.user.findMany({ where: { blocked: false } });
@@ -906,10 +915,15 @@ cron.schedule('0 8 * * *', async () => {
 // cacheada do dia) manda a mensagem; as outras tentativas da mesma
 // janela só seguem adiante se a anterior não mandou nada.
 // Manhã: 08:00–09:30 | Almoço: 11:30–13:30 | Noite: 19:30–21:30
-// ── Proativa NOTURNA (20h-21h30) ─────────────────────────────────────────
-// Proativa agendada principal. Puxa o assunto mais recente do dia.
+// ── Proativa NOTURNA (20h-22h45) ─────────────────────────────────────────
+// Proativa agendada principal. Puxa o assunto mais recente do dia, ou um
+// assunto que ficou no ar (que o usuário parou de responder), ou chama
+// aberto no tom dela. Respeita a JANELA APRENDIDA: se a Clara já aprendeu
+// que esse usuário costuma falar ~22h, ela não dispara às 20h — espera a
+// hora dele. Nos primeiros dias (sem dados), usa a janela toda normalmente.
 cron.schedule('*/15 20 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0,15,30 21 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('0,15,30,45 21 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('0,15,30,45 22 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
 
 // ── Proativa de TARDE por contexto (13h-17h) ─────────────────────────────
 // Não é almoço fixo — só dispara se passou 4h+ sem conversa E tem assunto
@@ -1041,6 +1055,22 @@ async function proativaInteligente(periodo) {
             where: { userId: user.id, type: 'proativa_noturna_lock', content: dateBRT() }
           }).catch(() => null);
           if (noturnaHoje) continue;
+
+          // JANELA APRENDIDA: se a Clara já sabe que esse usuário costuma falar
+          // num horário específico à noite (ex: 22h), ela espera chegar perto
+          // dessa hora em vez de disparar às 20h. Só desloca DENTRO da janela
+          // 20-23h — nunca sai dela. Sem dados suficientes (< 3 registros),
+          // getHorarioPreferido devolve null e ela usa a janela toda normal.
+          const horaPreferidaNoite = await memory.getHorarioPreferido(user.id, 20, 23).catch(() => null);
+          if (horaPreferidaNoite !== null) {
+            const horaAgora = now.getHours();
+            // Só segura se ainda falta chegar na hora preferida (com folga de
+            // 1 tentativa antes). Se já passou da hora dele, dispara normal.
+            if (horaAgora < horaPreferidaNoite && horaPreferidaNoite <= 22) {
+              console.log(`[Proativa noite] esperando janela aprendida (~${horaPreferidaNoite}h) — ${user.phone}`);
+              continue;
+            }
+          }
 
           // Se tem chamada_combinada pendente pras próximas 4h, cede pra ela
           const combinadaPendente = await prisma.memory.findFirst({
