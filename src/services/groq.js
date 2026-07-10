@@ -1245,7 +1245,7 @@ async function tentarGeminiComPersonalidade(message, history, tom, name, context
 
   // 3 tentativas com delays progressivos (4s, 8s) antes de cair no Groq
   // O outputTokens=0 é instabilidade momentânea — geralmente resolve na 2ª ou 3ª
-  const delays = [0, 4000, 8000, 12000, 18000];
+  const delays = [0, 4000, 8000, 12000];
   for (let i = 0; i < delays.length; i++) {
     if (delays[i] > 0) await new Promise(r => setTimeout(r, delays[i]));
     try {
