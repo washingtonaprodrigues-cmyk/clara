@@ -1243,25 +1243,20 @@ async function tentarGeminiComPersonalidade(message, history, tom, name, context
     });
   };
 
-  try {
-    const resposta = await tentarUmaVez();
-    console.log(`[GeminiSubstituto] Gemini respondeu para ${phone || '?'}`);
-    return apararRespostaCortada(resposta);
-  } catch (eGem) {
-    // Gap 3: Gemini retornou vazio ou falhou — retry após 4s antes de cair
-    // pro Groq. O outputTokens=0 com finishReason=STOP é falha momentânea,
-    // não estrutural — geralmente resolve na segunda tentativa.
-    console.error(`[GeminiSubstituto] Gemini falhou (tentativa 1): ${eGem.message} — retry em 4s`);
+  // 3 tentativas com delays progressivos (4s, 8s) antes de cair no Groq
+  // O outputTokens=0 é instabilidade momentânea — geralmente resolve na 2ª ou 3ª
+  const delays = [0, 4000, 8000];
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i] > 0) await new Promise(r => setTimeout(r, delays[i]));
     try {
-      await new Promise(r => setTimeout(r, 4000));
-      const resposta2 = await tentarUmaVez();
-      console.log(`[GeminiSubstituto] Gemini respondeu na retry para ${phone || '?'}`);
-      return apararRespostaCortada(resposta2);
-    } catch (eGem2) {
-      console.error(`[GeminiSubstituto] Gemini falhou (tentativa 2): ${eGem2.message} — caindo pro Groq`);
-      return null;
+      const resposta = await tentarUmaVez();
+      console.log(`[GeminiSubstituto] Gemini respondeu para ${phone || '?'}${i > 0 ? ` (tentativa ${i+1})` : ''}`);
+      return apararRespostaCortada(resposta);
+    } catch (eGem) {
+      console.error(`[GeminiSubstituto] Gemini falhou (tentativa ${i+1}/${delays.length}): ${eGem.message}${i < delays.length-1 ? ` — retry em ${delays[i+1]/1000}s` : ' — caindo pro Groq'}`);
     }
   }
+  return null;
 }
 
 // Tenta responder no estilo "Direta" (factual, sem personalidade) usando
