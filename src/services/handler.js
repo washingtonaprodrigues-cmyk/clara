@@ -668,20 +668,22 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
             }).catch(() => null);
             // O usuário já cumprimentou nesta mensagem?
             const jaCumprimentou = /\b(bom dia|bomdia|oi|ola|opa|eai|e ai|salve|bom diaa+)\b/i.test(normalizar(text));
-            if (!conversaAnteriorHoje && !jaCumprimentou) {
+            // Não emenda bom dia se a primeira mensagem for confirmação de
+            // remédio/lembrete — a Clara deve responder só sobre o remédio
+            // e o bom dia vem separado pelo cron alguns minutos depois.
+            const ehConfirmacaoAcao = /^(feito|tomei|tomado|já tomei|fiz|concluído|ok|feito fedo|tomou|pronto)[.! ]*(fedo)?[.!]?$/i.test(text.trim());
+            if (!conversaAnteriorHoje && !jaCumprimentou && !ehConfirmacaoAcao) {
               contexto += `\n\n[BOM DIA — IMPORTANTE] Esta é a PRIMEIRA mensagem do usuário hoje e ele NÃO te deu bom dia — foi direto ao assunto. Antes (ou junto) de responder o que ele pediu, EMENDE um bom dia SEU no SEU tom atual, de forma natural e curta. Exemplos conforme o tom: se for sarcástica/sem filtro, algo como "bom dia primeiro, né, grosso 🙄" ou "nem um oi, mas tá bom kk bom dia"; se for carinhosa/simpática, algo como "hummm acordou cedinho! bom dia, fedo 💜" ou "bom dia! 😊". Se souber algo do dia anterior ou do estado dele pela memória, pode puxar com humanidade ("dormiu bem?", "como você tá hoje?", "melhorou de ontem?"). NÃO seja robótica nem repita a mesma frase de sempre — varie. Depois disso, responda normalmente o que ele pediu.`;
-              // Marca o lock agora pra o cron não duplicar (ela vai cumprimentar nesta resposta)
               await prisma.memory.create({
                 data: { userId: user.id, type: 'bom_dia_lock', content: hojeStr }
               }).catch(() => {});
             } else if (jaCumprimentou && !conversaAnteriorHoje) {
-              // Usuário já deu bom dia primeiro — ela responde no clima, mas
-              // marcamos o lock mesmo assim pra o cron não mandar um bom dia
-              // redundante depois.
               await prisma.memory.create({
                 data: { userId: user.id, type: 'bom_dia_lock', content: hojeStr }
               }).catch(() => {});
             }
+            // Se for confirmação de ação (remédio/lembrete), não seta lock
+            // — o cron do bom dia ainda pode disparar separado
           }
         }
       } catch (eBomDia) {
