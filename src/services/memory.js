@@ -388,6 +388,13 @@ async function saveConversationMessage(userId, role, content, privateMode = fals
   await prisma.memory.create({
     data: { userId, type: 'conversa', content: JSON.stringify({ role, content, ts: Date.now() }) },
   });
+  // Aprendizado de janela: registra a hora em que o USUÁRIO fala, pra Clara ir
+  // entendendo a rotina (que horas ele mais conversa de manhã/almoço/noite).
+  // Silencioso, não afeta nada agora — só alimenta dados pra proativas ficarem
+  // mais certeiras com o tempo. Só conta mensagem real, não confirmação curta.
+  if (role === 'user' && content && content.trim().length > 6) {
+    registrarHorarioConversa(userId).catch(() => {});
+  }
   const msgs = await prisma.memory.findMany({
     where: { userId, type: 'conversa' },
     orderBy: { createdAt: 'desc' },
@@ -396,6 +403,44 @@ async function saveConversationMessage(userId, role, content, privateMode = fals
     const toDelete = msgs.slice(40).map((m) => m.id);
     await prisma.memory.deleteMany({ where: { id: { in: toDelete } } });
   }
+}
+
+// Registra a hora atual (BRT) numa contagem por período. Guarda um histograma
+// simples: quantas vezes o usuário falou em cada hora do dia. A proativa lê
+// isso pra escolher o melhor horário dentro de cada janela.
+async function registrarHorarioConversa(userId) {
+  const horaBRT = parseInt(new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getHours(), 10);
+  const reg = await prisma.memory.findFirst({
+    where: { userId, type: 'padrao_horario' }
+  }).catch(() => null);
+  let hist = {};
+  if (reg) { try { hist = JSON.parse(reg.content) || {}; } catch { hist = {}; } }
+  hist[horaBRT] = (hist[horaBRT] || 0) + 1;
+  if (reg) {
+    await prisma.memory.update({ where: { id: reg.id }, data: { content: JSON.stringify(hist) } }).catch(() => {});
+  } else {
+    await prisma.memory.create({ data: { userId, type: 'padrao_horario', content: JSON.stringify(hist) } }).catch(() => {});
+  }
+}
+
+// Lê o horário preferido do usuário dentro de uma janela [horaIni, horaFim).
+// Retorna a hora com mais registros na janela, ou null se ainda não há dados
+// suficientes (< 3 registros na janela = usa o padrão da proativa).
+async function getHorarioPreferido(userId, horaIni, horaFim) {
+  const reg = await prisma.memory.findFirst({
+    where: { userId, type: 'padrao_horario' }
+  }).catch(() => null);
+  if (!reg) return null;
+  let hist = {};
+  try { hist = JSON.parse(reg.content) || {}; } catch { return null; }
+  let melhorHora = null, maxCount = 0, totalJanela = 0;
+  for (let h = horaIni; h < horaFim; h++) {
+    const c = hist[h] || 0;
+    totalJanela += c;
+    if (c > maxCount) { maxCount = c; melhorHora = h; }
+  }
+  if (totalJanela < 3) return null; // dados insuficientes → proativa usa padrão
+  return melhorHora;
 }
 
 async function getConversationHistory(userId, limit = 10) {
@@ -779,7 +824,7 @@ module.exports = {
   getCamposDesconhecidos, getProximaCuriosidade, CAMPOS_CURIOSIDADE, CATEGORIAS_PERFIL,
   saveMemory, getRecentMemories,
   setTemporaryContext, getTemporaryContext, clearTemporaryContext,
-  saveConversationMessage, getConversationHistory,
+  saveConversationMessage, getConversationHistory, getHorarioPreferido,
   saveMedication, saveTask,
   saveExpense, getMonthExpenses,
   saveContact, getContacts, findContactByName,
