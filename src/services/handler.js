@@ -1,7 +1,7 @@
 // v2 - consulta direta sem LLM
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
-const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, extractMemoriaRelacional } = require('./groq');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality } = require('./groq');
 const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('./gemini');
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
@@ -600,28 +600,12 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         contexto += `\n\n[SAÚDE EM ABERTO] Mais cedo a pessoa mencionou: "${pendenciaSaude.resumo}".${agendaRelac} Se fizer sentido natural na conversa, pergunte com carinho genuíno como está — referencie a agenda acima se relevante. NUNCA cite remédios, doses ou medicamentos aqui. Não force se a mensagem for sobre outro assunto.`;
       }
 
-      // Injeta perfil pessoal acumulativo — o que ela sabe sobre o usuário
-      // construído ao longo do tempo. Família, trabalho, gostos, referências.
+      // Injeta perfil pessoal — usa o buildPersonalContext do memory.js
+      // que já consolida todas as categorias do info_pessoal do Dashboard
       try {
-        const perfisCats = await prisma.memory.findMany({
-          where: { userId: user.id, type: 'perfil_pessoal' }
-        }).catch(() => []);
-        if (perfisCats.length > 0) {
-          const now60 = Date.now();
-          const linhasPerfil = [];
-          for (const p of perfisCats) {
-            let meta = {}; try { meta = JSON.parse(p.metadata || '{}'); } catch {}
-            if (meta.expira && meta.expira < now60) continue; // expirado
-            if (!meta.texto) continue;
-            const label = {
-              familia: 'FAMÍLIA', trabalho: 'TRABALHO', gostos: 'GOSTOS',
-              rotina: 'ROTINA', referencias: 'REFERÊNCIAS COMPARTILHADAS', saude_familia: 'SAÚDE/FAMÍLIA'
-            }[p.content] || p.content.toUpperCase();
-            linhasPerfil.push(`${label}: ${meta.texto}`);
-          }
-          if (linhasPerfil.length > 0) {
-            contexto += `\n\n[QUEM ELE É — perfil acumulado ao longo do tempo]\n${linhasPerfil.join('\n')}`;
-          }
+        const perfilCompleto = await memory.buildPersonalContext(user.id).catch(() => null);
+        if (perfilCompleto && perfilCompleto.trim().length > 10) {
+          contexto += `\n\n[QUEM ELE É — memória acumulada]\n${perfilCompleto}`;
         }
       } catch {}
 
@@ -824,69 +808,6 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           where: { userId: user.id, type: 'presenca_hora', createdAt: { lt: limite30d } }
         });
       } catch {}
-    })();
-
-    // Memória relacional acumulativa — extrai fatos importantes da conversa
-    // e faz merge no perfil permanente. Como uma amiga que vai guardando
-    // tudo: família, trabalho, gostos, piadas internas, saúde da família.
-    ;(async () => {
-      try {
-        const histPerfil = await memory.getConversationHistory(user.id, 8).catch(() => []);
-        if (histPerfil.length < 2) return;
-        const conversaTexto = histPerfil.slice(-6).map(m =>
-          `${m.role === 'user' ? 'Ele' : 'Você'}: ${m.content}`
-        ).join('\n');
-
-        const novosFatos = await extractMemoriaRelacional(conversaTexto);
-        if (!novosFatos) return;
-
-        // Para cada categoria com dados novos, faz merge com o perfil existente
-        const categorias = ['familia', 'trabalho', 'gostos', 'rotina', 'referencias', 'saude_familia'];
-        for (const cat of categorias) {
-          if (!novosFatos[cat]) continue;
-          const existente = await prisma.memory.findFirst({
-            where: { userId: user.id, type: 'perfil_pessoal', content: cat }
-          }).catch(() => null);
-
-          let metaExistente = {};
-          try { metaExistente = JSON.parse(existente?.metadata || '{}'); } catch {}
-
-          // Merge: adiciona novos fatos sem apagar o que já sabe
-          const novoTexto = novosFatos[cat];
-          const textoAtual = metaExistente.texto || '';
-
-          // Usa Gemini pra fazer merge inteligente (não duplica, consolida)
-          let textoFinal = textoAtual;
-          if (textoAtual && textoAtual.length > 20) {
-            const mergeResp = await geminiFreeResponseLite([
-              { role: 'system', content: `Consolide estas duas versões de perfil pessoal em UMA versão atualizada. Não duplique informações, mantenha tudo relevante, atualize o que mudou. Máximo 5 linhas. Retorne só o texto consolidado, sem prefixo.` },
-              { role: 'user', content: `ATUAL:\n${textoAtual}\n\nNOVO:\n${novoTexto}` }
-            ], { temperature: 0.2, maxTokens: 200 }).catch(() => null);
-            if (mergeResp) textoFinal = mergeResp.trim();
-          } else {
-            textoFinal = novoTexto;
-          }
-
-          // TTL: saude_familia = 60 dias, resto = permanente (5 anos)
-          const diasTTL = cat === 'saude_familia' ? 60 : 365 * 5;
-          const expira = Date.now() + diasTTL * 24 * 60 * 60 * 1000;
-
-          if (existente) {
-            await prisma.memory.update({
-              where: { id: existente.id },
-              data: { metadata: JSON.stringify({ texto: textoFinal, expira, atualizado: new Date().toISOString() }) }
-            });
-          } else {
-            await prisma.memory.create({
-              data: {
-                userId: user.id, type: 'perfil_pessoal', content: cat,
-                metadata: JSON.stringify({ texto: textoFinal, expira, atualizado: new Date().toISOString() })
-              }
-            });
-          }
-          console.log(`[Perfil] ${cat} atualizado para ${user.id}`);
-        }
-      } catch(e) { /* silencioso */ }
     })();
 
     // Gap 2: extrai estado emocional/tópico do dia após cada troca
