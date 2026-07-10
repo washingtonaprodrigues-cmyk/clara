@@ -510,7 +510,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         const episodios = await prisma.memory.findMany({
           where: {
             userId: user.id, type: 'episodio_vida',
-            createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+            createdAt: { gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) }
           },
           orderBy: { createdAt: 'desc' }, take: 3
         });
