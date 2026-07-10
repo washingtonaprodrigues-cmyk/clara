@@ -255,24 +255,23 @@ async function handleSimpleResponse(phone, text, quotedText) {
       await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
       // 1ª msg: confirmação do sistema — curta, neutra, sem personalidade
       await sendMessage(phone, `✅ Feito! "${lembrete.message}" concluído.`, 400, quotedText);
-      // 2ª msg: Clara sendo ela mesma — comentário natural sobre o que foi feito,
-      // separado da confirmação pra não misturar os dois tipos de mensagem.
-      // Roda em background (não bloqueia o webhook de retornar).
+      // 2ª msg: Clara só entra SE tiver algo genuíno a dizer. A confirmação de
+      // sistema (acima) já cumpriu o papel funcional. Ela não precisa comentar
+      // toda tarefa — só quando aquilo especificamente merece uma reação de
+      // amiga. Se for algo trivial (beber água, tarefa comum), ela fica quieta.
       ;(async () => {
         try {
           await new Promise(r => setTimeout(r, 2000));
           const prefs = await memory.getUserPreference(user.id).catch(() => ({}));
           const memAfetiva = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
           const apelido = memAfetiva?.apelido_usuario || prefs?.name || '';
-          const relMemoria = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
-          const contextoRel = relMemoria?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoria.content}` : '';
           if (!geminiDisponivel() || todosModelosEsgotados()) return;
-          const sistema = buildPersonality(prefs?.tom || 'carinhoso', apelido, false) + contextoRel + `\n\n[LEMBRETE CONCLUÍDO] O usuário acabou de confirmar que concluiu "${lembrete.message}". Reaja de forma natural e curta — parabenize, pergunte como foi, faça uma piada, ou use como gancho pra algo relevante. Máximo 2 linhas. NÃO repita que a tarefa foi concluída. NÃO diga bom dia nem saudação de período — o bom dia vem separado.`;
+          const sistema = buildPersonality(prefs?.tom || 'carinhoso', apelido, false) + `\n\n[TAREFA CONCLUÍDA] O usuário confirmou que fez: "${lembrete.message}". O sistema JÁ confirmou pra ele — você NÃO precisa dizer que foi concluído nem repetir a tarefa.\n\nDECIDA: essa tarefa específica merece uma reação sua de amiga? Só reaja se for algo com peso genuíno (uma conquista, algo que ele estava adiando, algo importante da vida dele, algo com graça real). Se for trivial/rotineiro (beber água, tarefa comum do dia), responda APENAS "SKIP" — sem reação, deixa quieto.\n\nSe for reagir: 1 linha curta, no seu tom, sobre ISSO especificamente. NÃO puxe outros assuntos (Isis, saúde de familiares, pendências, agenda). NÃO diga bom dia. NUNCA seja genérica ("boa!", "arrasou!" soltos são proibidos) — se não tem nada específico e genuíno a dizer, é SKIP.`;
           const comentario = await geminiFreeResponse([
             { role: 'system', content: sistema },
             { role: 'user', content: `Acabei de confirmar que fiz: "${lembrete.message}"` }
           ], { temperature: 0.85, maxTokens: 120 }).catch(() => null);
-          if (comentario && comentario.trim().length > 3) {
+          if (comentario && comentario.trim().length > 3 && !/^SKIP/i.test(comentario.trim())) {
             await sendMessage(phone, comentario);
             await memory.saveConversationMessage(user.id, 'assistant', comentario).catch(() => {});
           }
