@@ -1202,12 +1202,17 @@ async function proativaInteligente(periodo) {
             ? `\n\nCONVERSA DE HOJE (use o assunto mais recente):\n${conversasHojeTexto}`
             : '';
 
+          // Pendências abertas — mas com RESPIRO. Se ela já perguntou sobre
+          // uma pendência recentemente (proativa ou conversa nas últimas ~20h),
+          // não repergunta. E se tem assunto mais recente rolando, ele tem
+          // prioridade sobre pendências antigas.
           const pendenciasAbertas = await prisma.pendencia.findMany({
-            where: { userId: user.id, resolvido: false },
+            where: { userId: user.id, resolvido: false, perguntado: false },
             orderBy: { createdAt: 'desc' }, take: 2
           }).catch(() => []);
+          const temAssuntoRecente = conversasHojeTexto.length > 30;
           const ctxPendencias = pendenciasAbertas.length > 0
-            ? `ASSUNTOS EM ABERTO (use como gancho natural, não robótico):\n${pendenciasAbertas.map(p => `- ${p.assunto}: ${p.contexto} → ${p.como_retomar}`).join('\n')}`
+            ? `ASSUNTOS EM ABERTO (do passado — use SÓ se NÃO houver assunto mais recente e atual rolando; senão deixe quieto, você já demonstrou que se importa):\n${pendenciasAbertas.map(p => `- ${p.assunto}: ${p.contexto} → ${p.como_retomar}`).join('\n')}${temAssuntoRecente ? '\n\n[ATENÇÃO] Há um assunto MAIS RECENTE na conversa de hoje. Priorize ELE. Não volte num assunto antigo se já tem algo atual — seria repetitivo e daria impressão de que você não acompanha o presente.' : ''}`
             : '';
 
           // Contexto recente filtrado
@@ -1464,6 +1469,17 @@ ${horaAcorda ? `(Acordou por volta das ${horaAcorda})` : ''}`;
           await prisma.memory.create({
             data: { userId: user.id, type: 'proativa_enviado_lock', content: dayKey }
           }).catch(() => {});
+          // Respiro de pendências: se havia pendência aberta E não tinha assunto
+          // recente competindo, provavelmente ela usou como gancho — marca como
+          // perguntada pra não repetir o mesmo tema logo em seguida. Volta ao
+          // radar naturalmente só se o usuário reabrir o assunto.
+          if (pendenciasAbertas.length > 0 && !temAssuntoRecente) {
+            await prisma.pendencia.update({
+              where: { id: pendenciasAbertas[0].id },
+              data: { perguntado: true }
+            }).catch(() => {});
+            console.log(`[Proativa] Pendência "${pendenciasAbertas[0].assunto}" marcada como perguntada (respiro)`);
+          }
           // Lock de 1 por dia pra noturna e tarde_contexto
           if (periodo === 'noite') {
             await prisma.memory.create({
@@ -1549,63 +1565,6 @@ cron.schedule('30 9 * * 0', async () => {
 // ═══════════════════════════════════════════════════════════════════════
 // TRADIÇÃO SEXTA (17:00)
 // ═══════════════════════════════════════════════════════════════════════
-cron.schedule('0 17 * * 5', async () => {
-  try {
-    const users = await prisma.user.findMany({ where: { blocked: false } });
-    const now = nowBRT();
-    const inicioSemana = new Date(now); inicioSemana.setDate(now.getDate() - 4); inicioSemana.setHours(0,0,0,0);
-    for (const user of users) {
-      try {
-        if (await jaEnviouHoje(user.id, 'sexta_enviado')) continue;
-        const [gastosSemana, tarefasSemana, { prefs }] = await Promise.all([
-          prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioSemana } } }),
-          prisma.reminder.findMany({ where: { userId: user.id, scheduledAt: { gte: inicioSemana }, confirmed: true } }),
-          getUserContext(user)
-        ]);
-        const totalGasto = gastosSemana.reduce((a, g) => a + g.value, 0);
-        const infoPessoal = await memory.buildPersonalContext(user.id);
-        const ctx = `É sexta-feira à tarde.\n${tarefasSemana.length > 0 ? `Essa semana o usuário concluiu ${tarefasSemana.length} compromisso(s)${totalGasto > 0 ? ` e registrou R$ ${totalGasto.toFixed(2)} em gastos` : ''}.` : ''}\n${infoPessoal}`;
-        const _sysSexta = `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} Envie uma mensagem de sexta-feira calorosa e breve (2-3 linhas). NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.\n${ctx}`;
-        const msg = await geminiRetry(_sysSexta, 'Envie mensagem de sexta.', { temperature: 0.8, maxTokens: 120 }, { maxTentativas: 3, delayMs: 5000, fallback: null });
-        if (!msg || isRespostaFallback(msg)) { console.log(`[Sexta] Rate limit ou fallback, pulado para ${user.phone}`); continue; }
-        await sendMessage(user.phone, msg);
-        await marcarEnviadoHoje(user.id, 'sexta_enviado');
-        console.log(`[Sexta] Enviado para ${user.phone}`);
-      } catch (e) { console.error(`[Sexta] Erro ${user.phone}:`, e.message); }
-    }
-  } catch (e) { console.error('[Sexta] Erro geral:', e.message); }
-}, { timezone: 'America/Sao_Paulo' });
-
-// ═══════════════════════════════════════════════════════════════════════
-// TRADIÇÃO DOMINGO (19:00)
-// ═══════════════════════════════════════════════════════════════════════
-cron.schedule('0 19 * * 0', async () => {
-  try {
-    const users = await prisma.user.findMany({ where: { blocked: false } });
-    const now = nowBRT();
-    const semanaQ = new Date(now); semanaQ.setDate(now.getDate() + 1);
-    const fimSemanaQ = new Date(now); fimSemanaQ.setDate(now.getDate() + 7);
-    for (const user of users) {
-      try {
-        if (!(await tentarLockDiario(user.id, 'domingo_enviado'))) {
-          console.log(`[Domingo] ja enviado hoje para ${user.phone}`); continue;
-        }
-        const [lembretesSemana, { prefs }, infoPessoal] = await Promise.all([
-          prisma.reminder.findMany({ where: { userId: user.id, confirmed: false, sent: false, scheduledAt: { gte: semanaQ, lte: fimSemanaQ } }, orderBy: { scheduledAt: 'asc' }, take: 5 }),
-          getUserContext(user),
-          memory.buildPersonalContext(user.id)
-        ]);
-        const ctx = `É domingo à noite, véspera de uma nova semana.\n${lembretesSemana.length > 0 ? `Próximos compromissos:\n${lembretesSemana.map(r => `• ${r.message}`).join('\n')}` : 'Sem compromissos agendados para a semana.'}\n${infoPessoal}`;
-        const _sysDom = `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} Envie uma mensagem de domingo à noite — tranquila, motivadora e breve (2-3 linhas). NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.\n${ctx}`;
-        const msg = await geminiRetry(_sysDom, 'Envie mensagem de domingo.', { temperature: 0.8, maxTokens: 120 }, { maxTentativas: 3, delayMs: 5000, fallback: null });
-        if (!msg || isRespostaFallback(msg)) { console.log(`[Domingo] Rate limit ou fallback, pulado para ${user.phone}`); continue; }
-        await sendMessage(user.phone, msg);
-        console.log(`[Domingo] Enviado para ${user.phone}`);
-      } catch (e) { console.error(`[Domingo] Erro ${user.phone}:`, e.message); }
-    }
-  } catch (e) { console.error('[Domingo] Erro geral:', e.message); }
-}, { timezone: 'America/Sao_Paulo' });
-
 // ═══════════════════════════════════════════════════════════════════════
 // SUMIÇO — 5+ dias sem conversar (09:00)
 // ═══════════════════════════════════════════════════════════════════════
@@ -1964,6 +1923,35 @@ cron.schedule('0 * * * *', async () => {
         console.log(`[Episódio] Deletado episódio íntimo: "${ep.content}"`);
         continue;
       }
+
+      // RESPIRO: se o usuário já tocou nesse tema nas últimas 12h (ex: respondeu
+      // de manhã "a Isis tá melhorando"), não repergunta à tarde — seria
+      // repetitivo. Marca como perguntado e segue. O assunto continua na
+      // memória, então se ele reabrir, ela sabe do que é.
+      try {
+        const palavrasChave = (ep.content || '').toLowerCase().split(/\s+/).filter(w => w.length > 4).slice(0, 4);
+        if (palavrasChave.length) {
+          const convRecente = await prisma.memory.findMany({
+            where: {
+              userId: ep.userId, type: 'conversa',
+              content: { not: { startsWith: '[Clara]' } },
+              createdAt: { gte: new Date(Date.now() - 12 * 60 * 60 * 1000) }
+            },
+            take: 30
+          }).catch(() => []);
+          const jaFalouDoTema = convRecente.some(c =>
+            palavrasChave.some(p => (c.content || '').toLowerCase().includes(p))
+          );
+          if (jaFalouDoTema) {
+            await prisma.memory.update({
+              where: { id: ep.id },
+              data: { metadata: JSON.stringify({ ...meta, perguntado: true }) }
+            }).catch(() => {});
+            console.log(`[Episódio] "${ep.content}" já foi falado nas últimas 12h — respiro, não repergunta`);
+            continue;
+          }
+        }
+      } catch {}
 
       // Marca como perguntado antes de disparar
       await prisma.memory.update({
