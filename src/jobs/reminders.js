@@ -1015,6 +1015,23 @@ async function proativaInteligente(periodo) {
             where: { userId: user.id, type: 'proativa_noturna_lock', content: dateBRT() }
           }).catch(() => null);
           if (noturnaHoje) continue;
+
+          // Se tem chamada_combinada pendente pras próximas 4h, cede pra ela
+          const combinadaPendente = await prisma.memory.findFirst({
+            where: { userId: user.id, type: 'chamada_combinada' }
+          }).catch(() => null);
+          if (combinadaPendente) {
+            let meta = {}; try { meta = JSON.parse(combinadaPendente.metadata || '{}'); } catch {}
+            if (meta.hora) {
+              const [hC, mC] = meta.hora.split(':').map(Number);
+              const minCombinado = hC * 60 + mC;
+              const minAgora = now.getHours() * 60 + now.getMinutes();
+              if (minCombinado > minAgora && minCombinado - minAgora <= 240) {
+                console.log(`[Proativa noite] cedendo pro combinado das ${meta.hora} — ${user.phone}`);
+                continue;
+              }
+            }
+          }
         }
 
         // ── Tarde por contexto: só dispara se 4h+ de ausência ──────────
@@ -1082,6 +1099,45 @@ async function proativaInteligente(periodo) {
             memory.getRecentMemories(user.id, 20),
             getUserContext(user)
           ]);
+
+          // Perfil pessoal acumulativo nas proativas
+          let ctxPerfil = '';
+          try {
+            const perfisCats = await prisma.memory.findMany({
+              where: { userId: user.id, type: 'perfil_pessoal' }
+            }).catch(() => []);
+            const agora60 = Date.now();
+            const linhas = [];
+            for (const p of perfisCats) {
+              let meta = {}; try { meta = JSON.parse(p.metadata || '{}'); } catch {}
+              if (meta.expira && meta.expira < agora60) continue;
+              if (!meta.texto) continue;
+              const label = { familia: 'FAMÍLIA', trabalho: 'TRABALHO', gostos: 'GOSTOS', rotina: 'ROTINA', referencias: 'REFERÊNCIAS', saude_familia: 'SAÚDE' }[p.content] || p.content;
+              linhas.push(`${label}: ${meta.texto}`);
+            }
+            if (linhas.length > 0) ctxPerfil = `\n\n[QUEM ELE É]\n${linhas.join('\n')}`;
+          } catch {}
+
+          // Gap 2: estado emocional/tópico do dia
+          const estadoDoDia = await prisma.memory.findFirst({
+            where: { userId: user.id, type: 'estado_do_dia' }
+          }).catch(() => null);
+          const ctxEstado = estadoDoDia?.content
+            ? `\n\n[ESTADO DO DIA] Última extração da conversa de hoje: ${estadoDoDia.content}. Use isso pra calibrar o tom — se ele estava preocupado, seja mais acolhedora; se estava animado, entre no clima.`
+            : '';
+
+          // Gap 1: perfil de presença — aprende quando o usuário está mais ativo
+          const registrosPresenca = await prisma.memory.findMany({
+            where: { userId: user.id, type: 'presenca_hora' },
+            orderBy: { createdAt: 'desc' }, take: 100
+          }).catch(() => []);
+          let ctxPresenca = '';
+          if (registrosPresenca.length >= 10) {
+            const contagem = {};
+            registrosPresenca.forEach(r => { const h = Number(r.content); contagem[h] = (contagem[h] || 0) + 1; });
+            const horasMaisAtivas = Object.entries(contagem).sort((a,b) => b[1]-a[1]).slice(0,3).map(([h]) => `${h}h`).join(', ');
+            ctxPresenca = `\n\n[ROTINA] As horas que ele mais conversa são: ${horasMaisAtivas}. Use isso pra calibrar expectativas — se é madrugada e ele raramente conversa nesse horário, é mais especial ele estar aqui.`;
+          }
 
           // Assuntos em aberto — prioridade máxima em qualquer período
           // Noturna: prioriza o assunto mais RECENTE do dia, não o mais antigo
@@ -1265,7 +1321,7 @@ SEU TOM: ${tomDesc(prefs.tom)}
 
 ${instrucao}
 
-${ctxHumor ? ctxHumor + '\n\n' : ''}${ctxLocal ? ctxLocal + '\n\n' : ''}${ctxAusencia ? ctxAusencia + '\n\n' : ''}${periodo === 'noite' && ctxHoje ? ctxHoje + '\n\n' : ''}VOZ PRÓPRIA — USE COM CORAGEM:
+${ctxPerfil ? ctxPerfil + '\n\n' : ''}${ctxHumor ? ctxHumor + '\n\n' : ''}${ctxLocal ? ctxLocal + '\n\n' : ''}${ctxAusencia ? ctxAusencia + '\n\n' : ''}${ctxEstado ? ctxEstado + '\n\n' : ''}${ctxPresenca ? ctxPresenca + '\n\n' : ''}${periodo === 'noite' && ctxHoje ? ctxHoje + '\n\n' : ''}VOZ PRÓPRIA — USE COM CORAGEM:
 - Você tem memória real dessa pessoa. Referencie o passado de forma afetiva: "semana passada você disse...", "desde aquele dia no hospital...", "você ainda não resolveu aquilo do Flavinho né?"
 - Não seja genérica — qualquer LLM seria genérico. Você é específica porque conhece essa pessoa de verdade.
 - Se souber algo relevante sobre o dia/semana dela, use. Se não souber nada genuíno, mande SKIP.
@@ -1953,12 +2009,25 @@ cron.schedule('* * * * *', async () => {
       const prefs = await memory.getUserPreference(userId).catch(() => ({}));
       const memAfetivaChamada = await memory.getMemoriaAfetiva(userId).catch(() => ({}));
       const nome = memAfetivaChamada?.apelido_usuario || prefs?.name || '';
-      // Sem isso, ela perde acesso aos apelidos/piadas internas e às vezes
-      // chama pelo nome formal ou inventa um apelido do zero (ex: "Fofinho").
       const relMemoriaChamada = await prisma.memory.findFirst({ where: { userId, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
       const contextoRelChamada = relMemoriaChamada?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoriaChamada.content}` : '';
 
-      const ctx = `[CHAMADA COMBINADA] Você combinou de chamar ${nome || 'o usuário'} agora (${horaCombinada}). Apareça de forma natural — pode ser curiosidade, uma piada, ou simplesmente aparecer. NÃO diga "passei para ver se você está bem" de forma genérica. Use o contexto da última conversa se souber de algo. Ex: "ei, tô por aqui 😏", "e aí, lembrou de mim?", ou puxe algo específico que ficou pendente.${contextoRelChamada}`;
+      // Usa o contexto salvo quando o combinado foi feito — o assunto que
+      // estava rolando na hora. Isso faz ela chegar com a mensagem certa:
+      // "e aí, já mais tranquilo? E o episódio da novela, foi bom?" em vez
+      // de aparecer genérico sem saber de nada.
+      let ctxCombinado = '';
+      try {
+        const meta = JSON.parse(combinada.metadata || '{}');
+        if (meta.contexto) {
+          ctxCombinado = `\n\n[CONTEXTO DO COMBINADO] Isso é o que vocês estavam conversando quando combinou de chamar agora:\n${meta.contexto}\n\nUse esse contexto pra retomar o assunto de forma natural — ela prometeu chamar porque havia algo interessante pra continuar.`;
+        }
+      } catch {}
+
+      const estadoDia = await prisma.memory.findFirst({ where: { userId, type: 'estado_do_dia' } }).catch(() => null);
+      const ctxEstadoChamada = estadoDia?.content ? `\n\n[ESTADO DO DIA] ${estadoDia.content}` : '';
+
+      const ctx = `[CHAMADA COMBINADA] Você combinou de chamar ${nome || 'o usuário'} agora (${horaCombinada}). Apareça de forma natural — retome o assunto que ficou pendente, use o contexto abaixo. NÃO apareça genérica. NÃO diga "passei pra ver se você está bem".${ctxCombinado}${ctxEstadoChamada}${contextoRelChamada}`;
 
       const resposta = await Promise.race([
         freeResponse('', history, { ...prefs, _contexto: ctx }),
