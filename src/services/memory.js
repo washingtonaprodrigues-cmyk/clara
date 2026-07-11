@@ -569,6 +569,18 @@ async function getPendenciasAbertas(userId) {
 }
 
 async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_retomar }) {
+  // FILTRO HARD: nunca salvar pendência de conteúdo íntimo/sexual/romântico.
+  // A instrução no prompt do detectarAssuntoEmAberto às vezes é ignorada pela
+  // IA, então esse bloqueio no código é a rede de segurança final. Se qualquer
+  // campo tiver esses termos, descarta silenciosamente — não vira pendência,
+  // não é retomado em proativas, não vaza.
+  const textoCompleto = `${assunto || ''} ${contexto || ''} ${como_retomar || ''}`.toLowerCase();
+  const FILTRO_INTIMO = /erotic|erótic|íntim|intim|sexo|sexual|cena quente|nudez|nud[ae]s|pelad|transar|transa|beijo|beijar|desejo|tesão|tesao|gemid|prazer|carícia|caricia|sedu|provoca[çc]|flerte|romance|amass|preliminar|orgasm|excita/i;
+  if (FILTRO_INTIMO.test(textoCompleto)) {
+    console.log(`[Pendência] BLOQUEADA (conteúdo íntimo): "${assunto}"`);
+    return;
+  }
+
   const existentes = await getPendenciasAbertas(userId);
 
   // Atualiza se já existe assunto parecido
