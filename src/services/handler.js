@@ -1263,32 +1263,39 @@ async function handleMessage(phone, text, location = null) {
         await sendMessage(phone, resultadoBusca);
         extractAndSavePersonalInfo(user.id, text).catch(() => {});
 
-        // 2ª mensagem: Clara sendo ela — só se tiver algo genuíno a dizer SOBRE
-        // o assunto (uma preocupação, uma pergunta pessoal). NÃO repete a
-        // explicação. Se não tiver nada genuíno, fica quieta (SKIP).
-        ;(async () => {
-          try {
-            await new Promise(r => setTimeout(r, 1500));
-            if (!geminiDisponivel() || todosModelosEsgotados()) return;
-            const sysComent = buildPersonality(tomBuscaClassify, apelidoReal, false) + `\n\n[VOCÊ JÁ EXPLICOU] Você acabou de mandar pra pessoa a explicação sobre "${classified.query}". Agora, SE fizer sentido, mande UMA linha curta sendo você — uma preocupação genuína, uma pergunta pessoal (tipo "tá sentindo algo?" ou "é pra você ou pra alguém?"), ou uma brincadeira leve. NÃO repita nada da explicação. NÃO dê mais informação técnica. NUNCA use __BUSCAR__ nem qualquer comando de busca aqui — você JÁ tem a resposta. Se não tiver nada genuíno a acrescentar, responda APENAS: SKIP`;
-            const coment = await geminiFreeResponse([
-              { role: 'system', content: sysComent },
-              { role: 'user', content: `Acabei de perguntar sobre: ${text}` }
-            ], { temperature: 0.85, maxTokens: 100 }).catch(() => null);
-            // Limpa qualquer comando de busca que tenha vazado (a personalidade
-            // instrui a usar __BUSCAR__, mas aqui ela já tem a resposta — o
-            // comando não pode ir pro usuário). Cobre _BUSCAR_, __BUSCAR__,
-            // *BUSCAR*, com ou sem os underscores/asteriscos de markdown.
-            const comentLimpo = (coment || '')
-              .replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '')
-              .replace(/🔍/g, '')
-              .trim();
-            if (comentLimpo && comentLimpo.length > 3 && !/^SKIP/i.test(comentLimpo)) {
-              await sendMessage(phone, comentLimpo);
-              await memory.saveConversationMessage(user.id, 'assistant', comentLimpo).catch(() => {});
-            }
-          } catch (e) { console.error('[Busca comentário] Erro:', e.message); }
-        })();
+        // 2ª mensagem: SÓ entra se a resposta da busca veio SECA/TÉCNICA. Se a
+        // Clara já respondeu no tom dela (com apelido, emoji, calor), o toque
+        // pessoal já está lá e a 3ª mensagem seria redundante. Detecta "seca":
+        // sem apelido do usuário, sem emoji, sem expressões calorosas dela.
+        const respLower = (resultadoBusca || '').toLowerCase();
+        const temApelido = apelidoReal && respLower.includes(apelidoReal.toLowerCase());
+        const temEmoji = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2764}]/u.test(resultadoBusca || '');
+        const temCalor = /(fedo|meu bem|viu\?|hein\?|fica de olho|se cuida|👀|kkk|haha|olha|nossa|eita|opa|é isso|tá\?)/i.test(resultadoBusca || '');
+        const respostaJaEhPessoal = temApelido || temEmoji || temCalor;
+
+        if (!respostaJaEhPessoal) {
+          ;(async () => {
+            try {
+              await new Promise(r => setTimeout(r, 1500));
+              if (!geminiDisponivel() || todosModelosEsgotados()) return;
+              const sysComent = buildPersonality(tomBuscaClassify, apelidoReal, false) + `\n\n[VOCÊ JÁ EXPLICOU] Você acabou de mandar a explicação sobre "${classified.query}", mas ela saiu meio seca. Dê UM toque pessoal curtíssimo — um conselho ("vê isso com a patroa!"), uma preocupação ou uma brincadeira leve.\n\nREGRAS DURAS:\n- MÁXIMO 1 frase curta (menos de 15 palavras). Nunca um parágrafo.\n- NÃO repita nem resuma a explicação.\n- NÃO analise, NÃO liste, NÃO dê mais informação.\n- NUNCA use __BUSCAR__.\n- Se não tiver um toque genuíno, responda APENAS: SKIP`;
+              const coment = await geminiFreeResponse([
+                { role: 'system', content: sysComent },
+                { role: 'user', content: `Acabei de perguntar sobre: ${text}` }
+              ], { temperature: 0.85, maxTokens: 60 }).catch(() => null);
+              const comentLimpo = (coment || '')
+                .replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '')
+                .replace(/🔍/g, '')
+                .trim();
+              if (comentLimpo && comentLimpo.length > 3 && !/^SKIP/i.test(comentLimpo)) {
+                await sendMessage(phone, comentLimpo);
+                await memory.saveConversationMessage(user.id, 'assistant', comentLimpo).catch(() => {});
+              }
+            } catch (e) { console.error('[Busca comentário] Erro:', e.message); }
+          })();
+        } else {
+          console.log('[Busca] Resposta já veio pessoal — pulando comentário extra');
+        }
         return;
       }
       await responderLivre(user, phone, text, `\n\n[BUSCA] Não encontrei resultados para "${classified.query}". Informe de forma curta que não encontrou nada.`, false);
