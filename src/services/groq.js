@@ -1685,7 +1685,7 @@ Corrija erros do resumo anterior se houver.` },
 // Isso protege proativas e boa noite de vazarem esse conteúdo.
 function filtrarConteudoIntimo(texto) {
   if (!texto) return texto;
-  const FILTRO = /erotic|erótic|íntim|intim|sexo|sexual|cena quente|nudez|nud[ae]s|pelad|transar|transa|tesão|tesao|gemid|orgasm|excita|prazer carnal|carícia|caricia|preliminar|masturb|penetra|sedu[çz]|flerte|amass/i;
+  const FILTRO = /erótic|erotic|sexo|sexual|cena quente|cena de sexo|nudez|nud[ae]s\b|pelad|transar|transa\b|tesão|tesao|gemid|orgasm|excita|masturb|penetra|preliminar|amass|conteúdo sexual/i;
   return texto
     .split('\n')
     .filter(linha => !FILTRO.test(linha))
