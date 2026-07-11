@@ -424,7 +424,7 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
         }).catch(() => []);
 
         if (conversasHoje.length > 0) {
-          const ehConfirmacao = c => /^(tomado|tomei|tomou|feito|já tomei|ok|feito fedo|pronto)[.! ]*(fedo)?[.!]?$/i.test((c.content || '').trim());
+          const ehConfirmacao = c => /^(tomado|tomei|tomou|feito|já tomei|ja tomei|ok|feito fedo|pronto|concluído|concluido)[.! ]*(fedo)?[.!]*$/i.test((c.content || '').trim());
           const temConversaReal = conversasHoje.some(c => !ehConfirmacao(c));
           if (temConversaReal) {
             // Já estava conversando de verdade — lock e stop
@@ -498,23 +498,28 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
 
           if (ultimaConfirmacao) {
             const minDesdeConfirmacao = (now - new Date(ultimaConfirmacao.createdAt)) / 60000;
-            if (minDesdeConfirmacao >= 5 && minDesdeConfirmacao <= 20) {
+            // Janela ampliada: 4 a 30min após confirmar. Antes era 5-20, muito
+            // estreita — se o cron (roda a cada 3min) não caísse exatamente nela,
+            // o bom dia por confirmação era perdido e caía só na rede de segurança.
+            if (minDesdeConfirmacao >= 4 && minDesdeConfirmacao <= 30) {
               podeEnviarAgora = true;
             }
           }
 
           // Caminho 2: não confirmou em 20 min → bom dia de qualquer jeito
-          if (!podeEnviarAgora && minutosDesdeEvento >= 20 && minutosDesdeEvento <= 35) {
+          if (!podeEnviarAgora && minutosDesdeEvento >= 20 && minutosDesdeEvento <= 45) {
             podeEnviarAgora = true;
           }
         }
 
-        // ── REDE DE SEGURANÇA — 7:30-8h ──
+        // ── REDE DE SEGURANÇA — 7:30-8:30h ──
         // Se o evento da manhã passou e nenhum caminho disparou ainda,
-        // garante o bom dia entre 7:30 e 8h de qualquer jeito.
+        // garante o bom dia entre 7:30 e 8:30 de qualquer jeito.
         if (!podeEnviarAgora) {
           const h = now.getHours(); const m = now.getMinutes();
-          if ((h === 7 && m >= 30) || (h === 8 && m < 0)) podeEnviarAgora = true;
+          // BUG corrigido: antes era "h===8 && m<0" (impossível, minuto nunca
+          // é negativo), então a rede só valia 7:30-7:59. Agora cobre até 8:30.
+          if ((h === 7 && m >= 30) || h === 8) podeEnviarAgora = true;
         }
 
         if (!podeEnviarAgora) continue;
@@ -525,7 +530,7 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
         // para o bom dia chegar como surpresa separada.
         const recente = await memory.getConversationHistory(user.id, 2).catch(() => []);
         const ultimaMsg = recente.filter(m => m.role === 'user').pop();
-        const foiConfirmacaoRemedio = ultimaMsg && /^(tomado|tomei|tomou|feito|já tomei|ok)\s*(fedo)?\s*\.?$/i.test((ultimaMsg.content || '').trim());
+        const foiConfirmacaoRemedio = ultimaMsg && /^(tomado|tomei|tomou|feito|já tomei|ja tomei|ok|pronto|concluído|concluido)\s*(fedo)?\s*[.!]*$/i.test((ultimaMsg.content || '').trim());
         if (!foiConfirmacaoRemedio && await houveConversaRecente(user.id, 5)) {
           console.log(`[Bom dia] Conversa em andamento, aguardando para ${user.phone}`);
           continue;
@@ -1262,16 +1267,14 @@ async function proativaInteligente(periodo) {
           // Pendências abertas — mas com RESPIRO. Se ela já perguntou sobre
           // uma pendência recentemente (proativa ou conversa nas últimas ~20h),
           // não repergunta. E se tem assunto mais recente rolando, ele tem
-          // Assuntos em aberto — usado APENAS como sinal de decisão (se há
-          // assunto aberto, vale a pena disparar a proativa). NÃO é injetado no
-          // prompt: as pendências já chegam via buildPersonalContext (infoPessoal),
-          // então injetar aqui de novo seria duplicação — foi o que fazia a Clara
-          // forçar/misturar assunto. Aqui só serve pra `if (!ctxPendencias)`.
+          // Assuntos em aberto — prioridade máxima em qualquer período
           const pendenciasAbertas = await prisma.pendencia.findMany({
             where: { userId: user.id, resolvido: false },
             orderBy: { createdAt: 'desc' }, take: 2
           }).catch(() => []);
-          const ctxPendencias = pendenciasAbertas.length > 0 ? 'tem_assunto_aberto' : '';
+          const ctxPendencias = pendenciasAbertas.length > 0
+            ? `ASSUNTOS EM ABERTO (use como gancho natural, não robótico):\n${pendenciasAbertas.map(p => `- ${p.assunto}: ${p.contexto} → ${p.como_retomar}`).join('\n')}`
+            : '';
 
           // Contexto recente filtrado
           const contextoMems = memsRecentes
@@ -1491,7 +1494,7 @@ REGRAS ABSOLUTAS:
 - NUNCA diga "Estou aqui", "pode contar comigo", "quer conversar?", "sobre algo em particular" — isso é carente e genérico, não é você
 - Se não tiver NADA genuíno pra dizer, responda APENAS: SKIP
 
-CONTEXTO RECENTE:
+${ctxPendencias ? ctxPendencias + '\n\n' : ''}CONTEXTO RECENTE:
 ${contextoMems}
 
 ${infoPessoalFiltrado || ''}
@@ -2575,5 +2578,23 @@ cron.schedule('30 8 * * *', async () => {
 // até o container assumir — aceitável e seguro (melhor atrasar que duplicar).
 setInterval(renovarHeartbeat, 20000);
 renovarHeartbeat();
+
+// ── Limpeza única no boot: remove pendências íntimas que já estejam no banco ──
+// O filtro na criação (memory.js) barra novas, mas as que já foram salvas antes
+// do filtro precisam ser removidas. Roda uma vez ao subir, silencioso.
+(async () => {
+  try {
+    const FILTRO_INTIMO = /erotic|erótic|íntim|intim|sexo|sexual|cena quente|nudez|nud[ae]s|pelad|transar|transa|beijo|beijar|desejo|tesão|tesao|gemid|prazer|carícia|caricia|sedu|provoca[çc]|flerte|romance|amass|preliminar|orgasm|excita/i;
+    const todasPendencias = await prisma.memory.findMany({ where: { type: 'pendencia_conversa' } }).catch(() => []);
+    let removidas = 0;
+    for (const p of todasPendencias) {
+      if (FILTRO_INTIMO.test((p.content || '').toLowerCase())) {
+        await prisma.memory.delete({ where: { id: p.id } }).catch(() => {});
+        removidas++;
+      }
+    }
+    if (removidas > 0) console.log(`[Limpeza íntima] ${removidas} pendência(s) íntima(s) removida(s) do banco`);
+  } catch (e) { console.error('[Limpeza íntima] Erro:', e.message); }
+})();
 
 console.log('Clara scheduler iniciado 💜');
