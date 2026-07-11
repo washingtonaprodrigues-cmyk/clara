@@ -1231,30 +1231,24 @@ async function handleMessage(phone, text, location = null) {
       const contextoRelBuscaClassify = await buscarContextoRelacional(user.id);
       const tomBuscaClassify = preferencesBusca?.tom || 'carinhoso';
 
-      // Comentário genuíno ANTES de buscar — não uma frase pronta de lista,
-      // é ela reagindo de verdade ao ASSUNTO perguntado (curiosidade, piada,
-      // opinião, o que for do estilo dela) e terminando com a promessa
-      // natural de ir checar, tipo ela faria numa conversa normal.
-      const historicoBusca = await memory.getConversationHistory(user.id, 8).catch(() => []);
-      const comentarioPrevio = await freeResponse(text, historicoBusca, {
-        name: apelidoReal,
-        tom: tomBuscaClassify,
-        _contexto: contextoRelBuscaClassify + `\n\n[ANTES DE BUSCAR] A pessoa te perguntou algo que você precisa pesquisar pra responder com precisão — você AINDA NÃO SABE a resposta. Reaja/comente de forma natural sobre o ASSUNTO da pergunta (curiosidade, piada, opinião, do seu jeito) e termine avisando que vai checar agora (ex: "peraí que vou ver", "deixa eu confirmar"). NÃO responda a pergunta em si, NÃO invente a informação. Máximo 2 linhas.`,
-      }).catch(() => null);
-
-      if (comentarioPrevio && !isRespostaFallback(comentarioPrevio)) {
-        // Remove qualquer tag BUSCAR que o modelo tenha embutido no comentário
-        // (a regra 2 do buildPersonality instrui ela a colocar __BUSCAR:...__ junto
-        // do comentário, mas aqui o comentário é pré-busca — a busca já vai rodar
-        // logo depois, então a tag é redundante e não pode vazar pro usuário)
-        const comentarioLimpo = comentarioPrevio.replace(/__?BUSCAR:[^_\n]*__?/gi, '').trim();
-        if (comentarioLimpo) {
-          await sendMessage(phone, comentarioLimpo);
-          await memory.saveConversationMessage(user.id, 'assistant', comentarioLimpo).catch(() => {});
+      // Quando ela NÃO SABE e precisa pesquisar: um aviso curto NO TOM DELA
+      // (nada de lupa/sistema) porque há uma espera real pela busca. É ela
+      // dizendo "peraí que já te confirmo", do jeito dela. Gerado, não fixo.
+      const historicoBusca = await memory.getConversationHistory(user.id, 6).catch(() => []);
+      let avisoPrevio = null;
+      try {
+        if (geminiDisponivel() && !todosModelosEsgotados()) {
+          const sysAviso = buildPersonality(tomBuscaClassify, apelidoReal, false) + `\n\n[VAI CHECAR] A pessoa perguntou algo que você quer confirmar direitinho antes de responder. Solte UMA frase curta, no SEU tom, avisando que vai dar uma olhada rápida pra falar certo (tipo "peraí que já te confirmo", "deixa eu ver certinho pra te falar"). NÃO responda a pergunta, NÃO invente informação, NÃO use lupa nem cara de robô. Máximo 1 linha.`;
+          avisoPrevio = await geminiFreeResponse([
+            { role: 'system', content: sysAviso },
+            { role: 'user', content: text }
+          ], { temperature: 0.8, maxTokens: 60 }).catch(() => null);
         }
-      } else {
-        // Geração falhou — cai num aviso simples só pra não ficar em silêncio
-        await sendMessage(phone, apelidoReal ? `Pera aí, ${apelidoReal}! 🔍` : 'Pera aí! 🔍');
+      } catch {}
+      const avisoLimpo = (avisoPrevio || '').replace(/__?BUSCAR:[^_\n]*__?/gi, '').replace(/🔍/g, '').trim();
+      if (avisoLimpo && !isRespostaFallback(avisoLimpo)) {
+        await sendMessage(phone, avisoLimpo);
+        await memory.saveConversationMessage(user.id, 'assistant', avisoLimpo).catch(() => {});
       }
 
       const resultadoBusca = await searchWeb(classified.query, cidade, apelidoReal, tomBuscaClassify, contextoRelBuscaClassify);
@@ -1263,6 +1257,25 @@ async function handleMessage(phone, text, location = null) {
         await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca);
         await sendMessage(phone, resultadoBusca);
         extractAndSavePersonalInfo(user.id, text).catch(() => {});
+
+        // 2ª mensagem: Clara sendo ela — só se tiver algo genuíno a dizer SOBRE
+        // o assunto (uma preocupação, uma pergunta pessoal). NÃO repete a
+        // explicação. Se não tiver nada genuíno, fica quieta (SKIP).
+        ;(async () => {
+          try {
+            await new Promise(r => setTimeout(r, 1500));
+            if (!geminiDisponivel() || todosModelosEsgotados()) return;
+            const sysComent = buildPersonality(tomBuscaClassify, apelidoReal, false) + `\n\n[VOCÊ JÁ EXPLICOU] Você acabou de mandar pra pessoa a explicação sobre "${classified.query}". Agora, SE fizer sentido, mande UMA linha curta sendo você — uma preocupação genuína, uma pergunta pessoal (tipo "tá sentindo algo?" ou "é pra você ou pra alguém?"), ou uma brincadeira leve. NÃO repita nada da explicação. NÃO dê mais informação técnica. Se não tiver nada genuíno a acrescentar, responda APENAS: SKIP`;
+            const coment = await geminiFreeResponse([
+              { role: 'system', content: sysComent },
+              { role: 'user', content: `Acabei de perguntar sobre: ${text}` }
+            ], { temperature: 0.85, maxTokens: 100 }).catch(() => null);
+            if (coment && coment.trim().length > 3 && !/^SKIP/i.test(coment.trim())) {
+              await sendMessage(phone, coment.trim());
+              await memory.saveConversationMessage(user.id, 'assistant', coment.trim()).catch(() => {});
+            }
+          } catch (e) { console.error('[Busca comentário] Erro:', e.message); }
+        })();
         return;
       }
       await responderLivre(user, phone, text, `\n\n[BUSCA] Não encontrei resultados para "${classified.query}". Informe de forma curta que não encontrou nada.`, false);
