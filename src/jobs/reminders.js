@@ -288,6 +288,12 @@ async function houveConversaRecente(userId, minutos = 5) {
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('*/2 * * * *', async () => {
   try {
+    // Continuidade só de dia (8h-22h). Depois disso, silêncio após conversa =
+    // hora de recolher, não de retomar assunto — o boa noite cuida da noite.
+    // Evita o caso de ela emendar um assunto solto à meia-noite.
+    const horaAgoraBRT = nowBRT().getHours();
+    if (horaAgoraBRT < 8 || horaAgoraBRT >= 22) return;
+
     const users = await prisma.user.findMany({ where: { blocked: false } });
     for (const user of users) {
       try {
@@ -347,11 +353,12 @@ TRECHO DA CONVERSA RECENTE:
 ${transcricao}
 
 REGRAS:
+- Fale APENAS sobre o que está NESTE trecho de conversa acima. NUNCA puxe outro assunto, pendência antiga, ou tema que não esteja aqui — isso soa desconexo e robótico.
 - 1-2 linhas no máximo.
 - NÃO repita o que já foi dito, NÃO refaça a mesma pergunta de antes.
 - NÃO comece com "Oi", "Olá" ou o nome da pessoa.
 - Siga o SEU tom normal — se for mais sem filtro/direto, não force "fofura"; se o assunto for sério, não force humor.
-- Se o assunto já parecia encerrado/resolvido na conversa, ou se você não tem nada genuíno e novo pra acrescentar, responda APENAS: SKIP`;
+- Se o assunto já parecia encerrado/resolvido, se já era uma despedida, ou se você não tem nada genuíno e novo pra acrescentar SOBRE ESTE assunto, responda APENAS: SKIP`;
 
         const msg = await geminiRetry(systemContinuidade, 'continuar a conversa', { temperature: 0.8, maxTokens: 150 }, { maxTentativas: 3, delayMs: 5000, fallback: null });
 
@@ -1255,15 +1262,16 @@ async function proativaInteligente(periodo) {
           // Pendências abertas — mas com RESPIRO. Se ela já perguntou sobre
           // uma pendência recentemente (proativa ou conversa nas últimas ~20h),
           // não repergunta. E se tem assunto mais recente rolando, ele tem
-          // prioridade sobre pendências antigas.
-          // Assuntos em aberto — prioridade máxima em qualquer período
+          // Assuntos em aberto — usado APENAS como sinal de decisão (se há
+          // assunto aberto, vale a pena disparar a proativa). NÃO é injetado no
+          // prompt: as pendências já chegam via buildPersonalContext (infoPessoal),
+          // então injetar aqui de novo seria duplicação — foi o que fazia a Clara
+          // forçar/misturar assunto. Aqui só serve pra `if (!ctxPendencias)`.
           const pendenciasAbertas = await prisma.pendencia.findMany({
             where: { userId: user.id, resolvido: false },
             orderBy: { createdAt: 'desc' }, take: 2
           }).catch(() => []);
-          const ctxPendencias = pendenciasAbertas.length > 0
-            ? `ASSUNTOS EM ABERTO (use como gancho natural, não robótico):\n${pendenciasAbertas.map(p => `- ${p.assunto}: ${p.contexto} → ${p.como_retomar}`).join('\n')}`
-            : '';
+          const ctxPendencias = pendenciasAbertas.length > 0 ? 'tem_assunto_aberto' : '';
 
           // Contexto recente filtrado
           const contextoMems = memsRecentes
@@ -1483,7 +1491,7 @@ REGRAS ABSOLUTAS:
 - NUNCA diga "Estou aqui", "pode contar comigo", "quer conversar?", "sobre algo em particular" — isso é carente e genérico, não é você
 - Se não tiver NADA genuíno pra dizer, responda APENAS: SKIP
 
-${ctxPendencias ? ctxPendencias + '\n\n' : ''}CONTEXTO RECENTE:
+CONTEXTO RECENTE:
 ${contextoMems}
 
 ${infoPessoalFiltrado || ''}
