@@ -303,7 +303,7 @@ cron.schedule('*/2 * * * *', async () => {
         const jaHojeCount = await prisma.memory.count({
           where: { userId: user.id, type: 'callback_continuidade_lock', content: { startsWith: hoje } }
         }).catch(() => 0);
-        if (jaHojeCount >= 2) continue;
+        if (jaHojeCount >= 1) continue;
 
         // Janela de observação: últimos 15 minutos de conversa
         const limite15min = new Date(Date.now() - 15 * 60 * 1000);
@@ -316,9 +316,11 @@ cron.schedule('*/2 * * * *', async () => {
         const ultimaMsg = msgsRecentes[msgsRecentes.length - 1];
         const minutosDesdeUltima = (Date.now() - new Date(ultimaMsg.createdAt).getTime()) / 60000;
 
-        // Janela de silêncio: nem muito em cima (pareceria notificação
-        // automática), nem muito depois (perde o "tava pensando AGORA").
-        if (minutosDesdeUltima < 5 || minutosDesdeUltima > 20) continue;
+        // Janela de silêncio ampliada: espera pelo menos 10min (antes 5) pra ter
+        // certeza de que a conversa realmente parou, não só uma pausa curta —
+        // reduz o risco dela emendar algo no meio de um papo ainda vivo. Teto de
+        // 20min mantém o "tava pensando agora".
+        if (minutosDesdeUltima < 10 || minutosDesdeUltima > 20) continue;
 
         // Engajamento real — pelo menos 2 mensagens DO USUÁRIO na janela,
         // não só a Clara falando sozinha.
