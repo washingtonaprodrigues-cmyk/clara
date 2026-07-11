@@ -125,6 +125,18 @@ const CAMPOS_CURIOSIDADE = [
 ];
 
 async function savePersonalInfo(userId, chave, valor, categoria = 'outro') {
+  // FILTRO HARD: nunca salvar info pessoal / referência compartilhada de
+  // conteúdo íntimo/sexual. Cobre o caso de "referencias_compartilhadas" ou
+  // qualquer categoria capturar uma conversa íntima de ontem e a Clara trazer
+  // isso por iniciativa (bom dia, proativa). A instrução no prompt não basta —
+  // esse bloqueio no código é a rede final.
+  const textoCheck = `${chave || ''} ${valor || ''}`.toLowerCase();
+  const FILTRO_INTIMO = /erotic|erótic|íntim|intim|sexo|sexual|cena quente|nudez|nud[ae]s|pelad|transar|transa|tesão|tesao|gemid|orgasm|excita|carícia|caricia|preliminar|masturb|penetra|sedu[çz]|amass|flerte/i;
+  if (FILTRO_INTIMO.test(textoCheck)) {
+    console.log(`[InfoPessoal] BLOQUEADA (conteúdo íntimo): "${chave}"`);
+    return null;
+  }
+
   const existing = await prisma.memory.findFirst({
     where: {
       userId,
