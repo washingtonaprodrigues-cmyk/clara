@@ -1456,7 +1456,14 @@ function renderFin(){
   if(!gastosMes.length){hist.innerHTML='<div class="fin-empty"><span style="font-size:32px;opacity:.2;display:block;margin-bottom:10px">💳</span>Nenhum lançamento em '+MESES_PT[finMes]+'</div>';return;}
   const container=document.createElement('div');
   container.innerHTML='<div class="fin-hist-section">Histórico</div>';
-  gastosMes.slice().reverse().forEach(g=>{
+  // Ordena: gastos primeiro (mais recentes no topo), entradas agrupadas no fim.
+  const ordenados=gastosMes.slice().reverse().sort((a,b)=>{
+    const aEntrada=a.value<0, bEntrada=b.value<0;
+    if(aEntrada&&!bEntrada)return 1;
+    if(!aEntrada&&bEntrada)return -1;
+    return 0;
+  });
+  ordenados.forEach(g=>{
     const isEntrada=g.value<0;
     const absVal=Math.abs(g.value);
     const name=g.description&&g.description!==g.category?g.description:(g.category.charAt(0).toUpperCase()+g.category.slice(1));
