@@ -1243,14 +1243,14 @@ async function handleMessage(phone, text, location = null) {
       let avisoPrevio = null;
       try {
         if (geminiDisponivel() && !todosModelosEsgotados()) {
-          const sysAviso = buildPersonality(tomBuscaClassify, apelidoReal, false) + `\n\n[VAI CHECAR] A pessoa perguntou algo que você quer confirmar direitinho antes de responder. Solte UMA frase curta, no SEU tom, avisando que vai dar uma olhada rápida pra falar certo (tipo "peraí que já te confirmo", "deixa eu ver certinho pra te falar"). NÃO responda a pergunta, NÃO invente informação, NÃO use lupa nem cara de robô. Máximo 1 linha.`;
+          const sysAviso = buildPersonality(tomBuscaClassify, apelidoReal, false) + `\n\n[VAI CHECAR] A pessoa perguntou algo que você quer confirmar direitinho antes de responder. Solte UMA frase curta, no SEU tom, avisando que vai dar uma olhada rápida pra falar certo (tipo "peraí que já te confirmo", "deixa eu ver certinho pra te falar"). NÃO responda a pergunta, NÃO invente informação, NÃO use lupa nem cara de robô. NUNCA escreva __BUSCAR__ nem qualquer comando de busca — só a frase natural de aviso. Máximo 1 linha.`;
           avisoPrevio = await geminiFreeResponse([
             { role: 'system', content: sysAviso },
             { role: 'user', content: text }
           ], { temperature: 0.8, maxTokens: 60 }).catch(() => null);
         }
       } catch {}
-      const avisoLimpo = (avisoPrevio || '').replace(/__?BUSCAR:[^_\n]*__?/gi, '').replace(/🔍/g, '').trim();
+      const avisoLimpo = (avisoPrevio || '').replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '').replace(/🔍/g, '').trim();
       if (avisoLimpo && !isRespostaFallback(avisoLimpo)) {
         await sendMessage(phone, avisoLimpo);
         await memory.saveConversationMessage(user.id, 'assistant', avisoLimpo).catch(() => {});
@@ -1270,14 +1270,22 @@ async function handleMessage(phone, text, location = null) {
           try {
             await new Promise(r => setTimeout(r, 1500));
             if (!geminiDisponivel() || todosModelosEsgotados()) return;
-            const sysComent = buildPersonality(tomBuscaClassify, apelidoReal, false) + `\n\n[VOCÊ JÁ EXPLICOU] Você acabou de mandar pra pessoa a explicação sobre "${classified.query}". Agora, SE fizer sentido, mande UMA linha curta sendo você — uma preocupação genuína, uma pergunta pessoal (tipo "tá sentindo algo?" ou "é pra você ou pra alguém?"), ou uma brincadeira leve. NÃO repita nada da explicação. NÃO dê mais informação técnica. Se não tiver nada genuíno a acrescentar, responda APENAS: SKIP`;
+            const sysComent = buildPersonality(tomBuscaClassify, apelidoReal, false) + `\n\n[VOCÊ JÁ EXPLICOU] Você acabou de mandar pra pessoa a explicação sobre "${classified.query}". Agora, SE fizer sentido, mande UMA linha curta sendo você — uma preocupação genuína, uma pergunta pessoal (tipo "tá sentindo algo?" ou "é pra você ou pra alguém?"), ou uma brincadeira leve. NÃO repita nada da explicação. NÃO dê mais informação técnica. NUNCA use __BUSCAR__ nem qualquer comando de busca aqui — você JÁ tem a resposta. Se não tiver nada genuíno a acrescentar, responda APENAS: SKIP`;
             const coment = await geminiFreeResponse([
               { role: 'system', content: sysComent },
               { role: 'user', content: `Acabei de perguntar sobre: ${text}` }
             ], { temperature: 0.85, maxTokens: 100 }).catch(() => null);
-            if (coment && coment.trim().length > 3 && !/^SKIP/i.test(coment.trim())) {
-              await sendMessage(phone, coment.trim());
-              await memory.saveConversationMessage(user.id, 'assistant', coment.trim()).catch(() => {});
+            // Limpa qualquer comando de busca que tenha vazado (a personalidade
+            // instrui a usar __BUSCAR__, mas aqui ela já tem a resposta — o
+            // comando não pode ir pro usuário). Cobre _BUSCAR_, __BUSCAR__,
+            // *BUSCAR*, com ou sem os underscores/asteriscos de markdown.
+            const comentLimpo = (coment || '')
+              .replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '')
+              .replace(/🔍/g, '')
+              .trim();
+            if (comentLimpo && comentLimpo.length > 3 && !/^SKIP/i.test(comentLimpo)) {
+              await sendMessage(phone, comentLimpo);
+              await memory.saveConversationMessage(user.id, 'assistant', comentLimpo).catch(() => {});
             }
           } catch (e) { console.error('[Busca comentário] Erro:', e.message); }
         })();
