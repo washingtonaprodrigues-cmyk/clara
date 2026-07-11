@@ -1663,7 +1663,7 @@ Corrija erros do resumo anterior se houver.` },
     if (geminiDisponivel() && !todosModelosEsgotados()) {
       try {
         const respGemini = await geminiFreeResponse(chatMsgs, { temperature: 0.4, maxTokens: 500 });
-        if (respGemini) return respGemini.trim();
+        if (respGemini) return filtrarConteudoIntimo(respGemini.trim());
       } catch (eGemini) {
         console.error('[generateRelationshipSummary] Gemini falhou, tentando Groq:', eGemini.message);
       }
@@ -1675,8 +1675,22 @@ Corrija erros do resumo anterior se houver.` },
       temperature: 0.4,
       max_tokens: 500,
     });
-    return completion.choices[0].message.content.trim();
+    return filtrarConteudoIntimo(completion.choices[0].message.content.trim());
   } catch(e) { return currentSummary || ''; }
+}
+
+// Rede de segurança final: remove qualquer LINHA do resumo/memória que
+// contenha conteúdo íntimo/sexual. A instrução no prompt pede pra não capturar,
+// mas a IA às vezes ignora — então filtramos o texto gerado, linha a linha.
+// Isso protege proativas e boa noite de vazarem esse conteúdo.
+function filtrarConteudoIntimo(texto) {
+  if (!texto) return texto;
+  const FILTRO = /erotic|erótic|íntim|intim|sexo|sexual|cena quente|nudez|nud[ae]s|pelad|transar|transa|tesão|tesao|gemid|orgasm|excita|prazer carnal|carícia|caricia|preliminar|masturb|penetra|sedu[çz]|flerte|amass/i;
+  return texto
+    .split('\n')
+    .filter(linha => !FILTRO.test(linha))
+    .join('\n')
+    .trim();
 }
 
 async function generateMemorySummary(memories, question) {
