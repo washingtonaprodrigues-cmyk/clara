@@ -724,10 +724,30 @@ async function boaNoiteInteligente() {
 
         const minAusente = (now - new Date(ultimaMsgUser.createdAt)) / 60000;
 
+        // GATILHO DE REMÉDIO: se o usuário confirmou um remédio nos últimos
+        // 5-15min (comum ter remédio às 23h, início da janela), ele está
+        // acordado agora — igual ao bom dia. Aproveita esse sinal pra mandar
+        // o boa noite logo, sem esperar os 30min de ausência.
+        let remedioRecenteConfirmado = false;
+        try {
+          const doseRecente = await prisma.memory.findFirst({
+            where: {
+              userId: user.id,
+              type: 'dose_confirmada',
+              createdAt: { gte: new Date(now.getTime() - 15 * 60 * 1000) }
+            },
+            orderBy: { createdAt: 'desc' }
+          }).catch(() => null);
+          if (doseRecente) {
+            const minDesde = (now - new Date(doseRecente.createdAt)) / 60000;
+            if (minDesde >= 5 && minDesde <= 15) remedioRecenteConfirmado = true;
+          }
+        } catch {}
+
         // Menos de 30min de ausência — ainda pode estar conversando, espera
-        // o próximo ciclo. Como agora roda 23h+, 30min já é sinal de que
-        // recolheu (a chamada de assunto das 20-22h45 já teve sua chance).
-        if (minAusente < 30) {
+        // o próximo ciclo. EXCEÇÃO: se confirmou remédio há 5-15min, está
+        // acordado e é hora de mandar o boa noite (não espera os 30min).
+        if (minAusente < 30 && !remedioRecenteConfirmado) {
           await prisma.memory.deleteMany({ where: { userId: user.id, type: 'boa_noite_lock', content: hoje } }).catch(() => {});
           continue;
         }
@@ -1236,26 +1256,13 @@ async function proativaInteligente(periodo) {
           // uma pendência recentemente (proativa ou conversa nas últimas ~20h),
           // não repergunta. E se tem assunto mais recente rolando, ele tem
           // prioridade sobre pendências antigas.
+          // Assuntos em aberto — prioridade máxima em qualquer período
           const pendenciasAbertas = await prisma.pendencia.findMany({
-            where: { userId: user.id, resolvido: false, perguntado: false },
+            where: { userId: user.id, resolvido: false },
             orderBy: { createdAt: 'desc' }, take: 2
           }).catch(() => []);
-          const temAssuntoRecente = conversasHojeTexto.length > 30;
-
-          // PRAZO VENCIDO: pendências de conversa onde o usuário deu um prazo
-          // ("até domingo vai o remédio da Isis") e esse prazo já passou. É a
-          // HORA de fechar o ciclo — tem prioridade e fura o respiro, porque é
-          // um follow-up esperado, não uma repetição. Ex: chegou segunda →
-          // "e aí fedo, a Isis melhorou daquela tosse?"
-          const prontasPraRetomar = await memory.getPendenciasProntasPraRetomar(user.id).catch(() => []);
-          const ctxPrazoVencido = prontasPraRetomar.length > 0
-            ? `[FECHAR O CICLO — PRIORIDADE] O usuário mencionou que isso teria desfecho por agora. Chegou a hora de perguntar como ficou, de forma natural e carinhosa (não robótica):\n${prontasPraRetomar.map(p => `- ${p.assunto}: ${p.contexto} → ${p.como_retomar}`).join('\n')}\nEssa é a melhor coisa pra puxar agora. Pergunte como resolveu.`
-            : '';
-
-          const ctxPendencias = ctxPrazoVencido
-            ? ctxPrazoVencido
-            : pendenciasAbertas.length > 0
-            ? `ASSUNTOS EM ABERTO (do passado — use SÓ se NÃO houver assunto mais recente e atual rolando; senão deixe quieto, você já demonstrou que se importa):\n${pendenciasAbertas.map(p => `- ${p.assunto}: ${p.contexto} → ${p.como_retomar}`).join('\n')}${temAssuntoRecente ? '\n\n[ATENÇÃO] Há um assunto MAIS RECENTE na conversa de hoje. Priorize ELE. Não volte num assunto antigo se já tem algo atual — seria repetitivo e daria impressão de que você não acompanha o presente.' : ''}`
+          const ctxPendencias = pendenciasAbertas.length > 0
+            ? `ASSUNTOS EM ABERTO (use como gancho natural, não robótico):\n${pendenciasAbertas.map(p => `- ${p.assunto}: ${p.contexto} → ${p.como_retomar}`).join('\n')}`
             : '';
 
           // Contexto recente filtrado
@@ -1512,24 +1519,6 @@ ${horaAcorda ? `(Acordou por volta das ${horaAcorda})` : ''}`;
           await prisma.memory.create({
             data: { userId: user.id, type: 'proativa_enviado_lock', content: dayKey }
           }).catch(() => {});
-          // Fechar o ciclo: se ela acabou de perguntar sobre uma pendência de
-          // prazo vencido, encerra ela — o follow-up foi feito. Se o usuário
-          // responder algo novo, vira conversa normal; não precisa repetir.
-          if (prontasPraRetomar.length > 0) {
-            await memory.fecharPendencia(user.id, prontasPraRetomar[0].id).catch(() => {});
-            console.log(`[Proativa] Ciclo fechado: "${prontasPraRetomar[0].assunto}" (prazo venceu, perguntou)`);
-          }
-          // Respiro de pendências: se havia pendência aberta E não tinha assunto
-          // recente competindo, provavelmente ela usou como gancho — marca como
-          // perguntada pra não repetir o mesmo tema logo em seguida. Volta ao
-          // radar naturalmente só se o usuário reabrir o assunto.
-          else if (pendenciasAbertas.length > 0 && !temAssuntoRecente) {
-            await prisma.pendencia.update({
-              where: { id: pendenciasAbertas[0].id },
-              data: { perguntado: true }
-            }).catch(() => {});
-            console.log(`[Proativa] Pendência "${pendenciasAbertas[0].assunto}" marcada como perguntada (respiro)`);
-          }
           // Lock de 1 por dia pra noturna e tarde_contexto
           if (periodo === 'noite') {
             await prisma.memory.create({
@@ -1973,35 +1962,6 @@ cron.schedule('0 * * * *', async () => {
         console.log(`[Episódio] Deletado episódio íntimo: "${ep.content}"`);
         continue;
       }
-
-      // RESPIRO: se o usuário já tocou nesse tema nas últimas 12h (ex: respondeu
-      // de manhã "a Isis tá melhorando"), não repergunta à tarde — seria
-      // repetitivo. Marca como perguntado e segue. O assunto continua na
-      // memória, então se ele reabrir, ela sabe do que é.
-      try {
-        const palavrasChave = (ep.content || '').toLowerCase().split(/\s+/).filter(w => w.length > 4).slice(0, 4);
-        if (palavrasChave.length) {
-          const convRecente = await prisma.memory.findMany({
-            where: {
-              userId: ep.userId, type: 'conversa',
-              content: { not: { startsWith: '[Clara]' } },
-              createdAt: { gte: new Date(Date.now() - 12 * 60 * 60 * 1000) }
-            },
-            take: 30
-          }).catch(() => []);
-          const jaFalouDoTema = convRecente.some(c =>
-            palavrasChave.some(p => (c.content || '').toLowerCase().includes(p))
-          );
-          if (jaFalouDoTema) {
-            await prisma.memory.update({
-              where: { id: ep.id },
-              data: { metadata: JSON.stringify({ ...meta, perguntado: true }) }
-            }).catch(() => {});
-            console.log(`[Episódio] "${ep.content}" já foi falado nas últimas 12h — respiro, não repergunta`);
-            continue;
-          }
-        }
-      } catch {}
 
       // Marca como perguntado antes de disparar
       await prisma.memory.update({
@@ -2464,6 +2424,10 @@ cron.schedule('0 4 * * *', async () => {
     const limite = new Date(nowBRT().getTime() - 48 * 60 * 60 * 1000);
     const resultado = await prisma.reminder.deleteMany({ where: { confirmed: false, scheduledAt: { lt: limite } } });
     if (resultado.count > 0) console.log(`[Cleanup Lembretes] ${resultado.count} removidos`);
+    // Marcadores dose_confirmada são efêmeros (só servem pro gatilho do boa
+    // noite nos 15min seguintes) — limpa os antigos pra não acumular.
+    const limiteDose = new Date(nowBRT().getTime() - 2 * 60 * 60 * 1000);
+    await prisma.memory.deleteMany({ where: { type: 'dose_confirmada', createdAt: { lt: limiteDose } } }).catch(() => {});
   } catch (e) { console.error('[Cleanup Lembretes] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
