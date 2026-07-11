@@ -2586,7 +2586,7 @@ renovarHeartbeat();
 // ou proativa, uma conversa íntima de ontem por iniciativa própria.
 (async () => {
   try {
-    const FILTRO_INTIMO = /erotic|erótic|íntim|intim|sexo|sexual|cena quente|nudez|nud[ae]s|pelad|transar|transa|tesão|tesao|gemid|orgasm|excita|carícia|caricia|preliminar|masturb|penetra|sedu[çz]|amass|flerte/i;
+    const FILTRO_INTIMO = /erótic|erotic|sexo|sexual|cena quente|cena de sexo|nudez|nud[ae]s\b|pelad|transar|transa\b|tesão|tesao|gemid|orgasm|excita|masturb|penetra|preliminar|amass|conteúdo sexual/i;
     const tipos = ['pendencia_conversa', 'relationship_summary', 'info_pessoal'];
     let removidas = 0;
     for (const tipo of tipos) {
