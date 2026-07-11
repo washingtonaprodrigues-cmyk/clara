@@ -1332,6 +1332,13 @@ function filtrarResposta(t) {
   t = t.replace(/^\[A[ÇC][ÃA]O[^\]]*\][^\n]*\n?/gim, '').trim();
   t = t.replace(/^\[sys:[^\]]*\][^\n]*\n?/gim, '').trim();
   t = t.replace(/^\[AÇÃO[^\]]*\][^\n]*\n?/gim, '').trim();
+  // Remove marcadores internos que vazam NO MEIO da frase (não só no início).
+  // Ex: "hoje foi dia de... [AÇÃO JÁ EXECUTADA: criar rotina]." — o Gemini às
+  // vezes inventa/imprime esses colchetes de bastidor no meio do texto. Remove
+  // qualquer [ ... ] que contenha palavras de marcação interna, onde estiver.
+  t = t.replace(/\s*\[(?:A[ÇC][ÃA]O|SISTEMA|SYS|CONTEXTO|INSTRU[ÇC][ÃA]O|MEM[ÓO]RIA|TAREFA CONCLU[ÍI]DA|EXECUTAD[AO])[^\]]*\]\s*/gi, ' ').replace(/\s{2,}/g, ' ').trim();
+  // Reticências órfãs que sobram após remover o marcador ("dia de... .")
+  t = t.replace(/\.\.\.\s*\./g, '...').replace(/\s+\./g, '.').trim();
   // Remove "Anotado ✅", "✅ Anotado!" e variações que vazam no início da
   // resposta da IA — isso é confirmação estruturada que já vai numa mensagem
   // separada (confirmacaoSeparada), não deve aparecer na resposta em texto.
