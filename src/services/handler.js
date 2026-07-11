@@ -441,7 +441,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       const txtLow = (text||'').toLowerCase();
       const falaDeAgenda = /hoje|amanhã|amanha|horário|horario|quando|agenda|compromisso|reuni[ãa]o|consulta|m[ée]dico|dentista|semana|m[êe]s|marcad|agendad|hor[áa]rio|que horas|tenho algo|tenho que|preciso ir|calendário|calendario/.test(txtLow);
       const falaDeRemedio = /rem[ée]dio|comprimido|tomar|dose|farm[áa]cia|medicament|triglicere|toroide|holmis|landizin|rem[ée]dinho|cápsula|capsula|antibi[óo]tico|p[íi]lula|bula|receita/.test(txtLow);
-      const faladeDinheiro = /dinheiro|gast|saldo|or[çc]amento|(paga|minha|a|essa|de)\s+conta|pagar|pagamento|reais|r\$|grana|sobrou|sobra|quanto tenho|quanto sobr|dispon[íi]vel|t[ôo] liso|falido|guap|bufunfa|extrato|financ|despesa|\bbanco\b|\bpix\b|d[íi]vida|divida|custou|custa|economiz|meu bolso|no vermelho/.test(txtLow);
+      const faladeDinheiro = /dinheiro|gast|saldo|or[çc]amento|(paga|minha|a|essa|de)\s+conta|pagar|pagamento|reais|r\$|grana|sobrou|sobra|quanto tenho|quanto sobr|dispon[íi]vel|t[ôo] liso|falido|guap|bufunfa|extrato|finan[çc]|despesa|\bbanco\b|\bpix\b|d[íi]vida|divida|custou|custa|economiz|meu bolso|no vermelho/.test(txtLow);
       const falaDeLista = /lista|mercado|compras|item|comprar|feira|supermercado/.test(txtLow);
       const ehManha = now.getHours() >= 6 && now.getHours() < 11;
 
@@ -518,9 +518,9 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         const labelMes = ehMesEspecifico ? `${nomeMesLabel} (mês que o usuário perguntou)` : `${nomeMesLabel} (mês vigente)`;
 
         if (totalEntradas > 0 || totalGasto > 0) {
-          contexto += `\n\n[FINANCEIRO — ${labelMes}]\nEntradas (recebido): R$ ${totalEntradas.toFixed(2)}\nGastos: R$ ${totalGasto.toFixed(2)}\nSaldo do mês (entradas − gastos): R$ ${saldoMes.toFixed(2)}`;
+          contexto += `\n\n[FINANCEIRO — ${labelMes}]\nEntradas (recebido): R$ ${totalEntradas.toFixed(2)}\nGastos: R$ ${totalGasto.toFixed(2)}\nSaldo do mês (entradas − gastos): R$ ${saldoMes.toFixed(2)}\n\n[INSTRUÇÃO] O usuário perguntou das finanças. RESPONDA com esses números concretos no seu tom (ex: "esse mês você recebeu X, gastou Y, sobrou Z"). NÃO responda de forma vaga nem só pergunte "algum gasto te surpreendeu?" — mostre os valores reais primeiro, aí sim pode comentar.`;
         } else {
-          contexto += `\n\n[FINANCEIRO — ${labelMes}]\nNenhum lançamento nesse mês (nem salário nem gastos registrados).`;
+          contexto += `\n\n[FINANCEIRO — ${labelMes}]\nNenhum lançamento nesse mês (nem salário nem gastos registrados).\n\n[INSTRUÇÃO] Diga claramente que não há nada registrado nesse mês ainda — nem entradas nem gastos. Não invente números.`;
         }
       }
 
