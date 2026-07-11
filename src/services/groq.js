@@ -1730,7 +1730,9 @@ CONVERSA:
 ${resumo}
 
 Se houver algo que passa nesses critérios, retorna APENAS JSON sem markdown:
-{"assunto":"nome curto (2-4 palavras)","contexto":"o que aconteceu em 1 linha","como_retomar":"uma pergunta natural de amiga sobre isso"}
+{"assunto":"nome curto (2-4 palavras)","contexto":"o que aconteceu em 1 linha","como_retomar":"uma pergunta natural de amiga sobre isso","prazo":"se a pessoa mencionou um prazo/data pro assunto ter desfecho (ex: 'até domingo', 'semana que vem', 'depois da consulta na terça'), coloque em texto curto aqui; senão null"}
+
+REGRA DO PRAZO: só preencha "prazo" se a pessoa deu um marco temporal REAL pro desfecho (um dia, um evento futuro). "até domingo vai o remédio" → prazo:"domingo". "vou resolver depois" → prazo:null (vago demais).
 
 Se não houver nada que passe nos critérios, retorna APENAS: null`;
     const msgs = [{ role: 'user', content: promptTxt }];
@@ -1758,7 +1760,7 @@ Se não houver nada que passe nos critérios, retorna APENAS: null`;
     if (!text || text === 'null' || !text.startsWith('{')) return null;
     const parsed = JSON.parse(text);
     if (!parsed.assunto || !parsed.contexto || !parsed.como_retomar) return null;
-    return parsed;
+    return { assunto: parsed.assunto, contexto: parsed.contexto, como_retomar: parsed.como_retomar, prazo: parsed.prazo || null };
   } catch { return null; }
 }
 
