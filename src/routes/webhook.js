@@ -204,6 +204,7 @@ async function handleSimpleResponse(phone, text, quotedText) {
         if (med) {
           const atualizado = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
           await prisma.memory.delete({ where: { id: pendenteRemedio.memoryId } }).catch(() => {});
+          await prisma.memory.create({ data: { userId: user.id, type: 'dose_confirmada', content: med.name } }).catch(() => {});
           await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${atualizado.remaining} doses. 💊`, 400, quotedText);
           return true;
         }
@@ -222,6 +223,7 @@ async function handleSimpleResponse(phone, text, quotedText) {
         if (med) {
           const atualizado = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
           await prisma.memory.delete({ where: { id: match.memoryId } }).catch(() => {});
+          await prisma.memory.create({ data: { userId: user.id, type: 'dose_confirmada', content: med.name } }).catch(() => {});
           await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${atualizado.remaining} doses. 💊`, 400, quotedText);
           return true;
         }
@@ -239,6 +241,7 @@ async function handleSimpleResponse(phone, text, quotedText) {
       const med = await getRemedioRecente(user.id);
       if (med) {
         await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
+        await prisma.memory.create({ data: { userId: user.id, type: 'dose_confirmada', content: med.name } }).catch(() => {});
         await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${med.remaining - 1} doses. 💊`, 400, quotedText);
         return true;
       }
