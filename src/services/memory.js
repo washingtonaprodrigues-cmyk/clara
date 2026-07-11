@@ -131,7 +131,7 @@ async function savePersonalInfo(userId, chave, valor, categoria = 'outro') {
   // isso por iniciativa (bom dia, proativa). A instrução no prompt não basta —
   // esse bloqueio no código é a rede final.
   const textoCheck = `${chave || ''} ${valor || ''}`.toLowerCase();
-  const FILTRO_INTIMO = /erotic|erótic|íntim|intim|sexo|sexual|cena quente|nudez|nud[ae]s|pelad|transar|transa|tesão|tesao|gemid|orgasm|excita|carícia|caricia|preliminar|masturb|penetra|sedu[çz]|amass|flerte/i;
+  const FILTRO_INTIMO = /erótic|erotic|sexo|sexual|cena quente|cena de sexo|nudez|nud[ae]s\b|pelad|transar|transa\b|tesão|tesao|gemid|orgasm|excita|masturb|penetra|preliminar|amass|conteúdo sexual/i;
   if (FILTRO_INTIMO.test(textoCheck)) {
     console.log(`[InfoPessoal] BLOQUEADA (conteúdo íntimo): "${chave}"`);
     return null;
@@ -587,7 +587,7 @@ async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_reto
   // campo tiver esses termos, descarta silenciosamente — não vira pendência,
   // não é retomado em proativas, não vaza.
   const textoCompleto = `${assunto || ''} ${contexto || ''} ${como_retomar || ''}`.toLowerCase();
-  const FILTRO_INTIMO = /erotic|erótic|íntim|intim|sexo|sexual|cena quente|nudez|nud[ae]s|pelad|transar|transa|beijo|beijar|desejo|tesão|tesao|gemid|prazer|carícia|caricia|sedu|provoca[çc]|flerte|romance|amass|preliminar|orgasm|excita/i;
+  const FILTRO_INTIMO = /erótic|erotic|sexo|sexual|cena quente|cena de sexo|nudez|nud[ae]s\b|pelad|transar|transa\b|tesão|tesao|gemid|orgasm|excita|masturb|penetra|preliminar|amass|conteúdo sexual/i;
   if (FILTRO_INTIMO.test(textoCompleto)) {
     console.log(`[Pendência] BLOQUEADA (conteúdo íntimo): "${assunto}"`);
     return;
