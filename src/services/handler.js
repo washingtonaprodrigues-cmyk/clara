@@ -1600,6 +1600,34 @@ async function handleMessage(phone, text, location = null) {
       return;
     }
 
+    // CONFIRMAÇÃO DE LEMBRETE/REMÉDIO pelo handler (classificado como
+    // concluir_lembrete/concluir_remedio). A confirmação de SISTEMA já foi
+    // enviada (webhook handleSimpleResponse) OU será — aqui a Clara NÃO deve
+    // soltar resposta genérica ("Aí sim! Pra isso que eu existo"). Ela só
+    // comenta se tiver algo genuíno, senão fica quieta. Mesma regra do
+    // LembreteConfirm, agora também nesse caminho (era o que vazava genérico).
+    if (classified.tipo === 'concluir_lembrete' || classified.tipo === 'concluir_remedio') {
+      ;(async () => {
+        try {
+          await new Promise(r => setTimeout(r, 1500));
+          if (!geminiDisponivel() || todosModelosEsgotados()) return;
+          const oQueFoi = classified.titulo || 'aquilo';
+          const sysConcl = buildPersonality(preferences?.tom || 'carinhoso', apelidoReal, false) + `\n\n[TAREFA CONCLUÍDA] O usuário confirmou que fez/tomou: "${oQueFoi}". O sistema JÁ confirmou pra ele — você NÃO precisa dizer que registrou nem repetir a tarefa.\n\nDECIDA: isso merece uma reação sua de amiga? Só reaja se tiver peso genuíno (uma conquista, algo importante, algo com graça real). Se for rotineiro (tomar remédio do dia a dia, tarefa comum), responda APENAS "SKIP" — fica quieta, o sistema já cuidou.\n\nSe for reagir: 1 linha curta, no seu tom, sobre ISSO. NÃO puxe outros assuntos (saúde de familiares, agenda, pendências). NÃO faça pergunta genérica tipo "como está se sentindo?" toda vez. NUNCA seja genérica ("boa!", "arrasou!", "pra isso que eu existo" são proibidos). Se não tem nada específico e genuíno, é SKIP.`;
+          const coment = await geminiFreeResponse([
+            { role: 'system', content: sysConcl },
+            { role: 'user', content: `Confirmei: "${oQueFoi}"` }
+          ], { temperature: 0.85, maxTokens: 100 }).catch(() => null);
+          const comentLimpo = (coment || '').replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '').trim();
+          if (comentLimpo && comentLimpo.length > 3 && !/^SKIP/i.test(comentLimpo)) {
+            await sendMessage(phone, comentLimpo);
+            await memory.saveConversationMessage(user.id, 'assistant', comentLimpo).catch(() => {});
+          }
+        } catch (e) { console.error('[ConcluirComment] Erro:', e.message); }
+      })();
+      extractAndSavePersonalInfo(user.id, text).catch(() => {});
+      return;
+    }
+
     await responderLivre(user, phone, text, '', isSaudacao, acaoConfirmacao);
     extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
   } catch (error) {
