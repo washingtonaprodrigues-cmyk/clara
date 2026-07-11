@@ -433,11 +433,16 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       ]);
 
       // ── Detecção de relevância por assunto da mensagem ───────────────────
+      // Regexes amplas de propósito: cobrem as formas NATURAIS de falar, não só
+      // as palavras óbvias. Melhor injetar o contexto a mais (a instrução já diz
+      // pra ela não puxar por iniciativa) do que ela ficar "cega" quando o
+      // usuário claramente tocou no assunto. Ex: "olha quanto sobrou", "minha
+      // grana", "tô liso" → tudo dinheiro.
       const txtLow = (text||'').toLowerCase();
-      const falaDeAgenda = /hoje|amanhã|horário|quando|agenda|compromisso|reunião|consulta|médico|dentista|semana|mês/.test(txtLow);
-      const falaDeRemedio = /remédio|comprimido|tomar|dose|farmácia|medicamento|triglicere|toroide|holmis|landizin/.test(txtLow);
-      const faladeDinheiro = /dinheiro|gasto|gastei|saldo|orçamento|conta|pagar|pagamento|real|reais|r\$/.test(txtLow);
-      const falaDeLista = /lista|mercado|compras|item|comprar/.test(txtLow);
+      const falaDeAgenda = /hoje|amanhã|amanha|horário|horario|quando|agenda|compromisso|reuni[ãa]o|consulta|m[ée]dico|dentista|semana|m[êe]s|marcad|agendad|hor[áa]rio|que horas|tenho algo|tenho que|preciso ir|calendário|calendario/.test(txtLow);
+      const falaDeRemedio = /rem[ée]dio|comprimido|tomar|dose|farm[áa]cia|medicament|triglicere|toroide|holmis|landizin|rem[ée]dinho|cápsula|capsula|antibi[óo]tico|p[íi]lula|bula|receita/.test(txtLow);
+      const faladeDinheiro = /dinheiro|gast|saldo|or[çc]amento|(paga|minha|a|essa|de)\s+conta|pagar|pagamento|reais|r\$|grana|sobrou|sobra|quanto tenho|quanto sobr|dispon[íi]vel|t[ôo] liso|falido|guap|bufunfa|extrato|financ|despesa|\bbanco\b|\bpix\b|d[íi]vida|divida|custou|custa|economiz|meu bolso|no vermelho/.test(txtLow);
+      const falaDeLista = /lista|mercado|compras|item|comprar|feira|supermercado/.test(txtLow);
       const ehManha = now.getHours() >= 6 && now.getHours() < 11;
 
       if (lembretes.length > 0) {
