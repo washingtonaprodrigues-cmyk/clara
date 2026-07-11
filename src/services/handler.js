@@ -1338,7 +1338,7 @@ async function handleMessage(phone, text, location = null) {
     }
 
     if (classified.tipo === 'relatorio_financeiro' || classified.tipo === 'consulta_saldo') {
-      await gerarRelatorioFinanceiroWhatsApp(user, phone);
+      await gerarRelatorioFinanceiroWhatsApp(user, phone, text);
       return;
     }
 
@@ -1682,34 +1682,82 @@ async function handleMessage(phone, text, location = null) {
   }
 }
 
-async function gerarRelatorioFinanceiroWhatsApp(user, phone) {
+async function gerarRelatorioFinanceiroWhatsApp(user, phone, textoUsuario = '') {
   try {
     const now = nowBRT();
-    const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
-    const preferences = await memory.getUserPreference(user.id);
-    const gastos = await prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } }, orderBy: { createdAt: 'desc' } });
+    const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const mesesLow = meses.map(m => m.toLowerCase());
+
+    // Detecta mês específico na pergunta ("finanças de junho"); senão, vigente.
+    const txtLow = (textoUsuario || '').toLowerCase();
+    let mesAlvo = now.getMonth();
+    let anoAlvo = now.getFullYear();
+    for (let i = 0; i < mesesLow.length; i++) {
+      if (new RegExp(`\\b${mesesLow[i]}\\b`, 'i').test(txtLow) || (i === 2 && /\bmarco\b/i.test(txtLow))) {
+        mesAlvo = i;
+        if (i > now.getMonth()) anoAlvo = now.getFullYear() - 1; // mês futuro = ano passado
+        break;
+      }
+    }
+    const inicioMes = new Date(anoAlvo, mesAlvo, 1);
+    const fimMes = new Date(anoAlvo, mesAlvo + 1, 0, 23, 59, 59);
+    const nomeMes = meses[mesAlvo];
+
+    const gastos = await prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes, lte: fimMes } }, orderBy: { createdAt: 'desc' } });
     const saidas = gastos.filter(g => g.value > 0);
     const entradas = gastos.filter(g => g.value < 0);
     const totalGasto = saidas.reduce((a, g) => a + g.value, 0);
     const totalEntradas = entradas.reduce((a, g) => a + Math.abs(g.value), 0);
-    const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-    const nomeMes = meses[now.getMonth()];
+    const saldo = totalEntradas - totalGasto;
+
+    // Formata em pt-BR: R$ 1.919,07 (ponto de milhar, vírgula decimal)
+    const brl = v => 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
     const catIcones = { alimentacao:'🍔', mercado:'🛒', transporte:'🚗', saude:'💊', lazer:'🎮', moradia:'🏠', educacao:'📚', entrada:'💰', outro:'📦' };
+    const catNomes = { alimentacao:'Alimentação', mercado:'Mercado', transporte:'Transporte', saude:'Saúde', lazer:'Lazer', moradia:'Moradia', educacao:'Educação', entrada:'Entrada', outro:'Outros' };
     const porCategoria = {};
-    saidas.forEach(g => { const cat = g.category || 'outro'; if (!porCategoria[cat]) porCategoria[cat] = 0; porCategoria[cat] += g.value; });
-    let texto = `📊 *Relatório de ${nomeMes}*\n\n`;
-    if (entradas.length > 0) texto += `💰 *Entradas:* R$ ${totalEntradas.toFixed(2)}\n`;
-    texto += `💸 *Total gasto:* R$ ${totalGasto.toFixed(2)}\n`;
-    { const saldo = totalEntradas - totalGasto; texto += `💵 *Saldo do mês:* R$ ${saldo.toFixed(2)}\n`; }
-    texto += `\n`;
-    if (Object.keys(porCategoria).length > 0) {
-      texto += `*Por categoria:*\n`;
-      Object.entries(porCategoria).sort((a, b) => b[1] - a[1]).forEach(([cat, val]) => { texto += `${catIcones[cat] || '📦'} ${cat.charAt(0).toUpperCase() + cat.slice(1)}: R$ ${val.toFixed(2)}\n`; });
-      texto += `\n`;
+    saidas.forEach(g => { const cat = g.category || 'outro'; porCategoria[cat] = (porCategoria[cat] || 0) + g.value; });
+
+    if (gastos.length === 0) {
+      await sendButtons(phone, `📊 *Finanças • ${nomeMes} de ${anoAlvo}*\n\nNenhum lançamento nesse mês ainda 😊`, [{ id: 'novo_gasto', label: '➕ Registrar gasto' }, { id: 'menu', label: '🏠 Menu' }]);
+      return;
     }
+
+    // ── Cabeçalho ──
+    let texto = `📊 *Finanças • ${nomeMes} de ${anoAlvo}*\n\n`;
+    texto += `💰 *Entradas:* ${brl(totalEntradas)}\n`;
+    texto += `💸 *Gastos:* ${brl(totalGasto)}\n`;
+    const emojiSaldo = saldo < 0 ? '📉' : '📈';
+    texto += `${emojiSaldo} *Saldo:* ${brl(saldo)}\n`;
+
+    // ── Principais gastos ──
+    if (Object.keys(porCategoria).length > 0) {
+      texto += `\n*Principais gastos*\n`;
+      Object.entries(porCategoria).sort((a, b) => b[1] - a[1]).forEach(([cat, val]) => {
+        texto += `${catIcones[cat] || '📦'} ${catNomes[cat] || cat.charAt(0).toUpperCase() + cat.slice(1)}: ${brl(val)}\n`;
+      });
+    }
+
+    // ── Últimos lançamentos ──
     const ultimos = saidas.slice(0, 5);
-    if (ultimos.length > 0) { texto += `*Últimos lançamentos:*\n`; ultimos.forEach(g => { const nome = g.description && g.description !== g.category ? g.description : g.category; texto += `• ${catIcones[g.category]||'📦'} ${nome} — R$ ${g.value.toFixed(2)}\n`; }); }
-    if (gastos.length === 0) texto = `📊 *Relatório de ${nomeMes}*\n\nNenhum lançamento este mês ainda 😊`;
+    if (ultimos.length > 0) {
+      texto += `\n*Últimos lançamentos*\n`;
+      ultimos.forEach(g => {
+        const nome = g.description && g.description !== g.category ? g.description : (catNomes[g.category] || g.category);
+        texto += `• ${nome} — ${brl(g.value)}\n`;
+      });
+    }
+
+    // ── Resumo final (a linha que fecha com sentido) ──
+    texto += `\n`;
+    if (saldo < 0) {
+      texto += `⚠️ Seus gastos ultrapassaram as entradas em ${brl(Math.abs(saldo))}, fechando ${nomeMes.toLowerCase()} com um saldo de ${brl(saldo)}.`;
+    } else if (totalEntradas > 0) {
+      texto += `✅ Você fechou ${nomeMes.toLowerCase()} no positivo, com ${brl(saldo)} de saldo. Mandou bem!`;
+    } else {
+      texto += `📌 Você ainda não registrou entradas em ${nomeMes.toLowerCase()}. Registre seu salário pra ver o saldo real do mês.`;
+    }
+
     await sendButtons(phone, texto, [{ id: 'novo_gasto', label: '➕ Registrar gasto' }, { id: 'menu', label: '🏠 Menu' }]);
   } catch (e) {
     console.error('[gerarRelatorioFinanceiro]', e.message);
