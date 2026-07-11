@@ -2579,21 +2579,33 @@ cron.schedule('30 8 * * *', async () => {
 setInterval(renovarHeartbeat, 20000);
 renovarHeartbeat();
 
-// ── Limpeza única no boot: remove pendências íntimas que já estejam no banco ──
-// O filtro na criação (memory.js) barra novas, mas as que já foram salvas antes
-// do filtro precisam ser removidas. Roda uma vez ao subir, silencioso.
+// ── Limpeza única no boot: remove QUALQUER memória íntima já no banco ──
+// Cobre pendências, resumo de relacionamento e info pessoal/referências. Os
+// filtros na criação barram novas, mas as salvas antes precisam sair. Roda
+// uma vez ao subir, silencioso. É o que impede a Clara de trazer, num bom dia
+// ou proativa, uma conversa íntima de ontem por iniciativa própria.
 (async () => {
   try {
-    const FILTRO_INTIMO = /erotic|erótic|íntim|intim|sexo|sexual|cena quente|nudez|nud[ae]s|pelad|transar|transa|beijo|beijar|desejo|tesão|tesao|gemid|prazer|carícia|caricia|sedu|provoca[çc]|flerte|romance|amass|preliminar|orgasm|excita/i;
-    const todasPendencias = await prisma.memory.findMany({ where: { type: 'pendencia_conversa' } }).catch(() => []);
+    const FILTRO_INTIMO = /erotic|erótic|íntim|intim|sexo|sexual|cena quente|nudez|nud[ae]s|pelad|transar|transa|tesão|tesao|gemid|orgasm|excita|carícia|caricia|preliminar|masturb|penetra|sedu[çz]|amass|flerte/i;
+    const tipos = ['pendencia_conversa', 'relationship_summary', 'info_pessoal'];
     let removidas = 0;
-    for (const p of todasPendencias) {
-      if (FILTRO_INTIMO.test((p.content || '').toLowerCase())) {
-        await prisma.memory.delete({ where: { id: p.id } }).catch(() => {});
-        removidas++;
+    for (const tipo of tipos) {
+      const registros = await prisma.memory.findMany({ where: { type: tipo } }).catch(() => []);
+      for (const r of registros) {
+        const alvo = `${r.content || ''} ${r.metadata || ''}`.toLowerCase();
+        if (FILTRO_INTIMO.test(alvo)) {
+          if (tipo === 'relationship_summary') {
+            // Resumo é 1 registro grande — filtra linha a linha, não deleta tudo
+            const limpo = (r.content || '').split('\n').filter(l => !FILTRO_INTIMO.test(l.toLowerCase())).join('\n').trim();
+            await prisma.memory.update({ where: { id: r.id }, data: { content: limpo } }).catch(() => {});
+          } else {
+            await prisma.memory.delete({ where: { id: r.id } }).catch(() => {});
+          }
+          removidas++;
+        }
       }
     }
-    if (removidas > 0) console.log(`[Limpeza íntima] ${removidas} pendência(s) íntima(s) removida(s) do banco`);
+    if (removidas > 0) console.log(`[Limpeza íntima] ${removidas} registro(s) íntimo(s) limpo(s) do banco`);
   } catch (e) { console.error('[Limpeza íntima] Erro:', e.message); }
 })();
 
