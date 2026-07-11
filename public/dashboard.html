@@ -886,33 +886,9 @@ select option{background:var(--s2)}
             </div>
           </div>
 
-          <!-- Finanças -->
-          <div class="cfg-section">
-            <div class="cfg-section-header">
-              <div class="cfg-section-icon" style="background:rgba(245,158,11,.1);color:#FCD34D">
-                <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-              </div>
-              <div>
-                <div class="cfg-section-title">Finanças</div>
-                <div class="cfg-section-sub">Informações financeiras para ajudar você a ter mais controle.</div>
-              </div>
-            </div>
-            <div class="cfg-fin-row">
-              <div class="cfg-fin-icon">
-                <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-              </div>
-              <div class="cfg-fin-info">
-                <div class="cfg-fin-label">Orçamento mensal</div>
-                <div class="cfg-fin-val" id="cfg-saldo-display">—</div>
-                <div class="cfg-fin-sub">A Clara usa este valor para acompanhar seus gastos.</div>
-              </div>
-              <button class="cfg-fin-btn" onclick="document.getElementById('cfg-saldo-input-wrap').style.display='block';this.style.display='none'">Alterar valor</button>
-            </div>
-            <div id="cfg-saldo-input-wrap" style="display:none;padding:0 18px 16px">
-              <input type="number" id="pref-saldo" placeholder="Ex: 3500" step="0.01" min="0" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:var(--r-sm);padding:9px 12px;color:var(--text);font-family:'Inter',sans-serif;font-size:14px;outline:none"/>
-              <div style="font-size:11px;color:var(--text3);margin-top:6px">Ou diga no chat: "meu orçamento é 3500"</div>
-            </div>
-          </div>
+          <!-- Finanças: removido. O orçamento agora é por mês (fluxo de caixa),
+               construído pelas entradas e gastos de cada mês no financeiro. -->
+
 
           <!-- Segurança -->
           <div class="cfg-section">
@@ -1166,7 +1142,7 @@ function iniciarAutoRefresh(){
     }catch{}
   },60000);
 }
-async function loadSaldo(){if(!phone)return;try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();currentSaldo=(d.saldo!==undefined&&d.saldo!==null)?d.saldo:null;}catch{}}
+async function loadSaldo(){/* orçamento agora é por mês (fluxo de caixa) — nada a carregar globalmente */}
 function addMsg(role,text){const msgs=document.getElementById('msgs');const w=document.getElementById('welcome');if(w)w.remove();const row=document.createElement('div');row.className='msg-row '+role;if(role==='bot'){const av=document.createElement('div');av.className='msg-avatar';av.innerHTML='<img src="/avatar" onerror="this.parentElement.style.background=\'linear-gradient(135deg,#8B5CF6,#A855F7)\';this.parentElement.textContent=\'✨\'" alt="Clara" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/>';const c=document.createElement('div');c.className='msg-content';const b=document.createElement('div');b.className='msg-bubble';b.textContent=text;c.appendChild(b);row.appendChild(av);row.appendChild(c);}else{const c=document.createElement('div');c.className='msg-content';const b=document.createElement('div');b.className='msg-bubble';b.textContent=text;const t=document.createElement('div');t.className='msg-time';const n=new Date();t.textContent=pad(n.getHours())+':'+pad(n.getMinutes());c.appendChild(b);c.appendChild(t);row.appendChild(c);}msgs.appendChild(row);msgs.scrollTop=msgs.scrollHeight;return row;}
 function buildListaCard(listaData){const{listaId,listaNome,listaItems}=listaData;const div=document.createElement('div');div.className='msg-lista-card';div.id='msg-lista-'+listaId;renderListaCardChat(div,listaId,listaNome,listaItems);return div;}
 function renderListaCardChat(div,listaId,listaNome,items){const done=items.filter(i=>i.done).length;const total=items.length;const pct=total>0?Math.round((done/total)*100):0;div.innerHTML=`<div class="msg-lista-titulo">${listaNome}</div><div class="msg-lista-items">${items.map(item=>`<div class="msg-lista-item${item.done?' done':''}" onclick="toggleMsgItem('${listaId}',${item.id})"><div class="msg-lista-check">${item.done?'✓':''}</div><span class="msg-lista-nome">${item.nome}</span></div>`).join('')}</div><div class="msg-lista-footer"><div class="msg-lista-progress"><div class="msg-lista-progress-bar" style="width:${pct}%"></div></div><span class="msg-lista-count">${done}/${total}</span></div><div class="msg-lista-add-row"><input class="msg-lista-add-inp" id="msgadd-${listaId}" placeholder="Adicionar item..." onkeydown="if(event.key==='Enter')addMsgItem('${listaId}')"/><button class="msg-lista-add-btn" onclick="addMsgItem('${listaId}')">+</button></div>`;}
@@ -1464,12 +1440,18 @@ function renderFin(){
   if(totalEl)totalEl.textContent=brl(total);
   if(countSub)countSub.textContent=gastosMes.length+' lançamento'+(gastosMes.length!==1?'s':'');
   if(saldoEl){
-    if(currentSaldo!==null&&currentSaldo!==undefined){
-      const restante=currentSaldo-total+totalEntradas;
-      saldoEl.textContent=brl(restante);
-      saldoEl.style.color=restante<0?'var(--red)':restante<currentSaldo*0.2?'#FCD34D':'#22C55E';
-      if(saldoSub)saldoSub.textContent='de '+brl(currentSaldo)+' orçados';
-    }else{saldoEl.textContent='—';saldoEl.style.color='var(--text3)';if(saldoSub)saldoSub.textContent='orçamento não definido';}
+    // Saldo do mês = entradas (salário etc) − gastos. Fluxo de caixa mensal
+    // puro, sem orçamento global. Cada mês é independente: começa do zero e
+    // é construído pelas entradas e saídas daquele mês.
+    const saldoMes=totalEntradas-total;
+    if(totalEntradas>0||total>0){
+      saldoEl.textContent=brl(saldoMes);
+      saldoEl.style.color=saldoMes<0?'var(--red)':(totalEntradas>0&&saldoMes<totalEntradas*0.2)?'#FCD34D':'#22C55E';
+      if(saldoSub)saldoSub.textContent=totalEntradas>0?('de '+brl(totalEntradas)+' recebidos'):'sem entradas ainda';
+    }else{
+      saldoEl.textContent='—';saldoEl.style.color='var(--text3)';
+      if(saldoSub)saldoSub.textContent='sem lançamentos';
+    }
   }
   if(!gastosMes.length){hist.innerHTML='<div class="fin-empty"><span style="font-size:32px;opacity:.2;display:block;margin-bottom:10px">💳</span>Nenhum lançamento em '+MESES_PT[finMes]+'</div>';return;}
   const container=document.createElement('div');
@@ -1861,12 +1843,6 @@ async function loadPrefs(){
       const disp=document.getElementById('cfg-nome-display');
       if(disp)disp.textContent=d.name;
     }
-    if(d.saldo!==undefined&&d.saldo!==null){
-      document.getElementById('pref-saldo').value=d.saldo;
-      currentSaldo=d.saldo;
-      const disp=document.getElementById('cfg-saldo-display');
-      if(disp)disp.textContent='R$ '+Number(d.saldo).toLocaleString('pt-BR',{minimumFractionDigits:2});
-    }
   }catch{}
   const pf=document.getElementById('pref-phone');
   if(pf)pf.value='';
@@ -1874,8 +1850,7 @@ async function loadPrefs(){
   if(phoneDisp)phoneDisp.textContent='+55 '+phone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
   renderAdminUsuarios();
 }
-async function savePrefs(){const tom=currentMood,nome=document.getElementById('pref-nome').value.trim();const saldoInput=document.getElementById('pref-saldo').value;const saldoNum=saldoInput!==''&&saldoInput!==undefined?parseFloat(saldoInput):null;let newPhone=document.getElementById('pref-phone').value.trim().replace(/\D/g,'');if(newPhone&&newPhone.length>=10){if(!newPhone.startsWith('55'))newPhone='55'+newPhone;phone=newPhone;const user=window._currentUser;if(user)localStorage.setItem(`clara_phone_${user.uid}`,newPhone);const sp=document.getElementById('sidebar-phone');if(sp)sp.textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');document.getElementById('drawer-phone').textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');}try{await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tom,nome,saldo:saldoNum})});if(saldoNum!==null)currentSaldo=saldoNum;showToast('Preferências salvas! ✅');
-    if(saldoNum!==null){const disp=document.getElementById('cfg-saldo-display');if(disp)disp.textContent='R$ '+Number(saldoNum).toLocaleString('pt-BR',{minimumFractionDigits:2});}
+async function savePrefs(){const tom=currentMood,nome=document.getElementById('pref-nome').value.trim();let newPhone=document.getElementById('pref-phone').value.trim().replace(/\D/g,'');if(newPhone&&newPhone.length>=10){if(!newPhone.startsWith('55'))newPhone='55'+newPhone;phone=newPhone;const user=window._currentUser;if(user)localStorage.setItem(`clara_phone_${user.uid}`,newPhone);const sp=document.getElementById('sidebar-phone');if(sp)sp.textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');document.getElementById('drawer-phone').textContent='+55 '+newPhone.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');}try{await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tom,nome})});showToast('Preferências salvas! ✅');
     if(currentNav==='financeiro')renderFin();}catch{showToast('Erro ⚠️');}}
 
 // ── Gerenciar usuários (admin) ──
