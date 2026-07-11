@@ -126,11 +126,17 @@ router.get('/gastos/:phone', async (req, res) => {
   try {
     const { phone } = req.params;
     const user = await memory.getOrCreateUser(phone);
-    const inicioMes = new Date(nowBRT().getFullYear(), nowBRT().getMonth(), 1);
+    // Traz uma janela ampla (6 meses atrás até 3 meses à frente) para o
+    // dashboard poder navegar entre meses — inclusive lançamentos futuros
+    // (ex: contas de agosto registradas em julho). Antes só trazia o mês
+    // vigente, então ao navegar/ticar em outro mês os dados sumiam.
+    const agora = nowBRT();
+    const inicio = new Date(agora.getFullYear(), agora.getMonth() - 6, 1);
+    const fim = new Date(agora.getFullYear(), agora.getMonth() + 4, 0, 23, 59, 59);
     const gastos = await prisma.expense.findMany({
-      where: { userId: user.id, createdAt: { gte: inicioMes } },
+      where: { userId: user.id, createdAt: { gte: inicio, lte: fim } },
       orderBy: { createdAt: 'desc' },
-      take: 50,
+      take: 300,
     });
     res.json(gastos);
   } catch (e) {
