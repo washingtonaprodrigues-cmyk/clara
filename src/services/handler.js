@@ -500,7 +500,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         if (mesAlvo !== null && mesAlvo !== now.getMonth()) {
           // Busca os gastos daquele mês específico. Considera o ano atual; se o
           // mês for futuro (ex: pergunta em jan sobre dezembro), usa ano passado.
-          const anoAlvo = mesAlvo > now.getMonth() ? now.getFullYear() - 1 : now.getFullYear();
+          const anoAlvo = (mesAlvo - now.getMonth() > 6) ? now.getFullYear() - 1 : now.getFullYear();
           const inicioMesAlvo = new Date(anoAlvo, mesAlvo, 1);
           const fimMesAlvo = new Date(anoAlvo, mesAlvo + 1, 0, 23, 59, 59);
           gastosParaCalcular = await prisma.expense.findMany({
@@ -1695,7 +1695,12 @@ async function gerarRelatorioFinanceiroWhatsApp(user, phone, textoUsuario = '') 
     for (let i = 0; i < mesesLow.length; i++) {
       if (new RegExp(`\\b${mesesLow[i]}\\b`, 'i').test(txtLow) || (i === 2 && /\bmarco\b/i.test(txtLow))) {
         mesAlvo = i;
-        if (i > now.getMonth()) anoAlvo = now.getFullYear() - 1; // mês futuro = ano passado
+        // Ano: por padrão o atual. Só considera ano PASSADO se o mês pedido
+        // está muito à frente (mais de 6 meses no futuro) — aí provavelmente
+        // a pessoa quer o passado (ex: em janeiro perguntar "novembro" = ano
+        // passado). Meses próximos no futuro (agosto pedido em julho) usam o
+        // ano atual, porque o usuário pode registrar lançamentos futuros.
+        if (i - now.getMonth() > 6) anoAlvo = now.getFullYear() - 1;
         break;
       }
     }
