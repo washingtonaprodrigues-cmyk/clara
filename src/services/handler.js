@@ -409,7 +409,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           orderBy: { scheduledAt: 'asc' }, take: 20
         }),
         prisma.medication.findMany({ where: { userId: user.id, active: true, remaining: { gt: 0 } } }),
-        preferences.saldo != null ? prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } } }) : Promise.resolve([]),
+        prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } } }),
         buildPersonalContext(user.id).catch(() => ''),
         prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null),
         // ── Pendência de saúde ainda não cobrada ──
@@ -479,14 +479,49 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         contexto += `\n\n[MEDICAMENTOS]\n${meds.map(fmtMed).join('\n')}`;
       }
 
-      // Financeiro — só injeta se falar de dinheiro
-      if (preferences.saldo != null && faladeDinheiro) {
-        const saidas = gastos.filter(g => g.value > 0);
-        const entradas = gastos.filter(g => g.value < 0);
+      // Financeiro — só injeta se falar de dinheiro. FLUXO DE CAIXA MENSAL:
+      // saldo do mês = entradas − gastos. Se o usuário mencionar um mês
+      // específico ("saldo de junho", "quanto gastei em maio"), busca AQUELE
+      // mês; senão, usa o mês vigente (gastos já carregados).
+      if (faladeDinheiro) {
+        const MESES_NOMES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+        const MESES_ALT = { 'marco':2, 'setembro':8 }; // sem acento
+        // Detecta menção a mês por nome
+        let mesAlvo = null; // 0-11, ou null = mês vigente
+        for (let i = 0; i < MESES_NOMES.length; i++) {
+          if (new RegExp(`\\b${MESES_NOMES[i]}\\b`, 'i').test(txtLow)) { mesAlvo = i; break; }
+        }
+        if (mesAlvo === null && /\bmarco\b/i.test(txtLow)) mesAlvo = 2;
+
+        let gastosParaCalcular = gastos; // padrão: mês vigente (já carregado)
+        let nomeMesLabel = now.toLocaleDateString('pt-BR', { month: 'long', timeZone: 'America/Sao_Paulo' });
+        let ehMesEspecifico = false;
+
+        if (mesAlvo !== null && mesAlvo !== now.getMonth()) {
+          // Busca os gastos daquele mês específico. Considera o ano atual; se o
+          // mês for futuro (ex: pergunta em jan sobre dezembro), usa ano passado.
+          const anoAlvo = mesAlvo > now.getMonth() ? now.getFullYear() - 1 : now.getFullYear();
+          const inicioMesAlvo = new Date(anoAlvo, mesAlvo, 1);
+          const fimMesAlvo = new Date(anoAlvo, mesAlvo + 1, 0, 23, 59, 59);
+          gastosParaCalcular = await prisma.expense.findMany({
+            where: { userId: user.id, createdAt: { gte: inicioMesAlvo, lte: fimMesAlvo } }
+          }).catch(() => []);
+          nomeMesLabel = MESES_NOMES[mesAlvo];
+          ehMesEspecifico = true;
+        }
+
+        const saidas = gastosParaCalcular.filter(g => g.value > 0);
+        const entradas = gastosParaCalcular.filter(g => g.value < 0);
         const totalGasto = saidas.reduce((a, g) => a + g.value, 0);
         const totalEntradas = entradas.reduce((a, g) => a + Math.abs(g.value), 0);
-        const restante = preferences.saldo - totalGasto + totalEntradas;
-        contexto += `\n\n[FINANCEIRO]\nOrçamento: R$ ${preferences.saldo.toFixed(2)}\nGasto: R$ ${totalGasto.toFixed(2)}\nEntradas: R$ ${totalEntradas.toFixed(2)}\nSaldo: R$ ${restante.toFixed(2)}`;
+        const saldoMes = totalEntradas - totalGasto;
+        const labelMes = ehMesEspecifico ? `${nomeMesLabel} (mês que o usuário perguntou)` : `${nomeMesLabel} (mês vigente)`;
+
+        if (totalEntradas > 0 || totalGasto > 0) {
+          contexto += `\n\n[FINANCEIRO — ${labelMes}]\nEntradas (recebido): R$ ${totalEntradas.toFixed(2)}\nGastos: R$ ${totalGasto.toFixed(2)}\nSaldo do mês (entradas − gastos): R$ ${saldoMes.toFixed(2)}`;
+        } else {
+          contexto += `\n\n[FINANCEIRO — ${labelMes}]\nNenhum lançamento nesse mês (nem salário nem gastos registrados).`;
+        }
       }
 
       // Listas — só injeta se falar de lista/compras
@@ -1665,7 +1700,7 @@ async function gerarRelatorioFinanceiroWhatsApp(user, phone) {
     let texto = `📊 *Relatório de ${nomeMes}*\n\n`;
     if (entradas.length > 0) texto += `💰 *Entradas:* R$ ${totalEntradas.toFixed(2)}\n`;
     texto += `💸 *Total gasto:* R$ ${totalGasto.toFixed(2)}\n`;
-    if (preferences.saldo != null) { const saldo = preferences.saldo - totalGasto + totalEntradas; texto += `💵 *Saldo restante:* R$ ${saldo.toFixed(2)}\n`; }
+    { const saldo = totalEntradas - totalGasto; texto += `💵 *Saldo do mês:* R$ ${saldo.toFixed(2)}\n`; }
     texto += `\n`;
     if (Object.keys(porCategoria).length > 0) {
       texto += `*Por categoria:*\n`;
@@ -1753,7 +1788,7 @@ async function listarGastos(user, phone) {
     let texto = `💰 *${meses[now.getMonth()]} — Resumo*\n\n`;
     if (entradas.length > 0) texto += `💰 Entradas: *R$ ${totalEntradas.toFixed(2)}*\n`;
     texto += `💸 Gastos: *R$ ${totalGasto.toFixed(2)}*\n`;
-    if (preferences.saldo != null) { const saldo = preferences.saldo - totalGasto + totalEntradas; texto += `💵 Saldo: *R$ ${saldo.toFixed(2)}*\n`; }
+    { const saldo = totalEntradas - totalGasto; texto += `💵 Saldo do mês: *R$ ${saldo.toFixed(2)}*\n`; }
     texto += `\n`;
     gastos.slice(0, 8).forEach(g => { const isEntrada = g.value < 0; const absVal = Math.abs(g.value); const nome = g.description && g.description !== g.category ? g.description : g.category; const sinal = isEntrada ? '+' : '-'; const icon = isEntrada ? '💰' : (catIcones[g.category] || '📦'); texto += `${icon} ${nome} — *${sinal}R$ ${absVal.toFixed(2)}*\n`; });
     texto += `\n_${gastos.length} lançamento${gastos.length !== 1 ? 's' : ''} este mês_`;
