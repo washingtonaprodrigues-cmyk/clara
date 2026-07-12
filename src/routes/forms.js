@@ -446,7 +446,8 @@ router.get('/preferencia/:phone', async (req, res) => {
     const { phone } = req.params;
     const user = await memory.getOrCreateUser(phone);
     const pref = await memory.getUserPreference(user.id);
-    res.json(pref);
+    // Inclui o toggle de proativas (campo no User, default false = desligado)
+    res.json({ ...pref, proativasAtivas: !!user.proativasAtivas });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -510,7 +511,7 @@ router.delete('/relacionamento/:phone', async (req, res) => {
 router.post('/preferencia/:phone', async (req, res) => {
   try {
     const { phone } = req.params;
-    const { nome, tom, saldo } = req.body;
+    const { nome, tom, saldo, proativasAtivas } = req.body;
     const user = await memory.getOrCreateUser(phone);
     const saldoNum = (saldo !== undefined && saldo !== null && saldo !== '') ? parseFloat(saldo) : null;
 
@@ -518,6 +519,14 @@ router.post('/preferencia/:phone', async (req, res) => {
     const tomMudou = tom && prefsAntigas?.tom !== tom;
 
     await memory.saveUserPreference(user.id, nome || null, tom || null, saldoNum);
+
+    // Toggle de proativas (campo no User). Só atualiza se veio no body.
+    if (proativasAtivas !== undefined) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { proativasAtivas: !!proativasAtivas }
+      }).catch(() => {});
+    }
 
     if (tomMudou) {
       const NOMES_TOM = {
