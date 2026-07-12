@@ -923,11 +923,33 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           const memAfetivaProm = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
           const apelidoProm = memAfetivaProm?.apelido_usuario || preferences?.name || '';
           const contextoRelProm = await buscarContextoRelacional(user.id);
+          // COMPLEMENTAR, não repetir: pega o que a Clara JÁ mencionou nas
+          // últimas respostas (nomes próprios com Maiúscula) e instrui a 2ª
+          // busca a trazer lugares/opções DIFERENTES. Sem isso, ela repetia a
+          // mesma cabeleireira (ex: "Marta Machado" duas vezes) porque buscava
+          // o mesmo termo genérico e caía nos mesmos resultados.
+          let jaMencionados = [];
+          try {
+            const ultimasClara = await prisma.memory.findMany({
+              where: { userId: user.id, type: 'conversa', content: { startsWith: '[Clara]' } },
+              orderBy: { createdAt: 'desc' }, take: 4
+            }).catch(() => []);
+            const textoTudo = (respStr + ' ' + ultimasClara.map(m => m.content).join(' '));
+            // Nomes próprios: sequências de palavras Capitalizadas (2+ letras)
+            const matches = textoTudo.match(/\b[A-ZÀ-Ú][a-zà-ú]{2,}(?:\s+[A-ZÀ-Ú][a-zà-ú]{2,})*/g) || [];
+            const ignorar = /^(Olha|Achei|Pelo|Quer|Que|Deixa|Mas|Então|Eita|Claro|Você|Isso|Como|Onde|Quando|Pra|Aqui|Ali|Sabe|Adoro|Morri|Opa|Nossa|Bom|Boa|Oi|Ah|Eu|Ela|Ele|Sim|Não|Vou|Tem|Uma|Uns|Umas)$/;
+            jaMencionados = [...new Set(matches.filter(n => n.length > 3 && !ignorar.test(n.split(' ')[0])))]
+              .filter(n => !/^(Taquarituba|Fartura|Carlópolis|Taquaritinga|São Paulo|Brasil)/.test(n)) // tira cidades
+              .slice(0, 8);
+          } catch {}
+          const instrucaoComplementar = jaMencionados.length > 0
+            ? `IMPORTANTE: a Clara JÁ mencionou estes lugares/nomes antes: ${jaMencionados.join(', ')}. Traga opções DIFERENTES e NOVAS, não repita esses. Se não houver outros bons, diga honestamente que esses que ela já falou são as melhores opções da região — não invente nem repita como se fosse novidade.`
+            : '';
           // Se o usuário estava CONTANDO algo (não perguntando), Clara buscou
           // pra ela mesma ficar por dentro — usa modo 'participar' pra não
           // explicar de volta pro usuário algo que ele mesmo já sabe.
           const modoBusca = pareceuPedidoInfo ? 'informar' : 'participar';
-          const resultado = await searchWeb(queryBusca, '', apelidoProm, preferences?.tom || 'carinhoso', contextoRelProm, modoBusca);
+          const resultado = await searchWeb(queryBusca, '', apelidoProm, preferences?.tom || 'carinhoso', contextoRelProm, modoBusca, instrucaoComplementar);
           // Modo 'participar': salva na memória de longa duração o que ela
           // aprendeu — nas próximas sessões ela já sabe do assunto e não
           // precisa anunciar que vai pesquisar de novo como se fosse novidade.
