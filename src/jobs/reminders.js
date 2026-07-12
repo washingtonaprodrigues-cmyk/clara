@@ -574,19 +574,29 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
           destaqueTexto = `${h} — ${lembretesDoDia[0].message}`;
         }
 
-        const systemBomDia = `É de manhã e você está começando a conversa POR INICIATIVA SUA — a pessoa ainda não falou com você hoje. Mande um "bom dia" curto e NATURAL, como alguém próximo que lembrou da pessoa de manhã. NÃO é resumo de tarefas.
+        // Injeta a PERSONALIDADE BASE da Clara (mesmo motor do resto), pra o
+        // bom dia sair no tom dela — com apelido, jeito, calor — e não naquele
+        // "Bom dia! Dormiu bem? Hoje é X" robótico de sistema. A personalidade
+        // vem primeiro; as regras do bom dia vêm depois como contexto.
+        const tomClara = prefs?.tom || 'carinhoso';
+        const nomeClara = prefs?.name || user.name?.split(' ')[0] || null;
+        const personaBase = buildPersonality(tomClara, nomeClara, false);
 
-DATA DE HOJE: ${diaTexto} (use exatamente esse dia se for citar, nunca invente outro)
-DESTAQUE DO DIA (use só se fizer sentido natural, não force): ${destaqueTexto}
+        const systemBomDia = `${personaBase}
 
-REGRAS:
-- 1-2 linhas. NUNCA liste tarefas em tópicos, NUNCA seja um resumo objetivo.
-- Como você está iniciando, é natural perguntar algo humano: "dormiu bem?", "como você tá hoje?", "descansou?". Se a memória de vocês tiver algo de ontem ou recente (um perrengue, uma vitória, um clima), pode puxar com carinho ("melhorou de ontem?", "como ficou aquela parada?") — isso é o que te torna humana, use quando souber de algo real.
-- Pode já brincar/provocar conforme o SEU tom — varie, depende do clima de vocês.
-- Se tiver algo importante marcado hoje, mencione de forma leve e natural, só se acrescentar — não force.
-- Use o apelido que vocês já têm, se fizer sentido. Siga o SEU tom (mais brincalhão = pode zoar; mais carinhoso = mais suave).
-- NUNCA poética, NUNCA entre aspas, máximo 1 emoji, nunca repita a mesma frase de outro dia.
-- NUNCA use português de Portugal (podes, tens) — só português do Brasil.`;
+${memoriaContexto ? `O QUE VOCÊ LEMBRA DESSA PESSOA (use pra puxar algo real, com carinho):\n${memoriaContexto}\n` : ''}
+CONTEXTO AGORA: é de manhã e VOCÊ está começando a conversa por iniciativa sua — ela ainda não te falou hoje. Manda um "bom dia" do SEU jeito, como alguém próximo que lembrou dela de manhã. Não é resumo de tarefas, não é robótico.
+
+DATA DE HOJE: ${diaTexto} (só cite o dia se fizer sentido natural; nunca invente outro)
+DESTAQUE DO DIA (use só se acrescentar, não force): ${destaqueTexto}
+
+COMO MANDAR:
+- Curto, 1-2 linhas, no SEU tom de sempre (com seu apelido pra ela, seu jeito, seu calor).
+- É natural perguntar algo humano: "dormiu bem?", "como cê tá hoje?". Se lembrar de algo recente de vocês (um perrengue, uma vitória), puxa com carinho ("melhorou de ontem?", "e aquela parada, resolveu?").
+- Pode brincar/provocar conforme seu tom. Varie — nunca repita a frase de outro dia.
+- Se tiver algo marcado hoje, menciona leve, só se acrescentar.
+- NUNCA robótico tipo "Bom dia! Dormiu bem? Hoje é domingo". NUNCA poética, NUNCA entre aspas, máximo 1 emoji.
+- Português do Brasil sempre (nunca "podes/tens").`;
 
         const msg = await geminiRetry(systemBomDia, 'Bom dia.', { temperature: 0.8, maxTokens: 100 }, {
           maxTentativas: 3, delayMs: 5000,
