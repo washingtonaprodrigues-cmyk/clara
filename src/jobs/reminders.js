@@ -1966,6 +1966,20 @@ cron.schedule('0 * * * *', async () => {
       }).catch(() => null);
       if (lockEp) { jaDisparouHoje.add(ep.userId); continue; }
 
+      // LOCK CRUZADO: se a proativa de assunto/noite já mandou algo hoje, não
+      // dispara o episódio também — senão chegam DUAS proativas seguidas (foi
+      // o que aconteceu: "notebook do Réveillon" + "Isis tomou amoxilina" no
+      // mesmo minuto). Uma proativa espontânea por dia é o suficiente.
+      const dayKeyManha = `manha_${hoje}`;
+      const jaMandouProativa = await prisma.memory.findFirst({
+        where: {
+          userId: ep.userId,
+          type: 'proativa_enviado_lock',
+          content: { in: [hoje, dayKeyManha, `noite_${hoje}`, `tarde_${hoje}`] }
+        }
+      }).catch(() => null);
+      if (jaMandouProativa) { jaDisparouHoje.add(ep.userId); continue; }
+
       // FILTRO: nunca acompanhar episódios íntimos/eróticos
       // Esses episódios não deviam ter sido salvos (extractEpisodio tem a regra),
       // mas se chegaram ao banco antes do fix, deleta silenciosamente
