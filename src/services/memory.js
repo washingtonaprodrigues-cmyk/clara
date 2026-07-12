@@ -124,7 +124,7 @@ const CAMPOS_CURIOSIDADE = [
   { chave: 'meta_financeira', categoria: 'metas',           pergunta: 'você tem alguma meta financeira que está perseguindo?',  contexto: 'financeiro' },
 ];
 
-async function savePersonalInfo(userId, chave, valor, categoria = 'outro') {
+async function savePersonalInfo(userId, chave, valor, categoria = 'outro', duracao = 'permanente') {
   // FILTRO HARD: nunca salvar info pessoal / referência compartilhada de
   // conteúdo íntimo/sexual. Cobre o caso de "referencias_compartilhadas" ou
   // qualquer categoria capturar uma conversa íntima de ontem e a Clara trazer
@@ -137,6 +137,14 @@ async function savePersonalInfo(userId, chave, valor, categoria = 'outro') {
     return null;
   }
 
+  // Duração do fato: 'permanente' (quem a pessoa é, história, gosto — fica pra
+  // sempre) ou 'temporaria' (algo acontecendo que vai passar). Fatos temporários
+  // ganham uma data de expiração; permanentes nunca expiram. Isso é o que
+  // permite a Clara lembrar "você foi DJ" pra sempre, mas esquecer "o carro deu
+  // problema" depois que resolve.
+  const ehTemporaria = duracao === 'temporaria';
+  const expiraEm = ehTemporaria ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() : null;
+
   const existing = await prisma.memory.findFirst({
     where: {
       userId,
@@ -147,11 +155,17 @@ async function savePersonalInfo(userId, chave, valor, categoria = 'outro') {
 
   if (existing) {
     if (existing.content === valor) return existing;
+    // Ao atualizar, se virou permanente (ex: "o carro deu problema" → depois
+    // "consertei o carro, ficou ótimo"), mantém permanente. Uma vez permanente,
+    // não volta a ser temporário.
+    let metaAntiga = {}; try { metaAntiga = JSON.parse(existing.metadata || '{}'); } catch {}
+    const jaEraPermanente = metaAntiga.duracao === 'permanente';
+    const duracaoFinal = jaEraPermanente ? 'permanente' : duracao;
     return prisma.memory.update({
       where: { id: existing.id },
       data: {
         content: valor,
-        metadata: JSON.stringify({ chave, categoria, updatedAt: new Date().toISOString() }),
+        metadata: JSON.stringify({ chave, categoria, duracao: duracaoFinal, expiraEm: duracaoFinal === 'temporaria' ? expiraEm : null, updatedAt: new Date().toISOString() }),
       },
     });
   }
@@ -161,7 +175,7 @@ async function savePersonalInfo(userId, chave, valor, categoria = 'outro') {
       userId,
       type: PERSONAL_INFO_TYPE,
       content: valor,
-      metadata: JSON.stringify({ chave, categoria, createdAt: new Date().toISOString() }),
+      metadata: JSON.stringify({ chave, categoria, duracao, expiraEm, createdAt: new Date().toISOString() }),
     },
   });
 }
@@ -196,12 +210,16 @@ async function getPersonalInfo(userId, categoria = null) {
     orderBy: { createdAt: 'desc' },
   });
 
+  const agora = Date.now();
   const result = {};
   for (const m of mems) {
     let meta = {};
     try { meta = JSON.parse(m.metadata || '{}'); } catch {}
     if (categoria && meta.categoria !== categoria) continue;
-    result[meta.chave || m.id] = { id: m.id, valor: m.content, categoria: meta.categoria || 'outro' };
+    // Fatos temporários expirados não entram no contexto — "o carro deu
+    // problema" some depois de resolver/expirar. Permanentes nunca expiram.
+    if (meta.duracao === 'temporaria' && meta.expiraEm && new Date(meta.expiraEm).getTime() < agora) continue;
+    result[meta.chave || m.id] = { id: m.id, valor: m.content, categoria: meta.categoria || 'outro', duracao: meta.duracao || 'permanente' };
   }
   return result;
 }
@@ -574,13 +592,26 @@ async function getPendenciasAbertas(userId) {
   }).catch(() => []);
   const agora = Date.now();
   const EXPIRY_MS = 3 * 24 * 60 * 60 * 1000;
-  return mems
-    .map(m => { try { return { id: m.id, criadoEm: m.createdAt, ...JSON.parse(m.content) }; } catch { return null; } })
+  const EXPIRY_ALTA_MS = 5 * 24 * 60 * 60 * 1000; // "depois te conto" dura mais
+  const lista = mems
+    .map(m => { try { return { id: m.id, criadoEm: m.createdAt, prioridade: 'normal', origem: 'conversa', cobrancas: 0, ...JSON.parse(m.content) }; } catch { return null; } })
     .filter(Boolean)
-    .filter(p => !p.encerrado && (agora - new Date(p.criadoEm).getTime()) < EXPIRY_MS);
+    .filter(p => {
+      if (p.encerrado) return false;
+      const idade = agora - new Date(p.criadoEm).getTime();
+      const limite = p.prioridade === 'alta' ? EXPIRY_ALTA_MS : EXPIRY_MS;
+      return idade < limite;
+    });
+  // Ordena: prioridade alta ("depois te conto") primeiro, depois por mais recente
+  lista.sort((a, b) => {
+    if (a.prioridade === 'alta' && b.prioridade !== 'alta') return -1;
+    if (b.prioridade === 'alta' && a.prioridade !== 'alta') return 1;
+    return new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime();
+  });
+  return lista;
 }
 
-async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_retomar }) {
+async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_retomar, prioridade = 'normal', origem = 'conversa' }) {
   // FILTRO HARD: nunca salvar pendência de conteúdo íntimo/sexual/romântico.
   // A instrução no prompt do detectarAssuntoEmAberto às vezes é ignorada pela
   // IA, então esse bloqueio no código é a rede de segurança final. Se qualquer
@@ -601,25 +632,31 @@ async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_reto
     assunto?.toLowerCase().includes(p.assunto?.toLowerCase()?.split(' ')[0])
   );
   if (mesmoAssunto) {
+    // Preserva a prioridade mais alta se já existia (um "depois te conto" não
+    // vira "normal" por uma atualização qualquer)
+    const prioridadeFinal = mesmoAssunto.prioridade === 'alta' ? 'alta' : prioridade;
     await prisma.memory.update({
       where: { id: mesmoAssunto.id },
-      data: { content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false }) }
+      data: { content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false, prioridade: prioridadeFinal, origem: mesmoAssunto.origem || origem, cobrancas: mesmoAssunto.cobrancas || 0 }) }
     }).catch(() => {});
     return;
   }
 
-  // Limite de 3 pendências ativas — remove a mais antiga se estourar
-  // Evita acúmulo de assuntos irrelevantes que nunca são resolvidos
+  // Limite de 3 pendências ativas — remove a mais antiga de prioridade NORMAL
+  // se estourar (nunca remove uma de prioridade alta / "depois te conto").
   if (existentes.length >= 3) {
-    const maisAntiga = existentes[existentes.length - 1]; // já vem desc, então [last] é a mais antiga
-    await prisma.memory.delete({ where: { id: maisAntiga.id } }).catch(() => {});
-    console.log(`[Pendência] Removida antiga: "${maisAntiga.assunto}" (limite 3)`);
+    const removivel = existentes.filter(p => p.prioridade !== 'alta');
+    if (removivel.length > 0) {
+      const maisAntiga = removivel[removivel.length - 1];
+      await prisma.memory.delete({ where: { id: maisAntiga.id } }).catch(() => {});
+      console.log(`[Pendência] Removida antiga: "${maisAntiga.assunto}" (limite 3)`);
+    }
   }
 
   await prisma.memory.create({
-    data: { userId, type: 'pendencia_conversa', content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false }) }
+    data: { userId, type: 'pendencia_conversa', content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false, prioridade, origem, cobrancas: 0 }) }
   }).catch(() => {});
-  console.log(`[Pendência] Salva: "${assunto}"`);
+  console.log(`[Pendência] Salva: "${assunto}"${prioridade === 'alta' ? ' [PRIORIDADE ALTA — depois te conto]' : ''}`);
 }
 
 async function fecharPendencia(userId, pendenciaId) {
