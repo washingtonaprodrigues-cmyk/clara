@@ -15,6 +15,7 @@ model User {
   monthlyIncome  Float?
   jornadaMinutos Int      @default(480)
   isPremium      Boolean  @default(false)
+  proativasAtivas Boolean @default(false)
   blocked        Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime? @updatedAt
