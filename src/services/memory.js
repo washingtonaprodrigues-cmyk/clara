@@ -573,7 +573,7 @@ async function getPendenciasAbertas(userId) {
     take: 10,
   }).catch(() => []);
   const agora = Date.now();
-  const EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+  const EXPIRY_MS = 3 * 24 * 60 * 60 * 1000;
   return mems
     .map(m => { try { return { id: m.id, criadoEm: m.createdAt, ...JSON.parse(m.content) }; } catch { return null; } })
     .filter(Boolean)
@@ -672,17 +672,17 @@ async function fecharPendenciasPorResolucao(userId, textoUsuario) {
     await fecharPendencia(userId, id);
   }
 
-  // ── Limpeza automática de pendências velhas (> 7 dias) ──
-  // Assunto de mais de uma semana sem resolução provavelmente já não é relevante.
-  // Remove silenciosamente para não acumular lixo.
-  const seteDiasAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  // ── Limpeza automática de pendências velhas (> 3 dias) ──
+  // Assunto de mais de 3 dias sem resolução já não é relevante pra puxar numa
+  // proativa — vira aquele "notebook do Réveillon" ressuscitado. Remove.
+  const seteDiasAtras = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
   const velhas = pendencias.filter(p =>
     !fechadas.includes(p.id) &&
     p.criadoEm && new Date(p.criadoEm) < seteDiasAtras
   );
   for (const p of velhas) {
     await fecharPendencia(userId, p.id);
-    console.log(`[Pendência] Expirada por idade (>7 dias): "${p.assunto}"`);
+    console.log(`[Pendência] Expirada por idade (>3 dias): "${p.assunto}"`);
   }
 }
 
