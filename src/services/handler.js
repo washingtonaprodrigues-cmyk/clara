@@ -785,7 +785,23 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // horas", "quando", etc). Usado tanto pra tag BUSCAR quanto pra
     // detecção de promessa de busca mais abaixo — evita ela mesma criar
     // uma busca do nada em cima de comentário/comemoração sem pedido real.
-    const pareceuPedidoInfo = /\?|que horas|quando|onde fica|onde é|qual (é|o|a)|quanto (custa|é|vale)|quem (é|foi|ganhou|joga)/i.test(text);
+    const pareceuPedidoInfo = /\?|que horas|quando|onde fica|onde é|qual (é|o|a)|quanto (custa|é|vale)|quem (é|foi|ganhou|joga)|consegue|me (arruma|acha|passa|manda|indica)|tem (algum|algo|lista|indica)|lista de|recomenda|indica|procura|pesquisa|busca/i.test(text);
+
+    // Continuação de uma conversa de busca: quando a mensagem do usuário é
+    // curta e sem "?" ("ambos", "os dois", "pode ser", "tá bom", "manda"),
+    // mas a ÚLTIMA fala da Clara já era sobre buscar/opções, entende como
+    // continuação — assim "Ambos fedo" depois de "quer tradicional ou moderno?"
+    // conta como pedido de info e a promessa de busca dela vale.
+    let pareceuBuscaAnterior = false;
+    try {
+      const ultimaClara = await prisma.memory.findFirst({
+        where: { userId: user.id, type: 'conversa', content: { startsWith: '[Clara]' } },
+        orderBy: { createdAt: 'desc' }
+      }).catch(() => null);
+      if (ultimaClara) {
+        pareceuBuscaAnterior = /op[çc][õo]es|pesquis|busca|procur|lugar|indic|recomend|prefere|tradicional|moderno|qual (tipo|estilo)|te trago|te falo|mais a fundo/i.test(ultimaClara.content || '');
+      }
+    } catch {}
 
     // ── Busca proativa: Clara sinalizou que quer pesquisar ──
     const buscaMatch = respStr.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
@@ -887,7 +903,14 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // "quando", etc). Sem isso, uma frase de efeito dela tipo "deixa eu ver
     // que horas" numa resposta a um convite/comentário ("bora torcermos")
     // disparava busca escondida sem ninguém ter pedido nada.
-    const prometeuBuscar = pareceuPedidoInfo && /peraí que vou ver|deixa eu (dar uma olhada|pesquisar|verificar|checar|buscar)|vou (pesquisar|buscar|dar uma olhada|verificar)|deixa eu ver|um segundo que|rapidinho aqui/i.test(respStr);
+    // Detecta quando a Clara PROMETEU buscar/trazer mais — inclui o jeito
+    // charmoso dela de falar ("vou dar uma pesquisada mais a fundo", "já volto
+    // com mais opções", "vou ver o que mais encontro", "tô correndo pra achar").
+    // Antes a regex era estreita e ela prometia sem o sistema executar a 2ª
+    // busca → ela "blefava". Agora qualquer promessa de retorno dispara a busca
+    // real, pra a palavra dela valer.
+    const REGEX_PROMESSA = /pera[íi] que vou ver|deixa eu (dar uma (olhada|pesquisada|checada)|pesquisar|verificar|checar|buscar|ver)|vou (pesquisar|buscar|dar uma (olhada|pesquisada)|verificar|ver o que mais|te trazer|trazer mais|procurar mais|achar|dar uma fun[çc]ada|investigar)|(j[áa] )?(vou )?volto? com mais|(t[ôo]|tou|estou) (correndo|procurando|pesquisando|na busca|caçando|atrás)|deixa eu ver|um segundo que|rapidinho aqui|pesquisada mais a fundo|mais a fundo|ver o que (mais )?(encontro|acho|tem)|te (falo|trago|mando) (as|mais) op[çc][õo]es|procurar? (mais|outros?)|dar uma vasculhada/i;
+    const prometeuBuscar = (pareceuPedidoInfo || pareceuBuscaAnterior) && REGEX_PROMESSA.test(respStr);
     if (prometeuBuscar && !buscaMatch) {
       ;(async () => {
         try {
