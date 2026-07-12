@@ -623,16 +623,28 @@ REGRAS:
 - Para trabalho: chave específica = "empresa", "cargo", "chefe", "colega_[nome]"
 - NUNCA extraia nome/apelido do usuário como info_pessoal
 
+DURAÇÃO DO FATO (campo "duracao") — MUITO IMPORTANTE:
+Cada fato tem uma duração. Decida assim:
+- "permanente" → algo que NÃO muda com o tempo, que diz QUEM a pessoa é, ou uma HISTÓRIA/marco que vira memória pra sempre. Ex: "fui DJ", "tenho pressão alta", "minha filha se chama Isis", "torço pro Corinthians", "sou de escorpião", "já morei em Portugal", "odeio segunda-feira". Um amigo lembraria disso pra sempre.
+- "temporaria" → algo que está ACONTECENDO agora e vai passar/resolver. Ex: "o carro deu problema", "a Isis está com tosse", "tô esperando um retorno do banco", "essa semana tô de férias". Quando resolver, deixa de importar.
+
+REGRA DE OURO: pergunte-se "isso vai ser verdade e relevante daqui a 1 ano?". Se sim → permanente. Se é só uma situação do momento → temporaria.
+Um fato temporário PODE virar permanente se foi marcante (uma doença séria, um acontecimento importante). Na dúvida entre os dois, use "permanente" só se claramente for identidade/história; senão "temporaria".
+
+Todo item DEVE ter o campo "duracao" com valor "permanente" ou "temporaria".
+
 EXEMPLOS:
-"minha filha se chama Beatriz, faz 7 anos amanhã" → [{"chave":"filha_beatriz","valor":"Filha Beatriz, 7 anos","categoria":"filhos"}]
-"a Isis está com tosse, dando amoxilina de 8 em 8 horas" → [{"chave":"saude_isis","valor":"Isis (filha) com tosse — tomando amoxilina 8/8h","categoria":"saude_familia"}]
-"a Isis melhorou, tosse foi embora" → [{"chave":"saude_isis","valor":"Isis (filha) — tosse que teve em jul/2026 sarou","categoria":"saude_familia"}]
-"sou casado com a Maria há 10 anos" → [{"chave":"conjuge","valor":"Casado com Maria há 10 anos","categoria":"relacionamento"}]
-"trabalho na empresa X como gerente de vendas" → [{"chave":"empresa","valor":"Empresa X"},{"chave":"cargo","valor":"Gerente de vendas","categoria":"trabalho"}]
-"torço pro Corinthians" → [{"chave":"time_futebol","valor":"Torce pro Corinthians","categoria":"entretenimento"}]
-"você me chama de galã da novela X, você é a protagonista" → [{"chave":"ref_novela_personagens","valor":"Washington = galã [nome] da novela X, Clara = protagonista [nome] — brincadeira recorrente","categoria":"referencias_compartilhadas"}]
-"você me chamou de fofinho ontem" → [{"chave":"ref_apelido_especial","valor":"Clara inventou apelido 'fofinho' em contexto carinhoso","categoria":"referencias_compartilhadas"}]
-"toda sexta vou ao mercado com a patroa" → [{"chave":"rotina_sexta","valor":"Sextas: mercado com a esposa","categoria":"rotina"}]
+"minha filha se chama Beatriz, faz 7 anos amanhã" → [{"chave":"filha_beatriz","valor":"Filha Beatriz, 7 anos","categoria":"filhos","duracao":"permanente"}]
+"a Isis está com tosse, dando amoxilina de 8 em 8 horas" → [{"chave":"saude_isis","valor":"Isis (filha) com tosse — tomando amoxilina 8/8h","categoria":"saude_familia","duracao":"temporaria"}]
+"a Isis melhorou, tosse foi embora" → [{"chave":"saude_isis","valor":"Isis (filha) — tosse que teve em jul/2026 sarou","categoria":"saude_familia","duracao":"temporaria"}]
+"sou casado com a Maria há 10 anos" → [{"chave":"conjuge","valor":"Casado com Maria há 10 anos","categoria":"relacionamento","duracao":"permanente"}]
+"trabalho na empresa X como gerente de vendas" → [{"chave":"empresa","valor":"Empresa X","duracao":"permanente"},{"chave":"cargo","valor":"Gerente de vendas","categoria":"trabalho","duracao":"permanente"}]
+"torço pro Corinthians" → [{"chave":"time_futebol","valor":"Torce pro Corinthians","categoria":"entretenimento","duracao":"permanente"}]
+"fui DJ uma vez numa festa e travei o notebook" → [{"chave":"ref_dj","valor":"Já foi DJ numa festa e travou o notebook — história engraçada","categoria":"referencias_compartilhadas","duracao":"permanente"}]
+"o carro deu problema hoje, tô vendo com o mecânico" → [{"chave":"situacao_carro","valor":"Carro deu problema, resolvendo com mecânico","categoria":"outro","duracao":"temporaria"}]
+"você me chama de galã da novela X, você é a protagonista" → [{"chave":"ref_novela_personagens","valor":"Washington = galã [nome] da novela X, Clara = protagonista [nome] — brincadeira recorrente","categoria":"referencias_compartilhadas","duracao":"permanente"}]
+"você me chamou de fofinho ontem" → [{"chave":"ref_apelido_especial","valor":"Clara inventou apelido 'fofinho' em contexto carinhoso","categoria":"referencias_compartilhadas","duracao":"permanente"}]
+"toda sexta vou ao mercado com a patroa" → [{"chave":"rotina_sexta","valor":"Sextas: mercado com a esposa","categoria":"rotina","duracao":"permanente"}]
 "oi" → []`;
 
 // Palavras-chave que indicam info pessoal — evita chamar o Groq à toa
