@@ -2979,12 +2979,33 @@ async function checkConfirmacaoPendente(user, phone, text) {
 }
 
 async function extractAndSavePersonalInfo(userId, text) {
+  // ── "Depois te conto" — pendência de PRIORIDADE ALTA ──────────────────
+  // Quando o usuário promete contar algo depois ("depois te conto", "te falo
+  // mais tarde", "agora não posso, depois eu conto"), isso vira a pendência
+  // nº 1 — ELE pediu pra ela lembrar. É a primeira pauta da conversa da noite.
+  try {
+    const promessaConto = /\b(depois (eu )?te conto|depois (eu )?conto|te conto (depois|mais tarde|de noite|à noite|amanhã)|te falo (depois|mais tarde)|(agora )?não posso (falar|contar|te contar) agora|conto (mais tarde|depois)|te explico depois|depois eu (te )?explico|logo (eu )?te conto)\b/i.test(text || '');
+    if (promessaConto) {
+      // Tenta capturar SOBRE O QUE ele vai contar, olhando a frase toda
+      const sobre = (text || '').replace(/\b(depois|te conto|conto|mais tarde|agora não posso|te falo|te explico|de noite|à noite|amanhã|logo)\b/gi, '').replace(/[,.!?]+/g, ' ').trim();
+      const assuntoResumo = sobre.length > 3 ? sobre.slice(0, 60) : 'aquilo que você ia me contar';
+      await memory.salvarOuAtualizarPendencia(userId, {
+        assunto: 'depois te conto',
+        contexto: `O usuário prometeu contar depois sobre: ${assuntoResumo}`,
+        como_retomar: `Perguntar com carinho, presumindo o melhor (ele estava ocupado/cansado): "você ia me contar sobre ${assuntoResumo}, não esqueci não 👀"`,
+        prioridade: 'alta',
+        origem: 'depois_te_conto'
+      }).catch(() => {});
+      console.log(`[Depois te conto] Pendência de prioridade alta criada: "${assuntoResumo}"`);
+    }
+  } catch (e) { console.error('[Depois te conto] erro:', e.message); }
+
   const infos = await extractPersonalInfo(text);
   if (infos && infos.length > 0) {
-    for (const { chave, valor, categoria } of infos) {
+    for (const { chave, valor, categoria, duracao } of infos) {
       if (!chave || !valor) continue;
-      await savePersonalInfo(userId, chave, valor, categoria || 'outro');
-      console.log(`[memória pessoal] salvo: ${chave} = "${valor}"`);
+      await savePersonalInfo(userId, chave, valor, categoria || 'outro', duracao || 'permanente');
+      console.log(`[memória pessoal] salvo: ${chave} = "${valor}" (${duracao || 'permanente'})`);
     }
   }
 
