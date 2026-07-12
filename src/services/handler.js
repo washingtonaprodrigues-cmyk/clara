@@ -785,12 +785,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // horas", "quando", etc). Usado tanto pra tag BUSCAR quanto pra
     // detecção de promessa de busca mais abaixo — evita ela mesma criar
     // uma busca do nada em cima de comentário/comemoração sem pedido real.
-    const pareceuPedidoInfo = /\?|que horas|quando|onde fica|onde é|qual (é|o|a)|quanto (custa|é|vale)|quem (é|foi|ganhou|joga)|consegue|me (arruma|acha|passa|manda|indica)|tem (algum|algo|lista|indica)|lista de|recomenda|indica|procura|pesquisa|busca/i.test(text);
-
-    // (Removida a detecção de "continuação de busca" que era larga demais e
-    // fazia qualquer mensagem virar nova busca — causava buscas empilhadas e a
-    // Clara achar que o usuário "sumiu e voltou". A promessa de busca abaixo já
-    // funciona bem só com pareceuPedidoInfo.)
+    const pareceuPedidoInfo = /\?|que horas|quando|onde fica|onde é|qual (é|o|a)|quanto (custa|é|vale)|quem (é|foi|ganhou|joga)/i.test(text);
 
     // ── Busca proativa: Clara sinalizou que quer pesquisar ──
     const buscaMatch = respStr.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
@@ -892,14 +887,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // "quando", etc). Sem isso, uma frase de efeito dela tipo "deixa eu ver
     // que horas" numa resposta a um convite/comentário ("bora torcermos")
     // disparava busca escondida sem ninguém ter pedido nada.
-    // Detecta quando a Clara PROMETEU buscar/trazer mais — inclui o jeito
-    // charmoso dela de falar ("vou dar uma pesquisada mais a fundo", "já volto
-    // com mais opções", "vou ver o que mais encontro", "tô correndo pra achar").
-    // Antes a regex era estreita e ela prometia sem o sistema executar a 2ª
-    // busca → ela "blefava". Agora qualquer promessa de retorno dispara a busca
-    // real, pra a palavra dela valer.
-    const REGEX_PROMESSA = /pera[íi] que vou ver|deixa eu (dar uma (olhada|pesquisada|checada)|pesquisar|verificar|checar|buscar|ver)|vou (pesquisar|buscar|dar uma (olhada|pesquisada)|verificar|ver o que mais|te trazer|trazer mais|procurar mais|achar|dar uma fun[çc]ada|investigar)|(j[áa] )?(vou )?volto? com mais|(t[ôo]|tou|estou) (correndo|procurando|pesquisando|na busca|caçando|atrás)|deixa eu ver|um segundo que|rapidinho aqui|pesquisada mais a fundo|mais a fundo|ver o que (mais )?(encontro|acho|tem)|te (falo|trago|mando) (as|mais) op[çc][õo]es|procurar? (mais|outros?)|dar uma vasculhada/i;
-    const prometeuBuscar = pareceuPedidoInfo && REGEX_PROMESSA.test(respStr);
+    const prometeuBuscar = pareceuPedidoInfo && /peraí que vou ver|deixa eu (dar uma olhada|pesquisar|verificar|checar|buscar)|vou (pesquisar|buscar|dar uma olhada|verificar)|deixa eu ver|um segundo que|rapidinho aqui/i.test(respStr);
     if (prometeuBuscar && !buscaMatch) {
       ;(async () => {
         try {
@@ -1291,7 +1279,7 @@ async function handleMessage(phone, text, location = null) {
       let avisoPrevio = null;
       try {
         if (geminiDisponivel() && !todosModelosEsgotados()) {
-          const sysAviso = buildPersonality(tomBuscaClassify, apelidoReal, false) + `\n\n[VAI CHECAR] A pessoa acabou de te pedir uma informação/indicação e você vai dar uma olhada rápida pra trazer certo. Solte UMA frase curta, no SEU tom, avisando que já vai ver pra ela. Varie a forma — nunca use sempre a mesma frase. NÃO responda a pergunta, NÃO invente informação, NÃO use lupa nem cara de robô. NUNCA escreva __BUSCAR__ nem qualquer comando de busca — só a frase natural de aviso. Máximo 1 linha.`;
+          const sysAviso = buildPersonality(tomBuscaClassify, apelidoReal, false) + `\n\n[VAI CHECAR] A pessoa perguntou algo que você quer confirmar direitinho antes de responder. Solte UMA frase curta, no SEU tom, avisando que vai dar uma olhada rápida pra falar certo (tipo "peraí que já te confirmo", "deixa eu ver certinho pra te falar"). NÃO responda a pergunta, NÃO invente informação, NÃO use lupa nem cara de robô. NUNCA escreva __BUSCAR__ nem qualquer comando de busca — só a frase natural de aviso. Máximo 1 linha.`;
           avisoPrevio = await geminiFreeResponse([
             { role: 'system', content: sysAviso },
             { role: 'user', content: text }
@@ -2991,33 +2979,12 @@ async function checkConfirmacaoPendente(user, phone, text) {
 }
 
 async function extractAndSavePersonalInfo(userId, text) {
-  // ── "Depois te conto" — pendência de PRIORIDADE ALTA ──────────────────
-  // Quando o usuário promete contar algo depois ("depois te conto", "te falo
-  // mais tarde", "agora não posso, depois eu conto"), isso vira a pendência
-  // nº 1 — ELE pediu pra ela lembrar. É a primeira pauta da conversa da noite.
-  try {
-    const promessaConto = /\b(depois (eu )?te conto|depois (eu )?conto|te conto (depois|mais tarde|de noite|à noite|amanhã)|te falo (depois|mais tarde)|(agora )?não posso (falar|contar|te contar) agora|conto (mais tarde|depois)|te explico depois|depois eu (te )?explico|logo (eu )?te conto)\b/i.test(text || '');
-    if (promessaConto) {
-      // Tenta capturar SOBRE O QUE ele vai contar, olhando a frase toda
-      const sobre = (text || '').replace(/\b(depois|te conto|conto|mais tarde|agora não posso|te falo|te explico|de noite|à noite|amanhã|logo)\b/gi, '').replace(/[,.!?]+/g, ' ').trim();
-      const assuntoResumo = sobre.length > 3 ? sobre.slice(0, 60) : 'aquilo que você ia me contar';
-      await memory.salvarOuAtualizarPendencia(userId, {
-        assunto: 'depois te conto',
-        contexto: `O usuário prometeu contar depois sobre: ${assuntoResumo}`,
-        como_retomar: `Perguntar com carinho, presumindo o melhor (ele estava ocupado/cansado): "você ia me contar sobre ${assuntoResumo}, não esqueci não 👀"`,
-        prioridade: 'alta',
-        origem: 'depois_te_conto'
-      }).catch(() => {});
-      console.log(`[Depois te conto] Pendência de prioridade alta criada: "${assuntoResumo}"`);
-    }
-  } catch (e) { console.error('[Depois te conto] erro:', e.message); }
-
   const infos = await extractPersonalInfo(text);
   if (infos && infos.length > 0) {
-    for (const { chave, valor, categoria, duracao } of infos) {
+    for (const { chave, valor, categoria } of infos) {
       if (!chave || !valor) continue;
-      await savePersonalInfo(userId, chave, valor, categoria || 'outro', duracao || 'permanente');
-      console.log(`[memória pessoal] salvo: ${chave} = "${valor}" (${duracao || 'permanente'})`);
+      await savePersonalInfo(userId, chave, valor, categoria || 'outro');
+      console.log(`[memória pessoal] salvo: ${chave} = "${valor}"`);
     }
   }
 
