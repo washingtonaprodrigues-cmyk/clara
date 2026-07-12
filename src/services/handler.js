@@ -441,7 +441,8 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       const txtLow = (text||'').toLowerCase();
       const falaDeAgenda = /hoje|amanhã|amanha|horário|horario|quando|agenda|compromisso|reuni[ãa]o|consulta|m[ée]dico|dentista|semana|m[êe]s|marcad|agendad|hor[áa]rio|que horas|tenho algo|tenho que|preciso ir|calendário|calendario/.test(txtLow);
       const falaDeRemedio = /rem[ée]dio|comprimido|tomar|dose|farm[áa]cia|medicament|triglicere|toroide|holmis|landizin|rem[ée]dinho|cápsula|capsula|antibi[óo]tico|p[íi]lula|bula|receita/.test(txtLow);
-      const faladeDinheiro = /dinheiro|gast|saldo|or[çc]amento|(paga|minha|a|essa|de)\s+conta|pagar|pagamento|reais|r\$|grana|sobrou|sobra|quanto tenho|quanto sobr|dispon[íi]vel|t[ôo] liso|falido|guap|bufunfa|extrato|finan[çc]|despesa|\bbanco\b|\bpix\b|d[íi]vida|divida|custou|custa|economiz|meu bolso|no vermelho/.test(txtLow);
+      const faladeDinheiro = /dinheiro|gast|saldo|or[çc]amento|(paga|minha|a|essa|de)\s+conta|pagar|pagamento|reais|r\$|grana|sobrou|sobra|quanto tenho|quanto sobr|dispon[íi]vel|t[ôo] liso|falido|guap|bufunfa|extrato|finan[çc]|despesa|\bbanco\b|\bpix\b|d[íi]vida|divida|custou|custa|economiz|meu bolso|no vermelho/.test(txtLow)
+        || classified.tipo === 'consulta_saldo' || classified.tipo === 'relatorio_financeiro';
       const falaDeLista = /lista|mercado|compras|item|comprar|feira|supermercado/.test(txtLow);
       const ehManha = now.getHours() >= 6 && now.getHours() < 11;
 
@@ -1337,7 +1338,14 @@ async function handleMessage(phone, text, location = null) {
       return;
     }
 
-    if (classified.tipo === 'relatorio_financeiro' || classified.tipo === 'consulta_saldo') {
+    // Card completo (relatório visual) SÓ quando o usuário pede explicitamente
+    // "relatório", "detalhado" ou "completo". Qualquer outra forma casual de
+    // perguntar de finanças ("como tão minhas contas?", "mostra o saldo de
+    // agosto") cai no fluxo normal, onde a Clara responde NO TOM DELA com os
+    // números (o contexto [FINANCEIRO] já é injetado). Assim: casual = ela;
+    // "relatório" = card. A intenção está nas palavras, sem precisar perguntar.
+    const pediuRelatorioExplicito = /relat[óo]rio|detalhad|complet|planilha|extrato detalhad/i.test(text || '');
+    if ((classified.tipo === 'relatorio_financeiro' || classified.tipo === 'consulta_saldo') && pediuRelatorioExplicito) {
       await gerarRelatorioFinanceiroWhatsApp(user, phone, text);
       return;
     }
