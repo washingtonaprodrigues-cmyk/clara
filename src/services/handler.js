@@ -442,7 +442,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       const falaDeAgenda = /hoje|amanhã|amanha|horário|horario|quando|agenda|compromisso|reuni[ãa]o|consulta|m[ée]dico|dentista|semana|m[êe]s|marcad|agendad|hor[áa]rio|que horas|tenho algo|tenho que|preciso ir|calendário|calendario/.test(txtLow);
       const falaDeRemedio = /rem[ée]dio|comprimido|tomar|dose|farm[áa]cia|medicament|triglicere|toroide|holmis|landizin|rem[ée]dinho|cápsula|capsula|antibi[óo]tico|p[íi]lula|bula|receita/.test(txtLow);
       const faladeDinheiro = /dinheiro|gast|saldo|or[çc]amento|(paga|minha|a|essa|de)\s+conta|pagar|pagamento|reais|r\$|grana|sobrou|sobra|quanto tenho|quanto sobr|dispon[íi]vel|t[ôo] liso|falido|guap|bufunfa|extrato|finan[çc]|despesa|\bbanco\b|\bpix\b|d[íi]vida|divida|custou|custa|economiz|meu bolso|no vermelho/.test(txtLow)
-        || classified.tipo === 'consulta_saldo' || classified.tipo === 'relatorio_financeiro';
+        || (typeof classified !== 'undefined' && classified && (classified.tipo === 'consulta_saldo' || classified.tipo === 'relatorio_financeiro'));
       const falaDeLista = /lista|mercado|compras|item|comprar|feira|supermercado/.test(txtLow);
       const ehManha = now.getHours() >= 6 && now.getHours() < 11;
 
@@ -787,21 +787,10 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // uma busca do nada em cima de comentário/comemoração sem pedido real.
     const pareceuPedidoInfo = /\?|que horas|quando|onde fica|onde é|qual (é|o|a)|quanto (custa|é|vale)|quem (é|foi|ganhou|joga)|consegue|me (arruma|acha|passa|manda|indica)|tem (algum|algo|lista|indica)|lista de|recomenda|indica|procura|pesquisa|busca/i.test(text);
 
-    // Continuação de uma conversa de busca: quando a mensagem do usuário é
-    // curta e sem "?" ("ambos", "os dois", "pode ser", "tá bom", "manda"),
-    // mas a ÚLTIMA fala da Clara já era sobre buscar/opções, entende como
-    // continuação — assim "Ambos fedo" depois de "quer tradicional ou moderno?"
-    // conta como pedido de info e a promessa de busca dela vale.
-    let pareceuBuscaAnterior = false;
-    try {
-      const ultimaClara = await prisma.memory.findFirst({
-        where: { userId: user.id, type: 'conversa', content: { startsWith: '[Clara]' } },
-        orderBy: { createdAt: 'desc' }
-      }).catch(() => null);
-      if (ultimaClara) {
-        pareceuBuscaAnterior = /op[çc][õo]es|pesquis|busca|procur|lugar|indic|recomend|prefere|tradicional|moderno|qual (tipo|estilo)|te trago|te falo|mais a fundo/i.test(ultimaClara.content || '');
-      }
-    } catch {}
+    // (Removida a detecção de "continuação de busca" que era larga demais e
+    // fazia qualquer mensagem virar nova busca — causava buscas empilhadas e a
+    // Clara achar que o usuário "sumiu e voltou". A promessa de busca abaixo já
+    // funciona bem só com pareceuPedidoInfo.)
 
     // ── Busca proativa: Clara sinalizou que quer pesquisar ──
     const buscaMatch = respStr.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
@@ -910,7 +899,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // busca → ela "blefava". Agora qualquer promessa de retorno dispara a busca
     // real, pra a palavra dela valer.
     const REGEX_PROMESSA = /pera[íi] que vou ver|deixa eu (dar uma (olhada|pesquisada|checada)|pesquisar|verificar|checar|buscar|ver)|vou (pesquisar|buscar|dar uma (olhada|pesquisada)|verificar|ver o que mais|te trazer|trazer mais|procurar mais|achar|dar uma fun[çc]ada|investigar)|(j[áa] )?(vou )?volto? com mais|(t[ôo]|tou|estou) (correndo|procurando|pesquisando|na busca|caçando|atrás)|deixa eu ver|um segundo que|rapidinho aqui|pesquisada mais a fundo|mais a fundo|ver o que (mais )?(encontro|acho|tem)|te (falo|trago|mando) (as|mais) op[çc][õo]es|procurar? (mais|outros?)|dar uma vasculhada/i;
-    const prometeuBuscar = (pareceuPedidoInfo || pareceuBuscaAnterior) && REGEX_PROMESSA.test(respStr);
+    const prometeuBuscar = pareceuPedidoInfo && REGEX_PROMESSA.test(respStr);
     if (prometeuBuscar && !buscaMatch) {
       ;(async () => {
         try {
