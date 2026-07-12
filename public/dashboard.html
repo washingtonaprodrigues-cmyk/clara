@@ -301,6 +301,17 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .rem-row-title.done{text-decoration:line-through;color:var(--text3)}
 .rem-done-toggle{display:flex;align-items:center;gap:6px;padding:8px 0;cursor:pointer;color:var(--text3);font-size:12px;font-weight:500;background:none;border:none;font-family:'Inter',sans-serif}
 .rem-done-toggle:hover{color:var(--text2)}
+.cfg-proativa-card{margin-top:14px;padding:16px;border-radius:14px;background:var(--card2,rgba(255,255,255,.03));border:1px solid var(--border2)}
+.cfg-proativa-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.cfg-proativa-txt{flex:1}
+.cfg-proativa-name{font-size:14px;font-weight:600;color:var(--text);margin-bottom:3px}
+.cfg-proativa-desc{font-size:12px;color:var(--text3);line-height:1.4}
+.cfg-switch{position:relative;width:48px;height:28px;flex-shrink:0;cursor:pointer}
+.cfg-switch input{opacity:0;width:0;height:0;position:absolute}
+.cfg-switch-slider{position:absolute;inset:0;border-radius:28px;background:var(--border2);transition:.25s}
+.cfg-switch-slider::before{content:'';position:absolute;width:22px;height:22px;left:3px;top:3px;border-radius:50%;background:#fff;transition:.25s}
+.cfg-switch input:checked + .cfg-switch-slider{background:var(--accent,#8B5CF6)}
+.cfg-switch input:checked + .cfg-switch-slider::before{transform:translateX(20px)}
 .rem-done-toggle svg{transition:transform .2s;width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
 .rem-done-toggle.open svg{transform:rotate(180deg)}
 .med-section-label{padding:14px 20px 6px;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.6px}
@@ -829,6 +840,18 @@ select option{background:var(--s2)}
                 <div class="cfg-preview-bubble" id="cfg-preview-text">Bom dia, Washington! ☀️<br>Você tem 3 compromissos hoje.<br><br>Vamos fazer acontecer! 💜</div>
                 <div class="cfg-preview-sub" id="cfg-preview-sub">Este é um exemplo de como a Clara se comunica no estilo <a href="#" onclick="return false" id="cfg-preview-link" style="color:var(--accent)">Simpática</a>.</div>
               </div>
+              <div class="cfg-proativa-card">
+                <div class="cfg-proativa-row">
+                  <div class="cfg-proativa-txt">
+                    <div class="cfg-proativa-name">💬 Deixar a Clara me chamar pra conversar</div>
+                    <div class="cfg-proativa-desc">Quando ativado, a Clara pode te mandar mensagem por conta própria — bom dia, boa noite e puxar assunto à noite. Desligado, ela só responde quando você fala com ela (mas continua lembrando de tudo).</div>
+                  </div>
+                  <label class="cfg-switch">
+                    <input type="checkbox" id="cfg-proativas-toggle" onchange="toggleProativas(this.checked)">
+                    <span class="cfg-switch-slider"></span>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1171,7 +1194,16 @@ async function sendChat(){
 }
 function cs(t){document.getElementById('chat-msg').value=t;sendChat();}
 async function newChat(){if(privateMode&&phone){try{await fetch(`/forms/conversa-limpar/${phone}`,{method:'POST'});}catch{}showToast('🔒 Histórico apagado');}document.getElementById('msgs').innerHTML='';if(phone)addMsg('bot','Nova conversa! Como posso ajudar? 💛');navTo('chat');}
-async function loadMood(){try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();if(d.tom)applyMood(d.tom);}catch{}}
+async function loadMood(){try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();if(d.tom)applyMood(d.tom);const tg=document.getElementById('cfg-proativas-toggle');if(tg)tg.checked=!!d.proativasAtivas;}catch{}}
+async function toggleProativas(ativo){
+  try{
+    await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proativasAtivas:ativo})});
+    showToast(ativo?'A Clara vai te chamar pra conversar 💬':'Proativas desativadas 🤫');
+  }catch{
+    showToast('Erro ao salvar ⚠️');
+    const tg=document.getElementById('cfg-proativas-toggle');if(tg)tg.checked=!ativo; // reverte
+  }
+}
 function applyMood(tom){currentMood=tom;document.querySelectorAll('.mood-card').forEach(b=>b.classList.toggle('active',b.dataset.mood===tom));}
 function selectMood(tom){
   applyMood(tom);
