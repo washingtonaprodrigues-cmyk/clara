@@ -171,6 +171,16 @@ async function marcarEnviadoHoje(userId, tipo) {
 }
 
 const _locksEmMemoria = new Map();
+// ── Botão "deixar a Clara me chamar pra conversar" ─────────────────────
+// Controla APENAS o envio espontâneo (ela iniciar o papo): bom dia, boa noite,
+// conversa da noite, puxar assunto. NÃO afeta alertas de remédio nem avisos de
+// lembrete (isso é utilidade, não papo). E NÃO afeta a memória: os assuntos
+// pendentes continuam sendo guardados e usados quando O USUÁRIO puxa conversa.
+// Default false (desligado) — usuário novo não recebe proativa até ativar.
+function proativasPermitidas(user) {
+  return !!(user && user.proativasAtivas);
+}
+
 async function tentarLockDiario(userId, tipo) {
   const hoje = dateBRT();
   const chave = `${userId}_${tipo}_${hoje}`;
@@ -297,6 +307,8 @@ cron.schedule('*/2 * * * *', async () => {
     const users = await prisma.user.findMany({ where: { blocked: false } });
     for (const user of users) {
       try {
+        // Respeita o botão "deixar a Clara me chamar" — continuidade é papo espontâneo
+        if (!proativasPermitidas(user)) continue;
         const hoje = dateBRT(nowBRT());
 
         // Teto diário — separado da proativa de janela
@@ -406,6 +418,8 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
     const users = await prisma.user.findMany({ where: { blocked: false } });
     for (const user of users) {
       try {
+        // Respeita o botão "deixar a Clara me chamar" — bom dia é papo espontâneo
+        if (!proativasPermitidas(user)) continue;
         // Checagem (sem consumir o lock ainda) — só consumimos quando for
         // de fato enviar, pra não travar o dia numa tentativa que só
         // estava esperando o sinal de "acordou".
@@ -721,6 +735,8 @@ async function boaNoiteInteligente() {
 
     for (const user of users) {
       try {
+        // Respeita o botão "deixar a Clara me chamar" — boa noite é papo espontâneo
+        if (!proativasPermitidas(user)) continue;
         // Já mandou boa noite hoje — pula
         if (!(await tentarLockDiario(user.id, 'boa_noite_lock'))) continue;
 
@@ -974,6 +990,8 @@ cron.schedule('*/15 * * * *', async () => {
     const users = await prisma.user.findMany({ where: { blocked: false } });
     for (const user of users) {
       try {
+        // Respeita o botão "deixar a Clara me chamar" — puxar assunto após saída é papo espontâneo
+        if (!proativasPermitidas(user)) continue;
         const lockKey = `despedida_processada_${dateBRT()}`;
         // Verifica última mensagem do usuário (não de Clara)
         const ultimaMsg = await prisma.memory.findFirst({
@@ -1048,6 +1066,8 @@ async function proativaInteligente(periodo) {
     const now = nowBRT();
     for (const user of users) {
       try {
+        // Respeita o botão "deixar a Clara me chamar" — puxar assunto é papo espontâneo
+        if (!proativasPermitidas(user)) continue;
         // ── Respeita janela de remédio ────────────────────────────────
         // Janela de 30min (era 20) — evita proativa colidir com alerta de
         // remédio no mesmo minuto exato (ex: proativa 23h e amoxilina 23h).
@@ -1954,6 +1974,8 @@ cron.schedule('0 * * * *', async () => {
 
     for (const ep of episodios) {
       if (!ep.user?.phone) continue;
+      // Respeita o botão "deixar a Clara me chamar" — acompanhamento é papo espontâneo
+      if (!proativasPermitidas(ep.user)) continue;
       let meta = {}; try { meta = JSON.parse(ep.metadata || '{}'); } catch {}
       if (meta.perguntado) continue;
       if (!meta.checkInAt || new Date(meta.checkInAt) > agora) continue;
