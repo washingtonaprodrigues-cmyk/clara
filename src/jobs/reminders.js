@@ -1017,7 +1017,7 @@ async function proativaDepoisTeConto(janela) {
     const hora = now.getHours();
     // Guarda de janela — evita disparo fora da hora mesmo se o cron chamar torto
     if (janela === 'almoco' && (hora < 11 || hora >= 14)) return;
-    if (janela === 'noite' && (hora < 21 || hora >= 23)) return;
+    if (janela === 'noite' && hora !== 21) return; // só a hora das 21h — nada de proativa após 22h
 
     const hoje = dateBRT(now);
     const users = await prisma.user.findMany({ where: { blocked: false } });
@@ -1096,8 +1096,8 @@ REGRAS:
 
 // ALMOÇO (11h–14h) — só se já conversaram hoje
 cron.schedule('0,30 11,12,13 * * *', async () => proativaDepoisTeConto('almoco'), { timezone: 'America/Sao_Paulo' });
-// NOITE (21h–22h) — fallback natural se não saiu no almoço
-cron.schedule('0,30 21,22 * * *', async () => proativaDepoisTeConto('noite'), { timezone: 'America/Sao_Paulo' });
+// NOITE (21h) — fallback natural se não saiu no almoço; nada após 22h
+cron.schedule('0,30 21 * * *', async () => proativaDepoisTeConto('noite'), { timezone: 'America/Sao_Paulo' });
 
 // ── Gatilho de DESPEDIDA (a cada 15min) ──────────────────────────────────
 // Detecta "depois eu te conto", "até mais tarde", "te falo mais tarde" etc.
