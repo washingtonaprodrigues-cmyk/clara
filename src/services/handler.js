@@ -35,6 +35,27 @@ function corrigirDataDiaSemana(textoOriginal, classified) {
   return classified;
 }
 
+// Peça 2 da dedução: resolve a DATA DE FIM de um tratamento a partir de texto
+// livre ("na segunda", "até sexta", "amanhã", "hoje"). Retorna Date (fim do dia
+// em BRT) ou null. Reusa o mapa de dias-da-semana do infoDatas().
+function resolverDataFim(texto) {
+  const t = (texto || '').toLowerCase();
+  if (/\bhoje\b/.test(t)) { const d = nowBRT(); d.setHours(23, 59, 59, 0); return d; }
+  if (/\bamanh[ãa]\b/.test(t)) { const d = nowBRT(); d.setDate(d.getDate() + 1); d.setHours(23, 59, 59, 0); return d; }
+  const m = t.match(DIAS_SEMANA_REGEX);
+  if (m) {
+    const raw = m[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const mapaNorm = { domingo: 'domingo', segunda: 'segunda', terca: 'terça', quarta: 'quarta', quinta: 'quinta', sexta: 'sexta', sabado: 'sábado' };
+    const nome = mapaNorm[raw];
+    try {
+      const { mapa } = infoDatas();
+      const ds = nome && mapa[nome]; // 'YYYY-MM-DD' (próxima ocorrência)
+      if (ds) return new Date(`${ds}T23:59:59-03:00`);
+    } catch {}
+  }
+  return null;
+}
+
 // Importa whatsapp de forma segura com fallback direto via axios
 let _whatsappModule = null;
 function getWhatsapp() {
@@ -1264,6 +1285,40 @@ async function handleMessage(phone, text, location = null) {
           await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
           console.log(`[soneca_remedio] ${alvo.medNome} adiado p/ ${horaFmt} (${phone})`);
           return await sendMessage(phone, `Beleza, adiei o *${alvo.medNome}* pra ${horaFmt} — te chamo de novo nesse horário 💊`);
+        }
+      }
+    }
+
+    // ── Peça 2 da dedução: "parar de tomar X na segunda" → data de fim ──────
+    // Detecção determinística. Grava endDate no remédio; um cron diário (em
+    // reminders.js) desativa e cria o acompanhamento (reusa a Peça 1) quando a
+    // data chega. Conservador: exige gatilho de FIM + menção a remédio + data.
+    {
+      const tLow = (text || '').toLowerCase();
+      const gatilhoFim = /\b(parar|paro|parei|pare|chega de|[uú]ltimo dia|s[óo] at[eé]|at[eé] (a |o )?(segunda|ter[cç]a|quarta|quinta|sexta|s[áa]bado|domingo|amanh[ãa]|hoje))\b/.test(tLow)
+        || /n[ãa]o (vou|preciso) mais (tomar|de)/.test(tLow);
+      const falaDeRemedio = /\b(rem[eé]dio|medicamento|tomar|comprimido|c[áa]psula|antibi[óo]tico)\b/.test(tLow);
+      // "forte" = substantivo explícito de remédio (sem "tomar", que é ambíguo:
+      // "parar de tomar café" não pode virar fim de tratamento).
+      const falaDeRemedioForte = /\b(rem[eé]dio|medicamento|comprimido|c[áa]psula|antibi[óo]tico)\b/.test(tLow);
+      if (gatilhoFim && falaDeRemedio) {
+        const dataFim = resolverDataFim(text);
+        if (dataFim) {
+          const medsAtivos = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
+          let med = medsAtivos.find(m =>
+            (m.name || '').toLowerCase().split(' ').filter(w => w.length > 3)
+              .some(w => tLow.includes(w.normalize('NFD').replace(/[\u0300-\u036f]/g, '')))
+          );
+          // Fallback "só um remédio ativo → é ele" SÓ quando há substantivo de
+          // remédio explícito, pra não confundir com "parar de tomar café".
+          if (!med && medsAtivos.length === 1 && falaDeRemedioForte) med = medsAtivos[0];
+          if (med) {
+            await prisma.medication.update({ where: { id: med.id }, data: { endDate: dataFim } }).catch(e => console.error('[endDate]', e.message));
+            const fmt = dataFim.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+            await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
+            console.log(`[FimTratamento] ${med.name} → endDate ${fmt} (${phone})`);
+            return await sendMessage(phone, `Anotado! Você para o *${med.name}* em ${fmt} 💜 Depois disso eu paro de te lembrar e te pergunto como foi.`);
+          }
         }
       }
     }
