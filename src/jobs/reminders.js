@@ -297,6 +297,10 @@ async function houveConversaRecente(userId, minutos = 5) {
 // máximo 2x por dia no total, independente da proativa de janela.
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('*/2 * * * *', async () => {
+  return; // DESATIVADO (a pedido): re-toque no MESMO assunto minutos após o
+          // silêncio. Sentia como cutucão/carência. Assuntos em aberto voltam
+          // de forma REATIVA (buildPersonalContext) quando o usuário fala.
+          // Remova este return pra reativar.
   try {
     // Continuidade só de dia (8h-22h). Depois disso, silêncio após conversa =
     // hora de recolher, não de retomar assunto — o boa noite cuida da noite.
