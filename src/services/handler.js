@@ -56,6 +56,22 @@ function resolverDataFim(texto) {
   return null;
 }
 
+// Item 4: decide se a cidade do usuário deve entrar na busca. Só entra quando a
+// intenção é claramente LOCAL e a query NÃO traz cidade explícita — senão
+// "hotel em Curitiba" viraria "...em <cidade do user>". Conservador: na dúvida,
+// NÃO injeta (busca sem cidade funciona; busca poluída com cidade errada, não).
+function cidadeParaBusca(query, cidade) {
+  if (!cidade) return '';
+  const q = (query || '');
+  const qLow = q.toLowerCase();
+  const intencaoLocal = /(perto|pr[óo]xim|\baqui\b|por aqui|perto de mim|na minha (cidade|regi[ãa]o|[áa]rea)|farm[áa]cia|drogaria|restaurante|lanchonete|pizzaria|posto|mercado|supermercado|padaria|hospital|pronto.?socorro|cl[íi]nica|dentista|cinema|shopping|\bloja\b|barbearia|sal[ãa]o|previs[ãa]o do tempo|\bclima\b|\btempo (hoje|amanh|agora|de hoje)|vai chover|temperatura|tr[âa]nsito)/.test(qLow);
+  if (!intencaoLocal) return '';
+  // cidade explícita na própria query (ex: "em Curitiba", "no Rio") → não injeta
+  const temCidadeExplicita = /(^|\s)(em|no|na|nos|nas|pra|para)\s+[A-ZÀ-Ú]/.test(q);
+  if (temCidadeExplicita) return '';
+  return cidade;
+}
+
 // Importa whatsapp de forma segura com fallback direto via axios
 let _whatsappModule = null;
 function getWhatsapp() {
@@ -843,7 +859,8 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         const memAfetivaBusca = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
         const apelidoBusca = memAfetivaBusca?.apelido_usuario || preferences?.name || '';
         const contextoRelBusca = await buscarContextoRelacional(user.id);
-        const resultado = await searchWeb(query, '', apelidoBusca, preferences?.tom || 'carinhoso', contextoRelBusca);
+        const cidadeBusca = await memory.getCidadeAtual(user.id).catch(() => '');
+        const resultado = await searchWeb(query, cidadeParaBusca(query, cidadeBusca), apelidoBusca, preferences?.tom || 'carinhoso', contextoRelBusca);
         if (resultado) {
           await memory.saveConversationMessage(user.id, 'user', text);
           await memory.saveConversationMessage(user.id, 'assistant', resultado);
@@ -1408,9 +1425,7 @@ async function handleMessage(phone, text, location = null) {
 
     if (classified.tipo === 'busca' && classified.query) {
       const preferencesBusca = await memory.getUserPreference(user.id).catch(() => null);
-      const cidade = await memory.getRecentMemories(user.id, 5)
-        .then(mems => mems.find(m => m.type === 'cidade')?.content || '')
-        .catch(() => '');
+      const cidade = await memory.getCidadeAtual(user.id).catch(() => '');
       // Usa o apelido REAL que a Clara já usa pra ele (ex: "fedo"), não o
       // nome formal cadastrado — passar só "Washington" pro reprocessamento
       // fazia o modelo inventar um apelido próprio (ex: "Wash") do nada.
@@ -1439,7 +1454,7 @@ async function handleMessage(phone, text, location = null) {
         await memory.saveConversationMessage(user.id, 'assistant', avisoLimpo).catch(() => {});
       }
 
-      const resultadoBusca = await searchWeb(classified.query, cidade, apelidoReal, tomBuscaClassify, contextoRelBuscaClassify);
+      const resultadoBusca = await searchWeb(classified.query, cidadeParaBusca(classified.query, cidade), apelidoReal, tomBuscaClassify, contextoRelBuscaClassify);
       if (resultadoBusca) {
         await memory.saveConversationMessage(user.id, 'user', text);
         await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca);
