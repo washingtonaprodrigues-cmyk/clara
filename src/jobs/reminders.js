@@ -1104,6 +1104,29 @@ cron.schedule('0,30 11,12,13 * * *', async () => proativaDepoisTeConto('almoco')
 // NOITE (21h) — fallback natural se não saiu no almoço; nada após 22h
 cron.schedule('0,30 21 * * *', async () => proativaDepoisTeConto('noite'), { timezone: 'America/Sao_Paulo' });
 
+// ═══════════════════════════════════════════════════════════════════════
+// DEDUÇÃO — Peça 2: fim de tratamento programado (endDate) → acompanhamento
+// ═══════════════════════════════════════════════════════════════════════
+// Todo dia de manhã, procura remédios ATIVOS cuja data de fim já passou
+// (ex: "parar de tomar na segunda"). Desativa (para de lembrar) e cria a
+// mesma pendência de acompanhamento da Peça 1 — a Clara puxa depois numa
+// conversa natural, conectando com o que sabe do remédio.
+cron.schedule('5 8 * * *', async () => {
+  try {
+    const agora = new Date();
+    const vencidos = await prisma.medication.findMany({
+      where: { active: true, endDate: { not: null, lte: agora } }
+    }).catch(() => []);
+    for (const med of vencidos) {
+      try {
+        await prisma.medication.update({ where: { id: med.id }, data: { active: false } }).catch(() => {});
+        await memory.acompanharFimDeRemedio(med.userId, med.name);
+        console.log(`[FimTratamento] ${med.name} chegou ao fim programado → desativado + acompanhamento (user ${med.userId})`);
+      } catch (eMed) { console.error('[FimTratamento] erro med:', eMed.message); }
+    }
+  } catch (e) { console.error('[FimTratamento] erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
 // ── Gatilho de DESPEDIDA (a cada 15min) ──────────────────────────────────
 // Detecta "depois eu te conto", "até mais tarde", "te falo mais tarde" etc.
 // na última mensagem. Se detectar, agenda um toque 2-3h depois pra retomar.
