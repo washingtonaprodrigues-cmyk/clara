@@ -1303,6 +1303,27 @@ async function handleMessage(phone, text, location = null) {
       classified.tipo = 'editar_lembrete';
     }
 
+    // ── GUARDA: resposta a uma PERGUNTA da Clara não vira lembrete/tarefa ────
+    // Mesma família do falso positivo do concluir. Se ele responde a uma
+    // pergunta da Clara (ex: "como foi o Detran? resolveu?" → "só na quinta
+    // fedo"), o classify às vezes lê a data ("quinta") e cria um lembrete-
+    // fantasma (e ainda perguntava "que horas?"). Se ele CITOU uma pergunta
+    // dela (tem "?" e não é alerta) e NÃO há gatilho explícito de lembrete no
+    // texto, é conversa — responde no tom, não cria tarefa nenhuma.
+    if (classified.tipo === 'tarefa' || classified.tipo === 'multiplas_tarefas') {
+      const mCitT = (text || '').match(/\[Mensagem citada:\s*"([\s\S]*?)"\]/i);
+      const citadoT = mCitT ? mCitT[1] : '';
+      const citouAlertaT = /🔔|💊|hora do medicamento|lembrete/i.test(citadoT);
+      const citouPerguntaT = /\?/.test(citadoT) && !citouAlertaT;
+      const temGatilhoLembrete = /(me lembr|me avis|me cutuc|anota a[ií]|anota isso|j[áa] anota|um lembrete|cria lembrete|agenda isso|n[ãa]o me deixa esquecer|n[ãa]o deixa eu esquecer|me lembre|daqui a?\s*\d+|em\s+\d+\s*(min|hora))/i.test(text || '');
+      if (citouPerguntaT && !temGatilhoLembrete) {
+        console.log('[tarefa] falso positivo (resposta a pergunta da Clara) — tratando como conversa');
+        await responderLivre(user, phone, text, '', false, null);
+        extractAndSavePersonalInfo(user.id, text).catch(() => {});
+        return;
+      }
+    }
+
     if (LISTA_TIPOS.includes(classified.tipo)) {
       const listaResult = await executeListaAction(user, phone, classified);
       let contextoExtra = '';
@@ -1498,8 +1519,11 @@ async function handleMessage(phone, text, location = null) {
       }).catch(() => {});
       const dataFmt = new Date(`${classified.data}T12:00:00-03:00`).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
       // Pergunta de horário no tom dela — não como sistema
+      // BUG CORRIGIDO: usava `prefs` (inexistente neste escopo) → crash
+      // "prefs is not defined". Busca local resolve.
+      const prefsHora = await memory.getUserPreference(user.id).catch(() => ({}));
       await freeResponse(`Preciso perguntar o horário pro lembrete "${classified.titulo}" no dia ${dataFmt}.`, [], {
-        name: prefs?.name, tom: prefs?.tom || 'carinhoso',
+        name: prefsHora?.name, tom: prefsHora?.tom || 'carinhoso',
         _contexto: `[SEM HORÁRIO] Você acabou de tentar criar o lembrete "${classified.titulo}" pro dia ${dataFmt} mas sem horário definido. Pergunte de forma natural e no seu tom qual horário colocar. Se a pessoa não souber, diga pra te passar quando souber que você ajusta. NÃO sugira horário provisório. Máximo 1-2 linhas.`,
         _maxTokens: 80
       }).then(async (resp) => {
