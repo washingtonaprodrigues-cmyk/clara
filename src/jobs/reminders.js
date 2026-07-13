@@ -728,7 +728,9 @@ REGRAS:
 // virou conversa. É o fechamento curto e carinhoso — "boa noite, durma bem" —
 // sem puxar assunto, sem gancho, sem usar remédio como trigger.
 cron.schedule('*/15 23 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0 0 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
+// DESATIVADO (a pedido): boa noite à meia-noite. O 23h + a garantida das
+// 23:45 já cobrem. Sem o disparo 00:00 que chegava como "boa noite" tarde.
+// cron.schedule('0 0 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
 
 async function boaNoiteInteligente() {
   try {
@@ -981,20 +983,31 @@ cron.schedule('0 8 * * *', async () => {
 // aberto no tom dela. Respeita a JANELA APRENDIDA: se a Clara já aprendeu
 // que esse usuário costuma falar ~22h, ela não dispara às 20h — espera a
 // hora dele. Nos primeiros dias (sem dados), usa a janela toda normalmente.
-cron.schedule('*/15 20 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0,15,30,45 21 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0,15,30,45 22 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+// ── DESATIVADO (a pedido): proativa noturna espontânea ────────────────────
+// A Clara não "puxa assunto" sozinha à noite. Assuntos pendentes só voltam
+// quando VOCÊS já estão conversando (ver cron de continuidade */2, mantido).
+// Reative descomentando as 3 linhas abaixo se um dia quiser de volta.
+// cron.schedule('*/15 20 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+// cron.schedule('0,15,30,45 21 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+// cron.schedule('0,15,30,45 22 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
 
 // ── Proativa de TARDE por contexto (13h-17h) ─────────────────────────────
 // Não é almoço fixo — só dispara se passou 4h+ sem conversa E tem assunto
 // genuíno do dia. Sem assunto → SKIP honesto. Cobre dias agitados onde
 // a pessoa falou bastante de manhã e sumiu.
-cron.schedule('0 13,14,15,16,17 * * *', async () => proativaInteligente('tarde_contexto'), { timezone: 'America/Sao_Paulo' });
+// ── DESATIVADO (a pedido): proativa de tarde por contexto ─────────────────
+// cron.schedule('0 13,14,15,16,17 * * *', async () => proativaInteligente('tarde_contexto'), { timezone: 'America/Sao_Paulo' });
 
 // ── Gatilho de DESPEDIDA (a cada 15min) ──────────────────────────────────
 // Detecta "depois eu te conto", "até mais tarde", "te falo mais tarde" etc.
 // na última mensagem. Se detectar, agenda um toque 2-3h depois pra retomar.
+//
+// DESATIVADO (a pedido): a Clara não manda mais o toque espontâneo depois da
+// despedida. O assunto pendente continua SENDO SALVO (isso é feito no handler)
+// e volta naturalmente quando VOCÊS já estiverem conversando de novo — não é
+// mais empurrado. Pra reativar, remova o `return` logo abaixo.
 cron.schedule('*/15 * * * *', async () => {
+  return; // DESATIVADO — ver nota acima
   try {
     const now = nowBRT();
     const users = await prisma.user.findMany({ where: { blocked: false } });
@@ -2017,6 +2030,12 @@ cron.schedule('0 * * * *', async () => {
     }
     const agora = new Date();
     const hoje = dateBRT(agora);
+    // ── DESATIVADO (a pedido): acompanhamento espontâneo de episódios ───────
+    // Era isto que fazia a Clara vir do nada com "e aí, como foi o óleo?" dias
+    // depois. Os episódios continuam SALVOS (viram memória), mas ela não puxa
+    // mais sozinha — só se o assunto surgir numa conversa ativa. A limpeza de
+    // conhecimento acima segue rodando de hora em hora. Remova o return p/ voltar.
+    return;
     const episodios = await prisma.memory.findMany({
       where: { type: 'episodio_vida' },
       include: { user: true },
