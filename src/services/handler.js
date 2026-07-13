@@ -2981,11 +2981,37 @@ async function checkConfirmacaoPendente(user, phone, text) {
 async function extractAndSavePersonalInfo(userId, text) {
   const infos = await extractPersonalInfo(text);
   if (infos && infos.length > 0) {
-    for (const { chave, valor, categoria } of infos) {
+    for (const { chave, valor, categoria, duracao } of infos) {
       if (!chave || !valor) continue;
-      await savePersonalInfo(userId, chave, valor, categoria || 'outro');
-      console.log(`[memória pessoal] salvo: ${chave} = "${valor}"`);
+      // Passa a duração classificada pelo extrator (permanente vs temporária).
+      // Fato permanente = identidade/história/gosto (nunca expira). Temporário =
+      // algo que vai passar (carro na oficina, Isis com tosse) — expira em 14d.
+      // Sem duracao definida, savePersonalInfo assume 'permanente' (retrocompat).
+      await savePersonalInfo(userId, chave, valor, categoria || 'outro', duracao || 'permanente');
+      console.log(`[memória pessoal] salvo: ${chave} = "${valor}" (${duracao || 'permanente'})`);
     }
+  }
+
+  // ── Ponte "depois te conto" ──────────────────────────────────────────
+  // Se o usuário prometeu contar algo depois, vira pendência de PRIORIDADE
+  // ALTA (o memory.js dá 5 dias de vida e coloca sempre em primeiro na fila
+  // da proativa da noite). É o assunto que ele mesmo prometeu — a Clara puxa
+  // 1x/dia presumindo o melhor, sem cobrar. Detecção simples por regex; o
+  // assunto exato é o que veio antes/depois da promessa na própria frase.
+  try {
+    const REGEX_DEPOIS_CONTO = /\b(depois (eu )?te conto|te conto (depois|mais tarde|logo)|te falo (depois|mais tarde|logo)|logo (eu )?te conto|(depois|mais tarde) (eu )?te falo|te explico depois|amanh[ãa] te conto)\b/i;
+    if (REGEX_DEPOIS_CONTO.test(text)) {
+      await memory.salvarOuAtualizarPendencia(userId, {
+        assunto: 'algo que ele prometeu te contar',
+        contexto: `Ele disse que ia te contar algo depois: "${text.slice(0, 150)}"`,
+        como_retomar: 'puxe com leveza, presumindo o melhor — "ontem você ia me contar uma coisa, né? 👀", sem cobrar',
+        prioridade: 'alta',
+        origem: 'depois_te_conto'
+      }).catch(() => {});
+      console.log(`[depois te conto] pendência ALTA criada para ${userId}`);
+    }
+  } catch (eConto) {
+    console.error('[depois te conto] erro:', eConto.message);
   }
 
   // ── Memória episódica: eventos concretos da vida do usuário ──────────
