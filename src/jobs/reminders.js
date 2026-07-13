@@ -621,6 +621,7 @@ COMO MANDAR:
 // Separado do boa noite para que a noite seja só descanso.
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('0 18 * * *', async () => {
+  return; // DESATIVADO (a pedido): fechamento do dia às 18h. Remova este return pra reativar.
   try {
     const now = nowBRT();
     const hoje = dateBRT(now);
@@ -1720,6 +1721,7 @@ ${horaAcorda ? `(Acordou por volta das ${horaAcorda})` : ''}`;
 // RADAR DA CLARA — domingo 09:30
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('30 9 * * 0', async () => {
+  return; // DESATIVADO (a pedido): radar de domingo 09:30. Remova este return pra reativar.
   try {
     const users = await prisma.user.findMany({ where: { blocked: false } });
     const now = nowBRT();
@@ -1785,6 +1787,7 @@ cron.schedule('30 9 * * 0', async () => {
 // SUMIÇO — 5+ dias sem conversar (09:00)
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('0 9 * * *', async () => {
+  return; // DESATIVADO (a pedido): "senti sua falta" após 5+ dias. Remova este return pra reativar.
   try {
     const users = await prisma.user.findMany({ where: { blocked: false } });
     const now = nowBRT();
