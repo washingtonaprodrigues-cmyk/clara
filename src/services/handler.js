@@ -2209,9 +2209,13 @@ async function executeAction(user, phone, classified, originalText) {
       }).catch(() => {});
 
       const foiSaudade = /saudade|quando sentir|quando quiser|quando der/i.test(originalText || text);
-      preferences._dicaAcao = foiSaudade
-        ? `\n\n[CHAMADA COMBINADA] Usuário disse pra chamar quando sentir saudade — você decidiu que vai chamar às ${horaFinal}. Responda de forma natural e carinhosa/zoeira conforme o tom, sem revelar que calculou o horário. Ex: "Pode deixar, uma hora dessas eu apareço 😏" — não mencione o horário exato, só confirme que vai aparecer.`
-        : `\n\n[CHAMADA COMBINADA] Usuário pediu pra ser chamado${horaJaInformada ? ` às ${horaFinal}` : ` — você escolheu às ${horaFinal}`}. Confirme de forma natural e animada. ${!horaJaInformada ? `Como você calculou o horário sozinha, varie entre duas formas de confirmar: (a) só dizer algo como "combinado, apareço mais tarde 😉" sem revelar a hora exata, ou (b) oferecer deixar ele escolher, tipo "Chamo sim! Se quiser me dizer uma hora melhor, é só falar que eu te chamo quando você quiser 😉" — escolha a que soar mais natural pro momento.` : `Ex: "Combinado! Te chamo às ${horaFinal} 😏"`}`;
+      // BUG REMOVIDO: aqui setava `preferences._dicaAcao` (preferences não existe
+      // neste escopo → crash) na esperança de influenciar o responderLivre. Mas
+      // executeAction é fire-and-forget (retorno ignorado no chamador), então a
+      // dica nunca chegava. A confirmação da chamada combinada é dada pelo
+      // responderLivre final do handleMessage. (Enhancement futuro: encadear o
+      // texto da confirmação — precisa passar o ctx pelo retorno, sessão própria.)
+      void foiSaudade;
       break;
     }
     case 'tarefa': {
@@ -2233,7 +2237,11 @@ async function executeAction(user, phone, classified, originalText) {
           }
         }).catch(() => {});
         const ctx = `\n\n[TÍTULO INCOMPLETO] O usuário pediu um lembrete mas o título ficou incompleto: "${resultTarefa.tituloIncompleto}". Pergunte de forma natural e com seu jeito — ex: "Opa, cobrar quem? 😄" ou "Espera, ${resultTarefa.tituloIncompleto} quem? Não me deixa curiosa! 🤔" — curto, no seu tom, sem criar nada ainda.`;
-        preferences._dicaAcao = ctx;
+        // BUG REMOVIDO: `preferences._dicaAcao = ctx` (preferences inexistente →
+        // crash) — e mesmo sem crash não chegaria ao responderLivre (executeAction
+        // é fire-and-forget). Deixado como no-op seguro. Enhancement futuro:
+        // entregar esta pergunta encadeando o ctx pelo retorno de executeAction.
+        void ctx;
       } else if (resultTarefa?.perguntarHora) {
         // Salva pendência de coleta — aguarda data/hora do usuário
         const expira = Date.now() + 15 * 60 * 1000; // 15 min
@@ -2253,7 +2261,8 @@ async function executeAction(user, phone, classified, originalText) {
         // A Clara pergunta de forma natural no seu tom
         const temData = !!resultTarefa.lembreteData;
         const ctx = `\n\n[COLETA DE LEMBRETE] O usuário pediu pra lembrar de "${resultTarefa.lembreteTitulo}"${temData ? ` para ${resultTarefa.lembreteData}` : ''} mas não disse ${temData ? 'o horário' : 'quando'}. Responda naturalmente no seu tom e pergunte ${temData ? 'que horas' : 'quando e que horas'} — de forma humana, não robótica. Ex: "Que legal! A que horas vai ser?" ou "Pode deixar! Pra quando você quer que eu te lembre?" — varie conforme o contexto. NÃO crie o lembrete ainda.`;
-        preferences._dicaAcao = ctx;
+        // BUG REMOVIDO: `preferences._dicaAcao = ctx` órfão/crash (ver nota acima). No-op seguro.
+        void ctx;
       }
       break;
     }
@@ -2842,6 +2851,10 @@ async function checkConfirmacaoPendente(user, phone, text) {
         frequencia: null
       };
       const resultFinal = await salvarTarefaSilenciosa(user, phone, classifiedCompleto, text);
+      // BUG CORRIGIDO: usava `preferences._dicaAcao` (preferences inexistente
+      // neste escopo → crash) e passava '' pro responderLivre, então a pergunta
+      // "que horas?" nunca chegava. Agora o ctx vai direto como contextoExtra.
+      let dicaAcao = '';
       if (resultFinal?.perguntarHora) {
         const expira = Date.now() + 15 * 60 * 1000;
         await prisma.memory.create({
@@ -2850,10 +2863,9 @@ async function checkConfirmacaoPendente(user, phone, text) {
             content: JSON.stringify({ tipo: 'coleta_lembrete', titulo: tituloCompleto, data: dados.data, turno: 'hora', expira })
           }
         }).catch(() => {});
-        const ctx = `\n\n[COLETA] Lembrete "${tituloCompleto}" — ainda falta o horário. Pergunte que horas de forma natural.`;
-        preferences._dicaAcao = ctx;
+        dicaAcao = `\n\n[COLETA] Lembrete "${tituloCompleto}" — ainda falta o horário. Pergunte que horas de forma natural.`;
       }
-      await responderLivre(user, phone, text, preferences._dicaAcao ? '' : `\n\n[TÍTULO COMPLETADO] Lembrete "${tituloCompleto}" foi criado. Confirme naturalmente.`);
+      await responderLivre(user, phone, text, dicaAcao || `\n\n[TÍTULO COMPLETADO] Lembrete "${tituloCompleto}" foi criado. Confirme naturalmente.`);
       return;
     }
 
@@ -2905,8 +2917,7 @@ async function checkConfirmacaoPendente(user, phone, text) {
         const ctx = !dataFinal
           ? `\n\n[COLETA] Usuário ainda não disse quando é "${titulo}". Pergunte a data de forma natural e curta.`
           : `\n\n[COLETA] Usuário disse que é ${dataFinal} mas não disse o horário de "${titulo}". Pergunte que horas de forma natural — pode sugerir um horário inteligente ex: "às 16h pra dar tempo de se preparar?" dependendo do contexto.`;
-        preferences._dicaAcao = ctx;
-        await responderLivre(user, phone, text, '', false, null, null);
+        await responderLivre(user, phone, text, ctx, false, null, null);
         return;
       }
 
