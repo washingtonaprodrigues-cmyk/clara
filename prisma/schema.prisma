@@ -74,6 +74,7 @@ model Medication {
   frequency  Int       @default(1)
   times      String
   active     Boolean   @default(true)
+  endDate    DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime?
 
