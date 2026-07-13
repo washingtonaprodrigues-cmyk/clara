@@ -826,8 +826,26 @@ async function salvarLocalizacao(userId, dados) {
   } catch {}
 }
 
-async function getLocalizacao(userId) {
+// Item 4: cidade ATUAL do usuário pra buscas locais. Prioriza a última
+// localização por GPS (reverse-geocode) numa janela de 7 dias — cidade é
+// estável por dias, diferente do getLocalizacao (4h) que é pra "perto de mim".
+// Cai pro que o usuário disse em texto. Retorna '' se não souber.
+async function getCidadeAtual(userId) {
   try {
+    const m = await prisma.memory.findFirst({ where: { userId, type: 'ultima_localizacao' } }).catch(() => null);
+    if (m) {
+      const d = JSON.parse(m.content);
+      if (d.cidade && (!d.ts || Date.now() - d.ts < 7 * 24 * 60 * 60 * 1000)) return d.cidade;
+    }
+  } catch {}
+  try {
+    const t = await prisma.memory.findFirst({ where: { userId, type: 'cidade' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+    if (t?.content) return t.content;
+  } catch {}
+  return '';
+}
+
+async function getLocalizacao(userId) {  try {
     const m = await prisma.memory.findFirst({ where: { userId, type: 'ultima_localizacao' } }).catch(() => null);
     if (!m) return null;
     const d = JSON.parse(m.content);
@@ -924,7 +942,7 @@ module.exports = {
   saveContact, getContacts, findContactByName,
   savePendencia,
   getPendenciasAbertas, salvarOuAtualizarPendencia, acompanharFimDeRemedio, fecharPendencia, fecharPendenciasPorResolucao, fecharPendenciaLembrete,
-  salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao,
+  salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao, getCidadeAtual,
   salvarMemoriaAfetiva, getMemoriaAfetiva,
   salvarResumoRelacionamento, getResumoRelacionamento,
 };
