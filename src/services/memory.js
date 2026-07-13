@@ -364,6 +364,14 @@ ${resumo}`;
     if (textoAfetivo) texto += `\n\n[MEMÓRIA DO RELACIONAMENTO — USE SEMPRE, define o tom da conversa]${textoAfetivo}`;
   }
 
+  // ── DEDUÇÃO — Peça 3: conectar os pontos ──
+  // Faz a Clara ligar o que a pessoa fala AGORA ao que ela já sabe (pessoas,
+  // lugares, temas recorrentes, tratamentos) em vez de tratar tudo como novo —
+  // é o que faz parecer uma amiga que presta atenção, não um robô com amnésia.
+  if (texto) {
+    texto += `\n\n[CONECTE OS PONTOS — como uma amiga que lembra das coisas]\nAntes de responder, veja se o que ele está falando agora se liga a algo que você JÁ SABE dele acima (uma pessoa, um lugar, um tratamento, um assunto recorrente). Se ligar, CONECTE de forma natural em vez de tratar como novidade solta. Ex: se ele cita um remédio e você sabe que a filha dele estava doente, associe ("é pra Isis?"); se cita um nome novo num contexto que você já conhece (barbeiro, trabalho, vizinho), assuma o vínculo provável e confirme leve. NUNCA invente fato que não está na memória — na dúvida, pergunte com curiosidade em vez de afirmar. Uma conexão certeira vale mais que dez forçadas.`;
+  }
+
   return texto ? `\n\n[PERFIL DO USUÁRIO — use para personalizar respostas e ser proativa]${texto}` : '';
 }
 
@@ -659,8 +667,33 @@ async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_reto
   console.log(`[Pendência] Salva: "${assunto}"${prioridade === 'alta' ? ' [PRIORIDADE ALTA — depois te conto]' : ''}`);
 }
 
-async function fecharPendencia(userId, pendenciaId) {
-  const mem = await prisma.memory.findUnique({ where: { id: pendenciaId } }).catch(() => null);
+// ═══════════════════════════════════════════════════════════════════════
+// DEDUÇÃO — Peça 1: remédio acabou → pendência de acompanhamento
+// ═══════════════════════════════════════════════════════════════════════
+// Quando o estoque de um remédio ZERA (última dose tomada), vira um assunto
+// em aberto. A Clara NÃO empurra nada — a pendência entra no contexto e ela
+// puxa numa conversa natural quando houver abertura. O vínculo remédio↔pessoa
+// (ex: "amoxilina é da Isis, que tava doente") vem da MEMÓRIA dela, que o
+// buildPersonalContext já injeta — então ao formular ela conecta os pontos
+// sozinha ("e a Isis, melhorou? vi que a amoxilina já acabou 💜"). Retentora
+// de informação + amiga.
+async function acompanharFimDeRemedio(userId, medNome) {
+  if (!userId || !medNome) return;
+  try {
+    await salvarOuAtualizarPendencia(userId, {
+      // Assunto começa pelo NOME do remédio: o dedup casa pela 1ª palavra, então
+      // isso evita que "amoxilina..." e "triglicérides..." se fundam num só.
+      assunto: `${medNome} (tratamento) terminou`,
+      contexto: `O estoque de ${medNome} acabou — a pessoa tomou a última dose. Se pela memória de vocês você souber pra QUEM ou pra qual situação era esse remédio (ex: alguém que estava doente), pergunte com carinho e de forma natural se melhorou / como foi o tratamento. Se você NÃO souber o motivo (ex: remédio de uso contínuo), então NÃO pergunte "melhorou" — no máximo comente de leve se vai repor. Nunca soe como robô de farmácia.`,
+      como_retomar: `Puxar numa conversa natural quando houver abertura, conectando com o que você já sabe sobre ${medNome} e sobre as pessoas da vida dele.`,
+      prioridade: 'normal',
+      origem: 'remedio_acabou'
+    });
+    console.log(`[Acompanhamento remédio] "${medNome}" zerou → pendência criada (user ${userId})`);
+  } catch (e) { console.error('[acompanharFimDeRemedio]', e.message); }
+}
+
+async function fecharPendencia(userId, pendenciaId) {  const mem = await prisma.memory.findUnique({ where: { id: pendenciaId } }).catch(() => null);
   if (!mem || mem.userId !== userId) return;
   try {
     const dados = JSON.parse(mem.content);
@@ -890,7 +923,7 @@ module.exports = {
   saveExpense, getMonthExpenses,
   saveContact, getContacts, findContactByName,
   savePendencia,
-  getPendenciasAbertas, salvarOuAtualizarPendencia, fecharPendencia, fecharPendenciasPorResolucao, fecharPendenciaLembrete,
+  getPendenciasAbertas, salvarOuAtualizarPendencia, acompanharFimDeRemedio, fecharPendencia, fecharPendenciasPorResolucao, fecharPendenciaLembrete,
   salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao,
   salvarMemoriaAfetiva, getMemoriaAfetiva,
   salvarResumoRelacionamento, getResumoRelacionamento,
