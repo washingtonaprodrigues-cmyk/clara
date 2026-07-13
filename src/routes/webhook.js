@@ -335,15 +335,21 @@ router.post('/', async (req, res) => {
         console.log(`[Webhook] messageId duplicado ignorado (cache memória): ${messageId}`);
         return res.json({ ok: true });
       }
+      // CORRIGIDO (corrida de duplicação): a marca em memória agora vem ANTES
+      // do await. Antes ela vinha DEPOIS do findFirst — se o mesmo webhook
+      // chegasse duas vezes quase juntas (retry da UazAPI ou webhook registrado
+      // em duplicidade), as duas passavam o .has() como false e processavam em
+      // dobro, gerando DUAS respostas (classify estocástico → respostas
+      // diferentes). Marcar síncrono aqui, antes de qualquer await, fecha a
+      // janela: a segunda entrega vê a marca na hora e é ignorada.
+      marcarMessageIdProcessado(messageId);
       const jaProcessadoDB = await prisma.memory.findFirst({
         where: { type: 'webhook_msgid', content: messageId }
       }).catch(() => null);
       if (jaProcessadoDB) {
         console.log(`[Webhook] messageId duplicado ignorado (banco, sobreviveu a restart): ${messageId}`);
-        marcarMessageIdProcessado(messageId);
         return res.json({ ok: true });
       }
-      marcarMessageIdProcessado(messageId);
       prisma.memory.create({ data: { userId: 'system', type: 'webhook_msgid', content: messageId } }).catch(() => {});
     } else {
       console.log('[Webhook] messageId não encontrado neste payload — chaves disponíveis:', Object.keys(body.message || {}).join(', '));
