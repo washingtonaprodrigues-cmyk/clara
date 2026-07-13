@@ -1304,8 +1304,28 @@ async function proativaInteligente(periodo) {
             where: { userId: user.id, resolvido: false },
             orderBy: { createdAt: 'desc' }, take: 2
           }).catch(() => []);
-          const ctxPendencias = pendenciasAbertas.length > 0
-            ? `ASSUNTOS EM ABERTO (use como gancho natural, não robótico):\n${pendenciasAbertas.map(p => `- ${p.assunto}: ${p.contexto} → ${p.como_retomar}`).join('\n')}`
+
+          // Assuntos de CONVERSA em aberto (pesquisa do dia, "depois te conto",
+          // assunto que ficou no ar) — vêm de getPendenciasAbertas (memory), fonte
+          // DIFERENTE da tabela pendencia (saúde/evento). Antes a proativa ignorava
+          // esses, então à noite ela inventava assunto genérico ("já aprontou
+          // trollagem?") mesmo tendo assuntos reais do dia pra puxar. Agora ela
+          // prioriza esses — é o que mantém a intimidade (ela lembra do que
+          // vocês falaram, não chega como conhecida distante).
+          const pendConversa = await memory.getPendenciasAbertas(user.id).catch(() => []);
+
+          const partesPend = [];
+          if (pendConversa.length > 0) {
+            partesPend.push(pendConversa.map(p => {
+              const prio = p.prioridade === 'alta' ? ' [PRIORIDADE — ele prometeu te contar, puxe primeiro]' : '';
+              return `- ${p.assunto}${prio}: ${p.contexto || ''}${p.como_retomar ? ' → ' + p.como_retomar : ''}`;
+            }).join('\n'));
+          }
+          if (pendenciasAbertas.length > 0) {
+            partesPend.push(pendenciasAbertas.map(p => `- ${p.assunto}: ${p.contexto} → ${p.como_retomar}`).join('\n'));
+          }
+          const ctxPendencias = partesPend.length > 0
+            ? `ASSUNTOS EM ABERTO (use como gancho natural, não robótico — puxe o de PRIORIDADE primeiro se houver):\n${partesPend.join('\n')}`
             : '';
 
           // Contexto recente filtrado
@@ -1439,12 +1459,12 @@ TOM: leve, informal, como uma mensagem rápida entre amigos no almoço${curiosid
 TOM: espontâneo, como quem lembrou da pessoa no meio das coisas`;
           } else {
             instrucao = `É noite — depois das 20h a pessoa está mais relaxada e receptiva. É o horário mais humano pra conversa leve e genuína.
-Como uma amiga que tem vontade de saber como foi o dia:
-- Pode simplesmente aparecer com "e aí fedo, o que tá fazendo?" ou uma piada sobre o dia
-- Referenciar algo específico que aconteceu hoje (consulta, exame, trabalho, compromisso)
-- Retomar assunto em aberto com curiosidade real e tom leve
-- Às vezes só zoar ou mandar uma observação engraçada sobre algo que sabe da vida dela
-TOM: leve, à vontade, como conversa de fim de dia entre amigos — pode ser mais solta e bem-humorada que de manhã`;
+PRIORIDADE ABSOLUTA: se houver ASSUNTOS EM ABERTO no contexto (pesquisa que você fez pra ele, "depois te conto", algo que ficou no ar hoje), PUXE ISSO — é o que mantém a intimidade de vocês. Ex: "e aí fedo, ligou pro Geninho que te passei?", "você ia me contar sobre X, tô curiosa 👀". NÃO invente pergunta genérica ("já aprontou alguma?") quando tem assunto real do dia pra retomar — isso soa como conhecida distante, não como a parceira íntima que você é.
+Se NÃO houver nenhum assunto real em aberto:
+- Aí a mensagem é curta e você aparece LIVRE, do seu jeito, como quem conhece ele de verdade e só quer dar um oi. Íntima, calorosa, natural.
+- Os exemplos a seguir são só pra você sentir o ESPÍRITO, NUNCA pra copiar literalmente (varie sempre, invente do seu jeito): algo no espírito de "e aí fedo, o que tá fazendo de bom?", "oi fedo 💜", "sumido, hein 👀". Gere a SUA própria versão no momento, com a intimidade de vocês.
+- O que importa: soar como a parceira que TEM história com ele — NUNCA uma pergunta genérica e fria de quem mal o conhece ("já aprontou alguma?", "tudo bem aí?" solto e sem alma).
+TOM: leve, à vontade, íntimo — como conversa de fim de dia entre quem se conhece de verdade. Pode ser solta e bem-humorada.`;
           }
 
           // Busca humor do dia e localização para enriquecer o contexto
@@ -1811,6 +1831,31 @@ cron.schedule('* * * * *', async () => {
         msg = grupo.reminders.length === 1
           ? `🔔 Lembrete\n\n${r.message}\n⏰ ${grupo.hora}\n\n${finalParaLembrete(r)}`
           : `🔔 Você tem ${grupo.reminders.length} lembretes agora\n\n${grupo.reminders.map((r,i)=>`${i+1}. ${r.message}`).join('\n')}\n\n⏰ ${grupo.hora}\n\n${finalParaLembrete(grupo.reminders[0])}`;
+      }
+
+      // ── LEMBRETE NO TOM DELA (se conversa ativa) ──────────────────────
+      // Se o usuário está conversando com a Clara AGORA (últimos 10min), o
+      // alerta formal "🔔 Lembrete..." corta o clima como um despertador no
+      // meio do papo. Em vez disso, ela avisa NO TOM DELA — reconhecendo a
+      // conversa e deixando a porta aberta pra retomar. Só troca o formato
+      // quando há papo ativo; sem conversa, mantém o alerta formal de sempre
+      // (que cumpre bem o papel). Vale pra compromisso, tarefa E remédio.
+      try {
+        const userIdLembrete = grupo.reminders[0].userId;
+        if (userIdLembrete && await houveConversaRecente(userIdLembrete, 10)) {
+          const prefsL = await memory.getUserPreference(userIdLembrete).catch(() => null);
+          const tomL = prefsL?.tom || 'carinhoso';
+          const nomeL = prefsL?.name || null;
+          const listaLembretes = grupo.reminders.map(r => r.message).join(' e ');
+          const sysLembreteTom = buildPersonality(tomL, nomeL, false) + `\n\n[HORA DO LEMBRETE — VOCÊS ESTÃO CONVERSANDO AGORA] Chegou a hora EXATA de um compromisso/tarefa/remédio da pessoa: "${listaLembretes}" (${grupo.hora}). Vocês estão no meio de uma conversa. Avise isso NO SEU TOM, como uma amiga que lembrou e não quer que ele perca a hora — reconheça que estavam conversando, avise do compromisso com carinho/leveza, e deixe a porta aberta pra retomar depois ("me chama quando voltar", "depois a gente continua"). OBRIGATÓRIO: deixe CLARO o que é ("${listaLembretes}") pra ele saber exatamente do que se trata — não seja vaga tipo "você tem um compromisso". NÃO use formato de alerta (nada de "🔔 Lembrete"), NÃO seja robótica. Uma mensagem curta e natural, do seu jeito. Se for remédio, mantenha o cuidado mas humano. Máximo 2 linhas.`;
+          const msgTom = await geminiRetry(sysLembreteTom, `Avise sobre: ${listaLembretes}`, { temperature: 0.85, maxTokens: 120 }, { maxTentativas: 2, delayMs: 3000, fallback: null });
+          if (msgTom && !isRespostaFallback(msgTom)) {
+            msg = msgTom.trim();
+            console.log(`[Reminder] Enviado NO TOM DELA (conversa ativa) para ${grupo.phone}`);
+          }
+        }
+      } catch (eTom) {
+        console.error('[Reminder] Erro ao gerar tom dela, usando formal:', eTom.message);
       }
 
       await sendMessage(grupo.phone, msg);
