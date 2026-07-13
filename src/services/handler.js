@@ -1197,6 +1197,77 @@ async function handleMessage(phone, text, location = null) {
 
     if (modoAtual === 'conversar') return await responderLivre(user, phone, text);
 
+    // ── Interceptação determinística: SONECA / ADIAR de UMA dose de remédio ──
+    // Caso do print: o usuário responde ao "💊 Hora do medicamento!" pedindo
+    // "remarca pra daqui 20 minutos". Isso NÃO é:
+    //   • ajustar_remedio  → esse muda o horário FIXO diário do remédio;
+    //   • editar_lembrete  → esse só olha a tabela `reminder`, e remédio vive
+    //                        na tabela `medication`, então nunca acha
+    //                        ("Não encontrei nenhum lembrete com ...").
+    // É uma soneca de UMA dose: reagenda só aquela dose pra daqui X, criando
+    // um lembrete one-off que reenvia o alerta — SEM tocar no schedule fixo.
+    // Determinístico (regex, sem LLM) e disparado só quando o contexto é
+    // claramente de remédio + tempo relativo + verbo de adiar, pra não roubar
+    // pedidos legítimos de lembrete novo ("me lembra daqui 20 min de X").
+    {
+      const tNorm = (text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const verboAdiar = /\b(remarc\w*|adia\w*|adianta\w*|soneca|de novo|mais\s+\d+\s*min)\b/.test(tNorm);
+      const contextoRemedio = /\b(remedio|medicamento|dose|comprimido|capsula)\b/.test(tNorm);
+      const quandoRelativo = calcularHorarioRelativo(text); // Date (agora+X) ou null
+
+      if (verboAdiar && contextoRemedio && quandoRelativo) {
+        // Descobre QUAL dose adiar: 1º pelas pendências de confirmação abertas
+        // (o remédio acabou de disparar), 2º pelo nome citado na mensagem.
+        const pendMems = await prisma.memory.findMany({
+          where: { userId: user.id, type: 'confirmacao_pendente' },
+          orderBy: { createdAt: 'desc' }
+        }).catch(() => []);
+        const dosesPendentes = pendMems
+          .map(p => { try { const d = JSON.parse(p.content); return d.tipo === 'remedio_dose' ? d : null; } catch { return null; } })
+          .filter(Boolean);
+
+        let alvo = null;
+        if (dosesPendentes.length === 1) {
+          alvo = dosesPendentes[0];
+        } else if (dosesPendentes.length > 1) {
+          alvo = dosesPendentes.find(d =>
+            (d.medNome || '').toLowerCase().split(' ').filter(w => w.length > 3)
+              .some(w => tNorm.includes(w.normalize('NFD').replace(/[\u0300-\u036f]/g, '')))
+          ) || null;
+        }
+        // Fallback: sem pendência aberta, casa pelo nome de um remédio ativo
+        // citado (via swipe-reply, o texto vem com "[Mensagem citada: ...]").
+        if (!alvo) {
+          const medsAtivos = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
+          const medCitado = medsAtivos.find(m =>
+            (m.name || '').toLowerCase().split(' ').filter(w => w.length > 3)
+              .some(w => tNorm.includes(w.normalize('NFD').replace(/[\u0300-\u036f]/g, '')))
+          );
+          if (medCitado) alvo = { medId: medCitado.id, medNome: medCitado.name };
+        }
+
+        if (alvo) {
+          // Cria o lembrete one-off que reenvia o alerta no horário pedido.
+          // Não mexemos em medication.times (schedule permanente) nem criamos
+          // nova confirmacao_pendente — a que veio do disparo original ainda
+          // vale (expira em 3h), então "tomei" continua descontando a dose.
+          await prisma.reminder.create({
+            data: {
+              userId: user.id,
+              phone,
+              message: `💊 ${alvo.medNome} (dose remarcada)`,
+              scheduledAt: quandoRelativo
+            }
+          }).catch(e => console.error('[soneca_remedio] erro ao criar:', e.message));
+
+          const horaFmt = quandoRelativo.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+          await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
+          console.log(`[soneca_remedio] ${alvo.medNome} adiado p/ ${horaFmt} (${phone})`);
+          return await sendMessage(phone, `Beleza, adiei o *${alvo.medNome}* pra ${horaFmt} — te chamo de novo nesse horário 💊`);
+        }
+      }
+    }
+
     // ── Passa contexto da conversa para o classify resolver referências vagas ──
     // Inclui: histórico recente + lembretes pendentes (para concluir_lembrete funcionar sem swipe)
     let contextoClassify = '';
@@ -1657,12 +1728,64 @@ async function handleMessage(phone, text, location = null) {
     // comenta se tiver algo genuíno, senão fica quieta. Mesma regra do
     // LembreteConfirm, agora também nesse caminho (era o que vazava genérico).
     if (classified.tipo === 'concluir_lembrete' || classified.tipo === 'concluir_remedio') {
+      // ── GUARDA ANTI-FALSO-POSITIVO ──────────────────────────────────────
+      // O classify às vezes lê "deu certo"/"consegui"/"foi"/"resolvi" como
+      // conclusão de tarefa. Mas muitas vezes é o usuário RESPONDENDO a uma
+      // PERGUNTA da Clara (ex: o acompanhamento "e aí, como foi o Detran?").
+      // No caso do print: ele respondeu "Deu certo fedo" citando a pergunta,
+      // isso virou concluir_lembrete, a resposta foi ENGOLIDA (nem salva no
+      // histórico nem respondida) e logo depois a Clara ainda reclamou que
+      // estava sendo ignorada — porque, pra ela, ele nunca tinha respondido.
+      //
+      // Regra: só tratar como conclusão de verdade quando há SINAL FORTE —
+      //   (a) citou o próprio alerta (🔔 Lembrete / 💊 Hora do medicamento);
+      //   (b) o título casa com um lembrete pendente de confirmação;
+      //   (c) citou um código (#1, "o 2"...) que aponta pra um pendente.
+      // Se ele citou uma PERGUNTA da Clara (tem "?" e não é alerta), ou não
+      // há match nenhum, então NÃO é conclusão: deixa seguir pro papo normal
+      // (responderLivre), que reconhece a resposta e salva o turno.
+      const mCit = (text || '').match(/\[Mensagem citada:\s*"([\s\S]*?)"\]/i);
+      const citado = mCit ? mCit[1] : '';
+      const citouAlerta = /🔔|💊|hora do medicamento|lembrete/i.test(citado);
+      const citouPergunta = /\?/.test(citado) && !citouAlerta;
+
+      let ehConclusaoReal = false;
+      if (!citouPergunta) {
+        const pendentesConf = await getLembretesPendentesConfirmacao(user.id).catch(() => []);
+        const codigoConcl = extrairCodigoLembrete(text);
+        if (codigoConcl && pendentesConf[codigoConcl - 1]) {
+          ehConclusaoReal = true;
+        } else if (classified.titulo && pendentesConf.length) {
+          const tt = classified.titulo.toLowerCase();
+          ehConclusaoReal = pendentesConf.some(r =>
+            r.message.toLowerCase().includes(tt) || tt.includes(r.message.toLowerCase().substring(0, 10))
+          );
+        }
+        if (!ehConclusaoReal && citouAlerta) ehConclusaoReal = true;
+      }
+
+      if (!ehConclusaoReal) {
+        // Falso positivo — é conversa de verdade. Segue pro fluxo normal.
+        console.log(`[Concluir] falso positivo (citouPergunta=${citouPergunta}) — tratando como conversa`);
+        await responderLivre(user, phone, text, '', isSaudacao, acaoConfirmacao);
+        extractAndSavePersonalInfo(user.id, text).catch(() => {});
+        return;
+      }
+
       ;(async () => {
         try {
           await new Promise(r => setTimeout(r, 1500));
           if (!geminiDisponivel() || todosModelosEsgotados()) return;
+          // BUG CORRIGIDO: aqui usava `preferences?.tom` e `apelidoReal`, mas
+          // essas variáveis só existem dentro de responderLivre / do sub-bloco
+          // de busca — no escopo do handleMessage NÃO existem, então o bloco
+          // lançava "preferences is not defined" TODA vez e a Clara nunca
+          // reagia a uma conclusão (morria em silêncio). Busca local resolve.
+          const prefsConcl = await memory.getUserPreference(user.id).catch(() => ({}));
+          const memAfConcl = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+          const apelidoConcl = memAfConcl?.apelido_usuario || prefsConcl?.name || '';
           const oQueFoi = classified.titulo || 'aquilo';
-          const sysConcl = buildPersonality(preferences?.tom || 'carinhoso', apelidoReal, false) + `\n\n[TAREFA CONCLUÍDA] O usuário confirmou que fez/tomou: "${oQueFoi}". O sistema JÁ confirmou pra ele — você NÃO precisa dizer que registrou nem repetir a tarefa.\n\nDECIDA: isso merece uma reação sua de amiga? Só reaja se tiver peso genuíno (uma conquista, algo importante, algo com graça real). Se for rotineiro (tomar remédio do dia a dia, tarefa comum), responda APENAS "SKIP" — fica quieta, o sistema já cuidou.\n\nSe for reagir: 1 linha curta, no seu tom, sobre ISSO. NÃO puxe outros assuntos (saúde de familiares, agenda, pendências). NÃO faça pergunta genérica tipo "como está se sentindo?" toda vez. NUNCA seja genérica ("boa!", "arrasou!", "pra isso que eu existo" são proibidos). Se não tem nada específico e genuíno, é SKIP.`;
+          const sysConcl = buildPersonality(prefsConcl?.tom || 'carinhoso', apelidoConcl, false) + `\n\n[TAREFA CONCLUÍDA] O usuário confirmou que fez/tomou: "${oQueFoi}". O sistema JÁ confirmou pra ele — você NÃO precisa dizer que registrou nem repetir a tarefa.\n\nDECIDA: isso merece uma reação sua de amiga? Só reaja se tiver peso genuíno (uma conquista, algo importante, algo com graça real). Se for rotineiro (tomar remédio do dia a dia, tarefa comum), responda APENAS "SKIP" — fica quieta, o sistema já cuidou.\n\nSe for reagir: 1 linha curta, no seu tom, sobre ISSO. NÃO puxe outros assuntos (saúde de familiares, agenda, pendências). NÃO faça pergunta genérica tipo "como está se sentindo?" toda vez. NUNCA seja genérica ("boa!", "arrasou!", "pra isso que eu existo" são proibidos). Se não tem nada específico e genuíno, é SKIP.`;
           const coment = await geminiFreeResponse([
             { role: 'system', content: sysConcl },
             { role: 'user', content: `Confirmei: "${oQueFoi}"` }
