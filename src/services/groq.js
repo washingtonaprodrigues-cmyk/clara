@@ -625,7 +625,7 @@ REGRAS:
 
 DURAÇÃO DO FATO (campo "duracao") — MUITO IMPORTANTE:
 Cada fato tem uma duração. Decida assim:
-- "permanente" → algo que NÃO muda com o tempo, que diz QUEM a pessoa é, ou uma HISTÓRIA/marco que vira memória pra sempre. Ex: "fui DJ", "tenho pressão alta", "minha filha se chama Isis", "torço pro Corinthians", "sou de escorpião", "já morei em Portugal", "odeio segunda-feira". Um amigo lembraria disso pra sempre.
+- "permanente" → algo que NÃO muda com o tempo, que diz QUEM a pessoa é, ou uma HISTÓRIA/marco que vira memória pra sempre. Isso INCLUI: identidade e história ("fui DJ", "já morei em Portugal"), saúde crônica ("tenho pressão alta"), família ("minha filha se chama Isis"); GOSTOS E PREFERÊNCIAS que definem a pessoa ("torço pro Corinthians", "novela/série/filme favorito", "banda/música que ama", "cor favorita", "comida favorita", "sou de escorpião"); APARÊNCIA e características físicas ("é alto", "tem barba", "cabelo cacheado", "usa óculos"); JEITO DE SER e traços de personalidade ("odeio segunda-feira", "sou tímido", "adoro acordar cedo"); e BRINCADEIRAS/referências internas de vocês. Um amigo lembraria disso pra sempre.
 - "temporaria" → algo que está ACONTECENDO agora e vai passar/resolver. Ex: "o carro deu problema", "a Isis está com tosse", "tô esperando um retorno do banco", "essa semana tô de férias". Quando resolver, deixa de importar.
 
 REGRA DE OURO: pergunte-se "isso vai ser verdade e relevante daqui a 1 ano?". Se sim → permanente. Se é só uma situação do momento → temporaria.
@@ -640,6 +640,9 @@ EXEMPLOS:
 "sou casado com a Maria há 10 anos" → [{"chave":"conjuge","valor":"Casado com Maria há 10 anos","categoria":"relacionamento","duracao":"permanente"}]
 "trabalho na empresa X como gerente de vendas" → [{"chave":"empresa","valor":"Empresa X","duracao":"permanente"},{"chave":"cargo","valor":"Gerente de vendas","categoria":"trabalho","duracao":"permanente"}]
 "torço pro Corinthians" → [{"chave":"time_futebol","valor":"Torce pro Corinthians","categoria":"entretenimento","duracao":"permanente"}]
+"minha cor favorita é azul e amo pagode" → [{"chave":"cor_favorita","valor":"Cor favorita: azul","categoria":"gostos","duracao":"permanente"},{"chave":"gosto_musical","valor":"Ama pagode","categoria":"gostos","duracao":"permanente"}]
+"sou alto, uso óculos e tenho barba" → [{"chave":"aparencia","valor":"Alto, usa óculos, tem barba","categoria":"aparencia","duracao":"permanente"}]
+"minha novela favorita é Avenida Brasil" → [{"chave":"novela_favorita","valor":"Novela favorita: Avenida Brasil","categoria":"gostos","duracao":"permanente"}]
 "fui DJ uma vez numa festa e travei o notebook" → [{"chave":"ref_dj","valor":"Já foi DJ numa festa e travou o notebook — história engraçada","categoria":"referencias_compartilhadas","duracao":"permanente"}]
 "o carro deu problema hoje, tô vendo com o mecânico" → [{"chave":"situacao_carro","valor":"Carro deu problema, resolvendo com mecânico","categoria":"outro","duracao":"temporaria"}]
 "você me chama de galã da novela X, você é a protagonista" → [{"chave":"ref_novela_personagens","valor":"Washington = galã [nome] da novela X, Clara = protagonista [nome] — brincadeira recorrente","categoria":"referencias_compartilhadas","duracao":"permanente"}]
@@ -648,7 +651,7 @@ EXEMPLOS:
 "oi" → []`;
 
 // Palavras-chave que indicam info pessoal — evita chamar o Groq à toa
-const PERSONAL_KEYWORDS = /minha|meu|meus|minhas|moro|trabalho|sou|tenho|família|filh|esposa|marido|pai|mãe|irmão|irmã|namorad|saúde|remédio|doença|objetivo|meta|aniversário|nasci|adoro|gosto|prefiro|odeio|n[ãa]o gosto|fã de|curto|amo (?!você|vc)|torço|torce|time|cargo|empresa|chefe|casad|signo|filho|filha|namorad|hobby|série|serie|novela|comida favorita|alergi|restrição|personagem|me chamou|você me chama|piada|brincadeira|apelido|galã|protagonista|vilão|herói|rotina|toda (semana|segunda|terça|quarta|quinta|sexta|sábado|domingo)/i;
+const PERSONAL_KEYWORDS = /minha|meu|meus|minhas|moro|trabalho|sou|tenho|família|filh|esposa|marido|pai|mãe|irmão|irmã|namorad|saúde|remédio|doença|objetivo|meta|aniversário|nasci|adoro|gosto|prefiro|odeio|n[ãa]o gosto|fã de|curto|amo (?!você|vc)|torço|torce|time|cargo|empresa|chefe|casad|signo|filho|filha|namorad|hobby|série|serie|novela|comida favorita|cor favorita|favorit|m[úu]sica|banda|pagode|sertanejo|filme|apar[êe]ncia|cabelo|barba|bigode|[óo]culos|altura|sou alto|sou baixo|magro|gordo|tatuagem|alergi|restrição|personagem|me chamou|você me chama|piada|brincadeira|apelido|galã|protagonista|vilão|herói|rotina|toda (semana|segunda|terça|quarta|quinta|sexta|sábado|domingo)/i;
 
 // ── extractPersonalInfo: extrai informações pessoais da mensagem do usuário ──
 // ultimaPerguntaClara: última mensagem da Clara (opcional) — permite entender
