@@ -1537,6 +1537,7 @@ async function handleMessage(phone, text, location = null) {
     // para sabermos o número real de doses resultante antes de confirmar —
     // evita a Clara "inventar" ou ficar vaga sobre a quantidade.
     let confirmacaoAjusteRemedio = null;
+    let acaoRespondeu = false;
     if (classified.tipo === 'ajustar_remedio') {
       confirmacaoAjusteRemedio = await executeAjustarRemedio(user, classified).catch(e => {
         console.error('Erro ajustar_remedio:', e.message);
@@ -1555,7 +1556,14 @@ async function handleMessage(phone, text, location = null) {
       // banco (bug observado: lembrete confirmado por mensagem mas que
       // nunca disparou). Agora esperamos a gravação terminar de verdade
       // antes de seguir pra mensagem de confirmação.
-      await executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
+      acaoRespondeu = await executeAction(user, phone, classified, text).catch(e => { console.error('Erro executeAction:', e.message); return false; });
+    }
+    // Se o executeAction já respondeu ao usuário (pediu horário/título que
+    // faltava, ou confirmou chamada combinada), encerra aqui: nada de
+    // confirmação de sistema nem responderLivre final por cima.
+    if (acaoRespondeu) {
+      extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
+      return;
     }
     const isSaudacao = classified.tipo === 'saudacao';
 
@@ -2099,6 +2107,11 @@ async function executeAjustarRemedio(user, classified) {
 }
 
 async function executeAction(user, phone, classified, originalText) {
+  // Retorna true se JÁ respondeu ao usuário aqui dentro (pediu o horário/título
+  // que faltava, ou confirmou a chamada combinada). Nesses casos o handleMessage
+  // NÃO deve mandar confirmação de sistema nem chamar o responderLivre final —
+  // senão sai mensagem duplicada.
+  let respondeuAqui = false;
   switch (classified.tipo) {
     case 'ponto_multiplo':
       await salvarPontoSilencioso(user, classified.acoes);
@@ -2208,14 +2221,15 @@ async function executeAction(user, phone, classified, originalText) {
         }
       }).catch(() => {});
 
-      const foiSaudade = /saudade|quando sentir|quando quiser|quando der/i.test(originalText || text);
-      // BUG REMOVIDO: aqui setava `preferences._dicaAcao` (preferences não existe
-      // neste escopo → crash) na esperança de influenciar o responderLivre. Mas
-      // executeAction é fire-and-forget (retorno ignorado no chamador), então a
-      // dica nunca chegava. A confirmação da chamada combinada é dada pelo
-      // responderLivre final do handleMessage. (Enhancement futuro: encadear o
-      // texto da confirmação — precisa passar o ctx pelo retorno, sessão própria.)
-      void foiSaudade;
+      const foiSaudade = /saudade|quando sentir|quando quiser|quando der/i.test(originalText || '');
+      // Confirma a chamada combinada NO TOM dela, aqui mesmo (executeAction),
+      // passando a dica como contextoExtra do responderLivre. Marca respondeuAqui
+      // pro handleMessage não mandar outra resposta por cima.
+      const dicaChamada = foiSaudade
+        ? `\n\n[CHAMADA COMBINADA] Usuário disse pra chamar quando sentir saudade — você decidiu que vai chamar às ${horaFinal}. Responda de forma natural e carinhosa/zoeira conforme o tom, sem revelar que calculou o horário. Ex: "Pode deixar, uma hora dessas eu apareço 😏" — não mencione o horário exato, só confirme que vai aparecer.`
+        : `\n\n[CHAMADA COMBINADA] Usuário pediu pra ser chamado${horaJaInformada ? ` às ${horaFinal}` : ` — você escolheu às ${horaFinal}`}. Confirme de forma natural e animada. ${!horaJaInformada ? `Como você calculou o horário sozinha, varie entre duas formas de confirmar: (a) só dizer algo como "combinado, apareço mais tarde 😉" sem revelar a hora exata, ou (b) oferecer deixar ele escolher, tipo "Chamo sim! Se quiser me dizer uma hora melhor, é só falar que eu te chamo quando você quiser 😉" — escolha a que soar mais natural pro momento.` : `Ex: "Combinado! Te chamo às ${horaFinal} 😏"`}`;
+      await responderLivre(user, phone, originalText || '', dicaChamada).catch(e => console.error('[chamada_combinada resp]', e.message));
+      respondeuAqui = true;
       break;
     }
     case 'tarefa': {
@@ -2237,11 +2251,10 @@ async function executeAction(user, phone, classified, originalText) {
           }
         }).catch(() => {});
         const ctx = `\n\n[TÍTULO INCOMPLETO] O usuário pediu um lembrete mas o título ficou incompleto: "${resultTarefa.tituloIncompleto}". Pergunte de forma natural e com seu jeito — ex: "Opa, cobrar quem? 😄" ou "Espera, ${resultTarefa.tituloIncompleto} quem? Não me deixa curiosa! 🤔" — curto, no seu tom, sem criar nada ainda.`;
-        // BUG REMOVIDO: `preferences._dicaAcao = ctx` (preferences inexistente →
-        // crash) — e mesmo sem crash não chegaria ao responderLivre (executeAction
-        // é fire-and-forget). Deixado como no-op seguro. Enhancement futuro:
-        // entregar esta pergunta encadeando o ctx pelo retorno de executeAction.
-        void ctx;
+        // Faz a pergunta aqui e sinaliza que já respondeu (evita "Anotado!" falso
+        // e o responderLivre final — que sairiam por cima, já que nada foi criado).
+        await responderLivre(user, phone, originalText || '', ctx).catch(e => console.error('[perguntarTitulo]', e.message));
+        respondeuAqui = true;
       } else if (resultTarefa?.perguntarHora) {
         // Salva pendência de coleta — aguarda data/hora do usuário
         const expira = Date.now() + 15 * 60 * 1000; // 15 min
@@ -2261,8 +2274,9 @@ async function executeAction(user, phone, classified, originalText) {
         // A Clara pergunta de forma natural no seu tom
         const temData = !!resultTarefa.lembreteData;
         const ctx = `\n\n[COLETA DE LEMBRETE] O usuário pediu pra lembrar de "${resultTarefa.lembreteTitulo}"${temData ? ` para ${resultTarefa.lembreteData}` : ''} mas não disse ${temData ? 'o horário' : 'quando'}. Responda naturalmente no seu tom e pergunte ${temData ? 'que horas' : 'quando e que horas'} — de forma humana, não robótica. Ex: "Que legal! A que horas vai ser?" ou "Pode deixar! Pra quando você quer que eu te lembre?" — varie conforme o contexto. NÃO crie o lembrete ainda.`;
-        // BUG REMOVIDO: `preferences._dicaAcao = ctx` órfão/crash (ver nota acima). No-op seguro.
-        void ctx;
+        // Faz a pergunta aqui e sinaliza que já respondeu (ver nota acima).
+        await responderLivre(user, phone, originalText || '', ctx).catch(e => console.error('[perguntarHora]', e.message));
+        respondeuAqui = true;
       }
       break;
     }
@@ -2373,6 +2387,7 @@ async function executeAction(user, phone, classified, originalText) {
       if (classified.valor !== undefined && classified.valor !== null) await memory.saveUserPreference(user.id, null, null, parseFloat(classified.valor));
       break;
   }
+  return respondeuAqui;
 }
 
 // ── Detector de humor ──────────────────────────────────────────────────
