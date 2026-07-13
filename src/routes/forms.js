@@ -329,6 +329,9 @@ router.post('/remedio-tomado/:id', async (req, res) => {
       where: { id },
       data: { remaining: { decrement: 1 } }
     });
+    // Peça 1 da dedução: se zerou o estoque, vira acompanhamento (a Clara puxa
+    // depois numa conversa natural, conectando com o que sabe do remédio).
+    if (med.remaining <= 0) await memory.acompanharFimDeRemedio(med.userId, med.name);
     // ── Limpa a pendência de confirmação criada pelo alarme (reminders.js) ──
     // Bug corrigido: confirmar pelo Dashboard decrementava normalmente,
     // mas não cancelava a pendência de confirmação aberta pelo alarme —
