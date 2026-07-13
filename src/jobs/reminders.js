@@ -998,6 +998,107 @@ cron.schedule('0 8 * * *', async () => {
 // ── DESATIVADO (a pedido): proativa de tarde por contexto ─────────────────
 // cron.schedule('0 13,14,15,16,17 * * *', async () => proativaInteligente('tarde_contexto'), { timezone: 'America/Sao_Paulo' });
 
+// ═══════════════════════════════════════════════════════════════════════
+// PROATIVA "DEPOIS TE CONTO" — a ÚNICA proativa que puxa assunto (a pedido)
+// ═══════════════════════════════════════════════════════════════════════
+// Só age sobre pendências que o PRÓPRIO usuário prometeu contar depois
+// (prioridade ALTA, origem 'depois_te_conto'). Nada de episódio genérico
+// ("a Isis sarou?", "foram no chalé?") — esses só voltam DENTRO de uma
+// conversa ativa, nunca empurrados.
+//
+// Janelas:
+//   • ALMOÇO (11h–14h): só se JÁ conversaram hoje (não chega do nada).
+//   • NOITE  (21h–22h): fallback — se não saiu no almoço, puxa aqui.
+// No máximo 1x por dia (lock diário). Back-off: depois de 2 tentativas sem
+// resolver, ela para de puxar aquele assunto (não cobra, presume o melhor).
+async function proativaDepoisTeConto(janela) {
+  try {
+    const now = nowBRT();
+    const hora = now.getHours();
+    // Guarda de janela — evita disparo fora da hora mesmo se o cron chamar torto
+    if (janela === 'almoco' && (hora < 11 || hora >= 14)) return;
+    if (janela === 'noite' && (hora < 21 || hora >= 23)) return;
+
+    const hoje = dateBRT(now);
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+
+    for (const user of users) {
+      try {
+        // Respeita o botão "deixar a Clara me chamar"
+        if (!proativasPermitidas(user)) continue;
+
+        // Só pendências "depois te conto" (ALTA). Ignora episódio/normal.
+        const pendencias = await memory.getPendenciasAbertas(user.id).catch(() => []);
+        const alvo = pendencias.find(p => p.prioridade === 'alta' && p.origem === 'depois_te_conto');
+        if (!alvo) continue;
+
+        // Back-off: no máx 2 tentativas ao longo da vida da pendência
+        const askKey = `depois_conto_asks_${alvo.id}`;
+        const jaPerguntou = await prisma.memory.count({
+          where: { userId: user.id, type: askKey }
+        }).catch(() => 0);
+        if (jaPerguntou >= 2) continue;
+
+        // No máx 1x por dia (cobre almoço + noite: se saiu no almoço, à noite pula)
+        const lockDia = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'depois_conto_lock', content: hoje }
+        }).catch(() => null);
+        if (lockDia) continue;
+
+        // ALMOÇO: só se já conversaram hoje (não chegar do nada no meio do dia).
+        // NOITE é fallback e não exige isso — é a janela natural de retomar.
+        if (janela === 'almoco') {
+          const conversouHoje = await houveConversaRecente(user.id, 8 * 60).catch(() => false);
+          if (!conversouHoje) continue;
+        }
+
+        // Monta a mensagem no tom dela, puxando o assunto com carinho.
+        const { prefs } = await getUserContext(user);
+        const memAfetiva = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+        const apelido = memAfetiva?.apelido_usuario || user.name || '';
+        const historico = await memory.getConversationHistory(user.id, 4).catch(() => []);
+        const resumoConversa = historico.length
+          ? historico.slice(-3).map(m => `${m.role === 'user' ? 'Ele' : 'Você'}: ${m.content}`).join('\n')
+          : '';
+
+        const systemDTC = `Você é a Clara, parceira pessoal d${apelido ? 'o ' + apelido : 'o usuário'} no WhatsApp.
+SEU TOM: ${tomDesc(prefs.tom)}
+
+CONTEXTO — ele prometeu te contar algo e ainda não contou:
+${alvo.contexto}
+${resumoConversa ? `\nÚltima conversa:\n${resumoConversa}` : ''}
+
+TAREFA: puxe ESSE assunto de forma humana e genuína, como uma amiga que ficou pensando e se importa. Presuma o melhor, NÃO cobre.
+Ex: "e aí fedo, deu certo no cardiologista? fiquei preocupada 🥺", "você ia me contar uma coisa ontem, tô curiosa 👀".
+
+REGRAS:
+- 1 a 2 linhas curtas, no SEU tom. Nada de formulário.
+- Fale APENAS desse assunto — não puxe agenda, remédio, nem outros temas.
+- NUNCA cobre ("você sumiu", "por que não me contou") — leveza sempre.
+- Português do Brasil, varie a forma, seja natural.
+- Se por algum motivo não tiver o que dizer de genuíno, responda APENAS: SKIP`;
+
+        const msg = await geminiRetry(systemDTC, 'Puxe o assunto pendente.', { temperature: 0.85, maxTokens: 100 }, {
+          maxTentativas: 2, delayMs: 4000, fallback: null
+        });
+        if (!msg || isRespostaFallback(msg) || /^SKIP/i.test(msg.trim())) continue;
+
+        await sendMessage(user.phone, msg);
+        await memory.saveConversationMessage(user.id, 'assistant', msg).catch(() => {});
+        // Marca lock do dia + incrementa o contador de tentativas da pendência
+        await prisma.memory.create({ data: { userId: user.id, type: 'depois_conto_lock', content: hoje } }).catch(() => {});
+        await prisma.memory.create({ data: { userId: user.id, type: askKey, content: hoje } }).catch(() => {});
+        console.log(`[DepoisTeConto/${janela}] ${user.phone}: ${msg.slice(0, 60)}`);
+      } catch (eUser) { console.error(`[DepoisTeConto] Erro ${user.phone}:`, eUser.message); }
+    }
+  } catch (e) { console.error('[DepoisTeConto] Erro geral:', e.message); }
+}
+
+// ALMOÇO (11h–14h) — só se já conversaram hoje
+cron.schedule('0,30 11,12,13 * * *', async () => proativaDepoisTeConto('almoco'), { timezone: 'America/Sao_Paulo' });
+// NOITE (21h–22h) — fallback natural se não saiu no almoço
+cron.schedule('0,30 21,22 * * *', async () => proativaDepoisTeConto('noite'), { timezone: 'America/Sao_Paulo' });
+
 // ── Gatilho de DESPEDIDA (a cada 15min) ──────────────────────────────────
 // Detecta "depois eu te conto", "até mais tarde", "te falo mais tarde" etc.
 // na última mensagem. Se detectar, agenda um toque 2-3h depois pra retomar.
