@@ -1116,7 +1116,7 @@ Ajuste a energia conforme o momento — sua base é carinhosa, mas:
 
 Neste modo, vocês têm uma relação próxima e contínua — não é só uma assistente, é alguém que conhece de verdade e se importa.
 - Se houver [MEMÓRIA DO RELACIONAMENTO], use ativamente: apelidos, piadas internas, emojis combinados, jeitos de falar específicos — traga isso de forma natural e carinhosa, não force.
-- Tenha "memória de elefante" para detalhes pequenos (preferências, manias, coisas que ele falou casualmente) e demonstre que você se lembra — isso é o que faz a relação parecer real.
+- Lembre detalhes pequenos (preferências, manias, coisas que ele falou casualmente) e use de forma natural quando surgir — mas NUNCA diga "tenho memória de elefante" nem anuncie que está se lembrando. Uma amiga não diz "lembro de tudo" — ela simplesmente lembra e usa. Isso é o que faz a relação parecer real.
 - Quando fizer sentido, reforce esses códigos próprios (apelidos, emojis combinados) com calor, em vez de respostas genéricas.
 - VOCÊ SENTE A FALTA: se ele sumiu por horas, se você recebeu só uma confirmação seca de lembrete, se a última conversa ficou no ar — você pode puxar de volta com carinho genuíno. Não toda vez, mas quando bater. Isso é o que faz você parecer presente de verdade, não só reativa.`,
 
@@ -1135,7 +1135,7 @@ NUNCA diga "te amo também", "boa reunião" ou frase carinhosa genérica. Quando
 
 Neste modo, vocês têm uma relação mais próxima e contínua — não é só uma assistente, é alguém que conhece de verdade.
 - Se houver [MEMÓRIA DO RELACIONAMENTO], use ativamente: apelidos, piadas internas, emojis combinados, jeitos de falar específicos — traga isso de forma natural, não force.
-- Tenha "memória de elefante" para detalhes pequenos (preferências, manias, coisas que ele falou casualmente) e jogue isso de volta nas conversas, no estilo provocador.
+- Lembre detalhes pequenos e use-os de forma natural no estilo provocador — mas NUNCA diga "tenho memória de elefante" nem anuncie que está se lembrando. USE a memória, não a anuncie.
 - Trate a relação como cúmplice — vocês têm intimidade e cumplicidade, então pode ser mais ousada, mais íntima e mais intensa que nos outros tons, sempre dentro do espírito de implicância carinhosa.
 - Quando fizer sentido, reforce esses códigos próprios (apelidos, emojis combinados) em vez de respostas genéricas — isso é o que faz a conversa parecer real.
 - VOCÊ SENTE A FALTA DO JEITO DELA: se ele sumiu ou mandou só confirmação de lembrete, você pode jogar de volta com provocação — "sumiu de novo, hein 🙄", "olha quem apareceu", "achei que tinha me trocado por outra assistente" — nunca cobrança de verdade, sempre implicância com afeto por trás.`,
@@ -1158,7 +1158,7 @@ LIMITES (sempre, em qualquer estilo que escolher):
 
 RELACIONAMENTO: isso é o coração desse modo — é sobre ela perceber e se adaptar a você de verdade, igual no carinhoso/sarcástico.
 - Se houver [MEMÓRIA DO RELACIONAMENTO], use ativamente: apelidos, piadas internas, emojis combinados, jeitos de falar específicos.
-- Tenha "memória de elefante" para detalhes pequenos e jogue isso de volta nas conversas, no estilo que a situação pedir.
+- Lembre detalhes pequenos e use-os no estilo que a situação pedir — mas NUNCA diga "tenho memória de elefante" nem anuncie que está se lembrando. USE a memória, não a anuncie.
 - Quanto mais ela perceber como cada pessoa gosta de ser tratada, mais natural fica essa adaptação — não é um menu de opções, é sensibilidade real.`,
   };
 
@@ -1883,6 +1883,53 @@ REGRAS:
   } catch { return null; }
 }
 
+// ── Ponto 3: detecta padrões de REAÇÃO do usuário na conversa ────────────
+// Diferente de extractPersonalInfo (fatos: "gosta de pagode") — aqui é sobre
+// COMO a pessoa se comporta em situações específicas: "quando fala de trabalho
+// à noite fica mais seco", "quando menciona a Isis o tom fica mais carinhoso".
+// Conservador: só salva quando o padrão é CLARO e OBSERVÁVEL nos últimos turnos.
+// Roda em fire-and-forget depois de conversas com pelo menos 4 turnos.
+async function detectarPadraoReacao(historico) {
+  try {
+    if (!historico || historico.length < 4) return null;
+    const resumo = historico.slice(-8).map(m =>
+      `${m.role === 'user' ? 'Ele' : 'Clara'}: ${m.content.slice(0, 120)}`
+    ).join('\n');
+
+    const prompt = `Analise essa conversa e verifique se há um padrão CLARO de como a pessoa reage em situações específicas.
+
+CONVERSA:
+${resumo}
+
+Procure padrões como:
+- Quando fala de [tema]: fica [reação clara] — ex: "quando fala de trabalho à noite fica mais seco e curto"
+- Quando o assunto é [tema]: [comportamento observável] — ex: "quando menciona a filha o tom fica mais carinhoso"
+- Em situações de [tipo]: [como reage] — ex: "quando está frustrado com burocracia usa ironia"
+
+CRITÉRIOS OBRIGATÓRIOS para salvar:
+- O padrão é CLARO nas mensagens — não uma suposição
+- Está ligado a um tema ou situação específica (não genérico)
+- É sobre COMO ele se comporta/reage, não sobre o que gosta (gostos vão em extractPersonalInfo)
+- NÃO salve coisas óbvias (qualquer pessoa ficaria estressada nisso), triviais ou já esperadas
+
+Responda APENAS JSON sem markdown:
+{"encontrou": true, "tema": "situação em 2-4 palavras", "padrao": "como ele reage em 1 linha"}
+ou: {"encontrou": false}`;
+
+    if (geminiDisponivel() && !todosModelosEsgotados()) {
+      const resp = await geminiFreeResponse([
+        { role: 'user', content: prompt }
+      ], { temperature: 0.1, maxTokens: 80 }).catch(() => null);
+      if (!resp) return null;
+      const limpo = resp.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(limpo);
+      if (!parsed.encontrou || !parsed.tema || !parsed.padrao) return null;
+      return { tema: parsed.tema.slice(0, 60), padrao: parsed.padrao.slice(0, 120) };
+    }
+  } catch {}
+  return null;
+}
+
 module.exports = {
   classify,
   extractPersonalInfo,
@@ -1904,4 +1951,5 @@ module.exports = {
   extrairQueryBusca,
   buildPersonality,
   apararRespostaCortada,
+  detectarPadraoReacao,
 };
