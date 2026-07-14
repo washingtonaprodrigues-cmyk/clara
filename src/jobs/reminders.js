@@ -544,15 +544,19 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
 
         if (!podeEnviarAgora) continue;
 
-        // Não dispara bom dia se o usuário mandou mensagem nos últimos 5 min
-        // — exceto se a última mensagem foi uma confirmação de remédio
-        // (tomado, feito etc.) — nesse caso é exatamente a hora certa
-        // para o bom dia chegar como surpresa separada.
-        const recente = await memory.getConversationHistory(user.id, 2).catch(() => []);
-        const ultimaMsg = recente.filter(m => m.role === 'user').pop();
-        const foiConfirmacaoRemedio = ultimaMsg && /^(tomado|tomei|tomou|feito|já tomei|ja tomei|ok|pronto|concluído|concluido)\s*(fedo)?\s*[.!]*$/i.test((ultimaMsg.content || '').trim());
-        if (!foiConfirmacaoRemedio && await houveConversaRecente(user.id, 5)) {
-          console.log(`[Bom dia] Conversa em andamento, aguardando para ${user.phone}`);
+        // Não dispara bom dia se o USUÁRIO mandou mensagem nos últimos 5 min.
+        // CORRIGIDO: antes usava houveConversaRecente() que contava também as
+        // respostas da própria Clara (ex: alerta de remédio às 7h) — isso fazia
+        // o cron ver "conversa recente" e pular o bom dia o dia todo.
+        // Agora só conta mensagem DO USUÁRIO mesmo.
+        const recentesBomDia = await memory.getConversationHistory(user.id, 5).catch(() => []);
+        const ultimaMsgUserBomDia = recentesBomDia.filter(m => m.role === 'user').pop();
+        const minDesdeUserBomDia = ultimaMsgUserBomDia
+          ? (Date.now() - new Date(ultimaMsgUserBomDia.createdAt || 0).getTime()) / 60000
+          : 999;
+        const foiConfirmacaoRemedio = ultimaMsgUserBomDia && /^(tomado|tomei|tomou|feito|já tomei|ja tomei|ok|pronto|concluído|concluido)\s*(fedo)?\s*[.!]*$/i.test((ultimaMsgUserBomDia.content || '').trim());
+        if (!foiConfirmacaoRemedio && minDesdeUserBomDia < 5) {
+          console.log(`[Bom dia] Usuário ativo recentemente (${Math.round(minDesdeUserBomDia)}min), aguardando para ${user.phone}`);
           continue;
         }
 
