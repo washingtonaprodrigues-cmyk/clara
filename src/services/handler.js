@@ -3,7 +3,7 @@
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
 // Sessao 12 (10/07/2026): confirmacoes de sistema em 1 linha (Feito!/Tomado!/Anotado!),
 // Clara comenta separada so se genuino (nunca generico). Ver webhook.js LembreteConfirm.
-const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, apararRespostaCortada } = require('./groq');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, apararRespostaCortada, detectarPadraoReacao } = require('./groq');
 const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('./gemini');
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
@@ -1027,6 +1027,19 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     }
 
     updateRelationshipSummary(user.id, history, respStr).catch(() => {});
+
+    // Ponto 3: detecta padrão de reação em background — como ele se comporta
+    // em situações específicas. Só roda quando há conversa suficiente (4+ turnos).
+    // Silencioso, fire-and-forget, não bloqueia a resposta.
+    ;(async () => {
+      try {
+        const histPadrao = await memory.getConversationHistory(user.id, 8).catch(() => []);
+        if (histPadrao.length >= 4) {
+          const padrao = await detectarPadraoReacao(histPadrao);
+          if (padrao) await memory.salvarPadraoReacao(user.id, padrao.tema, padrao.padrao);
+        }
+      } catch {}
+    })();
 
     // Item 4: resumo de fim de sessão
     // Se a mensagem atual veio depois de 2h+ de silêncio, significa que
