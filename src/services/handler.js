@@ -867,17 +867,14 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // detecção de promessa de busca mais abaixo — evita ela mesma criar
     // uma busca do nada em cima de comentário/comemoração sem pedido real.
     const pareceuPedidoInfo = /\?|que horas|quando|onde fica|onde é|qual (é|o|a)|quanto (custa|é|vale)|quem (é|foi|ganhou|joga)/i.test(text);
+    const buscaMatch = respStr.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
 
     // ── Busca proativa: Clara sinalizou que quer pesquisar ──
-    const buscaMatch = respStr.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
-    if (buscaMatch && !pareceuPedidoInfo) {
-      // Ignora a tag — manda a reação natural dela, só sem o pedaço da tag
-      const respSemTag = respStr.replace(buscaMatch[0], '').trim();
-      await memory.saveConversationMessage(user.id, 'user', text);
-      await memory.saveConversationMessage(user.id, 'assistant', respSemTag || respStr);
-      await sendMessage(phone, respSemTag || respStr);
-      return;
-    }
+    // REMOVIDO: o caminho antigo que mandava respSemTag (texto antes da tag)
+    // e parava sem buscar quando !pareceuPedidoInfo. Isso causava mensagens
+    // truncadas ("Nimesulida é um anti-inflamatório mais...") sem a busca.
+    // Agora: se o modelo gerou __BUSCAR__, sempre busca — independente de
+    // pareceuPedidoInfo. O aviso substitui o respSemTag.
     if (buscaMatch) {
       const query = buscaMatch[1].trim();
       const tom = preferences?.tom || 'carinhoso';
@@ -895,6 +892,32 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           await memory.saveConversationMessage(user.id, 'assistant', resultado);
           await sendMessage(phone, resultado);
           updateRelationshipSummary(user.id, history, resultado).catch(() => {});
+
+          // Comentário depois da busca — sempre gera pra manter ela presente
+          // após a info. Saúde → preocupação genuína. Outros → toque pessoal se seco.
+          const ehSaudeBusca = /(sintoma|saúde|doença|pressão|febre|\bdor\b|dores|remédio|medicamento|médico|hospital|exame de saúde|consulta|enjoo|tontura|náusea|cansaço|infecção|alergia|gripe|emergência)/i.test(query + ' ' + text);
+          const respLower = (resultado || '').toLowerCase();
+          const jaTemCalor = /(fedo|meu bem|viu\?|hein\?|fica de olho|eita|nossa)/i.test(respLower) || /[\u{1F300}-\u{1FAFF}]/u.test(resultado || '');
+          if (ehSaudeBusca || !jaTemCalor) {
+            ;(async () => {
+              try {
+                await new Promise(r => setTimeout(r, 1500));
+                if (!geminiDisponivel() || todosModelosEsgotados()) return;
+                const promptPos = ehSaudeBusca
+                  ? `\n\n[VOCÊ JÁ DEU A INFO DE SAÚDE] Você explicou sobre "${query}". Mande UM comentário curto de amiga preocupada — pergunte se ele tá sentindo algo, se é ele ou alguém da família. MÁXIMO 1 frase (menos de 15 palavras). Não repita a explicação.`
+                  : `\n\n[VOCÊ JÁ EXPLICOU] Info sobre "${query}" enviada. Dê UM toque pessoal curtíssimo — opinião, brincadeira leve ou pergunta genuína. MÁXIMO 1 frase. NÃO repita. Se não tiver toque genuíno, responda APENAS: SKIP`;
+                const coment = await geminiFreeResponse([
+                  { role: 'system', content: buildPersonality(tom, apelidoBusca, false) + promptPos },
+                  { role: 'user', content: text }
+                ], { temperature: 0.85, maxTokens: 60 }).catch(() => null);
+                const comentLimpo = (coment || '').replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '').replace(/🔍/g, '').trim();
+                if (comentLimpo && comentLimpo.length > 3 && !/^SKIP/i.test(comentLimpo)) {
+                  await sendMessage(phone, comentLimpo);
+                  await memory.saveConversationMessage(user.id, 'assistant', comentLimpo).catch(() => {});
+                }
+              } catch {}
+            })();
+          }
         } else {
           await sendMessage(phone, 'Pesquisei mas não encontrei nada útil sobre isso agora 😕');
         }
