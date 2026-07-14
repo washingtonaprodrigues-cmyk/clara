@@ -1264,7 +1264,7 @@ async function tentarGeminiComPersonalidade(message, history, tom, name, context
     ];
     return geminiFreeResponse(msgs, {
       temperature: tom === 'sarcastico' ? 0.9 : 0.7,
-      maxTokens: 600,
+      maxTokens: 800,
     });
   };
 
@@ -1898,4 +1898,5 @@ module.exports = {
   infoDatas,
   extrairQueryBusca,
   buildPersonality,
+  apararRespostaCortada,
 };
