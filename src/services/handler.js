@@ -401,55 +401,41 @@ async function buscarContextoRelacional(userId) {
 // classificada já gera o dele inline). Se a geração falhar, cai em frases
 // fixas COM personalidade (estilo do backup) — nunca uma lupa seca.
 async function gerarAvisoBusca(text, tom = 'carinhoso', apelido = '') {
-  try {
-    if (geminiDisponivel() && !todosModelosEsgotados()) {
-      // Prompt forçando voz 100% Clara — íntima, no tom do relacionamento,
-      // não frases genéricas de assistente ("garimpar", "fuçar", "buscar pra você").
-      // maxTokens 90 pra dar espaço a 1-2 linhas naturais se precisar.
-      const sys = buildPersonality(tom, apelido, false) + `\n\n[CONTEXTO INTERNO — NÃO APAREÇA NA RESPOSTA]: você vai checar uma informação antes de responder. Escreva uma reação natural e íntima de você avisando que vai confirmar antes de falar — como você diria isso numa conversa real com ele, no tom que vocês têm. Pode ter 1-2 linhas se ficar natural. PROIBIDO: palavras de assistente genérico ("garimpar", "fuçar", "buscar pra você", "vou pesquisar"); lupa ou 🔍; RESPONDER A PERGUNTA nem parcialmente (nem palpite, nem "acho que não tem", nem "provavelmente é X" — ZERO informação sobre o conteúdo antes de checar); inventar informação; escrever __BUSCAR__ ou qualquer tag técnica. EXEMPLO DO QUE NÃO FAZER: "Que bom que acordou pensando em futebol... mas hoje não tem jogo" ← ERRADO, respondeu antes de buscar. Tom certo: "Peraí que vou confirmar isso antes de te falar, não quero inventar não! 💜", "Deixa eu ver certinho antes de responder — não vou te passar coisa errada.", "Um segundo que vou checar pra garantir que tô te falando certo, tá?". O que importa é soar como você, jamais antecipar a resposta.`;
-      const g = await geminiFreeResponse([
-        { role: 'system', content: sys },
-        { role: 'user', content: text }
-      ], { temperature: 0.85, maxTokens: 90 }).catch(() => null);
-      const limpo = (g || '')
-        .replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '')
-        .replace(/🔍/g, '')
-        .replace(/\bgarimpar\b|\bfu[çc]ar\b|\bpesquisar isso\b|\bbuscar isso\b/gi, '')
-        .trim();
-      if (limpo && limpo.length > 5 && !isRespostaFallback(limpo)) return limpo;
-    }
-  } catch {}
-  // Fallback — frases que soam como ela, não como assistente genérico.
+  // Frases fixas por tom — mais confiável que geração. O Gemini era criativo
+  // demais no aviso e acabava respondendo a pergunta antes de buscar.
+  // Frases curtas, naturais, no tom dela, sem revelar nenhuma informação.
   const n = apelido || '';
-  const fallbacks = {
+  const por_tom = {
     carinhoso: n ? [
-      `Peraí que vou confirmar isso antes de te falar, não quero te passar coisa errada não! 💜`,
-      `Deixa eu ver certinho antes de responder, ${n} — um segundinho.`,
-      `Um segundo que vou checar pra te falar certo, tá? 😊`,
+      `Pera aí que vou dar uma olhada pra gente, ${n}! 💜`,
+      `Já vejo isso pra você, ${n}! 😊`,
+      `Um segundo que já checo aqui!`,
     ] : [
-      `Peraí que vou confirmar isso antes de te falar, não quero inventar não! 💜`,
-      `Deixa eu ver certinho antes de responder — um segundinho.`,
-      `Um segundo que vou checar pra garantir que tô te falando certo. 😊`,
+      `Pera aí que vou dar uma olhada pra gente! 💜`,
+      `Já vejo isso! 😊`,
+      `Um segundo que já checo aqui!`,
     ],
-    direto: [`Um segundo.`, `Verificando.`, `Já checo.`],
+    direto: [`Verificando.`, `Um segundo.`, `Já checo.`],
     divertido: n ? [
-      `Espera que vou confirmar isso antes de falar, ${n} — não vou inventar não! 😄`,
-      `Deixa eu checar rapidinho antes de te responder.`,
-      `Um segundo que vou ver certinho pra não te enrolar! 😅`,
+      `Pera aí que vou dar uma olhada pra gente, ${n}! 😄`,
+      `Já vejo isso, ${n}!`,
+      `Um segundo que já checo!`,
     ] : [
-      `Espera que vou confirmar antes de falar — não vou inventar não! 😄`,
-      `Deixa eu checar rapidinho antes de responder.`,
-      `Um segundo que vou ver certinho! 😅`,
+      `Pera aí que vou dar uma olhada pra gente! 😄`,
+      `Já vejo isso!`,
+      `Um segundo que já checo!`,
     ],
     sarcastico: n ? [
-      `Peraí que vou checar isso, ${n} — porque inventar eu não invento. 🙄`,
-      `Deixa eu confirmar antes de falar, que pelo menos um de nós dois vai ter certeza. 😏`,
+      `Pera aí que vou dar uma olhada pra gente, ${n}. 😏`,
+      `Já vejo isso, ${n}.`,
+      `Um segundo.`,
     ] : [
-      `Peraí que vou checar — porque inventar eu não invento. 🙄`,
-      `Deixa eu confirmar antes de falar. 😏`,
+      `Pera aí que vou dar uma olhada pra gente. 😏`,
+      `Já vejo isso.`,
+      `Um segundo.`,
     ],
   };
-  const opcoes = fallbacks[tom] || fallbacks.carinhoso;
+  const opcoes = por_tom[tom] || por_tom.carinhoso;
   return opcoes[Math.floor(Math.random() * opcoes.length)];
 }
 
