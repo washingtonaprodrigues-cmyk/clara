@@ -49,6 +49,29 @@ function marcarConteudoProcessado(phone, text, quotedText) {
   _conteudoProcessadoRecente.set(chaveConteudo(phone, text, quotedText), Date.now() + DEDUP_CONTEUDO_JANELA_MS);
 }
 
+// ── Terceira camada: dedup curto só por phone+text (10s) ──────────────────
+// Captura o caso onde a UazAPI entrega o mesmo webhook duas vezes com
+// messageIds DIFERENTES e com/sem quotedText diferente (ex: evento de
+// "mensagem recebida" + evento de "lida/entregue"), fazendo os dois
+// passarem pelas camadas 1 e 2. Hash sem quoted garante bloqueio
+// mesmo quando os payloads diferem só na parte de citação.
+const _dedupCurto = new Map();
+const DEDUP_CURTO_MS = 10 * 1000;
+
+function textJaProcessadoRecente(phone, text) {
+  if (!text) return false;
+  const chave = `${phone}|${text}`;
+  const expiraEm = _dedupCurto.get(chave);
+  if (!expiraEm) return false;
+  if (Date.now() >= expiraEm) { _dedupCurto.delete(chave); return false; }
+  return true;
+}
+
+function marcarTextProcessado(phone, text) {
+  if (!text) return;
+  _dedupCurto.set(`${phone}|${text}`, Date.now() + DEDUP_CURTO_MS);
+}
+
 setInterval(() => {
   const agora = Date.now();
   for (const [id, expiraEm] of _messageIdsProcessados) {
@@ -372,7 +395,14 @@ router.post('/', async (req, res) => {
       console.log(`[Webhook] conteúdo duplicado ignorado (2ª camada): ${phone} — "${text.slice(0, 60)}"`);
       return res.json({ ok: true });
     }
+    // Terceira camada: phone+text sem quotedText, janela 10s
+    // Captura retries da UazAPI com messageId diferente e/ou quotedText diferente
+    if (text && textJaProcessadoRecente(phone, text)) {
+      console.log(`[Webhook] conteúdo duplicado ignorado (3ª camada, 10s): ${phone} — "${text.slice(0, 60)}"`);
+      return res.json({ ok: true });
+    }
     if (text) marcarConteudoProcessado(phone, text, quotedText);
+    if (text) marcarTextProcessado(phone, text);
 
     const textComContexto = quotedText && text ? `[Mensagem citada: "${quotedText.slice(0, 200)}"]\n${text}` : text;
 
