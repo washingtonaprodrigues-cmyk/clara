@@ -771,30 +771,10 @@ async function boaNoiteInteligente() {
 
         const minAusente = (now - new Date(ultimaMsgUser.createdAt)) / 60000;
 
-        // GATILHO DE REMÉDIO: se o usuário confirmou um remédio nos últimos
-        // 5-15min (comum ter remédio às 23h, início da janela), ele está
-        // acordado agora — igual ao bom dia. Aproveita esse sinal pra mandar
-        // o boa noite logo, sem esperar os 30min de ausência.
-        let remedioRecenteConfirmado = false;
-        try {
-          const doseRecente = await prisma.memory.findFirst({
-            where: {
-              userId: user.id,
-              type: 'dose_confirmada',
-              createdAt: { gte: new Date(now.getTime() - 15 * 60 * 1000) }
-            },
-            orderBy: { createdAt: 'desc' }
-          }).catch(() => null);
-          if (doseRecente) {
-            const minDesde = (now - new Date(doseRecente.createdAt)) / 60000;
-            if (minDesde >= 5 && minDesde <= 15) remedioRecenteConfirmado = true;
-          }
-        } catch {}
-
-        // Menos de 30min de ausência — ainda pode estar conversando, espera
-        // o próximo ciclo. EXCEÇÃO: se confirmou remédio há 5-15min, está
-        // acordado e é hora de mandar o boa noite (não espera os 30min).
-        if (minAusente < 30 && !remedioRecenteConfirmado) {
+        // Menos de 30min de ausência — ainda pode estar conversando, espera.
+        // REMOVIDO: a exceção de "remédio recente" que ignorava esse check foi
+        // removida — se o usuário está ativo (remédio ou papo), boa noite espera.
+        if (minAusente < 30) {
           await prisma.memory.deleteMany({ where: { userId: user.id, type: 'boa_noite_lock', content: hoje } }).catch(() => {});
           continue;
         }
