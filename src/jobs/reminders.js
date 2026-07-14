@@ -1105,6 +1105,73 @@ cron.schedule('0,30 11,12,13 * * *', async () => proativaDepoisTeConto('almoco')
 cron.schedule('0,30 21 * * *', async () => proativaDepoisTeConto('noite'), { timezone: 'America/Sao_Paulo' });
 
 // ═══════════════════════════════════════════════════════════════════════
+// PONTO 1 — Proativa casual noturna (só modo sem filtro/sarcástico)
+// ═══════════════════════════════════════════════════════════════════════
+// Roda às 21:15 com delay aleatório de até 90min — chega entre 21:15 e
+// 22:45, nunca em horário fixo. Só dispara quando a conversa do dia foi
+// leve (poucos turnos). Mensagem casual e curta, sem "saudade" nem
+// "sumido" — tipo "Oi fedo, o que tá fazendo? 😅". Uma vez por dia max.
+cron.schedule('15 21 * * *', async () => {
+  try {
+    // Delay aleatório 0-90min — chega entre 21:15 e 22:45
+    const delayMs = Math.floor(Math.random() * 90 * 60 * 1000);
+    await new Promise(r => setTimeout(r, delayMs));
+
+    const now = nowBRT();
+    const hora = now.getHours();
+    // Garante que não passou das 23h mesmo com delay
+    if (hora >= 23) return;
+
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    for (const user of users) {
+      try {
+        if (!proativasPermitidas(user)) continue;
+        const prefs = await memory.getUserPreference(user.id).catch(() => ({}));
+        // Só no modo sem filtro (sarcástico)
+        if (prefs?.tom !== 'sarcastico') continue;
+        // Lock diário — dispara uma vez por dia no máximo
+        if (!(await tentarLockDiario(user.id, 'proativa_casual_lock'))) continue;
+
+        // Só quando a conversa do dia foi leve — menos de 8 turnos hoje
+        const hoje = dateBRT(now);
+        const inicioHoje = new Date(`${hoje}T00:00:00-03:00`);
+        const turnosHoje = await prisma.memory.count({
+          where: { userId: user.id, type: 'conversa', createdAt: { gte: inicioHoje } }
+        }).catch(() => 0);
+        if (turnosHoje >= 8) continue; // dia movimentado — não precisa de empurrão
+
+        const memAfetiva = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+        const apelido = memAfetiva?.apelido_usuario || prefs?.name || '';
+        const infoPessoal = await memory.buildPersonalContext(user.id).catch(() => '');
+
+        // Últimos assuntos da conversa pra não repetir gancho
+        const hist = await memory.getConversationHistory(user.id, 4).catch(() => []);
+        const ultimosAssuntos = hist.length > 0
+          ? hist.slice(-3).map(m => m.content.slice(0, 60)).join(' / ')
+          : '';
+
+        const sys = buildPersonality('sarcastico', apelido, false) + infoPessoal +
+          `\n\n[PROATIVA CASUAL NOTURNA] É noite, horário de relaxar. Manda UMA mensagem curta e leve pra ele — como uma amiga que está entediada ou curiosa, que quer falar sem motivo especial. ` +
+          `PROIBIDO: "senti sua falta", "sumiu", "tava esperando você", "oi sumido", qualquer coisa que soe como cobrança ou peso emocional. ` +
+          `Certo: algo casual e leve como "Oi ${apelido || 'você'}, o que tá fazendo? 😅", "Oieeee 😙", uma pergunta leve sobre o dia, uma provocação no seu estilo. ` +
+          `Máximo 1-2 linhas. No tom sarcástico dela — curto, direto, com a cara dela.` +
+          (ultimosAssuntos ? `\n\nÚltimos assuntos da conversa (não repita): ${ultimosAssuntos}` : '');
+
+        const msg = await geminiRetry(sys, 'Oi.', { temperature: 0.9, maxTokens: 60 }, {
+          maxTentativas: 2, delayMs: 3000, fallback: null
+        });
+
+        if (msg && !isRespostaFallback(msg) && msg.trim().length > 2) {
+          await sendMessage(user.phone, msg.trim());
+          await memory.saveConversationMessage(user.id, 'assistant', '[Clara] ' + msg.trim()).catch(() => {});
+          console.log(`[ProativaCasual] ${user.phone} — "${msg.trim().slice(0, 50)}"`);
+        }
+      } catch (e) { console.error(`[ProativaCasual] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error('[ProativaCasual] Erro geral:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
 // DEDUÇÃO — Peça 2: fim de tratamento programado (endDate) → acompanhamento
 // ═══════════════════════════════════════════════════════════════════════
 // Todo dia de manhã, procura remédios ATIVOS cuja data de fim já passou
