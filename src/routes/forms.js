@@ -1538,11 +1538,18 @@ router.get('/memorias/:phone', async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
 
+    // Filtra conteúdo íntimo do Dashboard — mesmo que o filtro de save
+    // já bloqueie na maioria dos casos, esta rede de segurança garante
+    // que nada íntimo/+18 apareça visível no painel.
+    const FILTRO_DASH = /erótic|erotic|sexo|sexual|cena quente|nudez|pelad|transar|tesão|orgasm|excita|masturb|penetra|preliminar/i;
+
     // Agrupa por categoria para exibição no Dashboard
     const categorias = {};
     for (const m of mems) {
       let meta = {};
       try { meta = JSON.parse(m.metadata || '{}'); } catch {}
+      // Pula itens com conteúdo íntimo
+      if (FILTRO_DASH.test(m.content || '') || FILTRO_DASH.test(meta.chave || '')) continue;
       const cat = meta.categoria || 'outro';
       if (!categorias[cat]) categorias[cat] = [];
       categorias[cat].push({
