@@ -396,6 +396,25 @@ async function buscarContextoRelacional(userId) {
   } catch { return ''; }
 }
 
+// Gera o aviso de "deixa eu checar" NA VOZ da Clara — nada de lupa nem recado
+// fixo. Usado nos caminhos de busca via __BUSCAR__ (o caminho de busca
+// classificada já gera o dele inline). Se a geração falhar, cai num aviso curto
+// e natural (sem lupa, sem cara de robô).
+async function gerarAvisoBusca(text, tom = 'carinhoso', apelido = '') {
+  try {
+    if (geminiDisponivel() && !todosModelosEsgotados()) {
+      const sys = buildPersonality(tom, apelido, false) + `\n\n[VAI CHECAR] A pessoa perguntou algo que você quer confirmar direitinho antes de responder. Solte UMA frase curta, no SEU tom, avisando que vai dar uma olhada rápida pra falar certo (tipo "peraí que já te confirmo", "deixa eu ver certinho pra te falar"). NÃO responda a pergunta, NÃO invente informação, NÃO use lupa nem cara de robô. NUNCA escreva __BUSCAR__ nem comando de busca — só a frase natural. Máximo 1 linha.`;
+      const g = await geminiFreeResponse([
+        { role: 'system', content: sys },
+        { role: 'user', content: text }
+      ], { temperature: 0.8, maxTokens: 60 }).catch(() => null);
+      const limpo = (g || '').replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '').replace(/🔍/g, '').trim();
+      if (limpo && !isRespostaFallback(limpo)) return limpo;
+    }
+  } catch {}
+  return 'Peraí que já te confirmo!';
+}
+
 async function responderLivre(user, phone, text, contextoExtra = '', skipContext = false, acaoConfirmacao = null, confirmacaoSeparada = null) {
   try {
     const history = await memory.getConversationHistory(user.id, 16);
@@ -417,8 +436,9 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       const resp = await freeResponse(text, history, preferences);
       if (resp === null) return;
       if (resp && resp.includes('__BUSCAR:')) {
-        // improvável em saudações, mas tratamos igual
-        await sendMessage(phone, 'Deixa eu pesquisar isso! 🔍');
+        const memAfSC = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+        const avSC = await gerarAvisoBusca(text, preferences?.tom || 'carinhoso', memAfSC?.apelido_usuario || preferences?.name || '');
+        await sendMessage(phone, avSC);
         return;
       }
       await memory.saveConversationMessage(user.id, 'user', text);
@@ -836,28 +856,13 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     }
     if (buscaMatch) {
       const query = buscaMatch[1].trim();
-      // Avisa que vai pesquisar, no estilo da Clara
       const tom = preferences?.tom || 'carinhoso';
-      const name = preferences?.name || '';
-      console.log(`[Busca] tom=${tom} name=${name}`);
-      const avisos = name ? {
-        carinhoso: [`✨ Pera aí que já busco pra gente!`, `Um segundo, ${name}! 🔍`, `Deixa eu dar uma olhada aqui! ✨`],
-        direto: [`🔍 Buscando.`, `Já procuro.`, `Um segundo.`],
-        divertido: [`Espera que vou garimpar isso pra você! 😄`, `Deixa eu fuçar aqui! 🔍`, `Um segundo que já acho! ✨`],
-        sarcastico: [`Tá bom, ${name}… deixa eu ver porque você não ia achar sozinho mesmo. 🙄`, `Pera aí que vou buscar pra gente. 😏`, `Já procuro, ${name}. 🔍`],
-      } : {
-        carinhoso: [`✨ Pera aí que já busco pra gente!`, `Um segundo! 🔍`, `Deixa eu dar uma olhada aqui! ✨`],
-        direto: [`🔍 Buscando.`, `Já procuro.`, `Um segundo.`],
-        divertido: [`Espera que vou garimpar isso pra você! 😄`, `Deixa eu fuçar aqui! 🔍`, `Um segundo que já acho! ✨`],
-        sarcastico: [`Tá bom… deixa eu ver porque você não ia achar sozinho mesmo. 🙄`, `Pera aí que vou buscar pra gente. 😏`, `Já procuro. 🔍`],
-      };
-      const opcoes = avisos[tom] || avisos.carinhoso;
-      const aviso = opcoes[Math.floor(Math.random() * opcoes.length)];
+      const memAfetivaBusca = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+      const apelidoBusca = memAfetivaBusca?.apelido_usuario || preferences?.name || '';
+      const aviso = await gerarAvisoBusca(text, tom, apelidoBusca);
       await sendMessage(phone, aviso);
 
       try {
-        const memAfetivaBusca = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
-        const apelidoBusca = memAfetivaBusca?.apelido_usuario || preferences?.name || '';
         const contextoRelBusca = await buscarContextoRelacional(user.id);
         const cidadeBusca = await memory.getCidadeAtual(user.id).catch(() => '');
         const resultado = await searchWeb(query, cidadeParaBusca(query, cidadeBusca), apelidoBusca, preferences?.tom || 'carinhoso', contextoRelBusca);
