@@ -249,6 +249,7 @@ GATILHOS DE TAREFA (prioridade sobre conteúdo): "me lembra", "me avisa", "anota
 NÃO É LEMBRETE — classifique como "outro":
 - Relatos do que o usuário vai fazer sem gatilho explícito: "vou tomar café", "tenho que trocar a blusa", "preciso passar no mercado", "querendo levar no zoológico", "pagar conta" → outro
 - Planos informais, intenções, vontades sem "me lembra", "anota", "agenda" → outro
+- REGRA CRÍTICA: verbo de ação pessoal no futuro (compro, faço, vou, pego, passo, resolvo, ligo, chego) SEM gatilho explícito = plano informal = SEMPRE outro, mesmo que tenha "amanhã", "na segunda", "semana que vem". Exemplos que SÃO outro: "amanhã compro outro santo e tudo resolvido 😅", "semana que vem passo lá", "amanhã ligo pra eles", "depois a gente resolve", "na segunda faço isso". Só vira tarefa se o usuário PEDIR: "me lembra de comprar", "anota pra amanhã".
 - Respostas sobre remédios já cadastrados: "vou tomar no horário", "ainda não tomei", "já tomei" → outro
 - Atividades cotidianas: tomar café, almoçar, dormir → outro
 - Brincadeiras, zoeira, ameaças de mentira, humor: "vou te zoar", "vou te pegar", "vou te acordar cedo", "você vai ver", "tô indo dormir", "passei pra te zoar" → outro (nunca crie lembrete de brincadeira)
