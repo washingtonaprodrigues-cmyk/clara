@@ -1382,6 +1382,23 @@ async function handleMessage(phone, text, location = null) {
 
     // ── GUARDA: resposta a uma PERGUNTA da Clara não vira lembrete/tarefa ────
     // Mesma família do falso positivo do concluir. Se ele responde a uma
+    // ── Guardrail: plano informal → nunca tarefa ─────────────────────────
+    // "amanhã compro outro santo" → Gemini classificou como tarefa (falso
+    // positivo). O prompt já proíbe isso, mas o modelo erra ocasionalmente.
+    // Regra determinística de segurança: verbo de ação pessoal no futuro
+    // (compro, faço, vou, pego, passo, resolvo...) SEM gatilho explícito
+    // ("me lembra", "anota", "agenda", "daqui X min", "às HH") = plano
+    // informal = conversa, não tarefa.
+    if (classified.tipo === 'tarefa' || classified.tipo === 'multiplas_tarefas') {
+      const tLowGuard = (text || '').toLowerCase();
+      const temGatilhoGuard = /(me lembr|me avis|me cutuc|anota a[ií]|anota isso|j[áa] anota|um lembrete|cria(r)? lembrete|agenda isso|n[ãa]o me deixa esquecer|n[ãa]o deixa eu esquecer|me lembre|daqui a?\s*\d+|em\s+\d+\s*(min|hora)|às?\s*\d{1,2}h\b|às?\s*\d{1,2}:\d{2})/i.test(tLowGuard);
+      const temVerboPessoal = /\b(compro|pego|paso|passo|resolvo|ligo|falo|vou buscar|vou comprar|vou fazer|vou l[áa]|chego|trago|levo|busco|acho|arrumo|resolvo|deixo|coloco)\b/i.test(tLowGuard);
+      if (!temGatilhoGuard && temVerboPessoal) {
+        console.log(`[Guardrail] tarefa-fantasma interceptada (plano informal sem gatilho): "${(text||'').slice(0,60)}"`);
+        classified.tipo = 'outro';
+      }
+    }
+
     // pergunta da Clara (ex: "como foi o Detran? resolveu?" → "só na quinta
     // fedo"), o classify às vezes lê a data ("quinta") e cria um lembrete-
     // fantasma (e ainda perguntava "que horas?"). Se ele CITOU uma pergunta
