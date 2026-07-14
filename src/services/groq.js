@@ -1333,6 +1333,10 @@ function filtrarResposta(t) {
   // Remove __BUSCAR:...__ e variações que VAZAM junto de outro texto — não deve aparecer pro usuário
   t = t.replace(/_+BUSCAR:[^_\n]*_*/gi, '').trim();
   t = t.replace(/\*+BUSCAR:[^*\n]*\**/gi, '').trim();
+  // CORRIGIDO: tag truncada pelo limite de tokens (ex: "__BUS" ou "__BUSCA" sem
+  // completar) também vaza pro usuário porque não casa com os padrões acima.
+  // Remove qualquer fragmento de __BUS... no final do texto (onde a truncagem ocorre).
+  t = t.replace(/\s*_+BUS(?:C(?:A(?:R[^_\n]*)?)?)?\s*$/i, '').trim();
   // Remove marcadores internos de contexto que o Gemini às vezes imprime literalmente,
   // incluindo o conteúdo formatado que vem logo depois (bullets, listas etc.)
   // Ex: [MEMÓRIA DO RELACIONAMENTO]\n• Humor: ...\n• Expressões: ...\n\nResposta real
