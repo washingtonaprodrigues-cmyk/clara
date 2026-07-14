@@ -364,6 +364,16 @@ ${resumo}`;
     if (textoAfetivo) texto += `\n\n[MEMÓRIA DO RELACIONAMENTO — USE SEMPRE, define o tom da conversa]${textoAfetivo}`;
   }
 
+  // ── Ponto 3: padrões de reação ──
+  // Como ele REAGE em situações específicas — não fatos sobre ele, mas
+  // comportamentos observados. Ajuda a Clara a calibrar o tom antes que
+  // ele precise dizer que está estressado, animado, frustrado etc.
+  const padroesReacao = await getPadroesReacao(userId).catch(() => []);
+  if (padroesReacao.length > 0) {
+    const linhas = padroesReacao.map(p => `• ${p.tema}: ${p.padrao}`).join('\n');
+    texto += `\n\n[COMO ELE REAGE — calibre seu tom antes que ele precise dizer]\n${linhas}`;
+  }
+
   // ── DEDUÇÃO — Peça 3: conectar os pontos ──
   // Faz a Clara ligar o que a pessoa fala AGORA ao que ela já sabe (pessoas,
   // lugares, temas recorrentes, tratamentos) em vez de tratar tudo como novo —
@@ -927,6 +937,48 @@ async function getResumoRelacionamento(userId) {
 
 // ====================== EXPORTS ======================
 
+// ── Ponto 3: padrões de reação ────────────────────────────────────────────
+// Salva como a pessoa REAGE em situações específicas (não o que ela gosta —
+// isso vai em info_pessoal). Max 15 padrões por usuário; upsert por tema.
+async function salvarPadraoReacao(userId, tema, padrao) {
+  try {
+    const chave = tema.toLowerCase().trim().slice(0, 50);
+    const existente = await prisma.memory.findFirst({
+      where: { userId, type: 'padrao_reacao', metadata: { contains: chave } }
+    }).catch(() => null);
+    const content = padrao.slice(0, 120);
+    const meta = JSON.stringify({ tema: chave, updatedAt: new Date().toISOString() });
+    if (existente) {
+      await prisma.memory.update({ where: { id: existente.id }, data: { content, metadata: meta } }).catch(() => {});
+    } else {
+      // Limita a 15 padrões — remove o mais antigo se passar
+      const total = await prisma.memory.count({ where: { userId, type: 'padrao_reacao' } }).catch(() => 0);
+      if (total >= 15) {
+        const maisAntigo = await prisma.memory.findFirst({
+          where: { userId, type: 'padrao_reacao' }, orderBy: { createdAt: 'asc' }
+        }).catch(() => null);
+        if (maisAntigo) await prisma.memory.delete({ where: { id: maisAntigo.id } }).catch(() => {});
+      }
+      await prisma.memory.create({ data: { userId, type: 'padrao_reacao', content, metadata: meta } }).catch(() => {});
+    }
+    console.log(`[PadraoReacao] Salvo: "${chave}" → "${content.slice(0, 60)}"`);
+  } catch (e) { console.error('[salvarPadraoReacao]', e.message); }
+}
+
+async function getPadroesReacao(userId) {
+  try {
+    const rows = await prisma.memory.findMany({
+      where: { userId, type: 'padrao_reacao' },
+      orderBy: { updatedAt: 'desc' },
+      take: 15
+    }).catch(() => []);
+    return rows.map(r => {
+      let tema = ''; try { tema = JSON.parse(r.metadata || '{}').tema || ''; } catch {}
+      return { tema, padrao: r.content };
+    }).filter(p => p.tema && p.padrao);
+  } catch { return []; }
+}
+
 module.exports = {
   prisma,
   getOrCreateUser,
@@ -943,6 +995,7 @@ module.exports = {
   savePendencia,
   getPendenciasAbertas, salvarOuAtualizarPendencia, acompanharFimDeRemedio, fecharPendencia, fecharPendenciasPorResolucao, fecharPendenciaLembrete,
   salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao, getCidadeAtual,
+  salvarPadraoReacao, getPadroesReacao,
   salvarMemoriaAfetiva, getMemoriaAfetiva,
   salvarResumoRelacionamento, getResumoRelacionamento,
 };
