@@ -859,10 +859,13 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomU
     // pro buscador e trazem resultado velho. Acrescenta mês/ano atuais pra
     // enviesar a busca ao período certo (ex: jogo do dia 7 já passou).
     const temDataRelativa = /\b(amanh[ãa]|hoje|essa semana|esta semana|agora|neste|nesta|próxim[oa]|proxim[oa]|que horas)\b/i.test(query);
-    let queryBase = query;
+    // Copa do Mundo 2026: adiciona "2026" se não estiver na query pra evitar
+    // resultado de torneios anteriores (Nations League, Euro, etc.)
+    const ehCopaMundo = /\b(copa|mundial|world cup|copa do mundo)\b/i.test(query) && !/202[0-9]/.test(query);
+    let queryBase = ehCopaMundo ? `${query} Copa do Mundo 2026` : query;
     if (temDataRelativa) {
       const mesAno = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', month: 'long', year: 'numeric' });
-      queryBase = `${query} ${mesAno}`;
+      queryBase = `${queryBase} ${mesAno}`;
     }
     const fullQuery = locationContext ? `${queryBase} em ${locationContext}` : queryBase;
     console.log(`🔎 Buscando: ${fullQuery}`);
@@ -1278,6 +1281,12 @@ async function tentarGeminiComPersonalidade(message, history, tom, name, context
     if (delays[i] > 0) await new Promise(r => setTimeout(r, delays[i]));
     try {
       const resposta = await tentarUmaVez();
+      // Resposta muito curta (< 25 chars) = Gemini retornou algo truncado ou
+      // vazio demais — não envia e força retry. Ex: "Beijos, seu safado!" (19 chars)
+      // vindo de um fallback com só 7 tokens não é uma resposta real.
+      if (!resposta || resposta.trim().length < 25) {
+        throw new Error(`Resposta muito curta (${(resposta||'').trim().length} chars) — retry`);
+      }
       console.log(`[GeminiSubstituto] Gemini respondeu para ${phone || '?'}${i > 0 ? ` (tentativa ${i+1})` : ''}`);
       return apararRespostaCortada(resposta);
     } catch (eGem) {
