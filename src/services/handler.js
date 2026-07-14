@@ -398,21 +398,59 @@ async function buscarContextoRelacional(userId) {
 
 // Gera o aviso de "deixa eu checar" NA VOZ da Clara — nada de lupa nem recado
 // fixo. Usado nos caminhos de busca via __BUSCAR__ (o caminho de busca
-// classificada já gera o dele inline). Se a geração falhar, cai num aviso curto
-// e natural (sem lupa, sem cara de robô).
+// classificada já gera o dele inline). Se a geração falhar, cai em frases
+// fixas COM personalidade (estilo do backup) — nunca uma lupa seca.
 async function gerarAvisoBusca(text, tom = 'carinhoso', apelido = '') {
   try {
     if (geminiDisponivel() && !todosModelosEsgotados()) {
-      const sys = buildPersonality(tom, apelido, false) + `\n\n[VAI CHECAR] A pessoa perguntou algo que você quer confirmar direitinho antes de responder. Solte UMA frase curta, no SEU tom, avisando que vai dar uma olhada rápida pra falar certo (tipo "peraí que já te confirmo", "deixa eu ver certinho pra te falar"). NÃO responda a pergunta, NÃO invente informação, NÃO use lupa nem cara de robô. NUNCA escreva __BUSCAR__ nem comando de busca — só a frase natural. Máximo 1 linha.`;
+      // Prompt forçando voz 100% Clara — íntima, no tom do relacionamento,
+      // não frases genéricas de assistente ("garimpar", "fuçar", "buscar pra você").
+      // maxTokens 90 pra dar espaço a 1-2 linhas naturais se precisar.
+      const sys = buildPersonality(tom, apelido, false) + `\n\n[CONTEXTO INTERNO — NÃO APAREÇA NA RESPOSTA]: você vai checar uma informação antes de responder. Escreva uma reação natural e íntima de você avisando que vai confirmar antes de falar — como você diria isso numa conversa real com ele, no tom que vocês têm. Pode ter 1-2 linhas se ficar natural. PROIBIDO: palavras de assistente genérico ("garimpar", "fuçar", "buscar pra você", "vou pesquisar"); lupa ou 🔍; responder a pergunta; inventar informação; escrever __BUSCAR__ ou qualquer tag técnica. Tom certo: "Peraí que vou confirmar isso antes de te falar, não quero inventar não! 💜", "Deixa eu ver certinho antes de responder — não vou te passar coisa errada.", "Um segundo que vou checar pra garantir que tô te falando certo, tá?". O que importa é soar como você, não como um app de busca animado.`;
       const g = await geminiFreeResponse([
         { role: 'system', content: sys },
         { role: 'user', content: text }
-      ], { temperature: 0.8, maxTokens: 60 }).catch(() => null);
-      const limpo = (g || '').replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '').replace(/🔍/g, '').trim();
-      if (limpo && !isRespostaFallback(limpo)) return limpo;
+      ], { temperature: 0.85, maxTokens: 90 }).catch(() => null);
+      const limpo = (g || '')
+        .replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '')
+        .replace(/🔍/g, '')
+        .replace(/\bgarimpar\b|\bfu[çc]ar\b|\bpesquisar isso\b|\bbuscar isso\b/gi, '')
+        .trim();
+      if (limpo && limpo.length > 5 && !isRespostaFallback(limpo)) return limpo;
     }
   } catch {}
-  return 'Peraí que já te confirmo!';
+  // Fallback — frases que soam como ela, não como assistente genérico.
+  const n = apelido || '';
+  const fallbacks = {
+    carinhoso: n ? [
+      `Peraí que vou confirmar isso antes de te falar, não quero te passar coisa errada não! 💜`,
+      `Deixa eu ver certinho antes de responder, ${n} — um segundinho.`,
+      `Um segundo que vou checar pra te falar certo, tá? 😊`,
+    ] : [
+      `Peraí que vou confirmar isso antes de te falar, não quero inventar não! 💜`,
+      `Deixa eu ver certinho antes de responder — um segundinho.`,
+      `Um segundo que vou checar pra garantir que tô te falando certo. 😊`,
+    ],
+    direto: [`Um segundo.`, `Verificando.`, `Já checo.`],
+    divertido: n ? [
+      `Espera que vou confirmar isso antes de falar, ${n} — não vou inventar não! 😄`,
+      `Deixa eu checar rapidinho antes de te responder.`,
+      `Um segundo que vou ver certinho pra não te enrolar! 😅`,
+    ] : [
+      `Espera que vou confirmar antes de falar — não vou inventar não! 😄`,
+      `Deixa eu checar rapidinho antes de responder.`,
+      `Um segundo que vou ver certinho! 😅`,
+    ],
+    sarcastico: n ? [
+      `Peraí que vou checar isso, ${n} — porque inventar eu não invento. 🙄`,
+      `Deixa eu confirmar antes de falar, que pelo menos um de nós dois vai ter certeza. 😏`,
+    ] : [
+      `Peraí que vou checar — porque inventar eu não invento. 🙄`,
+      `Deixa eu confirmar antes de falar. 😏`,
+    ],
+  };
+  const opcoes = fallbacks[tom] || fallbacks.carinhoso;
+  return opcoes[Math.floor(Math.random() * opcoes.length)];
 }
 
 async function responderLivre(user, phone, text, contextoExtra = '', skipContext = false, acaoConfirmacao = null, confirmacaoSeparada = null) {
