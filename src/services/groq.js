@@ -854,7 +854,16 @@ async function checkResolucaoPendencia(message, resumo) {
 
 async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomUsuario = 'carinhoso', contextoRelacional = '', modo = 'informar', instrucaoExtra = '') {
   try {
-    const fullQuery = locationContext ? `${query} em ${locationContext}` : query;
+    // Âncora temporal na QUERY: "amanhã"/"hoje"/"próximo jogo" não dizem nada
+    // pro buscador e trazem resultado velho. Acrescenta mês/ano atuais pra
+    // enviesar a busca ao período certo (ex: jogo do dia 7 já passou).
+    const temDataRelativa = /\b(amanh[ãa]|hoje|essa semana|esta semana|agora|neste|nesta|próxim[oa]|proxim[oa]|que horas)\b/i.test(query);
+    let queryBase = query;
+    if (temDataRelativa) {
+      const mesAno = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', month: 'long', year: 'numeric' });
+      queryBase = `${query} ${mesAno}`;
+    }
+    const fullQuery = locationContext ? `${queryBase} em ${locationContext}` : queryBase;
     console.log(`🔎 Buscando: ${fullQuery}`);
 
     // Perguntas de jogo/horário de partida são as que mais sofrem com fonte
@@ -933,9 +942,10 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomU
       ? `\n\nVocê acabou de pesquisar algo pra SI MESMA ficar por dentro — o usuário JÁ SABE sobre o assunto (foi ele que te contou). Agora use o que descobriu pra ENTRAR na conversa como participante, não como quem está informando. Compartilhe sua opinião sobre o que leu, faça uma pergunta sobre a experiência dele, comente algo que te chamou atenção, como uma amiga que acabou de dar uma olhada rápida e agora quer conversar sobre o assunto. NÃO enquadre como "você queria saber" ou "aqui está a informação" — isso soa como explicar pra quem já sabe. Máximo 4 linhas. NÃO use markdown. Use APENAS os fatos da informação abaixo — não invente dados.`
       : `\n\nVocê acabou de pesquisar algo e vai contar o que descobriu DO SEU JEITO — leve, sem jargão técnico, sem soar como relatório. A precisão dos fatos NÃO é desculpa pra ficar impessoal: continue sendo você mesma, com suas manias de fala, emojis, provocações e o apelido que vocês têm — mesmo respondendo uma pergunta puramente factual (tipo curiosidade, receita, definição), fale como você falaria isso pra essa pessoa especificamente, não como responderia pra qualquer um. Se der pra encaixar uma brincadeirinha ou um carinho natural com o assunto (sem forçar), encaixa — é isso que te faz humana e não um buscador. Mas UMA por resposta, no ponto certo, nunca em toda frase. REGRA CRÍTICA: use APENAS os fatos que estão na informação pesquisada abaixo. NUNCA invente dados, nomes, horários, adversários ou resultados que não estejam explicitamente na fonte. Se a fonte diz Brasil x Noruega, diga Brasil x Noruega — não substitua por outro adversário. Máximo 4 linhas. NÃO use markdown.\n\nREGRA DE TEMPERATURA: o Brasil usa Celsius (°C), NUNCA Fahrenheit. Se a informação pesquisada trouxer temperatura em Fahrenheit (°F) — comum em fontes americanas —, CONVERTA para Celsius antes de responder (fórmula: °C = (°F − 32) ÷ 1,8) e diga só o valor em °C, sem mencionar Fahrenheit. Ex: se a fonte diz "72°F", você fala "22°C". Valores de clima do Brasil quase sempre ficam entre 0°C e 45°C — se aparecer algo tipo "16°F" pra uma cidade brasileira, é Fahrenheit mal interpretado, converta.\n\nREGRA DE FUSO HORÁRIO: PRIMEIRO verifique se a informação já diz explicitamente "horário de Brasília" (ou "horário do Brasil") — se disser, esse horário JÁ ESTÁ CORRETO pra repassar exatamente como está, NUNCA some, subtraia ou "ajuste" esse valor por causa de menções a outra cidade/país no mesmo texto (ex: sede do jogo em outro país não muda o horário que já veio em horário de Brasília — são a mesma informação, não duas). SÓ converta quando o horário estiver claramente em outro fuso e NÃO vier acompanhado de "horário de Brasília" — nesse caso, se souber a sede com segurança, converta e diga que já converteu; se não tiver certeza do fuso de origem, informe exatamente como está na fonte e avise que pode não ser horário de Brasília, sugerindo conferir.`;
     const promptReprocesso = buildPersonality(tomUsuario || 'carinhoso', nomeUsuario, false) + contextoRelacional + regrasBusca + (instrucaoExtra ? `\n\n${instrucaoExtra}` : '');
+    const hojeBRTbusca = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
     const msgsReprocesso = [
       { role: 'system', content: promptReprocesso },
-      { role: 'user', content: `Pergunta: "${query}"\n\nInformação que você pesquisou:\n${resposta}\n\nAgora me conta isso do seu jeito, Clara:` }
+      { role: 'user', content: `Pergunta: "${query}"\n\n[HOJE é ${hojeBRTbusca}] Use isto pra entender "hoje", "amanhã", "hoje à noite" na pergunta. ATENÇÃO CRÍTICA: se a informação pesquisada abaixo falar de uma data que JÁ PASSOU (anterior a hoje), ela está DESATUALIZADA — NÃO a repasse como se fosse o próximo jogo/evento futuro. Nesse caso, seja sincera: diga que não achou certinho sobre a data que ele pediu e sugira ele conferir, em vez de dar uma resposta errada com confiança.\n\nInformação que você pesquisou:\n${resposta}\n\nAgora me conta isso do seu jeito, Clara:` }
     ];
 
     let traduzida = null;
