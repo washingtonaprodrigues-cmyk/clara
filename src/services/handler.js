@@ -1530,12 +1530,19 @@ async function handleMessage(phone, text, location = null) {
         const temCalor = /(fedo|meu bem|viu\?|hein\?|fica de olho|se cuida|👀|kkk|haha|olha|nossa|eita|opa|é isso|tá\?)/i.test(resultadoBusca || '');
         const respostaJaEhPessoal = temApelido || temEmoji || temCalor;
 
-        if (!respostaJaEhPessoal) {
+        // Saúde: SEMPRE gera comentário de preocupação — uma amiga que explica
+        // sintomas também pergunta "e você tá bem?", independente de emojis.
+        const ehSaude = /(sintoma|saúde|doença|pressão|febre|\bdor\b|dores|remédio|medicamento|médico|hospital|exame de saúde|consulta|enjoo|tontura|náusea|cansaço|infecção|alergia|gripe|covid|emergência)/i.test((classified.query || '') + ' ' + (text || ''));
+
+        if (!respostaJaEhPessoal || ehSaude) {
           ;(async () => {
             try {
               await new Promise(r => setTimeout(r, 1500));
               if (!geminiDisponivel() || todosModelosEsgotados()) return;
-              const sysComent = buildPersonality(tomBuscaClassify, apelidoReal, false) + `\n\n[VOCÊ JÁ EXPLICOU] Você acabou de mandar a explicação sobre "${classified.query}", mas ela saiu meio seca. Dê UM toque pessoal curtíssimo — um conselho ("vê isso com a patroa!"), uma preocupação ou uma brincadeira leve.\n\nREGRAS DURAS:\n- MÁXIMO 1 frase curta (menos de 15 palavras). Nunca um parágrafo.\n- NÃO repita nem resuma a explicação.\n- NÃO analise, NÃO liste, NÃO dê mais informação.\n- NUNCA use __BUSCAR__.\n- Se não tiver um toque genuíno, responda APENAS: SKIP`;
+              const promptComent = ehSaude
+                ? `\n\n[VOCÊ JÁ DEU A INFO DE SAÚDE] Você explicou sobre "${classified.query}". Agora mande UM comentário curto de amiga preocupada — pergunte se ele tá sentindo algo, se é ele ou alguém da família, se tá bem. MÁXIMO 1 frase (menos de 15 palavras). Não repita a explicação.`
+                : `\n\n[VOCÊ JÁ EXPLICOU] Você acabou de mandar a explicação sobre "${classified.query}", mas ela saiu meio seca. Dê UM toque pessoal curtíssimo — um conselho, uma preocupação ou uma brincadeira leve.\n\nREGRAS: MÁXIMO 1 frase curta. NÃO repita a explicação. NUNCA use __BUSCAR__. Se não tiver toque genuíno, responda APENAS: SKIP`;
+              const sysComent = buildPersonality(tomBuscaClassify, apelidoReal, false) + promptComent;
               const coment = await geminiFreeResponse([
                 { role: 'system', content: sysComent },
                 { role: 'user', content: `Acabei de perguntar sobre: ${text}` }
