@@ -3,7 +3,7 @@
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
 // Sessao 12 (10/07/2026): confirmacoes de sistema em 1 linha (Feito!/Tomado!/Anotado!),
 // Clara comenta separada so se genuino (nunca generico). Ver webhook.js LembreteConfirm.
-const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality } = require('./groq');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, apararRespostaCortada } = require('./groq');
 const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('./gemini');
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
@@ -428,7 +428,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       // mas precisa saber que o lembrete FOI criado, pra responder coerente
       // (comentar/brincar) sem dizer que vai anotar no futuro nem repetir
       // título/hora — isso já vem logo depois, cru.
-      preferences._dicaAcao = 'O lembrete que o usuário pediu JÁ foi anotado com sucesso (a confirmação detalhada será enviada logo após sua mensagem). Responda de forma natural e no seu tom — pode comentar, brincar, reagir — mas NÃO repita o título nem o horário, e NÃO diga que "vai anotar" (já está feito).';
+      preferences._dicaAcao = 'O lembrete que o usuário pediu JÁ foi anotado — a confirmação detalhada (título + horário) será enviada logo após. Responda de forma NATURAL, como se o lembrete fosse algo implícito e já resolvido. PROIBIDO: NÃO mencione horário, data nem título; NÃO diga "criei", "anotei", "registrei", "já até criei", "marquei", "agendei" nem qualquer variação — o usuário vai ver a confirmação em seguida. Foque em conversar sobre o assunto em si, pode comentar, brincar, reagir.';
     }
 
     if (skipContext) {
@@ -3199,8 +3199,11 @@ async function checkConfirmacaoPendente(user, phone, text) {
       return true;
     }
     if (dados.tipo === 'urgente_confirmacao') {
-      const sim = /^(sim|s|claro|pode|quero|yes|ok|manda|ativa|coloca)/.test(textNorm);
-      const nao = /^(n[aã]o|nao|n|não precisa|dispenso|deixa|tá bom|ta bom)/.test(textNorm);
+      // CORRIGIDO: regex anterior tinha `s` e `n` como opções sem boundary,
+      // então "Sobre o cartão..." casa com `s` e "nada disso..." com `n`.
+      // \b garante que só palavras completas disparam — "s" sozinho, "sim", etc.
+      const sim = /^(sim|claro|pode|quero|yes|ok|manda|ativa|coloca)\b|^s$/.test(textNorm);
+      const nao = /^(n[aã]o|nao|n[aã]o precisa|dispenso|deixa|ta bom|tá bom)\b|^n$/.test(textNorm);
       if (sim || nao) {
         await prisma.memory.delete({ where: { id: pendente.id } });
         if (sim) {
