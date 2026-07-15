@@ -49,14 +49,15 @@ function marcarConteudoProcessado(phone, text, quotedText) {
   _conteudoProcessadoRecente.set(chaveConteudo(phone, text, quotedText), Date.now() + DEDUP_CONTEUDO_JANELA_MS);
 }
 
-// ── Terceira camada: dedup curto só por phone+text (10s) ──────────────────
+// ── Terceira camada: dedup curto só por phone+text (30s) ──────────────────
 // Captura o caso onde a UazAPI entrega o mesmo webhook duas vezes com
 // messageIds DIFERENTES e com/sem quotedText diferente (ex: evento de
 // "mensagem recebida" + evento de "lida/entregue"), fazendo os dois
 // passarem pelas camadas 1 e 2. Hash sem quoted garante bloqueio
 // mesmo quando os payloads diferem só na parte de citação.
+// 30s (antes eram 10s) para cobrir retries tardios da UazAPI.
 const _dedupCurto = new Map();
-const DEDUP_CURTO_MS = 10 * 1000;
+const DEDUP_CURTO_MS = 30 * 1000;
 
 function textJaProcessadoRecente(phone, text) {
   if (!text) return false;
