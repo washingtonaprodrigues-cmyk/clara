@@ -505,41 +505,52 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
         if (primeiroEvento) {
           const minutosDesdeEvento = (now - primeiroEvento) / 60000;
 
-          // Caminho 1: confirmou? bom dia 5 min depois da confirmação
-          const ultimaConfirmacao = await prisma.memory.findFirst({
-            where: {
-              userId: user.id,
-              type: 'conversa',
-              content: { not: { startsWith: '[Clara]' } },
-              createdAt: { gte: primeiroEvento }
-            },
-            orderBy: { createdAt: 'desc' }
-          }).catch(() => null);
+        // Caminho 1: confirmou lembrete ou remédio esta manhã?
+        // CORRIGIDO: antes buscava em 'conversa' memories, mas confirmações rápidas
+        // ("Feito", "Tomado") não geram entrada lá — vão por handleSimpleResponse
+        // sem salvar conversa. Agora busca direto nas tabelas certas.
+        const lembreteConfirmadoManha = await prisma.reminder.findFirst({
+          where: {
+            userId: user.id,
+            confirmed: true,
+            updatedAt: { gte: inicioJanela, lte: fimJanela }
+          },
+          orderBy: { updatedAt: 'desc' }
+        }).catch(() => null);
 
-          if (ultimaConfirmacao) {
-            const minDesdeConfirmacao = (now - new Date(ultimaConfirmacao.createdAt)) / 60000;
-            // Janela ampliada: 4 a 30min após confirmar. Antes era 5-20, muito
-            // estreita — se o cron (roda a cada 3min) não caísse exatamente nela,
-            // o bom dia por confirmação era perdido e caía só na rede de segurança.
-            if (minDesdeConfirmacao >= 4 && minDesdeConfirmacao <= 30) {
-              podeEnviarAgora = true;
-            }
-          }
+        const doseConfirmadaManha = await prisma.memory.findFirst({
+          where: {
+            userId: user.id,
+            type: 'dose_confirmada',
+            createdAt: { gte: inicioJanela }
+          },
+          orderBy: { createdAt: 'desc' }
+        }).catch(() => null);
 
-          // Caminho 2: não confirmou em 20 min → bom dia de qualquer jeito
-          if (!podeEnviarAgora && minutosDesdeEvento >= 20 && minutosDesdeEvento <= 45) {
+        const confirmacaoManha = lembreteConfirmadoManha || doseConfirmadaManha;
+        if (confirmacaoManha) {
+          const tsConfirmacao = new Date(lembreteConfirmadoManha?.updatedAt || doseConfirmadaManha?.createdAt);
+          const minDesdeConfirmacao = (now - tsConfirmacao) / 60000;
+          if (minDesdeConfirmacao >= 10 && minDesdeConfirmacao <= 45) {
             podeEnviarAgora = true;
+            console.log(`[Bom dia] Caminho 1: confirmou (${Math.round(minDesdeConfirmacao)}min atrás) → bom dia agora`);
           }
         }
 
-        // ── REDE DE SEGURANÇA — 7:30-8:30h ──
-        // Se o evento da manhã passou e nenhum caminho disparou ainda,
-        // garante o bom dia entre 7:30 e 8:30 de qualquer jeito.
+        // Caminho 2: não confirmou em 30 min após o primeiro evento → bom dia de qualquer jeito
+        if (!podeEnviarAgora && minutosDesdeEvento >= 30 && minutosDesdeEvento <= 60) {
+          podeEnviarAgora = true;
+          console.log(`[Bom dia] Caminho 2: ${Math.round(minutosDesdeEvento)}min sem confirmação → bom dia`);
+        }
+        }
+
+        // ── REDE DE SEGURANÇA — 7:00h às 9:00h ──
+        // Sem lembrete/remédio, ou se os caminhos 1 e 2 não dispararam:
+        // garante o bom dia entre 7h e 9h de qualquer jeito.
         if (!podeEnviarAgora) {
-          const h = now.getHours(); const m = now.getMinutes();
-          // BUG corrigido: antes era "h===8 && m<0" (impossível, minuto nunca
-          // é negativo), então a rede só valia 7:30-7:59. Agora cobre até 8:30.
-          if ((h === 7 && m >= 30) || h === 8) podeEnviarAgora = true;
+          const h = now.getHours();
+          if (h >= 7 && h < 9) podeEnviarAgora = true;
+          if (podeEnviarAgora) console.log(`[Bom dia] Rede de segurança: ${h}h`);
         }
 
         if (!podeEnviarAgora) continue;
