@@ -853,7 +853,7 @@ async function checkResolucaoPendencia(message, resumo) {
   }
 }
 
-async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomUsuario = 'carinhoso', contextoRelacional = '', modo = 'informar', instrucaoExtra = '') {
+async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomUsuario = 'carinhoso', contextoRelacional = '', modo = 'informar', instrucaoExtra = '', mensagemOriginal = '') {
   try {
     // Âncora temporal na QUERY: "amanhã"/"hoje"/"próximo jogo" não dizem nada
     // pro buscador e trazem resultado velho. Acrescenta mês/ano atuais pra
@@ -947,9 +947,14 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomU
       : `\n\nVocê acabou de pesquisar algo e vai contar o que descobriu DO SEU JEITO — leve, sem jargão técnico, sem soar como relatório. REGRA DE PERSONALIDADE: comece com UMA reação pessoal sua (opinião, brincadeira, curiosidade — 1 frase curta), depois dê a info naturalmente. Não como dois blocos separados — tudo fluido numa mensagem só. Ex: série de vampiro → comece com o que você acha desse estilo, depois dê os fatos. Ex: remédio → comece com uma observação sua, depois explique. Isso faz a resposta parecer SUA, não de um buscador. Continue sendo você mesma, com suas manias de fala, emojis, provocações e o apelido que vocês têm. REGRA CRÍTICA: use APENAS os fatos que estão na informação pesquisada abaixo. NUNCA invente dados, nomes, horários, adversários ou resultados que não estejam explicitamente na fonte. Máximo 4 linhas. NÃO use markdown.\n\nREGRA DE TEMPERATURA: o Brasil usa Celsius (°C), NUNCA Fahrenheit. Se a informação pesquisada trouxer temperatura em Fahrenheit (°F) — comum em fontes americanas —, CONVERTA para Celsius antes de responder (fórmula: °C = (°F − 32) ÷ 1,8) e diga só o valor em °C, sem mencionar Fahrenheit. Ex: se a fonte diz "72°F", você fala "22°C". Valores de clima do Brasil quase sempre ficam entre 0°C e 45°C — se aparecer algo tipo "16°F" pra uma cidade brasileira, é Fahrenheit mal interpretado, converta.\n\nREGRA DE FUSO HORÁRIO: PRIMEIRO verifique se a informação já diz explicitamente "horário de Brasília" (ou "horário do Brasil") — se disser, esse horário JÁ ESTÁ CORRETO pra repassar exatamente como está, NUNCA some, subtraia ou "ajuste" esse valor por causa de menções a outra cidade/país no mesmo texto (ex: sede do jogo em outro país não muda o horário que já veio em horário de Brasília — são a mesma informação, não duas). SÓ converta quando o horário estiver claramente em outro fuso e NÃO vier acompanhado de "horário de Brasília" — nesse caso, se souber a sede com segurança, converta e diga que já converteu; se não tiver certeza do fuso de origem, informe exatamente como está na fonte e avise que pode não ser horário de Brasília, sugerindo conferir.`;
     const promptReprocesso = buildPersonality(tomUsuario || 'carinhoso', nomeUsuario, false) + contextoRelacional + regrasBusca + (instrucaoExtra ? `\n\n${instrucaoExtra}` : '');
     const hojeBRTbusca = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+    // mensagemOriginal: a mensagem completa do usuário (não só a query abstraída).
+    // Injeta pra síntese responder no contexto real — "Bom dia", nomes, situação.
+    const contextoPessoal = mensagemOriginal && mensagemOriginal !== query
+      ? `\nMensagem original completa do usuário: "${mensagemOriginal}"\n`
+      : '';
     const msgsReprocesso = [
       { role: 'system', content: promptReprocesso },
-      { role: 'user', content: `Pergunta: "${query}"\n\n[HOJE é ${hojeBRTbusca}] Use isto pra entender "hoje", "amanhã", "hoje à noite" na pergunta. ATENÇÃO CRÍTICA: se a informação pesquisada abaixo falar de uma data que JÁ PASSOU (anterior a hoje), ela está DESATUALIZADA — NÃO a repasse como se fosse o próximo jogo/evento futuro. Nesse caso, seja sincera: diga que não achou certinho sobre a data que ele pediu e sugira ele conferir, em vez de dar uma resposta errada com confiança.\n\nInformação que você pesquisou:\n${resposta}\n\nAgora me conta isso do seu jeito, Clara:` }
+      { role: 'user', content: `${contextoPessoal}Pergunta resumida: "${query}"\n\n[HOJE é ${hojeBRTbusca}] Use isto pra entender "hoje", "amanhã", "hoje à noite" na pergunta. ATENÇÃO CRÍTICA: se a informação pesquisada abaixo falar de uma data que JÁ PASSOU (anterior a hoje), ela está DESATUALIZADA — NÃO a repasse como se fosse o próximo jogo/evento futuro. Nesse caso, seja sincera: diga que não achou certinho sobre a data que ele pediu e sugira ele conferir, em vez de dar uma resposta errada com confiança.\n\nInformação que você pesquisou:\n${resposta}\n\nAgora me conta isso do seu jeito, Clara:` }
     ];
 
     let traduzida = null;
