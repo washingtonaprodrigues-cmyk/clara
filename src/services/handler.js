@@ -426,11 +426,11 @@ async function gerarAvisoBusca(text, tom = 'carinhoso', apelido = '') {
       `Um segundo que já checo!`,
     ],
     sarcastico: n ? [
-      `Pera aí que vou dar uma olhada pra gente, ${n}. 😏`,
+      `Pera aí que vou dar uma olhada pra gente, ${n}. 😉`,
       `Já vejo isso, ${n}.`,
       `Um segundo.`,
     ] : [
-      `Pera aí que vou dar uma olhada pra gente. 😏`,
+      `Pera aí que vou dar uma olhada pra gente. 😉`,
       `Já vejo isso.`,
       `Um segundo.`,
     ],
@@ -1807,7 +1807,7 @@ async function handleMessage(phone, text, location = null) {
       // 1ª msg: confirmação estruturada com a lista
       await sendMessage(phone, acaoConfirmacao);
       // Salva marcador de conversa pra proativa não disparar por cima
-      await memory.saveConversationMessage(user.id, 'assistant', '[Clara] ' + acaoConfirmacao).catch(() => {});
+      await memory.saveConversationMessage(user.id, 'assistant', acaoConfirmacao).catch(() => {});
       emitirAtualizacao(phone, 'lembretes');
       // 2ª msg: Clara sendo ela — comentário natural sobre os lembretes,
       // igual ao fluxo de tarefa única mas em background pra não atrasar.
@@ -1871,7 +1871,7 @@ async function handleMessage(phone, text, location = null) {
     if (classified.tipo === 'tarefa' && acaoConfirmacao) {
       // 1ª: confirmação do sistema (fatos, sem personalidade)
       await sendMessage(phone, acaoConfirmacao);
-      await memory.saveConversationMessage(user.id, 'assistant', '[Clara] ' + acaoConfirmacao).catch(() => {});
+      await memory.saveConversationMessage(user.id, 'assistant', acaoConfirmacao).catch(() => {});
       emitirAtualizacao(phone, 'lembretes');
       // 2ª: Clara sendo ela — tem acesso ao histórico recente da conversa,
       // então pode finalizar um assunto que estava rolando antes do lembrete,
