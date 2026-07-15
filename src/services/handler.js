@@ -886,7 +886,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       try {
         const contextoRelBusca = await buscarContextoRelacional(user.id);
         const cidadeBusca = await memory.getCidadeAtual(user.id).catch(() => '');
-        const resultado = await searchWeb(query, cidadeParaBusca(query, cidadeBusca), apelidoBusca, preferences?.tom || 'carinhoso', contextoRelBusca);
+        const resultado = await searchWeb(query, cidadeParaBusca(query, cidadeBusca), apelidoBusca, preferences?.tom || 'carinhoso', contextoRelBusca, 'informar', '', text);
         if (resultado) {
           await memory.saveConversationMessage(user.id, 'user', text);
           await memory.saveConversationMessage(user.id, 'assistant', resultado);
@@ -1516,27 +1516,17 @@ async function handleMessage(phone, text, location = null) {
       const contextoRelBuscaClassify = await buscarContextoRelacional(user.id);
       const tomBuscaClassify = preferencesBusca?.tom || 'carinhoso';
 
-      // Quando ela NÃO SABE e precisa pesquisar: um aviso curto NO TOM DELA
-      // (nada de lupa/sistema) porque há uma espera real pela busca. É ela
-      // dizendo "peraí que já te confirmo", do jeito dela. Gerado, não fixo.
-      const historicoBusca = await memory.getConversationHistory(user.id, 6).catch(() => []);
-      let avisoPrevio = null;
-      try {
-        if (geminiDisponivel() && !todosModelosEsgotados()) {
-          const sysAviso = buildPersonality(tomBuscaClassify, apelidoReal, false) + `\n\n[VAI CHECAR] A pessoa perguntou algo que você quer confirmar direitinho antes de responder. Solte UMA frase curta, no SEU tom, avisando que vai dar uma olhada rápida pra falar certo (tipo "peraí que já te confirmo", "deixa eu ver certinho pra te falar"). NÃO responda a pergunta, NÃO invente informação, NÃO use lupa nem cara de robô. NUNCA escreva __BUSCAR__ nem qualquer comando de busca — só a frase natural de aviso. Máximo 1 linha.`;
-          avisoPrevio = await geminiFreeResponse([
-            { role: 'system', content: sysAviso },
-            { role: 'user', content: text }
-          ], { temperature: 0.8, maxTokens: 60 }).catch(() => null);
-        }
-      } catch {}
-      const avisoLimpo = (avisoPrevio || '').replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '').replace(/🔍/g, '').trim();
-      if (avisoLimpo && !isRespostaFallback(avisoLimpo)) {
-        await sendMessage(phone, avisoLimpo);
-        await memory.saveConversationMessage(user.id, 'assistant', avisoLimpo).catch(() => {});
-      }
+      // Aviso pré-busca: usa as frases fixas do gerarAvisoBusca —
+      // curtas, no tom dela, sem responder a pergunta antes de buscar.
+      // O Gemini com maxTokens=60 aqui estava gerando respostas completas
+      // cortadas no meio ("Bom dia, fedo! 🙄 Pra soltar a barriga..."),
+      // que ficavam ótimas mas truncadas. Agora a frase é fixa e curta;
+      // a resposta completa e contextual vem na síntese da busca.
+      const avisoFixo = await gerarAvisoBusca(text, tomBuscaClassify, apelidoReal);
+      await sendMessage(phone, avisoFixo);
+      await memory.saveConversationMessage(user.id, 'assistant', avisoFixo).catch(() => {});
 
-      const resultadoBusca = await searchWeb(classified.query, cidadeParaBusca(classified.query, cidade), apelidoReal, tomBuscaClassify, contextoRelBuscaClassify);
+      const resultadoBusca = await searchWeb(classified.query, cidadeParaBusca(classified.query, cidade), apelidoReal, tomBuscaClassify, contextoRelBuscaClassify, 'informar', '', text);
       if (resultadoBusca) {
         await memory.saveConversationMessage(user.id, 'user', text);
         await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca);
