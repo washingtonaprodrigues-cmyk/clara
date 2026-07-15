@@ -1953,6 +1953,14 @@ async function handleMessage(phone, text, location = null) {
         return;
       }
 
+      // Envia confirmação estruturada — o handleSimpleResponse faz isso no caminho
+      // rápido, mas aqui no caminho classify ninguém mandava. Fix.
+      const tituloConf = classified.titulo || 'tarefa';
+      const msgConf = `✅ Feito! "${tituloConf}" concluído.`;
+      await sendMessage(phone, msgConf);
+      await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
+      await memory.saveConversationMessage(user.id, 'assistant', msgConf).catch(() => {});
+
       ;(async () => {
         try {
           await new Promise(r => setTimeout(r, 1500));
