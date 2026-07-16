@@ -3,7 +3,7 @@
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
 // Sessao 12 (10/07/2026): confirmacoes de sistema em 1 linha (Feito!/Tomado!/Anotado!),
 // Clara comenta separada so se genuino (nunca generico). Ver webhook.js LembreteConfirm.
-const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, apararRespostaCortada, detectarPadraoReacao } = require('./groq');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, apararRespostaCortada, detectarPadraoReacao, filtrarResposta } = require('./groq');
 const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('./gemini');
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
@@ -910,7 +910,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
                   { role: 'system', content: buildPersonality(tom, apelidoBusca, false) + promptPos },
                   { role: 'user', content: text }
                 ], { temperature: 0.85, maxTokens: 60 }).catch(() => null);
-                const comentLimpo = (coment || '').replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '').replace(/🔍/g, '').trim();
+                const comentLimpo = filtrarResposta((coment || '').replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '').replace(/🔍/g, '').trim());
                 if (comentLimpo && comentLimpo.length > 3 && !/^SKIP/i.test(comentLimpo)) {
                   await sendMessage(phone, comentLimpo);
                   await memory.saveConversationMessage(user.id, 'assistant', comentLimpo).catch(() => {});
@@ -1560,10 +1560,10 @@ async function handleMessage(phone, text, location = null) {
                 { role: 'system', content: sysComent },
                 { role: 'user', content: `Acabei de perguntar sobre: ${text}` }
               ], { temperature: 0.85, maxTokens: 60 }).catch(() => null);
-              const comentLimpo = (coment || '')
+              const comentLimpo = filtrarResposta((coment || '')
                 .replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '')
                 .replace(/🔍/g, '')
-                .trim();
+                .trim());
               if (comentLimpo && comentLimpo.length > 3 && !/^SKIP/i.test(comentLimpo)) {
                 await sendMessage(phone, comentLimpo);
                 await memory.saveConversationMessage(user.id, 'assistant', comentLimpo).catch(() => {});
@@ -1979,7 +1979,7 @@ async function handleMessage(phone, text, location = null) {
             { role: 'system', content: sysConcl },
             { role: 'user', content: `Confirmei: "${oQueFoi}"` }
           ], { temperature: 0.85, maxTokens: 100 }).catch(() => null);
-          const comentLimpo = (coment || '').replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '').trim();
+          const comentLimpo = filtrarResposta((coment || '').replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '').trim());
           if (comentLimpo && comentLimpo.length > 3 && !/^SKIP/i.test(comentLimpo)) {
             await sendMessage(phone, comentLimpo);
             await memory.saveConversationMessage(user.id, 'assistant', comentLimpo).catch(() => {});
