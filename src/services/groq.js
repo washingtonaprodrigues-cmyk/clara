@@ -1969,4 +1969,5 @@ module.exports = {
   buildPersonality,
   apararRespostaCortada,
   detectarPadraoReacao,
+  filtrarResposta,
 };
