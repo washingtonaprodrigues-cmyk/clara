@@ -375,6 +375,10 @@ ${resumo}`;
   }
 
   // ── DEDUÇÃO — Peça 3: conectar os pontos ──
+  // Nota: a memória é bilateral — o relationship summary captura tanto o que
+  // o usuário disse quanto o que Clara disse (bom dia, proativas, boa noite
+  // agora são salvas em conversa). Clara lembra dos dois lados naturalmente,
+  // sem precisar de uma seção explícita "o que eu disse".
   // Faz a Clara ligar o que a pessoa fala AGORA ao que ela já sabe (pessoas,
   // lugares, temas recorrentes, tratamentos) em vez de tratar tudo como novo —
   // é o que faz parecer uma amiga que presta atenção, não um robô com amnésia.
