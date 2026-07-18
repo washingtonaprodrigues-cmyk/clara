@@ -2407,7 +2407,7 @@ async function executeAction(user, phone, classified, originalText) {
             })
           }
         }).catch(() => {});
-        const ctx = `\n\n[TÍTULO INCOMPLETO] O usuário pediu um lembrete mas o título ficou incompleto: "${resultTarefa.tituloIncompleto}". Pergunte de forma natural e com seu jeito — ex: "Opa, cobrar quem? 😄" ou "Espera, ${resultTarefa.tituloIncompleto} quem? Não me deixa curiosa! 🤔" — curto, no seu tom, sem criar nada ainda.`;
+        const ctx = `\n\nSITUAÇÃO: O usuário pediu um lembrete mas o título ficou incompleto: "${resultTarefa.tituloIncompleto}". Pergunte de forma natural e com seu jeito — ex: "Opa, cobrar quem? 😄" ou "Espera, ${resultTarefa.tituloIncompleto} quem? Não me deixa curiosa! 🤔" — curto, no seu tom, sem criar nada ainda.`;
         // Faz a pergunta aqui e sinaliza que já respondeu (evita "Anotado!" falso
         // e o responderLivre final — que sairiam por cima, já que nada foi criado).
         await responderLivre(user, phone, originalText || '', ctx).catch(e => console.error('[perguntarTitulo]', e.message));
@@ -2430,7 +2430,7 @@ async function executeAction(user, phone, classified, originalText) {
         }).catch(() => {});
         // A Clara pergunta de forma natural no seu tom
         const temData = !!resultTarefa.lembreteData;
-        const ctx = `\n\n[COLETA DE LEMBRETE] O usuário pediu pra lembrar de "${resultTarefa.lembreteTitulo}"${temData ? ` para ${resultTarefa.lembreteData}` : ''} mas não disse ${temData ? 'o horário' : 'quando'}. Responda naturalmente no seu tom e pergunte ${temData ? 'que horas' : 'quando e que horas'} — de forma humana, não robótica. Ex: "Que legal! A que horas vai ser?" ou "Pode deixar! Pra quando você quer que eu te lembre?" — varie conforme o contexto. NÃO crie o lembrete ainda.`;
+        const ctx = `\n\nSITUAÇÃO: O usuário pediu pra lembrar de "${resultTarefa.lembreteTitulo}"${temData ? ` para ${resultTarefa.lembreteData}` : ''} mas não disse ${temData ? 'o horário' : 'quando'}. Pergunte ${temData ? 'que horas' : 'quando e que horas'} de forma natural e com seu jeito — ex: "Que legal! A que horas vai ser?" ou "Pode deixar! Pra quando você quer que eu te lembre?" — varie conforme o contexto. Não crie o lembrete ainda.`;
         // Faz a pergunta aqui e sinaliza que já respondeu (ver nota acima).
         await responderLivre(user, phone, originalText || '', ctx).catch(e => console.error('[perguntarHora]', e.message));
         respondeuAqui = true;
@@ -2663,24 +2663,48 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
   }
   await memory.saveMemory(user.id, 'tarefa', titulo, { data: classified.data, hora: classified.hora });
   let scheduledAt = null;
-  if (originalText) { const relativo = calcularHorarioRelativo(originalText); if (relativo) { scheduledAt = relativo; } }
-  if (!scheduledAt && classified.hora) {
-    const hoje = dateBRT();
-    let dataUsada = hoje;
-    if (classified.data) {
-      const dataObj = new Date(classified.data + 'T12:00:00-03:00');
-      const anoClassify = dataObj.getFullYear();
-      const anoAtual = new Date().getFullYear();
-      if (anoClassify >= anoAtual && anoClassify <= anoAtual + 1) dataUsada = classified.data;
-      else console.warn(`[DATA_INVALIDA] phone=${phone} titulo="${classified.titulo}" data_groq="${classified.data}" — ignorada, usando hoje`);
-    }
-    const [h, m] = classified.hora.split(':').map(Number);
-    scheduledAt = new Date(`${dataUsada}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
-    if (!classified.data && scheduledAt < nowBRT()) { scheduledAt.setDate(scheduledAt.getDate() + 1); }
+
+  // 1ª tentativa: tempo relativo no texto original ("daqui 30 minutos", "em 1 hora")
+  // Tem prioridade sobre classified.hora porque o modelo às vezes não converte
+  // tempos relativos pra absoluto corretamente.
+  const textoParaRelativo = originalText || classified.titulo || '';
+  if (textoParaRelativo) {
+    const relativo = calcularHorarioRelativo(textoParaRelativo);
+    if (relativo) { scheduledAt = relativo; }
   }
-  // ── SEM HORA E SEM DATA — sempre pede o horário antes de criar ──
-  // Ex: "não me deixa esquecer de marcar os exames" → não tem hora nem data
-  // → retorna perguntarHora para a Clara perguntar quando quer ser lembrado
+
+  // 2ª tentativa: hora absoluta extraída pelo classify
+  if (!scheduledAt && classified.hora) {
+    try {
+      const hoje = dateBRT();
+      let dataUsada = hoje;
+      if (classified.data) {
+        const dataObj = new Date(classified.data + 'T12:00:00-03:00');
+        const anoClassify = dataObj.getFullYear();
+        const anoAtual = new Date().getFullYear();
+        if (anoClassify >= anoAtual && anoClassify <= anoAtual + 1) dataUsada = classified.data;
+        else console.warn(`[DATA_INVALIDA] phone=${phone} titulo="${classified.titulo}" data_groq="${classified.data}" — ignorada, usando hoje`);
+      }
+      const [h, m] = classified.hora.split(':').map(Number);
+      if (!isNaN(h) && !isNaN(m)) {
+        scheduledAt = new Date(`${dataUsada}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
+        if (!classified.data && scheduledAt < nowBRT()) { scheduledAt.setDate(scheduledAt.getDate() + 1); }
+      }
+    } catch (e) {
+      console.warn(`[salvarTarefa] Erro ao parsear hora "${classified.hora}":`, e.message);
+    }
+  }
+  // ── SEM HORA E SEM DATA — pede o horário antes de criar ──
+  // Guarda: se o texto original tem expressão de tempo relativo mas
+  // calcularHorarioRelativo falhou por algum motivo, tenta de novo
+  // com uma janela mais ampla antes de pedir ao usuário.
+  const textoTemRelativo = /daqui\s+\d+|em\s+\d+\s*(min|hora|h\b)/i.test(textoParaRelativo);
+  if (!scheduledAt && textoTemRelativo) {
+    // Tem "daqui X" ou "em X min/hora" mas parse falhou — usa 30 min como fallback seguro
+    console.warn(`[salvarTarefa] Tempo relativo detectado mas parse falhou, usando 30min como fallback`);
+    scheduledAt = new Date(Date.now() + 30 * 60 * 1000);
+  }
+
   if (!scheduledAt && !classified.hora && !classified.data) {
     return { perguntarHora: true, lembreteTitulo: classified.titulo, lembreteData: null };
   }
