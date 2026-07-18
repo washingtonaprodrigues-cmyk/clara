@@ -626,6 +626,9 @@ COMO MANDAR:
         if (!(await tentarLockDiario(user.id, 'bom_dia_lock'))) continue;
 
         await sendMessage(user.phone, msg);
+        // Salva em conversa pra alimentar o relationship summary naturalmente
+        // — assim ela tem memória contínua do que disse, sem tags artificiais
+        await memory.saveConversationMessage(user.id, 'assistant', msg).catch(() => {});
         console.log(`[Bom dia] ${user.phone}: ${msg}`);
       } catch (e) { console.error(`[Bom dia] Erro ${user.phone}:`, e.message); }
     }
@@ -859,6 +862,7 @@ REGRAS:
         }
 
         await sendMessage(user.phone, msg);
+        await memory.saveConversationMessage(user.id, 'assistant', msg).catch(() => {});
         console.log(`[Boa noite] ${user.phone} — ${Math.round(minAusente)}min ausente — ${msg.slice(0, 60)}`);
       } catch (e) { console.error(`[Boa noite] Erro ${user.phone}:`, e.message); }
     }
@@ -1158,7 +1162,7 @@ cron.schedule('15 21 * * *', async () => {
 
         if (msg && !isRespostaFallback(msg) && msg.trim().length > 2) {
           await sendMessage(user.phone, msg.trim());
-          await memory.saveConversationMessage(user.id, 'assistant', '[Clara] ' + msg.trim()).catch(() => {});
+          await memory.saveConversationMessage(user.id, 'assistant', msg.trim()).catch(() => {});
           console.log(`[ProativaCasual] ${user.phone} — "${msg.trim().slice(0, 50)}"`);
         }
       } catch (e) { console.error(`[ProativaCasual] Erro ${user.phone}:`, e.message); }
