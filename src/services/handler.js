@@ -1081,14 +1081,13 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     })();
 
     // ── Linha do tempo: detecta eventos futuros que o usuário mencionou ──
-    // "amanhã levo as crianças pra Taquarituba às 9" → salva com hora de follow-up
-    // No contexto seguinte, Clara sabe que já passou e pode perguntar como foi.
+    // Funciona com ou sem hora específica: "amanhã levo as crianças" também captura.
     ;(async () => {
       try {
-        const temFuturo = /amanhã|hoje.{0,20}(à noite|mais tarde|depois)|às \d+\s*h\b|daqui \d+/i.test(text);
+        const temFuturo = /amanhã|depois de amanhã|semana que vem|hoje.{0,20}(à noite|mais tarde|depois)|às \d+\s*h\b|daqui \d+|próxim[ao]/i.test(text);
         if (!temFuturo) return;
         const ev = await geminiFreeResponse([
-          { role: 'user', content: `Mensagem: "${text.slice(0, 300)}"\nData/hora atual: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\n\nSe o usuário mencionou um evento futuro específico COM horário (ex: "levar filhos às 9", "consulta amanhã"), extraia: {"evento":"descrição curta","quando":"texto do quando","followup_horas":N} onde followup_horas é quanto tempo depois do evento perguntar como foi (geralmente 2-4h). Se não há evento futuro claro, responda: NADA.` }
+          { role: 'user', content: `Mensagem: "${text.slice(0, 300)}"\nData/hora atual: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\n\nSe o usuário mencionou um evento futuro específico (com OU sem horário exato), extraia: {"evento":"descrição curta","quando":"texto do quando (ex: amanhã, amanhã às 9h, hoje à noite)","followup_horas":N} onde followup_horas é quanto tempo depois do momento provável perguntar como foi — se não tem hora específica, use 24 para eventos de amanhã, 12 para eventos de hoje à noite. Se não há evento futuro claro, responda: NADA.` }
         ], { temperature: 0.1, maxTokens: 80 }).catch(() => null);
         if (!ev || /^NADA/i.test((ev || '').trim())) return;
         const parsed = JSON.parse(ev.replace(/```json|```/g, '').trim());
@@ -1096,9 +1095,9 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         await prisma.memory.create({ data: {
           userId: user.id, type: 'linha_tempo',
           content: parsed.evento.slice(0, 150),
-          metadata: JSON.stringify({ quando: parsed.quando, followup_horas: parsed.followup_horas || 2, criadoEm: new Date().toISOString(), status: 'pendente' })
+          metadata: JSON.stringify({ quando: parsed.quando, followup_horas: parsed.followup_horas || 24, criadoEm: new Date().toISOString(), status: 'pendente' })
         }}).catch(() => {});
-        console.log(`[LinhaTempo] "${parsed.evento}" — follow-up em ${parsed.followup_horas || 2}h`);
+        console.log(`[LinhaTempo] "${parsed.evento}" — follow-up em ${parsed.followup_horas || 24}h`);
       } catch {}
     })();
 
