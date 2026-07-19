@@ -1037,9 +1037,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
     updateRelationshipSummary(user.id, history, respStr).catch(() => {});
 
-    // Ponto 3: detecta padrão de reação em background — como ele se comporta
-    // em situações específicas. Só roda quando há conversa suficiente (4+ turnos).
-    // Silencioso, fire-and-forget, não bloqueia a resposta.
+    // Ponto 3: detecta padrão de reação em background
     ;(async () => {
       try {
         const histPadrao = await memory.getConversationHistory(user.id, 8).catch(() => []);
@@ -1047,6 +1045,60 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           const padrao = await detectarPadraoReacao(histPadrao);
           if (padrao) await memory.salvarPadraoReacao(user.id, padrao.tema, padrao.padrao);
         }
+      } catch {}
+    })();
+
+    // ── Personagem Clara: salva o que ela inventou sobre si mesma ──
+    // Detecta detalhes concretos que ela mencionou (amigas, lugares, atividades)
+    // e salva pra manter consistência — a Bia e a Carol continuam sendo a Bia e a Carol.
+    ;(async () => {
+      try {
+        if (!respStr || respStr.length < 40) return;
+        const temVidaPropria = /\b(tô|tava|fui|estava|estou|saí|vou sair|fiz|comi|assisti|ouvi|encontrei|fiquei|cheguei|saindo|curtindo|passei)\b/i.test(respStr);
+        if (!temVidaPropria) return;
+        const extracted = await geminiFreeResponse([
+          { role: 'user', content: `Resposta da Clara: "${respStr.slice(0, 400)}"\n\nSe Clara mencionou algo CONCRETO sobre a VIDA DELA (nome de amiga, bar/lugar específico, atividade que fez), liste em JSON: [{"item":"descrição curta"}]. Máx 3. Se nada concreto, responda: []` }
+        ], { temperature: 0.1, maxTokens: 100 }).catch(() => null);
+        if (!extracted) return;
+        const limpo = extracted.replace(/```json|```/g, '').trim();
+        const items = JSON.parse(limpo.startsWith('[') ? limpo : '[]');
+        for (const it of items) {
+          if (!it?.item || it.item.length < 5) continue;
+          const palavraChave = it.item.split(' ').slice(0, 2).join(' ').toLowerCase();
+          const existe = await prisma.memory.findFirst({
+            where: { userId: user.id, type: 'clara_personagem', content: { contains: palavraChave } }
+          }).catch(() => null);
+          if (!existe) {
+            await prisma.memory.create({ data: {
+              userId: user.id, type: 'clara_personagem',
+              content: it.item.slice(0, 150),
+              metadata: JSON.stringify({ data: new Date().toISOString() })
+            }}).catch(() => {});
+            console.log(`[ClaraPersonagem] "${it.item.slice(0, 60)}"`);
+          }
+        }
+      } catch {}
+    })();
+
+    // ── Linha do tempo: detecta eventos futuros que o usuário mencionou ──
+    // "amanhã levo as crianças pra Taquarituba às 9" → salva com hora de follow-up
+    // No contexto seguinte, Clara sabe que já passou e pode perguntar como foi.
+    ;(async () => {
+      try {
+        const temFuturo = /amanhã|hoje.{0,20}(à noite|mais tarde|depois)|às \d+\s*h\b|daqui \d+/i.test(text);
+        if (!temFuturo) return;
+        const ev = await geminiFreeResponse([
+          { role: 'user', content: `Mensagem: "${text.slice(0, 300)}"\nData/hora atual: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\n\nSe o usuário mencionou um evento futuro específico COM horário (ex: "levar filhos às 9", "consulta amanhã"), extraia: {"evento":"descrição curta","quando":"texto do quando","followup_horas":N} onde followup_horas é quanto tempo depois do evento perguntar como foi (geralmente 2-4h). Se não há evento futuro claro, responda: NADA.` }
+        ], { temperature: 0.1, maxTokens: 80 }).catch(() => null);
+        if (!ev || /^NADA/i.test((ev || '').trim())) return;
+        const parsed = JSON.parse(ev.replace(/```json|```/g, '').trim());
+        if (!parsed?.evento) return;
+        await prisma.memory.create({ data: {
+          userId: user.id, type: 'linha_tempo',
+          content: parsed.evento.slice(0, 150),
+          metadata: JSON.stringify({ quando: parsed.quando, followup_horas: parsed.followup_horas || 2, criadoEm: new Date().toISOString(), status: 'pendente' })
+        }}).catch(() => {});
+        console.log(`[LinhaTempo] "${parsed.evento}" — follow-up em ${parsed.followup_horas || 2}h`);
       } catch {}
     })();
 
