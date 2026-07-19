@@ -399,9 +399,15 @@ ${resumo}`;
   if (linhaTempo.length > 0) {
     const itensLinha = linhaTempo.map(m => {
       let meta = {}; try { meta = JSON.parse(m.metadata || '{}'); } catch {}
-      const criadoEm = new Date(meta.criadoEm || m.createdAt);
-      const followupAt = new Date(criadoEm.getTime() + (meta.followup_horas || 2) * 60 * 60 * 1000);
-      const jaPassou = agora > followupAt;
+      // Usa followup_at absoluto se disponível, senão cálculo legado
+      let jaPassou = false;
+      if (meta.followup_at) {
+        jaPassou = agora > new Date(meta.followup_at);
+      } else {
+        const criadoEm = new Date(meta.criadoEm || m.createdAt);
+        const followupAt = new Date(criadoEm.getTime() + (meta.followup_horas || 24) * 60 * 60 * 1000);
+        jaPassou = agora > followupAt;
+      }
       return { content: m.content, quando: meta.quando || '', jaPassou };
     });
     const passados = itensLinha.filter(i => i.jaPassou);
