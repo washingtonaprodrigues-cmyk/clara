@@ -545,12 +545,13 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
         }
 
         // ── REDE DE SEGURANÇA — 7:00h às 9:00h ──
-        // Sem lembrete/remédio, ou se os caminhos 1 e 2 não dispararam:
-        // garante o bom dia entre 7h e 9h de qualquer jeito.
-        if (!podeEnviarAgora) {
+        // SÓ quando não tem nenhum evento/lembrete pela manhã.
+        // Se tem evento, os Caminhos 1 e 2 cuidam do timing —
+        // a rede não compete com eles.
+        if (!podeEnviarAgora && !primeiroEvento) {
           const h = now.getHours();
           if (h >= 7 && h < 9) podeEnviarAgora = true;
-          if (podeEnviarAgora) console.log(`[Bom dia] Rede de segurança: ${h}h`);
+          if (podeEnviarAgora) console.log(`[Bom dia] Rede de segurança (sem eventos matinais): ${h}h`);
         }
 
         if (!podeEnviarAgora) continue;
