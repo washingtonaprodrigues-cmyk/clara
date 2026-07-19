@@ -1086,18 +1086,28 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       try {
         const temFuturo = /amanhã|depois de amanhã|semana que vem|hoje.{0,20}(à noite|mais tarde|depois)|às \d+\s*h\b|daqui \d+|próxim[ao]/i.test(text);
         if (!temFuturo) return;
+        const agora = new Date();
         const ev = await geminiFreeResponse([
-          { role: 'user', content: `Mensagem: "${text.slice(0, 300)}"\nData/hora atual: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\n\nSe o usuário mencionou um evento futuro específico (com OU sem horário exato), extraia: {"evento":"descrição curta","quando":"texto do quando (ex: amanhã, amanhã às 9h, hoje à noite)","followup_horas":N} onde followup_horas é quanto tempo depois do momento provável perguntar como foi — se não tem hora específica, use 24 para eventos de amanhã, 12 para eventos de hoje à noite. Se não há evento futuro claro, responda: NADA.` }
-        ], { temperature: 0.1, maxTokens: 80 }).catch(() => null);
+          { role: 'user', content: `Mensagem: "${text.slice(0, 300)}"\nData/hora atual: ${agora.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\n\nSe o usuário mencionou um evento futuro específico (com OU sem horário exato), extraia:\n{"evento":"descrição curta","quando":"texto do quando","horas_ate_evento":N,"followup_horas_apos":M}\n\nhoras_ate_evento = quantas horas do MOMENTO ATUAL até o evento acontecer (ex: "amanhã às 9h" quando são 23h45 = ~9.25h)\nfollowup_horas_apos = quantas horas DEPOIS do evento perguntar como foi (padrão: 2-3h para eventos com hora específica, 6h para eventos sem hora)\n\nSe não há evento futuro claro, responda: NADA.` }
+        ], { temperature: 0.1, maxTokens: 100 }).catch(() => null);
         if (!ev || /^NADA/i.test((ev || '').trim())) return;
         const parsed = JSON.parse(ev.replace(/```json|```/g, '').trim());
         if (!parsed?.evento) return;
+        const horasAteEvento = parsed.horas_ate_evento || 12;
+        const followupHoras = parsed.followup_horas_apos || 2;
+        // followup_at = agora + horas até o evento + horas de follow-up
+        const followupAt = new Date(agora.getTime() + (horasAteEvento + followupHoras) * 60 * 60 * 1000);
         await prisma.memory.create({ data: {
           userId: user.id, type: 'linha_tempo',
           content: parsed.evento.slice(0, 150),
-          metadata: JSON.stringify({ quando: parsed.quando, followup_horas: parsed.followup_horas || 24, criadoEm: new Date().toISOString(), status: 'pendente' })
+          metadata: JSON.stringify({
+            quando: parsed.quando,
+            followup_at: followupAt.toISOString(),
+            criadoEm: agora.toISOString(),
+            status: 'pendente'
+          })
         }}).catch(() => {});
-        console.log(`[LinhaTempo] "${parsed.evento}" — follow-up em ${parsed.followup_horas || 24}h`);
+        console.log(`[LinhaTempo] "${parsed.evento}" — follow-up previsto: ${followupAt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`);
       } catch {}
     })();
 
