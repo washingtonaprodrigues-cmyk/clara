@@ -835,21 +835,23 @@ async function boaNoiteInteligente() {
         if (resumoUltimaConversa) ctx += `\nÚltima conversa:\n${resumoUltimaConversa}`;
         if (infoPessoal) ctx += '\n' + infoPessoal;
 
-        const systemBoaNoite = `Você é a Clara, parceira pessoal d${apelido ? 'o ' + apelido : 'o usuário'} no WhatsApp.
-SEU TOM: ${tomDesc(prefs.tom)}
+        // Não manda boa noite se já foi dita na conversa recente
+        const histBoaNoite = await memory.getConversationHistory(user.id, 8).catch(() => []);
+        const jaHouveBoaNoite = histBoaNoite.some(m => /boa\s*noite/i.test(m.content || ''));
+        if (jaHouveBoaNoite) {
+          console.log(`[Boa noite] Já foi dita na conversa — pulando ${user.phone}`);
+          await prisma.memory.deleteMany({ where: { userId: user.id, type: 'boa_noite_lock', content: hoje } }).catch(() => {});
+          continue;
+        }
 
-Ele sumiu faz ${Math.round(minAusente / 60)}h — provavelmente foi dormir. Mande UMA boa noite natural, do jeito que uma amiga manda quando percebe que a pessoa foi descansar.
+        const ultMsgs = histBoaNoite.slice(-4).map(m =>
+          `${m.role === 'user' ? 'Ele' : 'Clara'}: ${(m.content || '').slice(0, 80)}`
+        ).join('\n');
 
-CONTEXTO:
-${ctx}
-
-REGRAS:
-- UMA frase curta, 1 linha. Sem lista, sem resumo do dia.
-- Use o contexto da última conversa se tiver algo interessante a dizer ("descansa, amanhã me conta o resto 😏", "foi dormir sem me responder né 🙄 boa noite então")
-- Se não tiver contexto especial, um boa noite simples e íntimo no seu tom
-- NUNCA "Parabéns", "estarei aqui", "Podes", "tens". Português do Brasil.
-- Varie sempre — nunca repita a mesma frase
-- Tom: ${prefs.tom || 'carinhoso'}`;
+        const systemBoaNoite = buildPersonality(prefs.tom || 'carinhoso', apelido, false) +
+          `\n\n${ctx}` +
+          (ultMsgs ? `\n\n[ÚLTIMAS MENSAGENS DO DIA]\n${ultMsgs}` : '') +
+          `\n\n[BOA NOITE] Mande UMA boa noite natural, do jeito que ela mandaria. Use o contexto se tiver algo interessante — "descansa, amanhã me conta o resto 😏", "foi dormir sem me responder né 🙄 boa noite então". Se não tiver contexto especial, um boa noite simples e íntimo no SEU tom. 1-2 linhas. Nunca genérica tipo "Por hoje é só. Boa noite!" — tem que soar como ela. NUNCA "estarei aqui", "Podes", "tens"`
 
         const msg = await geminiRetry(systemBoaNoite, 'Boa noite.', { temperature: 0.8, maxTokens: 80 }, {
           maxTentativas: 3, delayMs: 5000,
