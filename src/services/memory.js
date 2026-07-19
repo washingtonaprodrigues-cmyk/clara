@@ -374,6 +374,51 @@ ${resumo}`;
     texto += `\n\n[COMO ELE REAGE — calibre seu tom antes que ele precise dizer]\n${linhas}`;
   }
 
+  // ── Personagem Clara: o que ela já contou sobre si mesma ──
+  // Detalhes que ela inventou (amigas, lugares, atividades) — mantém consistência.
+  // "Bia e Carol" continuam sendo Bia e Carol nas próximas conversas.
+  const claraPersonagem = await prisma.memory.findMany({
+    where: { userId, type: 'clara_personagem' },
+    orderBy: { createdAt: 'desc' },
+    take: 15
+  }).catch(() => []);
+  if (claraPersonagem.length > 0) {
+    texto += '\n\n[DETALHES DA SUA PRÓPRIA VIDA — mantenha consistência, são coisas que você já contou]\n';
+    texto += claraPersonagem.map(m => `• ${m.content}`).join('\n');
+  }
+
+  // ── Linha do tempo: eventos que o usuário mencionou ──
+  // Se o evento já passou (baseado em criadoEm + followup_horas), Clara sabe
+  // que aconteceu e pode perguntar como foi de forma natural.
+  const agora = new Date();
+  const linhaTempo = await prisma.memory.findMany({
+    where: { userId, type: 'linha_tempo', createdAt: { gte: new Date(agora.getTime() - 72*60*60*1000) } },
+    orderBy: { createdAt: 'desc' },
+    take: 5
+  }).catch(() => []);
+  if (linhaTempo.length > 0) {
+    const itensLinha = linhaTempo.map(m => {
+      let meta = {}; try { meta = JSON.parse(m.metadata || '{}'); } catch {}
+      const criadoEm = new Date(meta.criadoEm || m.createdAt);
+      const followupAt = new Date(criadoEm.getTime() + (meta.followup_horas || 2) * 60 * 60 * 1000);
+      const jaPassou = agora > followupAt;
+      return { content: m.content, quando: meta.quando || '', jaPassou };
+    });
+    const passados = itensLinha.filter(i => i.jaPassou);
+    const futuros = itensLinha.filter(i => !i.jaPassou);
+    if (passados.length > 0 || futuros.length > 0) {
+      texto += '\n\n[LINHA DO TEMPO — o que o usuário mencionou]\n';
+      if (passados.length > 0) {
+        texto += 'Já aconteceu (se o momento for natural, pergunte como foi — 1 vez, sem insistir):\n';
+        texto += passados.map(i => `• ${i.content}${i.quando ? ` (${i.quando})` : ''}`).join('\n') + '\n';
+      }
+      if (futuros.length > 0) {
+        texto += 'Ainda vai acontecer:\n';
+        texto += futuros.map(i => `• ${i.content}${i.quando ? ` (${i.quando})` : ''}`).join('\n') + '\n';
+      }
+    }
+  }
+
   // ── DEDUÇÃO — Peça 3: conectar os pontos ──
   // Nota: a memória é bilateral — o relationship summary captura tanto o que
   // o usuário disse quanto o que Clara disse (bom dia, proativas, boa noite
