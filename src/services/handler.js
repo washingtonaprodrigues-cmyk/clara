@@ -1518,6 +1518,15 @@ async function handleMessage(phone, text, location = null) {
         console.log(`[Guardrail] tarefa-fantasma interceptada (plano informal sem gatilho): "${(text||'').slice(0,60)}"`);
         classified.tipo = 'outro';
       }
+      // "Vou tentar renovar minha habilitação daqui a pouco" = intenção, não pedido
+      // Se a frase começa com "vou/quero/preciso" sem gatilho explícito, é conversa
+      if (classified.tipo !== 'outro') {
+        const ehIntencao = /^(eu\s+)?(vou\s+(tentar|precisar|lá|fazer|buscar|ver|resolver|passar|pegar)|quero|preciso)\s+/i.test((text||'').trim());
+        if (ehIntencao && !temGatilhoGuard) {
+          console.log(`[Guardrail] Afirmação de intenção ≠ tarefa — tratando como conversa: "${(text||'').slice(0,60)}"`);
+          classified.tipo = 'outro';
+        }
+      }
     }
 
     // pergunta da Clara (ex: "como foi o Detran? resolveu?" → "só na quinta
@@ -3235,6 +3244,14 @@ async function checkConfirmacaoPendente(user, phone, text) {
     }
 
     if (dados.tipo === 'hora_lembrete') {
+      // Detecção de cancelamento — "não precisa", "deixa", "cancela" = encerra sem criar
+      const cancelou = /n[aã]o\s*(precisa|quero|vai|vou|vem|tem|queremos)|cancela|esquece|deixa\s*pra\s*l[aá]|desisti|mudei\s*de\s*ideia/i.test(text);
+      if (cancelou) {
+        await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
+        console.log(`[HoraLembrete] Cancelado pelo usuário — "${dados.titulo}"`);
+        return false; // deixa a resposta natural do freeResponse cuidar
+      }
+
       // Tenta extrair horário — captura "10h", "14:30", "às 8", "8 da manhã" etc.
       let horaEscolhida = null;
       const matchHM = textNorm.match(/(d{1,2})[:h](d{2})/);
