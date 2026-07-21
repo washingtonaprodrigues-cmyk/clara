@@ -629,21 +629,32 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
       // ── Episódios recentes da vida do usuário ─────────────────────────
       // Eventos concretos que aconteceram ou vão acontecer — informa o
-      // contexto de vida sem sobrecarregar (máx 3, pendentes primeiro)
+      // contexto de vida sem sobrecarregar (máx 3, pendentes primeiro).
+      // JANELA: 30 dias (era 90). Eventos "pendente" com mais de 7 dias
+      // já aconteceram ou foram cancelados — não exibir.
       try {
         const episodios = await prisma.memory.findMany({
           where: {
             userId: user.id, type: 'episodio_vida',
-            createdAt: { gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) }
+            createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
           },
-          orderBy: { createdAt: 'desc' }, take: 3
+          orderBy: { createdAt: 'desc' }, take: 5
         });
         if (episodios.length > 0) {
-          const listaEp = episodios.map(e => {
+          const agora7 = Date.now() - 7 * 24 * 60 * 60 * 1000;
+          const filtrados = episodios.filter(e => {
             let meta = {}; try { meta = JSON.parse(e.metadata || '{}'); } catch {}
-            return `• ${e.content}${meta.resultado === 'pendente' ? ' (ainda vai acontecer)' : ''}`;
-          }).join('\n');
-          contexto += `\n\n[CONTEXTO DE VIDA RECENTE — use naturalmente se relevante, nunca force]\n${listaEp}`;
+            // Pendente antigo = já aconteceu ou foi esquecido — não mostrar
+            if (meta.resultado === 'pendente' && new Date(e.createdAt).getTime() < agora7) return false;
+            return true;
+          }).slice(0, 3);
+          if (filtrados.length > 0) {
+            const listaEp = filtrados.map(e => {
+              let meta = {}; try { meta = JSON.parse(e.metadata || '{}'); } catch {}
+              return `• ${e.content}${meta.resultado === 'pendente' ? ' (ainda vai acontecer)' : ''}`;
+            }).join('\n');
+            contexto += `\n\n[CONTEXTO DE VIDA RECENTE — use naturalmente se relevante, nunca force]\n${listaEp}`;
+          }
         }
       } catch(e) {}
 
@@ -3252,7 +3263,9 @@ async function checkConfirmacaoPendente(user, phone, text) {
         return false; // deixa a resposta natural do freeResponse cuidar
       }
 
-      // Tenta extrair horário — captura "10h", "14:30", "às 8", "8 da manhã" etc.
+      // Emoji puro (😂, ❤️, 👍) = reação, não tentativa de dar horário — ignora
+      const apenasEmoji = text.trim().length <= 4 || /^[\p{Emoji}\s]+$/u.test(text.trim());
+      if (apenasEmoji) return false;
       let horaEscolhida = null;
       const matchHM = textNorm.match(/(d{1,2})[:h](d{2})/);
       const matchH = textNorm.match(/(d{1,2})s*h(?:oras)?b/);
@@ -3300,7 +3313,36 @@ async function checkConfirmacaoPendente(user, phone, text) {
       }
 
       const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-      await sendMessage(phone, `✅ Pronto! "${dados.titulo}" agendado pra ${dataFmt} às ${horaFinal} 📌`);
+      const msgConfirm = `✅ Anotado! "${dados.titulo}" pra ${dataFmt} às ${horaFinal} 📌`;
+      await sendMessage(phone, msgConfirm);
+      await memory.saveConversationMessage(user.id, 'assistant', msgConfirm).catch(() => {});
+
+      // Continua a conversa de onde parou — lembrete foi um aparte, não o fim do papo
+      ;(async () => {
+        try {
+          await new Promise(r => setTimeout(r, 1800));
+          const prefsCont = await memory.getUserPreference(user.id).catch(() => ({}));
+          const memAfetivaCont = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+          const apelCont = memAfetivaCont?.apelido_usuario || prefsCont?.name || '';
+          const ctxCont = await buscarContextoRelacional(user.id).catch(() => '');
+          const histCont = await memory.getConversationHistory(user.id, 8).catch(() => []);
+          const resumoCont = histCont.slice(0, -2).slice(-4)
+            .map(m => `${m.role === 'user' ? 'Ele' : 'Clara'}: ${(m.content || '').slice(0, 80)}`)
+            .join('\n');
+          if (!resumoCont) return;
+          const sysCont = buildPersonality(prefsCont?.tom || 'carinhoso', apelCont, false) + ctxCont +
+            `\n\n[APARTE RESOLVIDO] Você acabou de criar o lembrete "${dados.titulo}" às ${horaFinal} — já confirmado. Agora CONTINUE a conversa de onde estava antes do aparte do lembrete. Não mencione o lembrete de novo. Retome o assunto anterior de forma natural, como se o lembrete fosse apenas uma interrupção rápida já resolvida. 1-2 linhas, no seu tom.\n\nConversa recente:\n${resumoCont}`;
+          const cont = await geminiFreeResponse([
+            { role: 'system', content: sysCont },
+            { role: 'user', content: 'continua' }
+          ], { temperature: 0.85, maxTokens: 100 }).catch(() => null);
+          const contLimpo = filtrarResposta((cont || '').trim());
+          if (contLimpo && contLimpo.length > 5 && !isRespostaFallback(contLimpo)) {
+            await sendMessage(phone, contLimpo);
+            await memory.saveConversationMessage(user.id, 'assistant', contLimpo).catch(() => {});
+          }
+        } catch {}
+      })();
       return true;
     }
 
