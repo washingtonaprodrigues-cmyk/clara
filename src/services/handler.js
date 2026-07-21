@@ -3360,32 +3360,9 @@ async function checkConfirmacaoPendente(user, phone, text) {
       await sendMessage(phone, msgConfirm);
       await memory.saveConversationMessage(user.id, 'assistant', msgConfirm).catch(() => {});
 
-      // Continua a conversa de onde parou — lembrete foi um aparte, não o fim do papo
-      ;(async () => {
-        try {
-          await new Promise(r => setTimeout(r, 1800));
-          const prefsCont = await memory.getUserPreference(user.id).catch(() => ({}));
-          const memAfetivaCont = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
-          const apelCont = memAfetivaCont?.apelido_usuario || prefsCont?.name || '';
-          const ctxCont = await buscarContextoRelacional(user.id).catch(() => '');
-          const histCont = await memory.getConversationHistory(user.id, 8).catch(() => []);
-          const resumoCont = histCont.slice(0, -2).slice(-4)
-            .map(m => `${m.role === 'user' ? 'Ele' : 'Clara'}: ${(m.content || '').slice(0, 80)}`)
-            .join('\n');
-          if (!resumoCont) return;
-          const sysCont = buildPersonality(prefsCont?.tom || 'carinhoso', apelCont, false) + ctxCont +
-            `\n\n[APARTE RESOLVIDO] Você acabou de criar o lembrete "${dados.titulo}" às ${horaFinal} — já confirmado. Agora CONTINUE a conversa de onde estava antes do aparte do lembrete. Não mencione o lembrete de novo. Retome o assunto anterior de forma natural, como se o lembrete fosse apenas uma interrupção rápida já resolvida. 1-2 linhas, no seu tom.\n\nConversa recente:\n${resumoCont}`;
-          const cont = await geminiFreeResponse([
-            { role: 'system', content: sysCont },
-            { role: 'user', content: 'continua' }
-          ], { temperature: 0.85, maxTokens: 100 }).catch(() => null);
-          const contLimpo = filtrarResposta((cont || '').trim());
-          if (contLimpo && contLimpo.length > 5 && !isRespostaFallback(contLimpo)) {
-            await sendMessage(phone, contLimpo);
-            await memory.saveConversationMessage(user.id, 'assistant', contLimpo).catch(() => {});
-          }
-        } catch {}
-      })();
+      // Sem continuação automática — se o usuário quiser continuar o assunto,
+      // ele manda uma mensagem e o freeResponse normal cuida com o contexto
+      // do histórico. Mais simples e sem risco de ressuscitar conversa encerrada.
       return true;
     }
 
