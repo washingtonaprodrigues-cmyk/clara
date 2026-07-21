@@ -618,7 +618,7 @@ REGRAS:
 - Extraia APENAS o que o usuário declarou explicitamente. NUNCA deduza.
 - NUNCA invente nomes de pessoas. Se o nome não foi dito, não extraia.
 - ATRIBUIÇÃO CORRETA: "a patroa está tossindo" → chave "saude_patroa", NÃO "saude_washington". Sintomas e doenças devem ser atribuídos à pessoa correta — nunca assuma que é o próprio usuário se ele está falando de outra pessoa.
-- CORREÇÕES: quando o usuário corrige uma informação anterior ("era minha esposa, não eu", "foi a patroa que ficou doente"), extraia a versão CORRETA e inclua um campo "correcao": true. A entrada correta sobrescreve a errada.
+- CORREÇÕES EXPLÍCITAS: quando o usuário corrige uma atribuição errada ("era minha esposa, não eu", "foi a patroa que ficou doente, não eu"), faça DUAS coisas: (1) salve a informação CORRETA normalmente; (2) inclua um item extra com {"deletar": true, "chave_errada": "chave_que_estava_errada"} para limpar a entrada incorreta. Exemplo: "era a patroa, não eu" sobre tosse → salve saude_patroa E inclua {"deletar": true, "chave_errada": "saude_washington"}.
 - Para filhos: chave = "filho_[nome]" ou "filha_[nome]"
 - Para saude_familia: chave = "saude_[nome_familiar]", inclua situação atual e remédios
 - Para referencias_compartilhadas: chave = "ref_[assunto]", capture o máximo de contexto
