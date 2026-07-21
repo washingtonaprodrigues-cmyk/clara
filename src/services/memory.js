@@ -425,6 +425,19 @@ ${resumo}`;
     }
   }
 
+  // ── Memória narrativa contínua — linha do tempo que nunca regride ──
+  // Diferente do summary (substitui) e episódios (expiram), essa só acumula.
+  // Lida em ordem cronológica pra Clara saber o fio do que foi acontecendo.
+  const memoriaContínua = await prisma.memory.findMany({
+    where: { userId, type: 'memoria_continua' },
+    orderBy: { createdAt: 'asc' },
+    take: 21 // ~3 semanas de entradas diárias
+  }).catch(() => []);
+  if (memoriaContínua.length > 0) {
+    texto += '\n\n[LINHA DO TEMPO — o que foi acontecendo, em ordem cronológica. Use como fio condutor da conversa]\n';
+    texto += memoriaContínua.map(m => m.content).join('\n');
+  }
+
   // ── DEDUÇÃO — Peça 3: conectar os pontos ──
   // Nota: a memória é bilateral — o relationship summary captura tanto o que
   // o usuário disse quanto o que Clara disse (bom dia, proativas, boa noite
