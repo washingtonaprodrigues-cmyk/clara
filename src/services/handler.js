@@ -718,7 +718,10 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       const temAssuntoAberto = (perfilPessoal || '').includes('[ASSUNTOS EM ABERTO');
       let mostrarPendenciaSaude = false;
       // Não injeta saúde em aberto se a mensagem atual é confirmação de remédio
-      const ehConfirmacaoRemedio = /^(tomado|tomei|já tomei|tomou|feito)\s*(fedo)?\.?$/i.test((text||'').trim());
+      // GUARDA: mensagens longas (> 50 chars) NUNCA são confirmações de remédio —
+      // evita falso positivo quando usuário fala sobre remédio em conversa normal
+      const ehConfirmacaoRemedio = (text||'').trim().length <= 50 &&
+        /^(tomado|tomei|já tomei|tomou|feito)\s*(fedo)?\.?$/i.test((text||'').trim());
       if (pendenciaSaude && !temAssuntoAberto && !ehConfirmacaoRemedio) {
         const resumoLower = (pendenciaSaude.resumo || '').toLowerCase();
         const ehRemedio = /rem[eé]dio|medicamento|comp|dose|tomar/.test(resumoLower);
@@ -826,7 +829,8 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
             // Não emenda bom dia se a primeira mensagem for confirmação de
             // remédio/lembrete — a Clara deve responder só sobre o remédio
             // e o bom dia vem separado pelo cron alguns minutos depois.
-            const ehConfirmacaoAcao = /^(feito|tomei|tomado|já tomei|fiz|concluído|ok|feito fedo|tomou|pronto)[.! ]*(fedo)?[.!]?$/i.test(text.trim());
+            const ehConfirmacaoAcao = text.trim().length <= 50 &&
+              /^(feito|tomei|tomado|já tomei|fiz|concluído|ok|feito fedo|tomou|pronto)[.! ]*(fedo)?[.!]?$/i.test(text.trim());
             if (!conversaAnteriorHoje && !jaCumprimentou && !ehConfirmacaoAcao) {
               contexto += `\n\n[BOM DIA — IMPORTANTE] Esta é a PRIMEIRA mensagem do usuário hoje e ele NÃO te deu bom dia — foi direto ao assunto. Antes (ou junto) de responder o que ele pediu, EMENDE um bom dia SEU no SEU tom atual, de forma natural e curta. Exemplos conforme o tom: se for sarcástica/sem filtro, algo como "bom dia primeiro, né, grosso 🙄" ou "nem um oi, mas tá bom kk bom dia"; se for carinhosa/simpática, algo como "hummm acordou cedinho! bom dia, fedo 💜" ou "bom dia! 😊". Se souber algo do dia anterior ou do estado dele pela memória, pode puxar com humanidade ("dormiu bem?", "como você tá hoje?", "melhorou de ontem?"). NÃO seja robótica nem repita a mesma frase de sempre — varie. Depois disso, responda normalmente o que ele pediu.`;
               await prisma.memory.create({
