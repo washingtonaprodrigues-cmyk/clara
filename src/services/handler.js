@@ -1072,6 +1072,36 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
     updateRelationshipSummary(user.id, history, respStr).catch(() => {});
 
+    // ── Memória narrativa contínua — diário cronológico da relação ──
+    // Diferente do relationship_summary (que substitui) e dos episódios (que expiram),
+    // essa linha do tempo só ACUMULA. Uma entrada por dia, nunca deletada,
+    // lida em ordem cronológica. É o fio condutor que impede ela de regredir.
+    ;(async () => {
+      try {
+        const histTimeline = await memory.getConversationHistory(user.id, 10).catch(() => []);
+        if (histTimeline.length < 3) return;
+        const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+        // Evita duplicar entradas do mesmo dia — atualiza se já existe
+        const entradaHoje = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'memoria_continua', content: { startsWith: `[${hoje}]` } }
+        }).catch(() => null);
+        const resumoConv = histTimeline.slice(-6).map(m =>
+          `${m.role === 'user' ? 'Ele' : 'Clara'}: ${(m.content || '').slice(0, 100)}`
+        ).join('\n');
+        const entrada = await geminiFreeResponse([
+          { role: 'user', content: `Conversa de hoje (${hoje}):\n${resumoConv}\n\nEm 1-2 frases diretas, qual o ponto mais importante? Fatos concretos, estado emocional, decisões, eventos. Exemplos: "Washington preocupado com pressão 14/10, tentando equilibrar remédios.", "Habilitação pendente amanhã no almoço. Fala sobre briga com patroa sobre onde morar.". Se não tem nada relevante, responda: SKIP.` }
+        ], { temperature: 0.1, maxTokens: 80 }).catch(() => null);
+        if (!entrada || /^SKIP/i.test(entrada.trim())) return;
+        const conteudo = `[${hoje}] ${entrada.trim().slice(0, 200)}`;
+        if (entradaHoje) {
+          await prisma.memory.update({ where: { id: entradaHoje.id }, data: { content: conteudo } }).catch(() => {});
+        } else {
+          await prisma.memory.create({ data: { userId: user.id, type: 'memoria_continua', content: conteudo, metadata: JSON.stringify({ data: new Date().toISOString() }) } }).catch(() => {});
+        }
+        console.log(`[Timeline] ${conteudo.slice(0, 80)}`);
+      } catch {}
+    })();
+
     // Ponto 3: detecta padrão de reação em background
     ;(async () => {
       try {
