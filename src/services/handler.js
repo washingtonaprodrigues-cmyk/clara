@@ -3501,12 +3501,22 @@ async function checkConfirmacaoPendente(user, phone, text) {
 async function extractAndSavePersonalInfo(userId, text) {
   const infos = await extractPersonalInfo(text);
   if (infos && infos.length > 0) {
-    for (const { chave, valor, categoria, duracao } of infos) {
+    for (const { chave, valor, categoria, duracao, deletar, chave_errada } of infos) {
+      // Item de deleção: corrige atribuição errada removendo a entrada incorreta
+      if (deletar && chave_errada) {
+        const erradas = await prisma.memory.findMany({
+          where: { userId, type: 'info_pessoal' }
+        }).catch(() => []);
+        for (const e of erradas) {
+          let meta = {}; try { meta = JSON.parse(e.metadata || '{}'); } catch {}
+          if ((meta.chave || '').toLowerCase().includes(chave_errada.toLowerCase())) {
+            await prisma.memory.delete({ where: { id: e.id } }).catch(() => {});
+            console.log(`[memória] CORRIGIDA: deletada entrada errada "${meta.chave}"`);
+          }
+        }
+        continue;
+      }
       if (!chave || !valor) continue;
-      // Passa a duração classificada pelo extrator (permanente vs temporária).
-      // Fato permanente = identidade/história/gosto (nunca expira). Temporário =
-      // algo que vai passar (carro na oficina, Isis com tosse) — expira em 14d.
-      // Sem duracao definida, savePersonalInfo assume 'permanente' (retrocompat).
       await savePersonalInfo(userId, chave, valor, categoria || 'outro', duracao || 'permanente');
       console.log(`[memória pessoal] salvo: ${chave} = "${valor}" (${duracao || 'permanente'})`);
     }
