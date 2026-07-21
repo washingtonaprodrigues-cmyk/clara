@@ -628,30 +628,50 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       if (relMemoria?.content) contexto += `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoria.content}`;
 
       // ── Episódios recentes da vida do usuário ─────────────────────────
-      // Eventos concretos que aconteceram ou vão acontecer — informa o
-      // contexto de vida sem sobrecarregar (máx 3, pendentes primeiro).
-      // JANELA: 30 dias (era 90). Eventos "pendente" com mais de 7 dias
-      // já aconteceram ou foram cancelados — não exibir.
+      // Lógica temporal: episódio só aparece no contexto quando for o momento
+      // certo — como uma amiga que lembra de perguntar na hora certa, não toda
+      // hora. Isso evita puxar assunto de semanas atrás como se fosse agora.
       try {
         const episodios = await prisma.memory.findMany({
           where: {
             userId: user.id, type: 'episodio_vida',
             createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
           },
-          orderBy: { createdAt: 'desc' }, take: 5
+          orderBy: { createdAt: 'desc' }, take: 10
         });
         if (episodios.length > 0) {
-          const agora7 = Date.now() - 7 * 24 * 60 * 60 * 1000;
+          const agora = Date.now();
+          const RECENTE_MS    = 2 * 24 * 60 * 60 * 1000; // 0-2 dias: sempre mostra
+          const RESOLVIDO_MS  = 2 * 24 * 60 * 60 * 1000; // resolvido: mostra por 2 dias
+
           const filtrados = episodios.filter(e => {
             let meta = {}; try { meta = JSON.parse(e.metadata || '{}'); } catch {}
-            // Pendente antigo = já aconteceu ou foi esquecido — não mostrar
-            if (meta.resultado === 'pendente' && new Date(e.createdAt).getTime() < agora7) return false;
-            return true;
+            const idade = agora - new Date(e.createdAt).getTime();
+            const pendente = meta.resultado === 'pendente';
+
+            // Muito recente (< 2 dias): sempre mostra independente do status
+            if (idade < RECENTE_MS) return true;
+
+            // Resolvido: mostra por mais 2 dias pra ela poder comentar, depois some
+            if (!pendente) return idade < RESOLVIDO_MS;
+
+            // Pendente com prazo definido: só mostra quando o prazo chegou
+            if (meta.acompanhar_em_dias) {
+              // Usa next_check_at se foi reiniciado ("ainda não"), senão usa createdAt
+              const baseCheck = meta.next_check_at
+                ? new Date(meta.next_check_at).getTime()
+                : new Date(e.createdAt).getTime() + (meta.acompanhar_em_dias * 24 * 60 * 60 * 1000);
+              return agora >= baseCheck;
+            }
+
+            // Pendente sem prazo: mostra por até 5 dias
+            return idade < 5 * 24 * 60 * 60 * 1000;
           }).slice(0, 3);
+
           if (filtrados.length > 0) {
             const listaEp = filtrados.map(e => {
               let meta = {}; try { meta = JSON.parse(e.metadata || '{}'); } catch {}
-              return `• ${e.content}${meta.resultado === 'pendente' ? ' (ainda vai acontecer)' : ''}`;
+              return `• ${e.content}${meta.resultado === 'pendente' ? ' (ainda vai acontecer ou não atualizou)' : ''}`;
             }).join('\n');
             contexto += `\n\n[CONTEXTO DE VIDA RECENTE — use naturalmente se relevante, nunca force]\n${listaEp}`;
           }
@@ -1055,6 +1075,29 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         if (histPadrao.length >= 4) {
           const padrao = await detectarPadraoReacao(histPadrao);
           if (padrao) await memory.salvarPadraoReacao(user.id, padrao.tema, padrao.padrao);
+        }
+      } catch {}
+    })();
+
+    // ── "Ainda não" → reinicia contador do episódio ──
+    // Quando Clara perguntou sobre algo e o usuário responde "ainda não",
+    // reinicia o timer pra ela voltar a perguntar em 3 dias — não amanhã.
+    ;(async () => {
+      try {
+        const aindaNao = /ainda\s*n[aã]o|n[aã]o\s*(ainda|consegui|rolou|deu|fiz|resolvi)|por\s*enquanto\s*n[aã]o|n[aã]o\s*ainda/i.test(text);
+        if (!aindaNao) return;
+        // Verifica se há episódio pendente recente (criado nos últimos 7 dias)
+        const epsPendentes = await prisma.memory.findMany({
+          where: { userId: user.id, type: 'episodio_vida', createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+          orderBy: { createdAt: 'desc' }, take: 3
+        }).catch(() => []);
+        for (const ep of epsPendentes) {
+          let meta = {}; try { meta = JSON.parse(ep.metadata || '{}'); } catch {}
+          if (meta.resultado !== 'pendente') continue;
+          // Reinicia: next_check_at = agora + 3 dias
+          meta.next_check_at = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+          await prisma.memory.update({ where: { id: ep.id }, data: { metadata: JSON.stringify(meta) } }).catch(() => {});
+          console.log(`[Episodio] "Ainda não" detectado — next_check_at em 3 dias: "${ep.content.slice(0, 50)}"`);
         }
       } catch {}
     })();
