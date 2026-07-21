@@ -2581,14 +2581,12 @@ cron.schedule('* * * * *', async () => {
         }
         if (dados.tipo !== 'hora_lembrete') continue;
         if (Date.now() <= dados.expira) continue;
-        const user = await prisma.user.findUnique({ where: { id: p.userId } }).catch(() => null);
-        if (!user?.phone) { await prisma.memory.delete({ where: { id: p.id } }).catch(() => {}); continue; }
-        const scheduledAt = new Date(`${dados.data}T09:00:00-03:00`);
-        await prisma.reminder.create({ data: { userId: user.id, phone: user.phone, message: dados.titulo, scheduledAt } });
+        // Expirou sem resposta — deleta silenciosamente.
+        // Nada de "deixei pra 09:00 provisório" — esse comportamento é robótico
+        // e quebra o clima de qualquer conversa. Se o usuário quiser o lembrete,
+        // ele vai pedir de novo. Vida que segue.
         await prisma.memory.delete({ where: { id: p.id } }).catch(() => {});
-        const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-        await sendMessage(user.phone, `⏰ Não me respondeu o horário, então deixei "${dados.titulo}" pra ${dataFmt} às 09:00 (provisório). Pode me dizer o horário certo a qualquer momento 😊`);
-        console.log(`[HoraLembrete] Finalizado com 09:00 provisório: "${dados.titulo}" → ${user.phone}`);
+        console.log(`[HoraLembrete] Expirou sem resposta — deletado silenciosamente: "${dados.titulo}"`);
       } catch (e) { console.error(`[HoraLembrete] Erro ${p.id}:`, e.message); }
     }
   } catch (e) { console.error('[HoraLembrete] Erro geral:', e.message); }
