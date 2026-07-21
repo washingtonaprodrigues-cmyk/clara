@@ -2987,8 +2987,8 @@ async function editarLembrete(user, phone, classified, contextoClassify = '', or
     let novoScheduledAt = new Date(encontrado.scheduledAt);
     // Se classify não extraiu nova_hora, tenta extrair do texto diretamente
     // ("pra 10 horas", "às 10", "10h", "10:00" etc.)
-    if (!classified.nova_hora && text) {
-      const textN = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!classified.nova_hora && originalText) {
+      const textN = originalText.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const mHM = textN.match(/(\d{1,2})[:h](\d{2})/);
       const mH = textN.match(/(\d{1,2})\s*h(?:oras?)?\b/);
       const mAs = textN.match(/[a]s?\s+(\d{1,2})\b/);
