@@ -895,8 +895,13 @@ cron.schedule('45 23 * * *', async () => {
       try {
         const jaEnviou = await prisma.memory.findFirst({ where: { userId: user.id, type: 'boa_noite_lock', content: hoje } }).catch(() => null);
         if (jaEnviou) continue;
+        // Não manda boa noite garantida se usuário está em conversa ativa (últimos 30 min)
+        const histGar = await memory.getConversationHistory(user.id, 4).catch(() => []);
+        const ultimaUserGar = histGar.filter(m => m.role === 'user').pop();
+        if (ultimaUserGar) continue; // se tem conversa recente, o boa noite normal vai cuidar
         const msg = BOA_NOITE_GARANTIDA[Math.floor(Math.random() * BOA_NOITE_GARANTIDA.length)];
         await sendMessage(user.phone, msg);
+        await memory.saveConversationMessage(user.id, 'assistant', msg).catch(() => {});
         await prisma.memory.create({ data: { userId: user.id, type: 'boa_noite_lock', content: hoje } }).catch(() => {});
         console.log(`[Boa noite GARANTIDA] ${user.phone}: ${msg}`);
       } catch (e) { console.error(`[Boa noite GARANTIDA] Erro ${user.phone}:`, e.message); }
