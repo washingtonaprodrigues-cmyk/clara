@@ -425,18 +425,6 @@ ${resumo}`;
     }
   }
 
-  // ── Feature 2: Conexão externo/interno — contexto integrado ──
-  // Lê contexto preparado pelo processamento silencioso (cron 03h30).
-  // Quando existe, é a síntese mais afiada do que é relevante agora —
-  // combinando estado emocional + eventos externos + padrões.
-  const ctxPrep = await prisma.memory.findFirst({
-    where: { userId, type: 'contexto_preparado', createdAt: { gte: new Date(Date.now() - 24*60*60*1000) } },
-    orderBy: { createdAt: 'desc' }
-  }).catch(() => null);
-  if (ctxPrep) {
-    texto += `\n\n[CONTEXTO PREPARADO — síntese do que é mais relevante agora]\n${ctxPrep.content}`;
-  }
-
   // ── Memória narrativa contínua — linha do tempo que nunca regride ──
   // Diferente do summary (substitui) e episódios (expiram), essa só acumula.
   // Lida em ordem cronológica pra Clara saber o fio do que foi acontecendo.
