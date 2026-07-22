@@ -1647,6 +1647,14 @@ async function handleMessage(phone, text, location = null) {
           console.log(`[Guardrail] Afirmação de intenção ≠ tarefa — tratando como conversa: "${(text||'').slice(0,60)}"`);
           classified.tipo = 'outro';
         }
+        // "Vou pesquisar isso", "vou ver isso" = ELE vai pesquisar, não ela
+        if (classified.tipo === 'busca') {
+          const ehUsuarioPesquisando = /^(vou|eu vou|acho que vou)\s+(pesquisar|ver|procurar|buscar|googlar|checar)\b/i.test((text||'').trim());
+          if (ehUsuarioPesquisando) {
+            console.log(`[Guardrail] Usuário vai pesquisar sozinho ≠ busca: "${(text||'').slice(0,60)}"`);
+            classified.tipo = 'outro';
+          }
+        }
       }
     }
 
