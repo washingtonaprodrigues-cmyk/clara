@@ -425,6 +425,40 @@ ${resumo}`;
     }
   }
 
+  // ── Feature 1: Consciência emocional da semana ──
+  // Mostra o fio emocional recente — hoje pesa mais que ontem,
+  // ontem mais que anteontem. É contexto de fundo, não peso a carregar.
+  const estadosEmo = await prisma.memory.findMany({
+    where: { userId, type: 'estado_emocional', createdAt: { gte: new Date(Date.now() - 7*24*60*60*1000) } },
+    orderBy: { createdAt: 'desc' }, // mais recente primeiro
+    take: 7
+  }).catch(() => []);
+  if (estadosEmo.length > 0) {
+    // Hoje sempre aparece; dias anteriores só se intensidade >= 2
+    const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+    const filtrados = estadosEmo.filter((e, i) => {
+      if (i === 0) return true; // hoje sempre
+      try { return JSON.parse(e.metadata || '{}').intensidade >= 2; } catch { return false; }
+    }).slice(0, 4); // máx 4 dias
+    if (filtrados.length > 0) {
+      texto += '\n\n[COMO ELE TEM ESTADO — contexto de fundo, não peso a carregar. HOJE é o que mais importa; responda ao momento atual, não ao acumulado]\n';
+      texto += filtrados.map((e, i) => `${i === 0 ? '→ HOJE' : `  ${i}d atrás`}: ${e.content.replace(/^\[\d+\/\d+\]\s*/, '')}`).join('\n');
+      texto += '\nIMPORTANTE: se hoje está leve, seja leve. Não dramatize contexto anterior nem projete emoções que ele não está sentindo agora.';
+    }
+  }
+
+  // ── Feature 2: Conexão externo/interno — contexto integrado ──
+  // Lê contexto preparado pelo processamento silencioso (cron 03h30).
+  // Quando existe, é a síntese mais afiada do que é relevante agora —
+  // combinando estado emocional + eventos externos + padrões.
+  const ctxPrep = await prisma.memory.findFirst({
+    where: { userId, type: 'contexto_preparado', createdAt: { gte: new Date(Date.now() - 24*60*60*1000) } },
+    orderBy: { createdAt: 'desc' }
+  }).catch(() => null);
+  if (ctxPrep) {
+    texto += `\n\n[CONTEXTO PREPARADO — síntese do que é mais relevante agora]\n${ctxPrep.content}`;
+  }
+
   // ── Memória narrativa contínua — linha do tempo que nunca regride ──
   // Diferente do summary (substitui) e episódios (expiram), essa só acumula.
   // Lida em ordem cronológica pra Clara saber o fio do que foi acontecendo.
