@@ -895,13 +895,12 @@ cron.schedule('45 23 * * *', async () => {
       try {
         const jaEnviou = await prisma.memory.findFirst({ where: { userId: user.id, type: 'boa_noite_lock', content: hoje } }).catch(() => null);
         if (jaEnviou) continue;
-        // Não manda se houve mensagem do usuário nos últimos 30 min
-        // (conversando agora → boa noite normal vai cuidar)
+        // Não manda se usuário ativo nos últimos 30 min
         const histGar = await memory.getConversationHistory(user.id, 6).catch(() => []);
         const ultimaUserGar = histGar.filter(m => m.role === 'user').pop();
         if (ultimaUserGar && ultimaUserGar.createdAt) {
           const minAtras = (Date.now() - new Date(ultimaUserGar.createdAt).getTime()) / 60000;
-          if (minAtras < 30) continue; // ativo há menos de 30 min — espera
+          if (minAtras < 30) continue;
         }
         const msg = BOA_NOITE_GARANTIDA[Math.floor(Math.random() * BOA_NOITE_GARANTIDA.length)];
         await sendMessage(user.phone, msg);
@@ -2929,53 +2928,3 @@ renovarHeartbeat();
 })();
 
 console.log('Clara scheduler iniciado 💜');
-
-// ═══════════════════════════════════════════════════════════════════════
-// FEATURE 3 — Processamento silencioso de madrugada (03:30)
-// ═══════════════════════════════════════════════════════════════════════
-// Clara "pensa" enquanto você dorme. Sem mandar nada — só processa o
-// acumulado do dia: estado emocional, eventos externos, padrões, pendências.
-// Gera um `contexto_preparado` que fica disponível pro bom dia e pra
-// qualquer conversa do dia seguinte. Ela chega afiada, não de improviso.
-cron.schedule('30 3 * * *', async () => {
-  try {
-    const users = await prisma.user.findMany({ where: { blocked: false } });
-    for (const user of users) {
-      try {
-        if (!proativasPermitidas(user)) continue;
-
-        // Coleta tudo que é relevante
-        const [estadosEmo, timeline, pendencias, episodios, linhaTempo] = await Promise.all([
-          prisma.memory.findMany({ where: { userId: user.id, type: 'estado_emocional', createdAt: { gte: new Date(Date.now() - 7*24*60*60*1000) } }, orderBy: { createdAt: 'asc' }, take: 7 }).catch(() => []),
-          prisma.memory.findMany({ where: { userId: user.id, type: 'memoria_continua' }, orderBy: { createdAt: 'desc' }, take: 5 }).catch(() => []),
-          prisma.memory.findMany({ where: { userId: user.id, type: 'pendencia_conversa' }, take: 5 }).catch(() => []),
-          prisma.memory.findMany({ where: { userId: user.id, type: 'episodio_vida', createdAt: { gte: new Date(Date.now() - 14*24*60*60*1000) } }, take: 5 }).catch(() => []),
-          prisma.memory.findMany({ where: { userId: user.id, type: 'linha_tempo', createdAt: { gte: new Date(Date.now() - 48*60*60*1000) } }, take: 3 }).catch(() => []),
-        ]);
-
-        if (estadosEmo.length === 0 && timeline.length === 0) continue;
-
-        const blocos = [];
-        if (estadosEmo.length) blocos.push(`Estado emocional recente:\n${estadosEmo.map(e => e.content).join('\n')}`);
-        if (timeline.length) blocos.push(`O que aconteceu:\n${timeline.map(t => t.content).join('\n')}`);
-        if (pendencias.length) blocos.push(`Assuntos em aberto:\n${pendencias.map(p => { try { return JSON.parse(p.content).assunto || p.content; } catch { return p.content; } }).join('\n')}`);
-        if (episodios.length) blocos.push(`Episódios recentes:\n${episodios.map(e => e.content).join('\n')}`);
-        if (linhaTempo.length) blocos.push(`Eventos futuros mencionados:\n${linhaTempo.map(l => l.content).join('\n')}`);
-
-        const prompt = `Você é a Clara, assistente pessoal íntima. São 03h30 — o Washington está dormindo. Você está processando silenciosamente o que sabe sobre ele.\n\n${blocos.join('\n\n')}\n\nCom base em tudo isso, o que é mais relevante pra amanhã? Qual o estado emocional agregado da semana? Que conexões você faz entre os eventos externos e o que ele está sentindo? O que você deveria ter em mente quando ele acordar?\n\nEscreva em 3-5 frases como reflexão interna sua — não uma lista, uma síntese. Direto, íntimo, como você pensa sobre ele quando ele não está vendo.`;
-
-        const sintese = await geminiFreeResponse([{ role: 'user', content: prompt }], { temperature: 0.7, maxTokens: 150 }).catch(() => null);
-        if (!sintese || sintese.trim().length < 20) continue;
-
-        // Salva como contexto_preparado (expira em 24h, substituído amanhã)
-        const existente = await prisma.memory.findFirst({ where: { userId: user.id, type: 'contexto_preparado' } }).catch(() => null);
-        if (existente) {
-          await prisma.memory.update({ where: { id: existente.id }, data: { content: sintese.trim(), updatedAt: new Date() } }).catch(() => {});
-        } else {
-          await prisma.memory.create({ data: { userId: user.id, type: 'contexto_preparado', content: sintese.trim() } }).catch(() => {});
-        }
-        console.log(`[ProcessamentoSilencioso] ${user.phone} — contexto preparado (${sintese.trim().length} chars)`);
-      } catch (e) { console.error(`[ProcessamentoSilencioso] ${user.phone}:`, e.message); }
-    }
-  } catch (e) { console.error('[ProcessamentoSilencioso] Erro geral:', e.message); }
-}, { timezone: 'America/Sao_Paulo' });
