@@ -1357,8 +1357,8 @@ function filtrarResposta(t) {
   // Se a resposta É um marcador de busca (só isso), preserva — o handler precisa processar
   if (/^[*_]{0,2}BUSCAR:[^*_\n]+[*_]{0,2}$/i.test(t.trim())) return t.trim();
   // Remove __BUSCAR:...__ e variações que VAZAM junto de outro texto — não deve aparecer pro usuário
-  t = t.replace(/_+BUSCAR:[^_\n]*_*/gi, '').trim();
-  t = t.replace(/\*+BUSCAR:[^*\n]*\**/gi, '').trim();
+  t = t.replace(/_*BUSCAR_*:[^\n]*/gi, '').trim();  // pega __BUSCAR__:query e variantes
+  t = t.replace(/\**BUSCAR\**:[^\n]*/gi, '').trim();
   // CORRIGIDO: tag truncada pelo limite de tokens (ex: "__BUS" ou "__BUSCA" sem
   // completar) também vaza pro usuário porque não casa com os padrões acima.
   // Remove qualquer fragmento de __BUS... no final do texto (onde a truncagem ocorre).
