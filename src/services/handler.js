@@ -1072,7 +1072,6 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
     updateRelationshipSummary(user.id, history, respStr).catch(() => {});
 
-
     // ── Memória narrativa contínua — diário cronológico da relação ──
     // Diferente do relationship_summary (que substitui) e dos episódios (que expiram),
     // essa linha do tempo só ACUMULA. Uma entrada por dia, nunca deletada,
@@ -1614,14 +1613,6 @@ async function handleMessage(phone, text, location = null) {
         if (ehIntencao && !temGatilhoGuard) {
           console.log(`[Guardrail] Afirmação de intenção ≠ tarefa — tratando como conversa: "${(text||'').slice(0,60)}"`);
           classified.tipo = 'outro';
-        }
-        // "Vou pesquisar isso", "vou ver isso" = ELE vai pesquisar, não ela
-        if (classified.tipo === 'busca') {
-          const ehUsuarioPesquisando = /^(vou|eu vou|acho que vou)\s+(pesquisar|ver|procurar|buscar|googlar|checar)\b/i.test((text||'').trim());
-          if (ehUsuarioPesquisando) {
-            console.log(`[Guardrail] Usuário vai pesquisar sozinho ≠ busca: "${(text||'').slice(0,60)}"`);
-            classified.tipo = 'outro';
-          }
         }
       }
     }
