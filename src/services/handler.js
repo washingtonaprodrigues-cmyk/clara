@@ -938,8 +938,11 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
               try {
                 await new Promise(r => setTimeout(r, 1500));
                 if (!geminiDisponivel() || todosModelosEsgotados()) return;
+                const ehLocalBusca = /(farmácia|farmacia|médico|medico|clínica|clinica|hospital|consultório|consultorio|cardiologista|dentista|laboratorio|laboratório|serviço|servico|loja|mercado|restaurante|oficina|mecânico|mecanico)/i.test(query + ' ' + text);
                 const promptPos = ehSaudeBusca
-                  ? `\n\n[VOCÊ JÁ DEU A INFO DE SAÚDE] Você explicou sobre "${query}". Mande UM comentário curto de amiga preocupada — pergunte se ele tá sentindo algo, se é ele ou alguém da família. MÁXIMO 1 frase (menos de 15 palavras). Não repita a explicação.`
+                  ? `\n\n[VOCÊ JÁ DEU A INFO DE SAÚDE] Você explicou sobre "${query}". Mande UM comentário curto de amiga preocupada — pergunte se ele tá sentindo algo, se é ele ou alguém da família. MÁXIMO 1 frase. Não repita a explicação.`
+                  : ehLocalBusca
+                  ? `\n\n[VOCÊ JÁ DEU A INFO LOCAL] Info sobre "${query}" enviada. Ofereça buscar mais a fundo se necessário — algo como "Quer que eu busque mais opções?" ou "Se quiser mais detalhes é só falar!". MÁXIMO 1 frase curta.`
                   : `\n\n[VOCÊ JÁ EXPLICOU] Info sobre "${query}" enviada. Dê UM toque pessoal curtíssimo — opinião, brincadeira leve ou pergunta genuína. MÁXIMO 1 frase. NÃO repita. Se não tiver toque genuíno, responda APENAS: SKIP`;
                 const coment = await geminiFreeResponse([
                   { role: 'system', content: buildPersonality(tom, apelidoBusca, false) + promptPos },
