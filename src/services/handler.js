@@ -1072,38 +1072,6 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
     updateRelationshipSummary(user.id, history, respStr).catch(() => {});
 
-    // ── Feature 1: Consciência emocional acumulada ──
-    // Extrai o tom emocional de cada conversa e acumula nos últimos 7 dias.
-    // Clara saberá se você está vindo de uma semana pesada ou tranquila
-    // sem precisar você explicar — entra em cada conversa calibrada.
-    ;(async () => {
-      try {
-        const histEmo = await memory.getConversationHistory(user.id, 8).catch(() => []);
-        if (histEmo.length < 3) return;
-        const resumoEmo = histEmo.slice(-6).map(m =>
-          `${m.role === 'user' ? 'Ele' : 'Clara'}: ${(m.content || '').slice(0, 100)}`
-        ).join('\n');
-        const emoStr = await geminiFreeResponse([
-          { role: 'user', content: `Conversa:\n${resumoEmo}\n\nQual o tom emocional predominante do usuário (não da Clara)? Responda APENAS JSON: {"tom":"ansioso|aliviado|frustrado|leve|carregado|neutro|animado|preocupado","intensidade":1,"motivo":"1 frase"}\nIntensidade: 1=sutil, 2=claro, 3=intenso. Se conversa trivial sem tom claro, {"tom":"neutro","intensidade":1,"motivo":"conversa casual"}.` }
-        ], { temperature: 0.1, maxTokens: 60 }).catch(() => null);
-        if (!emoStr) return;
-        const emo = JSON.parse(emoStr.replace(/```json|```/g, '').trim());
-        if (!emo?.tom) return;
-        const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-        // Upsert por dia — uma entrada por dia, a mais recente vence
-        const existeHoje = await prisma.memory.findFirst({
-          where: { userId: user.id, type: 'estado_emocional', metadata: { contains: hoje } }
-        }).catch(() => null);
-        const meta = JSON.stringify({ data: hoje, ts: new Date().toISOString() });
-        const conteudo = `[${hoje}] ${emo.tom} (intensidade ${emo.intensidade}/3) — ${emo.motivo}`;
-        if (existeHoje) {
-          await prisma.memory.update({ where: { id: existeHoje.id }, data: { content: conteudo, metadata: meta } }).catch(() => {});
-        } else {
-          await prisma.memory.create({ data: { userId: user.id, type: 'estado_emocional', content: conteudo, metadata: meta } }).catch(() => {});
-        }
-        console.log(`[EstadoEmocional] ${conteudo.slice(0, 70)}`);
-      } catch {}
-    })();
 
     // ── Memória narrativa contínua — diário cronológico da relação ──
     // Diferente do relationship_summary (que substitui) e dos episódios (que expiram),
