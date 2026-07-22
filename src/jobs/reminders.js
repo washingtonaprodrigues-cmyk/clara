@@ -2503,7 +2503,7 @@ cron.schedule('* * * * *', async () => {
       const estadoDia = await prisma.memory.findFirst({ where: { userId, type: 'estado_do_dia' } }).catch(() => null);
       const ctxEstadoChamada = estadoDia?.content ? `\n\n[ESTADO DO DIA] ${estadoDia.content}` : '';
 
-      const ctx = `[CHAMADA COMBINADA] Você combinou de chamar ${nome || 'o usuário'} agora (${horaCombinada}). Apareça de forma natural — retome o assunto que ficou pendente, use o contexto abaixo. NÃO apareça genérica. NÃO diga "passei pra ver se você está bem".${ctxCombinado}${ctxEstadoChamada}${contextoRelChamada}`;
+      const ctx = `[CHAMADA COMBINADA] Você combinou de chamar ${nome || 'o usuário'} agora (${horaCombinada}). Apareça de forma natural no SEU tom. COMO FAZER: olhe o contexto abaixo — se havia um assunto em aberto ou algo que ele ia fazer/contar, comece por aí de forma natural ("e aí, como foi aquilo?", "e o Detran, resolveu?", "me conta como foi!"). Se não havia nada específico, apareça de um jeito leve e direto ("oi, aqui estou!", "apareci! tô aqui."). NUNCA apareça genérica com "passei pra ver se você está bem" nem use __BUSCAR__ nem qualquer tag de sistema.${ctxCombinado}${ctxEstadoChamada}${contextoRelChamada}`;
 
       // Tenta gerar mensagem contextual — com retry e fallback simples
       // Se Gemini falhar em ambas as tentativas, manda uma mensagem curta
