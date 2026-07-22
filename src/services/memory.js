@@ -1,868 +1,1069 @@
-const express = require('express');
-const router = express.Router();
-const { handleMessage } = require('../services/handler');
-const { freeResponse, buildPersonality } = require('../services/groq');
-const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('../services/gemini');
-const memory = require('../services/memory');
-const rateLimit = require('../services/rateLimit');
+// Clara memory v7 — Clara 3.0: perfil rico + curiosidade orgânica
+
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-// ── Cache de deduplicação de messageId ──
-const _messageIdsProcessados = new Map();
-const DEDUP_JANELA_MS = 10 * 60 * 1000;
+// ====================== HELPERS ======================
 
-function marcarMessageIdProcessado(id) {
-  _messageIdsProcessados.set(id, Date.now() + DEDUP_JANELA_MS);
+function parseDateSafely(date) {
+  if (!date) return null;
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return null;
+  return d;
 }
 
-// ── Segunda camada: dedup por CONTEÚDO (telefone + texto + quotedText) ──
-// CORREÇÃO (sessão 7.1): a chave agora inclui o quotedText (mensagem
-// citada via swipe-reply). Sem isso, dois "Feito" em resposta a remédios
-// diferentes chegavam com o mesmo hash phone+texto → o segundo era
-// ignorado como duplicata → confirmação do segundo remédio nunca
-// processada.
-//
-// Com quotedText no hash:
-//   "Feito" citando "Remédio de pressão"  → hash A → processa
-//   "Feito" citando "Remédio de Toróide"  → hash B → processa
-//   "Feito" citando "Remédio de pressão"  → hash A de novo → ignora (retry real)
-const _conteudoProcessadoRecente = new Map();
-const DEDUP_CONTEUDO_JANELA_MS = 60 * 1000;
+// ====================== USER ======================
 
-function chaveConteudo(phone, text, quotedText) {
-  const quoted = quotedText ? String(quotedText).trim().slice(0, 100) : '';
-  return `${phone}|${text}|${quoted}`;
+async function getOrCreateUser(phone) {
+  let user = await prisma.user.findUnique({ where: { phone } });
+  if (!user) {
+    user = await prisma.user.create({ data: { phone } });
+    console.log(`👤 Nova usuária: ${phone}`);
+  }
+  return user;
 }
 
-function conteudoJaProcessado(phone, text, quotedText) {
-  if (!text) return false;
-  const chave = chaveConteudo(phone, text, quotedText);
-  const expiraEm = _conteudoProcessadoRecente.get(chave);
-  if (!expiraEm) return false;
-  if (Date.now() >= expiraEm) { _conteudoProcessadoRecente.delete(chave); return false; }
+// ====================== JORNADA ======================
+
+async function saveJornada(userId, minutos) {
+  return prisma.user.update({ where: { id: userId }, data: { jornadaMinutos: minutos } });
+}
+
+async function getJornada(userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { jornadaMinutos: true } });
+  return user?.jornadaMinutos || 480;
+}
+
+// ====================== PREFERÊNCIAS ======================
+
+async function saveUserPreference(userId, name, tom, saldo = null) {
+  const data = {};
+  if (name && typeof name === 'string' && name.trim().length > 0) {
+    data.name = name.trim();
+  }
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  let meta = {};
+  if (user?.metadata) { try { meta = JSON.parse(user.metadata); } catch {} }
+  if (tom && typeof tom === 'string' && tom.trim().length > 0) meta.tom = tom.trim();
+  if (saldo !== null && saldo !== undefined && !isNaN(saldo)) meta.saldo = parseFloat(saldo);
+  data.metadata = JSON.stringify(meta);
+  return prisma.user.update({ where: { id: userId }, data });
+}
+
+async function getUserPreference(userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return { name: null, tom: 'carinhoso', saldo: null };
+  let tom = 'carinhoso', saldo = null;
+  if (user.metadata) {
+    try {
+      const m = JSON.parse(user.metadata);
+      tom = m.tom || 'carinhoso';
+      saldo = m.saldo !== undefined ? m.saldo : null;
+    } catch {}
+  }
+  return { name: user.name, tom, saldo };
+}
+
+// ====================== MEMÓRIA PESSOAL RICA ======================
+// Clara 3.0: categorias expandidas para conhecer o usuário de verdade.
+// Cada categoria alimenta tanto o contexto da Clara quanto alertas proativos.
+
+const PERSONAL_INFO_TYPE = 'info_pessoal';
+
+// Categorias do perfil rico — usadas pelo extractPersonalInfo (groq.js)
+// e exibidas no Dashboard > Memórias com labels amigáveis
+const CATEGORIAS_PERFIL = {
+  familia:              { label: '👨‍👩‍👧 Família',                  emoji: '👨‍👩‍👧' },
+  relacionamento:       { label: '❤️ Relacionamento',             emoji: '❤️' },
+  filhos:               { label: '👶 Filhos',                     emoji: '👶' },
+  trabalho:             { label: '💼 Trabalho',                   emoji: '💼' },
+  hobbies:              { label: '🎯 Hobbies',                    emoji: '🎯' },
+  entretenimento:       { label: '🎬 Entretenimento',             emoji: '🎬' },
+  alimentacao:          { label: '🍔 Alimentação',                emoji: '🍔' },
+  metas:                { label: '🎯 Metas',                      emoji: '🎯' },
+  personalidade:        { label: '✨ Personalidade',              emoji: '✨' },
+  saude:                { label: '💊 Saúde (dele)',               emoji: '💊' },
+  saude_familia:        { label: '🏥 Saúde da Família',          emoji: '🏥' },
+  datas:                { label: '📅 Datas importantes',          emoji: '📅' },
+  rotina:               { label: '⏰ Rotina',                     emoji: '⏰' },
+  objetivos:            { label: '🚀 Objetivos',                  emoji: '🚀' },
+  referencias_compartilhadas: { label: '🤝 Referências & Piadas', emoji: '🤝' },
+  relacionamento_clara: { label: '💜 Relação com a Clara',        emoji: '💜' },
+  outro:                { label: '📌 Informações gerais',         emoji: '📌' },
+};
+
+// Campos que a Clara ainda não conhece e pode perguntar organicamente.
+// Cada item tem: categoria, pergunta natural, e quando faz sentido perguntar.
+// Usado pelo sistema de curiosidade orgânica no groq.js.
+const CAMPOS_CURIOSIDADE = [
+  // Família / Relacionamento
+  { chave: 'conjuge',         categoria: 'relacionamento',  pergunta: 'você é casado(a) ou tem namorado(a)?',                    contexto: 'qualquer' },
+  { chave: 'aniversario_relacionamento', categoria: 'relacionamento', pergunta: 'quando é o aniversário de vocês juntos?',        contexto: 'relacionamento' },
+  { chave: 'filhos_nomes',    categoria: 'filhos',          pergunta: 'você tem filhos?',                                        contexto: 'qualquer' },
+  { chave: 'filhos_idades',   categoria: 'filhos',          pergunta: 'quantos anos tem seu(s) filho(s)?',                       contexto: 'filhos' },
+  // Trabalho
+  { chave: 'empresa',         categoria: 'trabalho',        pergunta: 'em qual empresa você trabalha?',                          contexto: 'trabalho' },
+  { chave: 'cargo',           categoria: 'trabalho',        pergunta: 'qual é o seu cargo?',                                     contexto: 'trabalho' },
+  { chave: 'chefe',           categoria: 'trabalho',        pergunta: 'como é seu chefe? te dá espaço ou é mais controlador?',   contexto: 'trabalho' },
+  // Entretenimento
+  { chave: 'time_futebol',    categoria: 'entretenimento',  pergunta: 'você torce pra algum time de futebol?',                   contexto: 'qualquer' },
+  { chave: 'series_favoritas', categoria: 'entretenimento', pergunta: 'tem alguma série que você está assistindo agora?',        contexto: 'lazer' },
+  { chave: 'filmes_favoritos', categoria: 'entretenimento', pergunta: 'que tipo de filme você mais curte?',                     contexto: 'lazer' },
+  { chave: 'musica_genero',   categoria: 'entretenimento',  pergunta: 'que tipo de música você mais ouve?',                     contexto: 'lazer' },
+  // Hobbies
+  { chave: 'hobby_principal', categoria: 'hobbies',         pergunta: 'o que você curte fazer quando está de folga?',            contexto: 'qualquer' },
+  { chave: 'esporte',         categoria: 'hobbies',         pergunta: 'você pratica algum esporte ou academia?',                 contexto: 'saude' },
+  // Alimentação
+  { chave: 'comida_favorita', categoria: 'alimentacao',     pergunta: 'qual é sua comida favorita?',                            contexto: 'qualquer' },
+  { chave: 'restricao_alimentar', categoria: 'alimentacao', pergunta: 'você tem alguma restrição alimentar?',                   contexto: 'saude' },
+  // Personalidade
+  { chave: 'signo',           categoria: 'personalidade',   pergunta: 'qual é o seu signo?',                                    contexto: 'qualquer' },
+  { chave: 'introvertido_extrovertido', categoria: 'personalidade', pergunta: 'você se considera mais introvertido ou extrovertido?', contexto: 'qualquer' },
+  // Metas
+  { chave: 'meta_principal',  categoria: 'metas',           pergunta: 'qual é o seu maior objetivo agora?',                     contexto: 'qualquer' },
+  { chave: 'meta_financeira', categoria: 'metas',           pergunta: 'você tem alguma meta financeira que está perseguindo?',  contexto: 'financeiro' },
+];
+
+async function savePersonalInfo(userId, chave, valor, categoria = 'outro', duracao = 'permanente') {
+  // FILTRO HARD: nunca salvar info pessoal / referência compartilhada de
+  // conteúdo íntimo/sexual. Cobre o caso de "referencias_compartilhadas" ou
+  // qualquer categoria capturar uma conversa íntima de ontem e a Clara trazer
+  // isso por iniciativa (bom dia, proativa). A instrução no prompt não basta —
+  // esse bloqueio no código é a rede final.
+  const textoCheck = `${chave || ''} ${valor || ''}`.toLowerCase();
+  const FILTRO_INTIMO = /erótic|erotic|sexo|sexual|cena quente|cena de sexo|nudez|nud[ae]s\b|pelad|transar|transa\b|tesão|tesao|gemid|orgasm|excita|masturb|penetra|preliminar|amass|conteúdo sexual/i;
+  if (FILTRO_INTIMO.test(textoCheck)) {
+    console.log(`[InfoPessoal] BLOQUEADA (conteúdo íntimo): "${chave}"`);
+    return null;
+  }
+
+  // Duração do fato: 'permanente' (quem a pessoa é, história, gosto — fica pra
+  // sempre) ou 'temporaria' (algo acontecendo que vai passar). Fatos temporários
+  // ganham uma data de expiração; permanentes nunca expiram. Isso é o que
+  // permite a Clara lembrar "você foi DJ" pra sempre, mas esquecer "o carro deu
+  // problema" depois que resolve.
+  const ehTemporaria = duracao === 'temporaria';
+  const expiraEm = ehTemporaria ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() : null;
+
+  const existing = await prisma.memory.findFirst({
+    where: {
+      userId,
+      type: PERSONAL_INFO_TYPE,
+      metadata: { contains: `"chave":"${chave}"` },
+    },
+  });
+
+  if (existing) {
+    if (existing.content === valor) return existing;
+    // Ao atualizar, se virou permanente (ex: "o carro deu problema" → depois
+    // "consertei o carro, ficou ótimo"), mantém permanente. Uma vez permanente,
+    // não volta a ser temporário.
+    let metaAntiga = {}; try { metaAntiga = JSON.parse(existing.metadata || '{}'); } catch {}
+    const jaEraPermanente = metaAntiga.duracao === 'permanente';
+    const duracaoFinal = jaEraPermanente ? 'permanente' : duracao;
+    return prisma.memory.update({
+      where: { id: existing.id },
+      data: {
+        content: valor,
+        metadata: JSON.stringify({ chave, categoria, duracao: duracaoFinal, expiraEm: duracaoFinal === 'temporaria' ? expiraEm : null, updatedAt: new Date().toISOString() }),
+      },
+    });
+  }
+
+  return prisma.memory.create({
+    data: {
+      userId,
+      type: PERSONAL_INFO_TYPE,
+      content: valor,
+      metadata: JSON.stringify({ chave, categoria, duracao, expiraEm, createdAt: new Date().toISOString() }),
+    },
+  });
+}
+
+async function deletePersonalInfo(userId, memoryId) {
+  // Verifica que a memória pertence ao usuário antes de deletar
+  const mem = await prisma.memory.findFirst({
+    where: { id: memoryId, userId, type: PERSONAL_INFO_TYPE }
+  }).catch(() => null);
+  if (!mem) return false;
+  await prisma.memory.delete({ where: { id: memoryId } }).catch(() => {});
+  // Quando o usuário deleta, marca que não quer ser perguntado sobre aquilo de novo por 30 dias
+  let meta = {};
+  try { meta = JSON.parse(mem.metadata || '{}'); } catch {}
+  if (meta.chave) {
+    await prisma.memory.create({
+      data: {
+        userId,
+        type: 'perfil_deletado',
+        content: meta.chave,
+        metadata: JSON.stringify({ deletadoEm: new Date().toISOString(), expira: Date.now() + 30 * 24 * 60 * 60 * 1000 })
+      }
+    }).catch(() => {});
+  }
   return true;
 }
 
-function marcarConteudoProcessado(phone, text, quotedText) {
-  if (!text) return;
-  _conteudoProcessadoRecente.set(chaveConteudo(phone, text, quotedText), Date.now() + DEDUP_CONTEUDO_JANELA_MS);
-}
+async function getPersonalInfo(userId, categoria = null) {
+  const where = { userId, type: PERSONAL_INFO_TYPE };
+  const mems = await prisma.memory.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+  });
 
-// ── Terceira camada: dedup curto só por phone+text (30s) ──────────────────
-// Captura o caso onde a UazAPI entrega o mesmo webhook duas vezes com
-// messageIds DIFERENTES e com/sem quotedText diferente (ex: evento de
-// "mensagem recebida" + evento de "lida/entregue"), fazendo os dois
-// passarem pelas camadas 1 e 2. Hash sem quoted garante bloqueio
-// mesmo quando os payloads diferem só na parte de citação.
-// 30s (antes eram 10s) para cobrir retries tardios da UazAPI.
-const _dedupCurto = new Map();
-const DEDUP_CURTO_MS = 30 * 1000;
-
-function textJaProcessadoRecente(phone, text) {
-  if (!text) return false;
-  const chave = `${phone}|${text}`;
-  const expiraEm = _dedupCurto.get(chave);
-  if (!expiraEm) return false;
-  if (Date.now() >= expiraEm) { _dedupCurto.delete(chave); return false; }
-  return true;
-}
-
-function marcarTextProcessado(phone, text) {
-  if (!text) return;
-  _dedupCurto.set(`${phone}|${text}`, Date.now() + DEDUP_CURTO_MS);
-}
-
-setInterval(() => {
   const agora = Date.now();
-  for (const [id, expiraEm] of _messageIdsProcessados) {
-    if (agora >= expiraEm) _messageIdsProcessados.delete(id);
+  const result = {};
+  for (const m of mems) {
+    let meta = {};
+    try { meta = JSON.parse(m.metadata || '{}'); } catch {}
+    if (categoria && meta.categoria !== categoria) continue;
+    // Fatos temporários expirados não entram no contexto — "o carro deu
+    // problema" some depois de resolver/expirar. Permanentes nunca expiram.
+    if (meta.duracao === 'temporaria' && meta.expiraEm && new Date(meta.expiraEm).getTime() < agora) continue;
+    result[meta.chave || m.id] = { id: m.id, valor: m.content, categoria: meta.categoria || 'outro', duracao: meta.duracao || 'permanente' };
   }
-  for (const [chave, expiraEm] of _conteudoProcessadoRecente) {
-    if (agora >= expiraEm) _conteudoProcessadoRecente.delete(chave);
-  }
-}, 5 * 60 * 1000);
+  return result;
+}
 
-// Imports lazy para evitar circular dependency
-function sendMessage(phone, msg, delay, quotedText) {
-  const w = require('../services/whatsapp');
-  if (w && typeof w.sendMessage === 'function') return w.sendMessage(phone, msg, delay, quotedText);
-  const axios = require('axios');
-  return axios.post(`${process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com'}/send/text`,
-    { number: phone, text: msg, delay: delay || 800 },
-    { headers: { token: process.env.UAZAPI_TOKEN, 'Content-Type': 'application/json' }, timeout: 30000 }
+// Retorna lista de chaves que o usuário deletou recentemente (não perguntar de novo)
+async function getChavesDeletadas(userId) {
+  const mems = await prisma.memory.findMany({
+    where: { userId, type: 'perfil_deletado' },
+    orderBy: { createdAt: 'desc' }
+  }).catch(() => []);
+  const agora = Date.now();
+  return mems
+    .map(m => { try { const d = JSON.parse(m.metadata || '{}'); return d.expira > agora ? m.content : null; } catch { return null; } })
+    .filter(Boolean);
+}
+
+// Retorna quais campos do CAMPOS_CURIOSIDADE a Clara ainda não conhece
+// e o usuário não deletou — usados para perguntas orgânicas
+async function getCamposDesconhecidos(userId) {
+  const infos = await getPersonalInfo(userId);
+  const chavesConhecidas = new Set(Object.keys(infos));
+  const chavesDeletadas = new Set(await getChavesDeletadas(userId));
+
+  return CAMPOS_CURIOSIDADE.filter(campo =>
+    !chavesConhecidas.has(campo.chave) && !chavesDeletadas.has(campo.chave)
   );
 }
 
-function nowBRT() {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+// Retorna o próximo campo que faz sentido perguntar dado o contexto atual
+// contextoAtual: 'qualquer' | 'trabalho' | 'lazer' | 'saude' | 'financeiro' | 'relacionamento'
+async function getProximaCuriosidade(userId, contextoAtual = 'qualquer') {
+  const desconhecidos = await getCamposDesconhecidos(userId);
+  if (!desconhecidos.length) return null;
+
+  // Prioriza campos que combinam com o contexto atual da conversa
+  const contextuais = desconhecidos.filter(c => c.contexto === contextoAtual);
+  const gerais = desconhecidos.filter(c => c.contexto === 'qualquer');
+
+  const candidatos = contextuais.length > 0 ? contextuais : gerais;
+  if (!candidatos.length) return desconhecidos[0]; // fallback: qualquer desconhecido
+
+  // Retorna um aleatório entre os candidatos (evita sempre a mesma ordem)
+  return candidatos[Math.floor(Math.random() * candidatos.length)];
 }
 
-const CONFIRMACOES = [
-  /^(ok|okay|certo|beleza|combinado|entendido|anotado)$/i,
-];
-const NEGACOES = [
-  /^(n[aã]o|nao|nope|agora n[aã]o|depois|n)$/i,
-];
-const TOMEI_REMEDIO = [
-  /tomei|já tomei|ja tomei|tomado|dose tomada/i,
-];
-const LEMBRETE_FEITO = [
-  /^(sim|s|feito|fiz|pronto|conclu[ií]do?|já fiz|ja fiz|feito!|pronto!|perfeito|ótimo|otimo)$/i,
-];
+async function buildPersonalContext(userId) {
+  const infos = await getPersonalInfo(userId);
+  
+  // Resumo evolutivo — contexto mais importante, nunca some
+  const resumo = await getResumoRelacionamento(userId).catch(() => null);
 
-async function getLembretePendente(userId, phone, quotedText) {
-  if (quotedText) {
-    const quotedLower = quotedText.toLowerCase();
-    // Quando há citação, busca o dia inteiro (usuário pode responder horas
-    // depois — a janela de 15min era muito curta e fazia a confirmação
-    // cair no handler da IA, gerando resposta genérica "Boa, fedo!")
-    const hoje = new Date(nowBRT());
-    hoje.setHours(0, 0, 0, 0);
-    const naoConcluidos = await prisma.reminder.findMany({
-      where: {
-        OR: [{ userId, confirmed: false }, { phone, confirmed: false }],
-        scheduledAt: { gte: hoje }
-      },
-      orderBy: { scheduledAt: 'desc' }
-    });
-    const porCitacao = naoConcluidos.find(r => quotedLower.includes(r.message.toLowerCase()));
-    if (porCitacao) return porCitacao;
+  const grupos = {};
+  for (const cat of Object.keys(CATEGORIAS_PERFIL)) grupos[cat] = [];
+
+  for (const [chave, { valor, categoria }] of Object.entries(infos)) {
+    const grupo = grupos[categoria] || grupos.outro;
+    grupo.push(valor);
   }
 
-  // Sem citação — janela de 30min (era 15min, aumentado pra dar margem real)
-  const trintaMin = new Date(nowBRT().getTime() - 30 * 60 * 1000);
-  const candidatos = await prisma.reminder.findMany({
-    where: {
-      OR: [
-        { userId, sent: true, confirmed: false, scheduledAt: { gte: trintaMin } },
-        { phone, sent: true, confirmed: false, scheduledAt: { gte: trintaMin } },
-      ]
-    },
-    orderBy: { scheduledAt: 'desc' }
-  });
-  if (!candidatos.length) return null;
-  return candidatos[0];
-}
+  const labels = Object.fromEntries(
+    Object.entries(CATEGORIAS_PERFIL).map(([cat, { label }]) => [cat, label])
+  );
 
-async function getRemedioRecente(userId) {
-  const now = nowBRT();
-  const pad = n => String(n).padStart(2, '0');
-  const horarios = [];
-  for (let d = -5; d <= 5; d++) {
-    const t = new Date(now.getTime() + d * 60000);
-    horarios.push(`${pad(t.getHours())}:${pad(t.getMinutes())}`);
+  let texto = '';
+  
+  // Resumo do relacionamento vem primeiro — é o contexto mais valioso
+  if (resumo) {
+    texto += `
+[RESUMO DO RELACIONAMENTO — leia antes de tudo, define quem é essa pessoa pra você]
+${resumo}`;
   }
-  const meds = await prisma.medication.findMany({
-    where: { userId, active: true, remaining: { gt: 0 } }
-  });
-  for (const m of meds) {
-    let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
-    if (times.some(t => horarios.includes(t))) return m;
-  }
-  return null;
-}
 
-function parseVCard(vcard) {
-  if (!vcard) return null;
-  const lines = vcard.split('\n');
-  let nome = null, telefone = null;
-  for (const line of lines) {
-    if (line.startsWith('FN:')) nome = line.replace('FN:', '').trim();
-    if (line.startsWith('TEL')) {
-      const waidMatch = line.match(/waid=(\d+)/);
-      if (waidMatch) { telefone = waidMatch[1]; }
-      else { const val = line.split(':').slice(1).join(':'); telefone = val.replace(/\D/g, ''); }
+  for (const [cat, items] of Object.entries(grupos)) {
+    if (items.length === 0) continue;
+    texto += `\n[${labels[cat]}]\n${items.map(i => `• ${i}`).join('\n')}`;
+  }
+
+  // ── Assuntos em aberto ──
+  // Prioridade: mostra o MAIS RECENTE em destaque para manter o assunto
+  // vivo. Se houver outros abertos, aparecem como contexto secundário
+  // (menor peso) para não sobrecarregar a resposta.
+  const pendencias = await getPendenciasAbertas(userId);
+  if (pendencias.length > 0) {
+    // [0] = mais recente (orderBy createdAt desc em getPendenciasAbertas)
+    const principal = pendencias[0];
+    texto += `\n\n[ASSUNTO EM ABERTO — prioridade máxima, retome quando houver abertura natural]\n• ${principal.assunto}: ${principal.contexto} → ${principal.como_retomar}`;
+    // Demais assuntos: mencionados de forma mais leve, sem forçar
+    if (pendencias.length > 1) {
+      const outros = pendencias.slice(1, 3).map(p => `• ${p.assunto}: ${p.contexto}`).join('\n');
+      texto += `\n\n[OUTROS ASSUNTOS EM ABERTO — só retome se surgir oportunidade muito natural]\n${outros}`;
     }
   }
-  if (!nome || !telefone) return null;
-  if (!telefone.startsWith('55') && telefone.length <= 11) telefone = '55' + telefone;
-  return { nome, telefone };
+
+  // ── Campos que a Clara ainda não conhece (para curiosidade orgânica) ──
+  // Passa no contexto como dica para o modelo saber o que pode perguntar,
+  // sem forçar — só aparece quando a conversa estiver esfriando.
+  const desconhecidos = await getCamposDesconhecidos(userId);
+  if (desconhecidos.length > 0) {
+    const exemplos = desconhecidos.slice(0, 4).map(c => c.pergunta).join('; ');
+    texto += `\n\n[AINDA NÃO SEI — posso perguntar organicamente quando a conversa permitir, MÁXIMO 1 por conversa, NUNCA force]: ${exemplos}`;
+  }
+
+  // ── Humor do dia — contexto emocional ──
+  const humor = await getHumorDia(userId).catch(() => null);
+  if (humor) {
+    const estadoMap = {
+      doente: '🤒 Não está se sentindo bem',
+      cansado: '😴 Está cansado',
+      estressado: '😤 Está estressado',
+      preocupado: '😟 Está preocupado com algo',
+      triste: '😢 Está triste',
+      animado: '😊 Está animado e de bom humor',
+    };
+    const desc = estadoMap[humor.estado] || humor.estado;
+    const motivo = humor.motivo ? ` (${humor.motivo})` : '';
+    texto += `\n\n[ESTADO EMOCIONAL ATUAL${humor.intensidade === 'intenso' ? ' — INTENSO, seja especialmente cuidadosa' : ''}]: ${desc}${motivo}`;
+  }
+
+  // ── Localização: casa e trabalho permanentes + atual ──
+  for (const [chave, label] of [['bairro_casa', 'Casa'], ['bairro_trabalho', 'Trabalho']]) {
+    const info = await prisma.memory.findFirst({
+      where: { userId, type: 'info_pessoal', metadata: { contains: chave } }
+    }).catch(() => null);
+    if (info) texto += `\n• ${label}: ${info.content}`;
+  }
+
+  const loc = await getLocalizacao(userId).catch(() => null);
+  if (loc?.cidade) {
+    const locTexto = loc.bairro ? `${loc.bairro}, ${loc.cidade}` : loc.cidade;
+    texto += `\n\n[LOCALIZAÇÃO ATUAL (recente)]: ${locTexto} — pode referenciar se for natural`;
+  }
+
+  // ── Memória afetiva — como a Clara se relaciona com essa pessoa ──
+  const afetiva = await getMemoriaAfetiva(userId).catch(() => ({}));
+  if (Object.keys(afetiva).length > 0) {
+    let textoAfetivo = '';
+    if (afetiva.apelido_usuario) textoAfetivo += `\n• Como ele gosta de ser chamado: ${afetiva.apelido_usuario}`;
+    if (afetiva.apelido_clara) textoAfetivo += `\n• Como ele chama você: ${afetiva.apelido_clara}`;
+    if (afetiva.tom_relacao) textoAfetivo += `\n• Tom da relação: ${afetiva.tom_relacao}`;
+    if (afetiva.piada_interna) textoAfetivo += `\n• Referência afetiva: ${afetiva.piada_interna}`;
+    if (afetiva.emoji_combinado) textoAfetivo += `\n• Emojis da relação: ${afetiva.emoji_combinado}`;
+    if (textoAfetivo) texto += `\n\n[MEMÓRIA DO RELACIONAMENTO — USE SEMPRE, define o tom da conversa]${textoAfetivo}`;
+  }
+
+  // ── Ponto 3: padrões de reação ──
+  // Como ele REAGE em situações específicas — não fatos sobre ele, mas
+  // comportamentos observados. Ajuda a Clara a calibrar o tom antes que
+  // ele precise dizer que está estressado, animado, frustrado etc.
+  const padroesReacao = await getPadroesReacao(userId).catch(() => []);
+  if (padroesReacao.length > 0) {
+    const linhas = padroesReacao.map(p => `• ${p.tema}: ${p.padrao}`).join('\n');
+    texto += `\n\n[COMO ELE REAGE — calibre seu tom antes que ele precise dizer]\n${linhas}`;
+  }
+
+  // ── Personagem Clara: o que ela já contou sobre si mesma ──
+  // Detalhes que ela inventou (amigas, lugares, atividades) — mantém consistência.
+  // "Bia e Carol" continuam sendo Bia e Carol nas próximas conversas.
+  const claraPersonagem = await prisma.memory.findMany({
+    where: { userId, type: 'clara_personagem' },
+    orderBy: { createdAt: 'desc' },
+    take: 15
+  }).catch(() => []);
+  if (claraPersonagem.length > 0) {
+    texto += '\n\n[DETALHES DA SUA PRÓPRIA VIDA — mantenha consistência, são coisas que você já contou]\n';
+    texto += claraPersonagem.map(m => `• ${m.content}`).join('\n');
+  }
+
+  // ── Linha do tempo: eventos que o usuário mencionou ──
+  // Se o evento já passou (baseado em criadoEm + followup_horas), Clara sabe
+  // que aconteceu e pode perguntar como foi de forma natural.
+  const agora = new Date();
+  const linhaTempo = await prisma.memory.findMany({
+    where: { userId, type: 'linha_tempo', createdAt: { gte: new Date(agora.getTime() - 72*60*60*1000) } },
+    orderBy: { createdAt: 'desc' },
+    take: 5
+  }).catch(() => []);
+  if (linhaTempo.length > 0) {
+    const itensLinha = linhaTempo.map(m => {
+      let meta = {}; try { meta = JSON.parse(m.metadata || '{}'); } catch {}
+      // Usa followup_at absoluto se disponível, senão cálculo legado
+      let jaPassou = false;
+      if (meta.followup_at) {
+        jaPassou = agora > new Date(meta.followup_at);
+      } else {
+        const criadoEm = new Date(meta.criadoEm || m.createdAt);
+        const followupAt = new Date(criadoEm.getTime() + (meta.followup_horas || 24) * 60 * 60 * 1000);
+        jaPassou = agora > followupAt;
+      }
+      return { content: m.content, quando: meta.quando || '', jaPassou };
+    });
+    const passados = itensLinha.filter(i => i.jaPassou);
+    const futuros = itensLinha.filter(i => !i.jaPassou);
+    if (passados.length > 0 || futuros.length > 0) {
+      texto += '\n\n[LINHA DO TEMPO — o que o usuário mencionou]\n';
+      if (passados.length > 0) {
+        texto += 'Já aconteceu (se o momento for natural, pergunte como foi — 1 vez, sem insistir):\n';
+        texto += passados.map(i => `• ${i.content}${i.quando ? ` (${i.quando})` : ''}`).join('\n') + '\n';
+      }
+      if (futuros.length > 0) {
+        texto += 'Ainda vai acontecer:\n';
+        texto += futuros.map(i => `• ${i.content}${i.quando ? ` (${i.quando})` : ''}`).join('\n') + '\n';
+      }
+    }
+  }
+
+  // ── Memória narrativa contínua — linha do tempo que nunca regride ──
+  // Diferente do summary (substitui) e episódios (expiram), essa só acumula.
+  // Lida em ordem cronológica pra Clara saber o fio do que foi acontecendo.
+  const memoriaContínua = await prisma.memory.findMany({
+    where: { userId, type: 'memoria_continua' },
+    orderBy: { createdAt: 'asc' },
+    take: 21 // ~3 semanas de entradas diárias
+  }).catch(() => []);
+  if (memoriaContínua.length > 0) {
+    texto += '\n\n[LINHA DO TEMPO — o que foi acontecendo, em ordem cronológica. Use como fio condutor da conversa]\n';
+    texto += memoriaContínua.map(m => m.content).join('\n');
+  }
+
+  // ── DEDUÇÃO — Peça 3: conectar os pontos ──
+  // Nota: a memória é bilateral — o relationship summary captura tanto o que
+  // o usuário disse quanto o que Clara disse (bom dia, proativas, boa noite
+  // agora são salvas em conversa). Clara lembra dos dois lados naturalmente,
+  // sem precisar de uma seção explícita "o que eu disse".
+  // Faz a Clara ligar o que a pessoa fala AGORA ao que ela já sabe (pessoas,
+  // lugares, temas recorrentes, tratamentos) em vez de tratar tudo como novo —
+  // é o que faz parecer uma amiga que presta atenção, não um robô com amnésia.
+  if (texto) {
+    texto += `\n\n[CONECTE OS PONTOS — como uma amiga que lembra das coisas]\nAntes de responder, veja se o que ele está falando agora se liga a algo que você JÁ SABE dele acima (uma pessoa, um lugar, um tratamento, um assunto recorrente). Se ligar, CONECTE de forma natural em vez de tratar como novidade solta. Ex: se ele cita um remédio e você sabe que a filha dele estava doente, associe ("é pra Isis?"); se cita um nome novo num contexto que você já conhece (barbeiro, trabalho, vizinho), assuma o vínculo provável e confirme leve. NUNCA invente fato que não está na memória — na dúvida, pergunte com curiosidade em vez de afirmar. Uma conexão certeira vale mais que dez forçadas.`;
+  }
+
+  return texto ? `\n\n[PERFIL DO USUÁRIO — use para personalizar respostas e ser proativa]${texto}` : '';
 }
 
-function extrairQuotedText(message) {
-  return message?.quotedMsg?.body
-    || message?.quotedMsg?.text
-    || message?.quotedMsg?.content
-    || message?.quoted?.body
-    || message?.quoted?.text
-    || message?.quoted?.content
-    || message?.contextInfo?.quotedMessage?.conversation
-    || message?.contextInfo?.quotedMessage?.extendedTextMessage?.text
-    || message?.content?.contextInfo?.quotedMessage?.conversation
-    || message?.content?.contextInfo?.quotedMessage?.extendedTextMessage?.text
-    || message?.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation
-    || '';
+// ====================== MEMÓRIAS ======================
+
+async function saveMemory(userId, type, content, metadata = null) {
+  return prisma.memory.create({
+    data: {
+      userId, type, content,
+      metadata: metadata ? JSON.stringify(metadata) : null,
+    },
+  });
 }
 
-async function handleSimpleResponse(phone, text, quotedText) {
-  const user = await memory.getOrCreateUser(phone);
-  const textLower = text.trim();
+async function getRecentMemories(userId, limit = 30) {
+  const mems = await prisma.memory.findMany({
+    where: { userId, type: { not: 'conversa' } },
+    orderBy: { createdAt: 'desc' },
+    take: limit + 10,
+  });
+  return mems
+    .filter(m => !/^__.*__$/.test(m.type) && !m.type.startsWith('lock_') && m.type !== 'webhook_msgid' && m.type !== 'perfil_deletado')
+    .slice(0, limit);
+}
 
-  const ehTextoTomeiForte = TOMEI_REMEDIO.some(r => r.test(textLower));
-  const ehTextoAmbiguo = LEMBRETE_FEITO.some(r => r.test(textLower));
+// ====================== CONTEXTO TEMPORÁRIO ======================
 
-  if (ehTextoTomeiForte || ehTextoAmbiguo) {
-    const todasPendentesMems = await prisma.memory.findMany({
-      where: { userId: user.id, type: 'confirmacao_pendente' },
+async function setTemporaryContext(userId, context, minutes = 10) {
+  const expiresAt = Date.now() + (minutes * 60 * 1000);
+  await saveMemory(userId, 'contexto_temp', JSON.stringify({ context, expiresAt }));
+}
+
+async function getTemporaryContext(userId) {
+  const mems = await getRecentMemories(userId, 20);
+  const ctx = mems.find(m => m.type === 'contexto_temp');
+  if (!ctx) return null;
+  try {
+    const parsed = JSON.parse(ctx.content);
+    if (Date.now() > parsed.expiresAt) return null;
+    return parsed.context;
+  } catch { return null; }
+}
+
+async function clearTemporaryContext(userId) {
+  await saveMemory(userId, 'contexto_temp', '');
+}
+
+// ====================== CONVERSA ======================
+
+async function saveConversationMessage(userId, role, content, privateMode = false) {
+  if (privateMode) return;
+  await prisma.memory.create({
+    data: { userId, type: 'conversa', content: JSON.stringify({ role, content, ts: Date.now() }) },
+  });
+  // Aprendizado de janela: registra a hora em que o USUÁRIO fala, pra Clara ir
+  // entendendo a rotina (que horas ele mais conversa de manhã/almoço/noite).
+  // Silencioso, não afeta nada agora — só alimenta dados pra proativas ficarem
+  // mais certeiras com o tempo. Só conta mensagem real, não confirmação curta.
+  if (role === 'user' && content && content.trim().length > 6) {
+    registrarHorarioConversa(userId).catch(() => {});
+  }
+  const msgs = await prisma.memory.findMany({
+    where: { userId, type: 'conversa' },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (msgs.length > 40) {
+    const toDelete = msgs.slice(40).map((m) => m.id);
+    await prisma.memory.deleteMany({ where: { id: { in: toDelete } } });
+  }
+}
+
+// Registra a hora atual (BRT) numa contagem por período. Guarda um histograma
+// simples: quantas vezes o usuário falou em cada hora do dia. A proativa lê
+// isso pra escolher o melhor horário dentro de cada janela.
+async function registrarHorarioConversa(userId) {
+  const horaBRT = parseInt(new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getHours(), 10);
+  const reg = await prisma.memory.findFirst({
+    where: { userId, type: 'padrao_horario' }
+  }).catch(() => null);
+  let hist = {};
+  if (reg) { try { hist = JSON.parse(reg.content) || {}; } catch { hist = {}; } }
+  hist[horaBRT] = (hist[horaBRT] || 0) + 1;
+  if (reg) {
+    await prisma.memory.update({ where: { id: reg.id }, data: { content: JSON.stringify(hist) } }).catch(() => {});
+  } else {
+    await prisma.memory.create({ data: { userId, type: 'padrao_horario', content: JSON.stringify(hist) } }).catch(() => {});
+  }
+}
+
+// Lê o horário preferido do usuário dentro de uma janela [horaIni, horaFim).
+// Retorna a hora com mais registros na janela, ou null se ainda não há dados
+// suficientes (< 3 registros na janela = usa o padrão da proativa).
+async function getHorarioPreferido(userId, horaIni, horaFim) {
+  const reg = await prisma.memory.findFirst({
+    where: { userId, type: 'padrao_horario' }
+  }).catch(() => null);
+  if (!reg) return null;
+  let hist = {};
+  try { hist = JSON.parse(reg.content) || {}; } catch { return null; }
+  let melhorHora = null, maxCount = 0, totalJanela = 0;
+  for (let h = horaIni; h < horaFim; h++) {
+    const c = hist[h] || 0;
+    totalJanela += c;
+    if (c > maxCount) { maxCount = c; melhorHora = h; }
+  }
+  if (totalJanela < 3) return null; // dados insuficientes → proativa usa padrão
+  return melhorHora;
+}
+
+async function getConversationHistory(userId, limit = 10) {
+  const msgs = await prisma.memory.findMany({
+    where: { userId, type: 'conversa' },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  });
+  return msgs.reverse().map((m) => {
+    try {
+      const parsed = JSON.parse(m.content);
+      return { role: parsed.role, content: parsed.content };
+    } catch { return null; }
+  }).filter(Boolean);
+}
+
+// ====================== MEDICAMENTOS ======================
+
+async function saveMedication(userId, data) {
+  const { nome, quantidade, frequencia, horarios } = data;
+  await prisma.medication.updateMany({
+    where: { userId, active: true, name: { contains: nome, mode: 'insensitive' } },
+    data: { active: false },
+  });
+  const med = await prisma.medication.create({
+    data: {
+      userId, name: nome,
+      totalPills: quantidade || 0,
+      remaining: quantidade || 0,
+      frequency: frequencia || 1,
+      times: JSON.stringify(horarios || ['08:00']),
+    },
+  });
+  await saveMemory(userId, 'remedio', `${nome} - ${frequencia}x por dia`, { medId: med.id });
+  return med;
+}
+
+// ====================== TAREFAS ======================
+
+async function saveTask(userId, data) {
+  const { titulo, data: date, hora } = data;
+  let dueDate = parseDateSafely(date);
+  if (dueDate) dueDate.setHours(12, 0, 0, 0);
+  const task = await prisma.task.create({
+    data: { userId, title: titulo, dueDate, dueTime: hora || null },
+  });
+  await saveMemory(userId, 'compromisso', titulo, { taskId: task.id });
+  return task;
+}
+
+// ====================== GASTOS ======================
+
+async function saveExpense(userId, data) {
+  const { valor, categoria, descricao, createdAt } = data;
+  const expenseData = {
+    userId,
+    value: parseFloat(valor) || 0,
+    category: categoria || 'outro',
+    description: descricao || '',
+  };
+  if (createdAt) expenseData.createdAt = createdAt;
+  const expense = await prisma.expense.create({ data: expenseData });
+  await saveMemory(userId, 'gasto', `R$ ${valor} em ${categoria}`);
+  return expense;
+}
+
+async function getMonthExpenses(userId) {
+  const start = new Date();
+  start.setDate(1); start.setHours(0, 0, 0, 0);
+  return prisma.expense.findMany({
+    where: { userId, createdAt: { gte: start } },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+// ====================== PENDÊNCIAS EMOCIONAIS ======================
+
+async function savePendencia(userId, { categoria, resumo, horas = 4 }) {
+  const checkInAt = new Date(Date.now() + horas * 60 * 60 * 1000);
+  return prisma.pendencia.create({
+    data: { userId, categoria, resumo, checkInAt },
+  });
+}
+
+// ====================== CONTATOS ======================
+
+async function saveContact(userId, { nome, phone, relation = null, notes = null }) {
+  let phoneClean = phone.replace(/\D/g, '');
+  if (!phoneClean.startsWith('55') && phoneClean.length <= 11) phoneClean = '55' + phoneClean;
+  const existing = await prisma.contact.findFirst({ where: { userId, phone: phoneClean } });
+  if (existing) {
+    return prisma.contact.update({
+      where: { id: existing.id },
+      data: { name: nome, relation, notes, updatedAt: new Date() }
+    });
+  }
+  return prisma.contact.create({
+    data: { userId, name: nome, phone: phoneClean, relation, notes }
+  });
+}
+
+async function getContacts(userId) {
+  return prisma.contact.findMany({ where: { userId }, orderBy: { name: 'asc' } });
+}
+
+async function findContactByName(userId, nome) {
+  return prisma.contact.findMany({
+    where: { userId, name: { contains: nome, mode: 'insensitive' } }
+  });
+}
+
+// ====================== ASSUNTOS EM ABERTO ======================
+
+async function getPendenciasAbertas(userId) {
+  const mems = await prisma.memory.findMany({
+    where: { userId, type: 'pendencia_conversa' },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+  }).catch(() => []);
+  const agora = Date.now();
+  const EXPIRY_MS = 3 * 24 * 60 * 60 * 1000;
+  const EXPIRY_ALTA_MS = 5 * 24 * 60 * 60 * 1000; // "depois te conto" dura mais
+  const lista = mems
+    .map(m => { try { return { id: m.id, criadoEm: m.createdAt, prioridade: 'normal', origem: 'conversa', cobrancas: 0, ...JSON.parse(m.content) }; } catch { return null; } })
+    .filter(Boolean)
+    .filter(p => {
+      if (p.encerrado) return false;
+      const idade = agora - new Date(p.criadoEm).getTime();
+      const limite = p.prioridade === 'alta' ? EXPIRY_ALTA_MS : EXPIRY_MS;
+      return idade < limite;
+    });
+  // Ordena: prioridade alta ("depois te conto") primeiro, depois por mais recente
+  lista.sort((a, b) => {
+    if (a.prioridade === 'alta' && b.prioridade !== 'alta') return -1;
+    if (b.prioridade === 'alta' && a.prioridade !== 'alta') return 1;
+    return new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime();
+  });
+  return lista;
+}
+
+async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_retomar, prioridade = 'normal', origem = 'conversa' }) {
+  // FILTRO HARD: nunca salvar pendência de conteúdo íntimo/sexual/romântico.
+  // A instrução no prompt do detectarAssuntoEmAberto às vezes é ignorada pela
+  // IA, então esse bloqueio no código é a rede de segurança final. Se qualquer
+  // campo tiver esses termos, descarta silenciosamente — não vira pendência,
+  // não é retomado em proativas, não vaza.
+  const textoCompleto = `${assunto || ''} ${contexto || ''} ${como_retomar || ''}`.toLowerCase();
+  const FILTRO_INTIMO = /erótic|erotic|sexo|sexual|cena quente|cena de sexo|nudez|nud[ae]s\b|pelad|transar|transa\b|tesão|tesao|gemid|orgasm|excita|masturb|penetra|preliminar|amass|conteúdo sexual/i;
+  if (FILTRO_INTIMO.test(textoCompleto)) {
+    console.log(`[Pendência] BLOQUEADA (conteúdo íntimo): "${assunto}"`);
+    return;
+  }
+
+  const existentes = await getPendenciasAbertas(userId);
+
+  // Atualiza se já existe assunto parecido
+  const mesmoAssunto = existentes.find(p =>
+    p.assunto?.toLowerCase().includes(assunto?.toLowerCase()?.split(' ')[0]) ||
+    assunto?.toLowerCase().includes(p.assunto?.toLowerCase()?.split(' ')[0])
+  );
+  if (mesmoAssunto) {
+    // Preserva a prioridade mais alta se já existia (um "depois te conto" não
+    // vira "normal" por uma atualização qualquer)
+    const prioridadeFinal = mesmoAssunto.prioridade === 'alta' ? 'alta' : prioridade;
+    await prisma.memory.update({
+      where: { id: mesmoAssunto.id },
+      data: { content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false, prioridade: prioridadeFinal, origem: mesmoAssunto.origem || origem, cobrancas: mesmoAssunto.cobrancas || 0 }) }
+    }).catch(() => {});
+    return;
+  }
+
+  // Limite de 3 pendências ativas — remove a mais antiga de prioridade NORMAL
+  // se estourar (nunca remove uma de prioridade alta / "depois te conto").
+  if (existentes.length >= 3) {
+    const removivel = existentes.filter(p => p.prioridade !== 'alta');
+    if (removivel.length > 0) {
+      const maisAntiga = removivel[removivel.length - 1];
+      await prisma.memory.delete({ where: { id: maisAntiga.id } }).catch(() => {});
+      console.log(`[Pendência] Removida antiga: "${maisAntiga.assunto}" (limite 3)`);
+    }
+  }
+
+  await prisma.memory.create({
+    data: { userId, type: 'pendencia_conversa', content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false, prioridade, origem, cobrancas: 0 }) }
+  }).catch(() => {});
+  console.log(`[Pendência] Salva: "${assunto}"${prioridade === 'alta' ? ' [PRIORIDADE ALTA — depois te conto]' : ''}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// DEDUÇÃO — Peça 1: remédio acabou → pendência de acompanhamento
+// ═══════════════════════════════════════════════════════════════════════
+// Quando o estoque de um remédio ZERA (última dose tomada), vira um assunto
+// em aberto. A Clara NÃO empurra nada — a pendência entra no contexto e ela
+// puxa numa conversa natural quando houver abertura. O vínculo remédio↔pessoa
+// (ex: "amoxilina é da Isis, que tava doente") vem da MEMÓRIA dela, que o
+// buildPersonalContext já injeta — então ao formular ela conecta os pontos
+// sozinha ("e a Isis, melhorou? vi que a amoxilina já acabou 💜"). Retentora
+// de informação + amiga.
+async function acompanharFimDeRemedio(userId, medNome) {
+  if (!userId || !medNome) return;
+  try {
+    await salvarOuAtualizarPendencia(userId, {
+      // Assunto começa pelo NOME do remédio: o dedup casa pela 1ª palavra, então
+      // isso evita que "amoxilina..." e "triglicérides..." se fundam num só.
+      assunto: `${medNome} (tratamento) terminou`,
+      contexto: `O estoque de ${medNome} acabou — a pessoa tomou a última dose. Se pela memória de vocês você souber pra QUEM ou pra qual situação era esse remédio (ex: alguém que estava doente), pergunte com carinho e de forma natural se melhorou / como foi o tratamento. Se você NÃO souber o motivo (ex: remédio de uso contínuo), então NÃO pergunte "melhorou" — no máximo comente de leve se vai repor. Nunca soe como robô de farmácia.`,
+      como_retomar: `Puxar numa conversa natural quando houver abertura, conectando com o que você já sabe sobre ${medNome} e sobre as pessoas da vida dele.`,
+      prioridade: 'normal',
+      origem: 'remedio_acabou'
+    });
+    console.log(`[Acompanhamento remédio] "${medNome}" zerou → pendência criada (user ${userId})`);
+  } catch (e) { console.error('[acompanharFimDeRemedio]', e.message); }
+}
+
+async function fecharPendencia(userId, pendenciaId) {  const mem = await prisma.memory.findUnique({ where: { id: pendenciaId } }).catch(() => null);
+  if (!mem || mem.userId !== userId) return;
+  try {
+    const dados = JSON.parse(mem.content);
+    await prisma.memory.update({
+      where: { id: pendenciaId },
+      data: { content: JSON.stringify({ ...dados, encerrado: true }) }
+    });
+    console.log(`[Pendência] Fechada: "${dados.assunto}"`);
+  } catch {}
+}
+
+async function fecharPendenciasPorResolucao(userId, textoUsuario) {
+  const pendencias = await getPendenciasAbertas(userId);
+  if (!pendencias.length) return;
+
+  const textoLower = textoUsuario.toLowerCase();
+
+  // ── Sinais explícitos de resolução ──
+  const SINAIS_GERAIS = /\b(estou bem|tá bem|já passou|passou|deu certo|foi ótimo|foi bem|resolvido|resolveu|já fiz|normal|tranquilo|melhorei|melhor|alta|cheguei em casa|chegou|saiu|terminou|acabou|tudo certo|tudo bem|sem problema|não foi nada|era nada|nada grave|liberado|já bebi|já tomei|já fiz|já foi|feito|concluído|concluido|pronto|ok feito|fiz isso)\b/i;
+
+  // ── Verifica cada pendência individualmente ──
+  // Uma pendência é fechada se:
+  // 1. O texto menciona palavras do assunto E tem sinal de resolução
+  // 2. O texto menciona palavras do assunto E verbo no passado ("já X", "fiz X", "tomei X")
+  // 3. Tem sinal geral E a pendência é a mais recente (fallback)
+  const VERBOS_PASSADO = /\b(já |fiz |tomei |bebi |fui |foi |terminei |acabei |resolvi |concluí |fez |foram )\b/i;
+
+  const fechadas = [];
+  for (const p of pendencias) {
+    const palavrasAssunto = (p.assunto || '').toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const palavrasContexto = (p.contexto || '').toLowerCase().split(/\s+/).filter(w => w.length > 4);
+    const palavras = [...palavrasAssunto, ...palavrasContexto.slice(0, 4)];
+    const mencionaAssunto = palavras.some(w => textoLower.includes(w));
+
+    if (mencionaAssunto && (SINAIS_GERAIS.test(textoUsuario) || VERBOS_PASSADO.test(textoUsuario))) {
+      fechadas.push(p.id);
+    }
+  }
+
+  // Se não casou nenhum assunto específico mas tem sinal geral → fecha a mais recente
+  if (!fechadas.length && SINAIS_GERAIS.test(textoUsuario)) {
+    fechadas.push(pendencias[0].id);
+  }
+
+  for (const id of fechadas) {
+    await fecharPendencia(userId, id);
+  }
+
+  // ── Limpeza automática de pendências velhas (> 3 dias) ──
+  // Assunto de mais de 3 dias sem resolução já não é relevante pra puxar numa
+  // proativa — vira aquele "notebook do Réveillon" ressuscitado. Remove.
+  const seteDiasAtras = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  const velhas = pendencias.filter(p =>
+    !fechadas.includes(p.id) &&
+    p.criadoEm && new Date(p.criadoEm) < seteDiasAtras
+  );
+  for (const p of velhas) {
+    await fecharPendencia(userId, p.id);
+    console.log(`[Pendência] Expirada por idade (>3 dias): "${p.assunto}"`);
+  }
+}
+
+// ── fecharPendenciaLembrete ──
+// Chamada quando o usuário confirma um lembrete — fecha automaticamente
+// qualquer pendência com assunto relacionado ao título do lembrete.
+// Ex: lembrete "beber água" confirmado → fecha pendência "beber água"
+async function fecharPendenciaLembrete(userId, tituloLembrete) {
+  if (!tituloLembrete) return;
+  const pendencias = await getPendenciasAbertas(userId);
+  if (!pendencias.length) return;
+
+  const tituloLower = tituloLembrete.toLowerCase();
+  const palavrasTitulo = tituloLower.split(/\s+/).filter(w => w.length > 3);
+
+  for (const p of pendencias) {
+    const palavrasAssunto = (p.assunto || '').toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const palavrasContexto = (p.contexto || '').toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const todasPalavras = [...palavrasAssunto, ...palavrasContexto.slice(0, 3)];
+
+    const temRelacao = palavrasTitulo.some(w => todasPalavras.includes(w)) ||
+                       todasPalavras.some(w => tituloLower.includes(w));
+    if (temRelacao) {
+      await fecharPendencia(userId, p.id);
+      console.log(`[Pendência] Fechada por lembrete confirmado: "${p.assunto}" ← "${tituloLembrete}"`);
+    }
+  }
+}
+
+// ── Humor do dia ────────────────────────────────────────────────────────
+async function salvarHumorDia(userId, humor) {
+  if (!humor || !humor.estado) return;
+  try {
+    const existente = await prisma.memory.findFirst({ where: { userId, type: 'humor_dia' } }).catch(() => null);
+    const content = JSON.stringify({
+      estado: humor.estado,
+      intensidade: humor.intensidade || 'leve',
+      motivo: humor.motivo || null,
+      expira: Date.now() + 48 * 60 * 60 * 1000
+    });
+    if (existente) {
+      await prisma.memory.update({ where: { id: existente.id }, data: { content } }).catch(() => {});
+    } else {
+      await prisma.memory.create({ data: { userId, type: 'humor_dia', content } }).catch(() => {});
+    }
+  } catch {}
+}
+
+async function getHumorDia(userId) {
+  try {
+    const m = await prisma.memory.findFirst({ where: { userId, type: 'humor_dia' } }).catch(() => null);
+    if (!m) return null;
+    const d = JSON.parse(m.content);
+    if (Date.now() > d.expira) {
+      await prisma.memory.delete({ where: { id: m.id } }).catch(() => {});
+      return null;
+    }
+    return d;
+  } catch { return null; }
+}
+
+async function salvarLocalizacao(userId, dados) {
+  try {
+    const existente = await prisma.memory.findFirst({ where: { userId, type: 'ultima_localizacao' } }).catch(() => null);
+    const content = JSON.stringify({ ...dados, ts: Date.now() });
+    if (existente) {
+      await prisma.memory.update({ where: { id: existente.id }, data: { content } }).catch(() => {});
+    } else {
+      await prisma.memory.create({ data: { userId, type: 'ultima_localizacao', content } }).catch(() => {});
+    }
+  } catch {}
+}
+
+// Item 4: cidade ATUAL do usuário pra buscas locais. Prioriza a última
+// localização por GPS (reverse-geocode) numa janela de 7 dias — cidade é
+// estável por dias, diferente do getLocalizacao (4h) que é pra "perto de mim".
+// Cai pro que o usuário disse em texto. Retorna '' se não souber.
+async function getCidadeAtual(userId) {
+  try {
+    const m = await prisma.memory.findFirst({ where: { userId, type: 'ultima_localizacao' } }).catch(() => null);
+    if (m) {
+      const d = JSON.parse(m.content);
+      if (d.cidade && (!d.ts || Date.now() - d.ts < 7 * 24 * 60 * 60 * 1000)) return d.cidade;
+    }
+  } catch {}
+  try {
+    const t = await prisma.memory.findFirst({ where: { userId, type: 'cidade' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+    if (t?.content) return t.content;
+  } catch {}
+  return '';
+}
+
+async function getLocalizacao(userId) {  try {
+    const m = await prisma.memory.findFirst({ where: { userId, type: 'ultima_localizacao' } }).catch(() => null);
+    if (!m) return null;
+    const d = JSON.parse(m.content);
+    if (Date.now() - d.ts > 4 * 60 * 60 * 1000) return null;
+    return d;
+  } catch { return null; }
+}
+
+
+// ====================== MEMÓRIA AFETIVA ======================
+// Salva como a Clara se relaciona com o usuário:
+// apelidos, tom, piadas internas, jeito de falar.
+// Sobrevive a reboots — é a "personalidade da relação".
+
+async function salvarMemoriaAfetiva(userId, tipo, valor) {
+  // tipos: 'apelido_usuario', 'apelido_clara', 'tom_relacao', 'piada_interna', 'emoji_combinado'
+  try {
+    const existente = await prisma.memory.findFirst({
+      where: { userId, type: 'memoria_afetiva', metadata: { contains: `"tipo":"${tipo}"` } }
+    }).catch(() => null);
+    const metadata = JSON.stringify({ tipo, updatedAt: new Date().toISOString() });
+    if (existente) {
+      await prisma.memory.update({ where: { id: existente.id }, data: { content: valor, metadata } }).catch(() => {});
+    } else {
+      await prisma.memory.create({ data: { userId, type: 'memoria_afetiva', content: valor, metadata } }).catch(() => {});
+    }
+    console.log(`[Afetiva] ${tipo}: "${valor}"`);
+  } catch {}
+}
+
+async function getMemoriaAfetiva(userId) {
+  try {
+    const mems = await prisma.memory.findMany({
+      where: { userId, type: 'memoria_afetiva' },
       orderBy: { createdAt: 'desc' }
     }).catch(() => []);
-    const pendentesRemedio = todasPendentesMems
-      .map(p => { try { const d = JSON.parse(p.content); return d.tipo === 'remedio_dose' ? { memoryId: p.id, ...d } : null; } catch { return null; } })
-      .filter(Boolean);
-
-    const quotedLowerMed = (quotedText || '').toLowerCase();
-
-    if (pendentesRemedio.length === 1) {
-      const pendenteRemedio = pendentesRemedio[0];
-      // Texto tipo "tomei/tomado" é sinal forte o suficiente sozinho. Já um
-      // "feito"/"ok"/"pronto" é ambíguo (também usado pra concluir lembretes)
-      // — só assume remédio se a citação realmente aponta pro medicamento,
-      // senão deixa cair no fluxo de lembrete abaixo.
-      const primeiraPalavraMed = pendenteRemedio.medNome.toLowerCase().split(' ')[0];
-      const pareceCitarMedicamento = ehTextoTomeiForte
-        || quotedLowerMed.includes('medicamento')
-        || quotedLowerMed.includes(primeiraPalavraMed);
-      if (pareceCitarMedicamento) {
-        const med = await prisma.medication.findUnique({ where: { id: pendenteRemedio.medId } }).catch(() => null);
-        if (med) {
-          const atualizado = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
-          await prisma.memory.delete({ where: { id: pendenteRemedio.memoryId } }).catch(() => {});
-          await prisma.memory.create({ data: { userId: user.id, type: 'dose_confirmada', content: med.name } }).catch(() => {});
-          if (atualizado.remaining <= 0) await memory.acompanharFimDeRemedio(user.id, med.name);
-          await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${atualizado.remaining} doses. 💊`, 400, quotedText);
-          return true;
-        }
-      }
-    } else if (pendentesRemedio.length > 1) {
-      const textoLower = textLower.toLowerCase();
-      const match = pendentesRemedio.find(p => {
-        const palavrasNome = p.medNome.toLowerCase().split(' ').filter(w => w.length > 3);
-        return palavrasNome.some(w => quotedLowerMed.includes(w));
-      }) || (ehTextoTomeiForte ? pendentesRemedio.find(p => {
-        const palavrasNome = p.medNome.toLowerCase().split(' ').filter(w => w.length > 3);
-        return palavrasNome.some(w => textoLower.includes(w));
-      }) : null);
-      if (match) {
-        const med = await prisma.medication.findUnique({ where: { id: match.medId } }).catch(() => null);
-        if (med) {
-          const atualizado = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
-          await prisma.memory.delete({ where: { id: match.memoryId } }).catch(() => {});
-          await prisma.memory.create({ data: { userId: user.id, type: 'dose_confirmada', content: med.name } }).catch(() => {});
-          if (atualizado.remaining <= 0) await memory.acompanharFimDeRemedio(user.id, med.name);
-          await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${atualizado.remaining} doses. 💊`, 400, quotedText);
-          return true;
-        }
-      } else if (ehTextoTomeiForte || quotedLowerMed.includes('medicamento')) {
-        const nomes = pendentesRemedio.map(p => `• ${p.medNome}`).join('\n');
-        await sendMessage(phone, `Você tem mais de um remédio pendente agora:\n${nomes}\n\nQual deles você tomou? Me diz o nome 😊`);
-        return true;
-      }
+    const resultado = {};
+    for (const m of mems) {
+      try {
+        const meta = JSON.parse(m.metadata || '{}');
+        if (meta.tipo) resultado[meta.tipo] = m.content;
+      } catch {}
     }
+    return resultado;
+  } catch { return {}; }
+}
 
-    // Fallback por horário (sem pendência registrada) — só pra texto forte
-    // ("tomei"/"tomado"). Um "feito"/"ok" ambíguo sem pendência aberta não
-    // deve ser assumido como remédio, pra não roubar confirmação de lembrete.
-    if (ehTextoTomeiForte) {
-      const med = await getRemedioRecente(user.id);
-      if (med) {
-        const atualizadoFb = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
-        await prisma.memory.create({ data: { userId: user.id, type: 'dose_confirmada', content: med.name } }).catch(() => {});
-        if (atualizadoFb.remaining <= 0) await memory.acompanharFimDeRemedio(user.id, med.name);
-        await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${atualizadoFb.remaining} doses. 💊`, 400, quotedText);
-        return true;
-      }
-    }
-  }
+// ====================== RESUMO EVOLUTIVO DO RELACIONAMENTO ======================
+// Cresce com o tempo, nunca é apagado — só atualizado.
+// Contém: o que a Clara já sabe sobre a pessoa, momentos marcantes,
+// assuntos recorrentes, como a relação evoluiu.
 
-  if (LEMBRETE_FEITO.some(r => r.test(textLower))) {
-    const lembrete = await getLembretePendente(user.id, phone, quotedText);
-    if (lembrete) {
-      await prisma.reminder.update({ where: { id: lembrete.id }, data: { confirmed: true } });
-      // Salva como conversa pra houveConversaRecente bloquear proativas
-      // (sem isso, "Tomado fedo" não aparecia no histórico e a proativa
-      // de manhã achava que você estava sumido e mandava mensagem carente)
-      await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
-      // 1ª msg: confirmação do sistema — curta, neutra, sem personalidade
-      await sendMessage(phone, `✅ Feito! "${lembrete.message}" concluído.`, 400, quotedText);
-      // 2ª msg: Clara só entra SE tiver algo genuíno a dizer. A confirmação de
-      // sistema (acima) já cumpriu o papel funcional. Ela não precisa comentar
-      // toda tarefa — só quando aquilo especificamente merece uma reação de
-      // amiga. Se for algo trivial (beber água, tarefa comum), ela fica quieta.
-      ;(async () => {
-        try {
-          await new Promise(r => setTimeout(r, 2000));
-          const prefs = await memory.getUserPreference(user.id).catch(() => ({}));
-          const memAfetiva = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
-          const apelido = memAfetiva?.apelido_usuario || prefs?.name || '';
-          if (!geminiDisponivel() || todosModelosEsgotados()) return;
-          const sistema = buildPersonality(prefs?.tom || 'carinhoso', apelido, false) + `\n\n[TAREFA CONCLUÍDA] O usuário confirmou que fez: "${lembrete.message}". O sistema JÁ confirmou pra ele — você NÃO precisa dizer que foi concluído nem repetir a tarefa.\n\nDECIDA: essa tarefa específica merece uma reação sua de amiga? Só reaja se for algo com peso genuíno (uma conquista, algo que ele estava adiando, algo importante da vida dele, algo com graça real). Se for trivial/rotineiro (beber água, tarefa comum do dia), responda APENAS "SKIP" — sem reação, deixa quieto.\n\nSe for reagir: 1 linha curta, no seu tom, sobre ISSO especificamente. NÃO puxe outros assuntos (Isis, saúde de familiares, pendências, agenda). NÃO diga bom dia. NUNCA seja genérica ("boa!", "arrasou!" soltos são proibidos) — se não tem nada específico e genuíno a dizer, é SKIP.`;
-          const comentario = await geminiFreeResponse([
-            { role: 'system', content: sistema },
-            { role: 'user', content: `Acabei de confirmar que fiz: "${lembrete.message}"` }
-          ], { temperature: 0.85, maxTokens: 120 }).catch(() => null);
-          if (comentario && comentario.trim().length > 3 && !/^SKIP/i.test(comentario.trim())) {
-            await sendMessage(phone, comentario);
-            await memory.saveConversationMessage(user.id, 'assistant', comentario).catch(() => {});
-          }
-        } catch(e) { console.error('[LembreteConfirm] Erro no comentário:', e.message); }
-      })();
-      return true;
-    }
-  }
-
-  if (CONFIRMACOES.some(r => r.test(textLower))) {
-    const lembrete = await getLembretePendente(user.id, phone, quotedText);
-    if (lembrete) { await sendMessage(phone, `👍 Ok! Te lembro de: *${lembrete.message}*`, 400, quotedText); return true; }
-    return false;
-  }
-
-  if (NEGACOES.some(r => r.test(textLower))) {
-    const lembrete = await getLembretePendente(user.id, phone, quotedText);
-    if (lembrete) {
-      const expira = Date.now() + 10 * 60 * 1000;
-      await prisma.memory.create({
-        data: {
-          userId: user.id, type: 'confirmacao_pendente',
-          content: JSON.stringify({ tipo: 'remarcar_negacao', lembreteId: lembrete.id, lembreteTitulo: lembrete.message, expira })
-        }
+async function salvarResumoRelacionamento(userId, novoResumo) {
+  try {
+    const existente = await prisma.memory.findFirst({
+      where: { userId, type: 'resumo_relacionamento' }
+    }).catch(() => null);
+    if (existente) {
+      await prisma.memory.update({
+        where: { id: existente.id },
+        data: { content: novoResumo }
       }).catch(() => {});
-      await sendMessage(phone, `Tudo bem! Pra que horas quer que eu remarque "${lembrete.message}"? 😊`);
-      return true;
-    }
-    return false;
-  }
-
-  return false;
-}
-
-router.post('/', async (req, res) => {
-  try {
-    const body = req.body;
-
-    // LOG DIAGNOSTICO — remove apos resolver duplicacao
-    const _msgId = body.message?.id || body.message?.messageid || body.message?.messageId || body.message?.key?.id || 'sem-id';
-    const _fromMe = body.message?.fromMe;
-    const _wasSentByApi = body.message?.wasSentByApi;
-    const _sender = body.message?.sender_pn || body.message?.sender || 'sem-sender';
-    const _text = (body.message?.text || body.message?.content?.text || '').slice(0, 40);
-    console.log(`[Webhook-diag] id:${_msgId} fromMe:${_fromMe} wasSentByApi:${_wasSentByApi} sender:${_sender} text:"${_text}"`);
-
-    if (body.message?.fromMe === true) return res.json({ ok: true });
-    if (body.message?.wasSentByApi === true) return res.json({ ok: true });
-    if (body.message?.isGroup === true) return res.json({ ok: true });
-
-    // ── Deduplicação por messageId ──
-    const messageId = body.message?.id || body.message?.messageid || body.message?.messageId || body.message?.key?.id;
-    if (messageId) {
-      if (_messageIdsProcessados.has(messageId)) {
-        console.log(`[Webhook] messageId duplicado ignorado (cache memória): ${messageId}`);
-        return res.json({ ok: true });
-      }
-      // CORRIGIDO (corrida de duplicação): a marca em memória agora vem ANTES
-      // do await. Antes ela vinha DEPOIS do findFirst — se o mesmo webhook
-      // chegasse duas vezes quase juntas (retry da UazAPI ou webhook registrado
-      // em duplicidade), as duas passavam o .has() como false e processavam em
-      // dobro, gerando DUAS respostas (classify estocástico → respostas
-      // diferentes). Marcar síncrono aqui, antes de qualquer await, fecha a
-      // janela: a segunda entrega vê a marca na hora e é ignorada.
-      marcarMessageIdProcessado(messageId);
-      const jaProcessadoDB = await prisma.memory.findFirst({
-        where: { type: 'webhook_msgid', content: messageId }
-      }).catch(() => null);
-      if (jaProcessadoDB) {
-        console.log(`[Webhook] messageId duplicado ignorado (banco, sobreviveu a restart): ${messageId}`);
-        return res.json({ ok: true });
-      }
-      prisma.memory.create({ data: { userId: 'system', type: 'webhook_msgid', content: messageId } }).catch(() => {});
     } else {
-      console.log('[Webhook] messageId não encontrado neste payload — chaves disponíveis:', Object.keys(body.message || {}).join(', '));
+      await prisma.memory.create({
+        data: { userId, type: 'resumo_relacionamento', content: novoResumo }
+      }).catch(() => {});
     }
-
-    const phone = (body.message?.sender_pn || '').replace('@s.whatsapp.net', '').replace(/\D/g, '');
-    if (!phone) {
-      console.log('⚠️ Webhook sem phone:', JSON.stringify(body).slice(0, 200));
-      return res.json({ ok: true });
-    }
-
-    const text = body.message?.text || body.message?.content?.text || '';
-
-    // Extrai quoted ANTES do dedup de conteúdo — necessário para o hash correto
-    const quotedText = extrairQuotedText(body.message);
-
-    // ── Deduplicação por conteúdo (2ª camada) ──
-    // Hash inclui quotedText para não bloquear confirmações de itens diferentes
-    if (text && conteudoJaProcessado(phone, text, quotedText)) {
-      console.log(`[Webhook] conteúdo duplicado ignorado (2ª camada): ${phone} — "${text.slice(0, 60)}"`);
-      return res.json({ ok: true });
-    }
-    // Terceira camada: phone+text sem quotedText, janela 10s
-    // Captura retries da UazAPI com messageId diferente e/ou quotedText diferente
-    if (text && textJaProcessadoRecente(phone, text)) {
-      console.log(`[Webhook] conteúdo duplicado ignorado (3ª camada, 10s): ${phone} — "${text.slice(0, 60)}"`);
-      return res.json({ ok: true });
-    }
-    if (text) marcarConteudoProcessado(phone, text, quotedText);
-    if (text) marcarTextProcessado(phone, text);
-
-    const textComContexto = quotedText && text ? `[Mensagem citada: "${quotedText.slice(0, 200)}"]\n${text}` : text;
-
-    console.log(`📨 WEBHOOK: ${phone} — "${text.slice(0, 80)}"${quotedText ? ` [citou: "${quotedText.slice(0, 40)}"]` : ''}`);
-
-    if (text) {
-      const pausaStatus = await rateLimit.verificarPausa(phone);
-
-      if (pausaStatus && !pausaStatus.expirou) {
-        const msg = rateLimit.mensagemDurantePausa(
-          pausaStatus.dados.tipo,
-          pausaStatus.dados.ausencia,
-          pausaStatus.dados.retornoHora
-        );
-        await sendMessage(phone, msg);
-        return res.json({ ok: true });
-      }
-
-      if (pausaStatus && pausaStatus.expirou) {
-        const msgRetorno = rateLimit.mensagemRetorno(pausaStatus.dados.tipo, pausaStatus.dados.retorno);
-        await sendMessage(phone, msgRetorno);
-      }
-
-      const handled = await handleSimpleResponse(phone, text, quotedText);
-      if (!handled) {
-        handleMessage(phone, textComContexto).catch(console.error);
-      }
-      return res.json({ ok: true });
-    }
-
-    // ── CONTATO encaminhado ──
-    const msgType = body.message?.messageType || body.message?.type || '';
-    const isContact = msgType === 'contactMessage' || msgType === 'contactsArrayMessage'
-      || body.message?.contact || body.message?.contacts;
-
-    if (isContact) {
-      try {
-        const user = await memory.getOrCreateUser(phone);
-        const vcards = [];
-        if (body.message?.contacts) {
-          for (const c of body.message.contacts) { if (c.vcard) vcards.push(c.vcard); }
-        } else if (body.message?.contact?.vcard) {
-          vcards.push(body.message.contact.vcard);
-        } else if (body.message?.content?.vcard) {
-          vcards.push(body.message.content.vcard);
-        }
-        if (vcards.length === 0) return res.json({ ok: true });
-
-        const salvos = [], erros = [];
-        for (const vcard of vcards) {
-          const contato = parseVCard(vcard);
-          if (!contato) { erros.push('vCard inválido'); continue; }
-          try {
-            await memory.saveContact(user.id, { nome: contato.nome, phone: contato.telefone });
-            salvos.push(contato.nome);
-          } catch (e) { erros.push(contato.nome); }
-        }
-
-        if (salvos.length === 1) {
-          await sendMessage(phone, `✅ Contato salvo! *${salvos[0]}* está na minha lista agora 📱`);
-        } else if (salvos.length > 1) {
-          await sendMessage(phone, `✅ ${salvos.length} contatos salvos!\n\n${salvos.map(n => `• ${n}`).join('\n')}\n\nJá posso enviar mensagens para eles 📱`);
-        } else {
-          await sendMessage(phone, 'Recebi o contato mas não consegui ler as informações 😕 Tenta encaminhar de novo!');
-        }
-      } catch (e) { console.error('[Contato vCard] Erro:', e.message); }
-      return res.json({ ok: true });
-    }
-
-    // ── GEOLOCALIZAÇÃO ──
-    const isLocation = msgType === 'locationMessage' || msgType === 'LocationMessage'
-      || body.message?.location || body.message?.latitude;
-
-    if (isLocation) {
-      try {
-        const user = await memory.getOrCreateUser(phone);
-        const lat = body.message?.location?.latitude || body.message?.latitude;
-        const lng = body.message?.location?.longitude || body.message?.longitude;
-        const enderecoOriginal = body.message?.location?.address || body.message?.address || null;
-        if (lat && lng) {
-          // Salva localização atual (temporária, 4h)
-          await memory.salvarLocalizacao(user.id, { lat, lng, endereco: enderecoOriginal });
-
-          // Geocoding reverso via Nominatim
-          let cidade = null, bairro = null, enderecoCompleto = enderecoOriginal;
-          try {
-            const axios = require('axios');
-            const resp = await axios.get(
-              `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=pt-BR`,
-              { headers: { 'User-Agent': 'ClaraIA/1.0' }, timeout: 5000 }
-            );
-            enderecoCompleto = resp.data?.display_name || enderecoOriginal;
-            cidade = resp.data?.address?.city || resp.data?.address?.town || resp.data?.address?.village || null;
-            bairro = resp.data?.address?.suburb || resp.data?.address?.neighbourhood || null;
-            await memory.salvarLocalizacao(user.id, { lat, lng, endereco: enderecoCompleto, cidade, bairro });
-            console.log(`[Geo] ${phone}: ${cidade}${bairro ? ', ' + bairro : ''}`);
-          } catch (eGeo) { console.log(`[Geo] Geocoding falhou: ${eGeo.message}`); }
-
-          // ── Aprende casa e trabalho ──
-          // Compara com endereços já conhecidos. Se for próximo (< 500m),
-          // confirma. Se for novo, pergunta se é casa ou trabalho.
-          const locTexto = bairro ? `${bairro}, ${cidade || ''}`.trim() : cidade || 'esse local';
-          const distancia = (lat1, lng1, lat2, lng2) => {
-            const R = 6371000;
-            const dLat = (lat2-lat1)*Math.PI/180;
-            const dLng = (lng2-lng1)*Math.PI/180;
-            const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
-            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-          };
-
-          // Busca casa e trabalho salvos no perfil
-          const infos = await prisma.memory.findMany({
-            where: { userId: user.id, type: 'info_pessoal' }
-          }).catch(() => []);
-
-          let emCasa = false, emTrabalho = false;
-          let casaLat = null, casaLng = null, trabalhoLat = null, trabalhoLng = null;
-
-          for (const info of infos) {
-            try {
-              const meta = JSON.parse(info.metadata || '{}');
-              if (meta.chave === 'endereco_casa' && info.content) {
-                const coords = JSON.parse(info.content);
-                if (coords.lat) { casaLat = coords.lat; casaLng = coords.lng; }
-                if (casaLat && distancia(lat, lng, casaLat, casaLng) < 300) emCasa = true;
-              }
-              if (meta.chave === 'endereco_trabalho' && info.content) {
-                const coords = JSON.parse(info.content);
-                if (coords.lat) { trabalhoLat = coords.lat; trabalhoLng = coords.lng; }
-                if (trabalhoLat && distancia(lat, lng, trabalhoLat, trabalhoLng) < 300) emTrabalho = true;
-              }
-            } catch {}
-          }
-
-          const humor = await memory.getHumorDia(user.id).catch(() => null);
-          let msgGeo;
-
-          if (emCasa) {
-            // Chegou em casa — tom de amiga que se importa, NÃO de vigilância.
-            // Nunca dizer "detectei/vi que você chegou" (soa monitoramento).
-            // Age como quem torce/imagina, não como quem rastreia.
-            const variacoesCasa = humor?.estado === 'cansado'
-              ? ['Chegou bem? Agora descansa que você merece 😴', 'Em casa enfim! Relaxa aí fedo 💜']
-              : humor?.estado === 'doente'
-              ? ['Chegou bem? Toma conta de você 🙏', 'Em casa! Se cuida e descansa 💜']
-              : ['Chegou bem em casa? 😊', 'Boa, chegou em casa! Como foi o dia?', 'Em casa enfim! Tudo certo por aí? 💜'];
-            msgGeo = variacoesCasa[Math.floor(Math.random() * variacoesCasa.length)];
-          } else if (emTrabalho) {
-            const variacoesTrab = ['Bom trabalho hoje fedo 💪', 'No batente! Dia produtivo aí 😊', 'Chegou no trampo! Bora que bora 💪'];
-            msgGeo = variacoesTrab[Math.floor(Math.random() * variacoesTrab.length)];
-          } else if (!casaLat && !trabalhoLat) {
-            // Não conhece nenhum endereço ainda — pergunta
-            msgGeo = `📍 Recebi sua localização em ${locTexto}!
-
-Isso é sua casa ou seu trabalho? Assim eu aprendo seus endereços fixos 😊`;
-            // Salva confirmação pendente pra processar resposta
-            await prisma.memory.create({
-              data: {
-                userId: user.id,
-                type: 'confirmacao_pendente',
-                content: JSON.stringify({
-                  tipo: 'aprender_endereco',
-                  lat, lng,
-                  endereco: enderecoCompleto,
-                  cidade, bairro,
-                  expira: Date.now() + 5 * 60 * 1000
-                })
-              }
-            }).catch(() => {});
-          } else {
-            // Conhece um mas não o outro, ou está em lugar diferente
-            msgGeo = `📍 ${locTexto} — ${humor?.estado === 'cansado' ? 'voltando pra casa logo?' : 'por aí!'}`;
-            // Se não conhece casa ainda, oferece aprender
-            if (!casaLat) {
-              msgGeo += String.fromCharCode(10,10) + 'Esse é seu endereço de casa? Posso salvar pra saber quando você chegar 😊';
-              await prisma.memory.create({
-                data: {
-                  userId: user.id,
-                  type: 'confirmacao_pendente',
-                  content: JSON.stringify({
-                    tipo: 'aprender_endereco',
-                    lat, lng, endereco: enderecoCompleto, cidade, bairro,
-                    expira: Date.now() + 5 * 60 * 1000
-                  })
-                }
-              }).catch(() => {});
-            }
-          }
-
-          await sendMessage(phone, msgGeo);
-        }
-      } catch (e) { console.error('[Geo] Erro:', e.message); }
-      return res.json({ ok: true });
-    }
-
-    // ── ÁUDIO ──
-    const audioMsgType = body.message?.messageType || body.message?.mediaType || body.message?.type || '';
-    const isAudio = ['audioMessage','audio','pttMessage','AudioMessage','media'].includes(audioMsgType)
-      || body.message?.audio || body.message?.ptt
-      || (body.message?.mimeType || '').includes('audio')
-      || (body.message?.content?.mimeType || '').includes('audio');
-
-    if (isAudio) {
-      console.log('[Áudio] Detectado. messageType:', audioMsgType);
-      transcribeAndProcess(phone, body).catch(console.error);
-      return res.json({ ok: true });
-    }
-
-    // Imagem → processa com visão (Gemini). Vídeo e documento ainda não.
-    if (body.message?.mediaType === 'image' || body.message?.messageType === 'imageMessage') {
-      console.log('[Imagem] Detectada. Processando com visão...');
-      processImage(phone, body).catch(console.error);
-      return res.json({ ok: true });
-    }
-
-    // Mensagem sem texto mas com caption — provavelmente imagem com legenda
-    // que chegou num webhook separado sem o mediaType correto
-    if (!text && body.message?.caption) {
-      console.log('[Imagem] Caption detectada sem mediaType — tentando processImage');
-      processImage(phone, body).catch(console.error);
-      return res.json({ ok: true });
-    }
-    if (['video','document'].includes(body.message?.mediaType) ||
-        ['videoMessage','documentMessage'].includes(body.message?.messageType)) {
-      sendMessage(phone, 'Por enquanto não consigo ver vídeos ou arquivos — mas foto e áudio eu já dou conta! 😊').catch(console.error);
-      return res.json({ ok: true });
-    }
-
-    return res.json({ ok: true });
-  } catch (error) {
-    console.error('Erro webhook:', error);
-    return res.status(500).json({ error: 'Erro interno' });
-  }
-});
-
-router.post('/receive', (req, res) => res.json({ ok: true }));
-router.get('/test', (req, res) => res.json({ status: 'Clara funcionando ✅' }));
-
-async function transcribeAndProcess(phone, body) {
-  try {
-    const messageId = body.message?.id || body.message?.messageid || body.message?.messageId || body.message?.key?.id;
-    if (!messageId) {
-      console.log('[Áudio] ID não encontrado. Keys:', Object.keys(body.message || {}).join(', '));
-      await sendMessage(phone, 'Não consegui processar o áudio 😕 Pode digitar?');
-      return;
-    }
-    console.log(`[Áudio] Baixando messageId:`, messageId);
-    const UAZAPI_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
-    const UAZAPI_TOKEN = process.env.UAZAPI_TOKEN;
-    const dlRes = await fetch(`${UAZAPI_URL}/message/download`, {
-      method: 'POST',
-      headers: { 'token': UAZAPI_TOKEN, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: messageId, return_base64: true, return_link: false, generate_mp3: false }),
-    });
-    if (!dlRes.ok) {
-      const errText = await dlRes.text().catch(() => '');
-      console.error('[Áudio] Falha no download:', dlRes.status, errText.slice(0, 200));
-      await sendMessage(phone, 'Não consegui baixar o áudio 😕 Pode digitar?');
-      return;
-    }
-    const dlData = await dlRes.json();
-    if (!dlData.base64Data) {
-      console.error('[Áudio] base64Data vazio.');
-      await sendMessage(phone, 'Não consegui ler o áudio 😕 Pode digitar?');
-      return;
-    }
-    const audioBuffer = Buffer.from(dlData.base64Data, 'base64');
-    const mimeType = dlData.mimetype || 'audio/ogg';
-    const ext = mimeType.includes('mp3') ? 'mp3' : 'ogg';
-    const base64Audio = audioBuffer.toString('base64');
-
-    let texto = null;
-
-    // ── Gemini como primário — mais estável que Groq Whisper ──────────────
-    const GEMINI_KEY = process.env.GEMINI_API_KEY;
-    if (GEMINI_KEY) {
-      try {
-        const geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{
-                parts: [
-                  { text: 'Transcreva exatamente o que foi dito neste áudio em português brasileiro. Retorne APENAS a transcrição, sem comentários, sem pontuação excessiva, sem prefixos.' },
-                  { inlineData: { mimeType, data: base64Audio } }
-                ]
-              }],
-              generationConfig: { maxOutputTokens: 500, temperature: 0 }
-            })
-          }
-        );
-        if (geminiRes.ok) {
-          const geminiData = await geminiRes.json();
-          const candidato = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-          if (candidato && candidato.length > 1) {
-            texto = candidato;
-            console.log(`[Áudio] Transcrito via Gemini`);
-          }
-        } else {
-          console.warn('[Áudio] Gemini falhou:', geminiRes.status);
-        }
-      } catch (eGemini) {
-        console.warn('[Áudio] Gemini erro:', eGemini.message);
-      }
-    }
-
-    // ── Groq Whisper como fallback ────────────────────────────────────────
-    if (!texto) {
-      const Groq = require('groq-sdk');
-      const { toFile } = require('groq-sdk');
-      const chaves = [process.env.GROQ_API_KEY_2, process.env.GROQ_API_KEY].filter(Boolean);
-      for (const chave of chaves) {
-        try {
-          const groqInst = new Groq({ apiKey: chave });
-          const transcription = await groqInst.audio.transcriptions.create({
-            file: await toFile(audioBuffer, `audio.${ext}`, { type: mimeType }),
-            model: 'whisper-large-v3-turbo',
-            language: 'pt',
-          });
-          texto = transcription.text?.trim();
-          if (texto) { console.log(`[Áudio] Transcrito via Groq fallback`); break; }
-        } catch (eGroq) {
-          console.warn(`[Áudio] Groq fallback falhou:`, eGroq.message);
-        }
-      }
-    }
-    if (!texto) {
-      await sendMessage(phone, 'Não entendi o áudio 😕 Pode repetir digitando?');
-      return;
-    }
-    console.log(`[Áudio] ${phone} transcrito: "${texto.slice(0, 80)}"`);
-
-    // Detecta se o áudio foi cortado no meio — termina sem pontuação
-    // e com palavras de continuação típicas de frase incompleta
-    const pareceCortado = texto.length < 40 &&
-      /\b(e|aí|então|mas|que|pra|para|né|tá|ta)\s*$/i.test(texto.trim());
-    if (pareceCortado) {
-      console.log(`[Áudio] Possível corte detectado: "${texto}"`);
-      await sendMessage(phone, 'Acho que o áudio cortou no meio 😕 Pode repetir ou digitar o resto?');
-      return;
-    }
-
-    await handleMessage(phone, texto);
-  } catch (e) {
-    console.error('[Áudio] Erro:', e.message);
-    await sendMessage(phone, 'Tive um problema com o áudio 😕 Pode digitar?');
-  }
+  } catch {}
 }
 
-module.exports = router;
-
-// ── Processamento de imagem com visão (Gemini) ────────────────────────────
-// Baixa a imagem via UAZAPI (mesmo fluxo do áudio), manda pro Gemini Vision
-// com a personalidade da Clara, e ela responde no jeito dela. Detecta o tipo:
-// - Comprovante/recibo → extrai valor e cria o gasto
-// - Documento → lê e resume o que importa
-// - Foto casual → comenta como amiga
-async function processImage(phone, body) {
+async function getResumoRelacionamento(userId) {
   try {
-    const messageId = body.message?.id || body.message?.messageid || body.message?.messageId || body.message?.key?.id;
-    if (!messageId) {
-      await sendMessage(phone, 'Não consegui abrir a imagem 😕 Manda de novo?');
-      return;
-    }
-
-    // Aviso rápido no tom da Clara enquanto analisa
-    let nome = '';
-    try {
-      const u = await prisma.user.findFirst({ where: { phone } }).catch(() => null);
-      nome = u?.name ? ` ${u.name.split(' ')[0]}` : '';
-    } catch {}
-    await sendMessage(phone, 'Deixa eu dar uma olhada 👀');
-
-    // Baixa a imagem em base64
-    const UAZAPI_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
-    const UAZAPI_TOKEN = process.env.UAZAPI_TOKEN;
-    const dlRes = await fetch(`${UAZAPI_URL}/message/download`, {
-      method: 'POST',
-      headers: { 'token': UAZAPI_TOKEN, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: messageId, return_base64: true, return_link: false }),
-    });
-    if (!dlRes.ok) {
-      await sendMessage(phone, 'Não consegui baixar a imagem 😕 Tenta de novo?');
-      return;
-    }
-    const dlData = await dlRes.json();
-    if (!dlData.base64Data) {
-      await sendMessage(phone, 'A imagem veio vazia 😕 Manda de novo?');
-      return;
-    }
-    const mimeType = dlData.mimetype || 'image/jpeg';
-
-    // Legenda que o usuário mandou junto com a foto (se houver)
-    const legenda = body.message?.caption || body.message?.text || '';
-
-    // Monta o prompt da Clara para análise de imagem
-    const { geminiVision } = require('../services/gemini');
-    const systemPrompt = `Você é a Clara, uma amiga próxima e esperta no WhatsApp${nome ? `, conversando com${nome}` : ''}. Você está olhando uma imagem que seu amigo te mandou. Reaja de forma natural e calorosa, do SEU jeito — não como um robô descrevendo pixels.
-
-Identifique o que é e responda adequadamente:
-- Se for COMPROVANTE/RECIBO/NOTA com um valor: diga que registrou o gasto e mencione o valor e onde foi (ex: "Anotei aqui: R$ 50 no mercado 💸"). Comece a resposta com a tag oculta [GASTO:valor:categoria:descricao] na PRIMEIRA linha (ex: [GASTO:50.00:mercado:compras]), depois a resposta normal embaixo. A tag será removida antes de enviar.
-- Se for DOCUMENTO/PRINT com informação: leia e resuma o que importa, de forma útil e no seu tom.
-- Se for uma FOTO casual (pessoa, lugar, comida, pet): comente como amiga, com carinho e bom humor.
-- Se tiver um remédio/receita: identifique e fale sobre, mas lembre de confirmar dosagem com médico.
-
-${legenda ? `O amigo escreveu junto com a foto: "${legenda}" — leve isso em conta.` : ''}
-
-Seja calorosa, breve (máximo 5 linhas), sem aspas, no português do Brasil. Use no máximo 1-2 emojis.`;
-
-    const userPrompt = legenda || 'Olha essa imagem e reage do seu jeito.';
-    let analise;
-    try {
-      analise = await geminiVision(dlData.base64Data, mimeType, systemPrompt, userPrompt);
-    } catch (eVision) {
-      console.error('[Imagem] Erro na visão:', eVision.message);
-      await sendMessage(phone, 'Vi que você mandou uma foto, mas não consegui processar agora 😕 Me conta o que é?');
-      return;
-    }
-
-    // Se a Clara detectou um gasto, extrai a tag e cria o registro em silêncio
-    // (a própria resposta dela já confirma o gasto — não duplica mensagem)
-    const gastoMatch = analise.match(/\[GASTO:([\d.]+):([^:]+):([^\]]+)\]/);
-    if (gastoMatch) {
-      const valor = parseFloat(gastoMatch[1]);
-      const categoria = gastoMatch[2].trim();
-      const descricao = gastoMatch[3].trim();
-      analise = analise.replace(/\[GASTO:[^\]]+\]\s*/, '').trim();
-      try {
-        const memory = require('../services/memory');
-        const user = await prisma.user.findFirst({ where: { phone } }).catch(() => null);
-        if (user && valor > 0) {
-          await memory.saveExpense(user.id, { valor, categoria, descricao });
-          console.log(`[Imagem] Gasto criado: R$ ${valor} (${categoria})`);
-        }
-      } catch (eGasto) {
-        console.error('[Imagem] Erro ao criar gasto:', eGasto.message);
-      }
-    }
-
-    console.log(`[Imagem] ${phone} analisada: "${analise.slice(0, 60)}"`);
-
-    // Salva no histórico pra Clara manter o fio da conversa — se o usuário
-    // comentar a foto depois ("essa é você", "gostou?"), ela tem o contexto.
-    try {
-      const memory = require('../services/memory');
-      const user = await prisma.user.findFirst({ where: { phone } }).catch(() => null);
-      if (user) {
-        await memory.saveConversationMessage(user.id, 'user', `[enviou uma imagem${legenda ? `: "${legenda}"` : ''}]`);
-        await memory.saveConversationMessage(user.id, 'assistant', analise);
-      }
-    } catch (eSave) {
-      console.error('[Imagem] Erro ao salvar histórico:', eSave.message);
-    }
-
-    await sendMessage(phone, analise);
-  } catch (e) {
-    console.error('[Imagem] Erro:', e.message);
-    await sendMessage(phone, 'Tive um problema com a imagem 😕 Pode tentar de novo?');
-  }
+    const m = await prisma.memory.findFirst({
+      where: { userId, type: 'resumo_relacionamento' }
+    }).catch(() => null);
+    return m?.content || null;
+  } catch { return null; }
 }
+
+// ====================== EXPORTS ======================
+
+// ── Ponto 3: padrões de reação ────────────────────────────────────────────
+// Salva como a pessoa REAGE em situações específicas (não o que ela gosta —
+// isso vai em info_pessoal). Max 15 padrões por usuário; upsert por tema.
+async function salvarPadraoReacao(userId, tema, padrao) {
+  try {
+    const chave = tema.toLowerCase().trim().slice(0, 50);
+    const existente = await prisma.memory.findFirst({
+      where: { userId, type: 'padrao_reacao', metadata: { contains: chave } }
+    }).catch(() => null);
+    const content = padrao.slice(0, 120);
+    const meta = JSON.stringify({ tema: chave, updatedAt: new Date().toISOString() });
+    if (existente) {
+      await prisma.memory.update({ where: { id: existente.id }, data: { content, metadata: meta } }).catch(() => {});
+    } else {
+      // Limita a 15 padrões — remove o mais antigo se passar
+      const total = await prisma.memory.count({ where: { userId, type: 'padrao_reacao' } }).catch(() => 0);
+      if (total >= 15) {
+        const maisAntigo = await prisma.memory.findFirst({
+          where: { userId, type: 'padrao_reacao' }, orderBy: { createdAt: 'asc' }
+        }).catch(() => null);
+        if (maisAntigo) await prisma.memory.delete({ where: { id: maisAntigo.id } }).catch(() => {});
+      }
+      await prisma.memory.create({ data: { userId, type: 'padrao_reacao', content, metadata: meta } }).catch(() => {});
+    }
+    console.log(`[PadraoReacao] Salvo: "${chave}" → "${content.slice(0, 60)}"`);
+  } catch (e) { console.error('[salvarPadraoReacao]', e.message); }
+}
+
+async function getPadroesReacao(userId) {
+  try {
+    const rows = await prisma.memory.findMany({
+      where: { userId, type: 'padrao_reacao' },
+      orderBy: { updatedAt: 'desc' },
+      take: 15
+    }).catch(() => []);
+    return rows.map(r => {
+      let tema = ''; try { tema = JSON.parse(r.metadata || '{}').tema || ''; } catch {}
+      return { tema, padrao: r.content };
+    }).filter(p => p.tema && p.padrao);
+  } catch { return []; }
+}
+
+module.exports = {
+  prisma,
+  getOrCreateUser,
+  saveJornada, getJornada,
+  saveUserPreference, getUserPreference,
+  savePersonalInfo, deletePersonalInfo, getPersonalInfo, buildPersonalContext,
+  getCamposDesconhecidos, getProximaCuriosidade, CAMPOS_CURIOSIDADE, CATEGORIAS_PERFIL,
+  saveMemory, getRecentMemories,
+  setTemporaryContext, getTemporaryContext, clearTemporaryContext,
+  saveConversationMessage, getConversationHistory, getHorarioPreferido,
+  saveMedication, saveTask,
+  saveExpense, getMonthExpenses,
+  saveContact, getContacts, findContactByName,
+  savePendencia,
+  getPendenciasAbertas, salvarOuAtualizarPendencia, acompanharFimDeRemedio, fecharPendencia, fecharPendenciasPorResolucao, fecharPendenciaLembrete,
+  salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao, getCidadeAtual,
+  salvarPadraoReacao, getPadroesReacao,
+  salvarMemoriaAfetiva, getMemoriaAfetiva,
+  salvarResumoRelacionamento, getResumoRelacionamento,
+};
