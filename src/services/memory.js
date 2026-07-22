@@ -920,6 +920,17 @@ async function getCidadeAtual(userId) {
     const t = await prisma.memory.findFirst({ where: { userId, type: 'cidade' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
     if (t?.content) return t.content;
   } catch {}
+  // Fallback: busca em info_pessoal por chaves de cidade/moradia
+  try {
+    const infos = await prisma.memory.findMany({ where: { userId, type: 'info_pessoal' }, take: 50 }).catch(() => []);
+    for (const info of infos) {
+      let meta = {}; try { meta = JSON.parse(info.metadata || '{}'); } catch {}
+      const chave = (meta.chave || '').toLowerCase();
+      if (/cidade|mora|moradia|reside|residência|local|hometown/.test(chave)) {
+        return info.content;
+      }
+    }
+  } catch {}
   return '';
 }
 
