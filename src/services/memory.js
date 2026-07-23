@@ -294,8 +294,17 @@ ${resumo}`;
   const humor = await getHumorDia(userId).catch(() => null);
   if (humor) {
     const estadoMap = {
-      doente: '🤒 Não está se sentindo bem',
-      cansado: '😴 Está cansado',
+      trabalhando:  '💼 Está trabalhando agora',
+      em_reunião:   '📞 Está em reunião',
+      almoçando:    '🍽️ Está almoçando',
+      em_casa:      '🏠 Está em casa',
+      viajando:     '🚗 Está viajando / na estrada',
+      doente:       '🤒 Não está se sentindo bem',
+      cansado:      '😴 Está cansado',
+      estressado:   '😤 Está estressado',
+      preocupado:   '😟 Está preocupado com algo',
+      triste:       '😢 Está triste',
+      animado:      '😊 Está animado e de bom humor',
       estressado: '😤 Está estressado',
       preocupado: '😟 Está preocupado com algo',
       triste: '😢 Está triste',
