@@ -1,8 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const { handleMessage } = require('../services/handler');
-const { freeResponse, buildPersonality } = require('../services/groq');
-const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('../services/gemini');
 const memory = require('../services/memory');
 const rateLimit = require('../services/rateLimit');
 const { PrismaClient } = require('@prisma/client');
@@ -49,30 +47,6 @@ function marcarConteudoProcessado(phone, text, quotedText) {
   _conteudoProcessadoRecente.set(chaveConteudo(phone, text, quotedText), Date.now() + DEDUP_CONTEUDO_JANELA_MS);
 }
 
-// ── Terceira camada: dedup curto só por phone+text (30s) ──────────────────
-// Captura o caso onde a UazAPI entrega o mesmo webhook duas vezes com
-// messageIds DIFERENTES e com/sem quotedText diferente (ex: evento de
-// "mensagem recebida" + evento de "lida/entregue"), fazendo os dois
-// passarem pelas camadas 1 e 2. Hash sem quoted garante bloqueio
-// mesmo quando os payloads diferem só na parte de citação.
-// 30s (antes eram 10s) para cobrir retries tardios da UazAPI.
-const _dedupCurto = new Map();
-const DEDUP_CURTO_MS = 30 * 1000;
-
-function textJaProcessadoRecente(phone, text) {
-  if (!text) return false;
-  const chave = `${phone}|${text}`;
-  const expiraEm = _dedupCurto.get(chave);
-  if (!expiraEm) return false;
-  if (Date.now() >= expiraEm) { _dedupCurto.delete(chave); return false; }
-  return true;
-}
-
-function marcarTextProcessado(phone, text) {
-  if (!text) return;
-  _dedupCurto.set(`${phone}|${text}`, Date.now() + DEDUP_CURTO_MS);
-}
-
 setInterval(() => {
   const agora = Date.now();
   for (const [id, expiraEm] of _messageIdsProcessados) {
@@ -114,29 +88,20 @@ const LEMBRETE_FEITO = [
 async function getLembretePendente(userId, phone, quotedText) {
   if (quotedText) {
     const quotedLower = quotedText.toLowerCase();
-    // Quando há citação, busca o dia inteiro (usuário pode responder horas
-    // depois — a janela de 15min era muito curta e fazia a confirmação
-    // cair no handler da IA, gerando resposta genérica "Boa, fedo!")
-    const hoje = new Date(nowBRT());
-    hoje.setHours(0, 0, 0, 0);
     const naoConcluidos = await prisma.reminder.findMany({
-      where: {
-        OR: [{ userId, confirmed: false }, { phone, confirmed: false }],
-        scheduledAt: { gte: hoje }
-      },
+      where: { OR: [{ userId, confirmed: false }, { phone, confirmed: false }] },
       orderBy: { scheduledAt: 'desc' }
     });
     const porCitacao = naoConcluidos.find(r => quotedLower.includes(r.message.toLowerCase()));
     if (porCitacao) return porCitacao;
   }
 
-  // Sem citação — janela de 30min (era 15min, aumentado pra dar margem real)
-  const trintaMin = new Date(nowBRT().getTime() - 30 * 60 * 1000);
+  const quinze = new Date(nowBRT().getTime() - 15 * 60 * 1000);
   const candidatos = await prisma.reminder.findMany({
     where: {
       OR: [
-        { userId, sent: true, confirmed: false, scheduledAt: { gte: trintaMin } },
-        { phone, sent: true, confirmed: false, scheduledAt: { gte: trintaMin } },
+        { userId, sent: true, confirmed: false, scheduledAt: { gte: quinze } },
+        { phone, sent: true, confirmed: false, scheduledAt: { gte: quinze } },
       ]
     },
     orderBy: { scheduledAt: 'desc' }
@@ -228,8 +193,6 @@ async function handleSimpleResponse(phone, text, quotedText) {
         if (med) {
           const atualizado = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
           await prisma.memory.delete({ where: { id: pendenteRemedio.memoryId } }).catch(() => {});
-          await prisma.memory.create({ data: { userId: user.id, type: 'dose_confirmada', content: med.name } }).catch(() => {});
-          if (atualizado.remaining <= 0) await memory.acompanharFimDeRemedio(user.id, med.name);
           await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${atualizado.remaining} doses. 💊`, 400, quotedText);
           return true;
         }
@@ -248,8 +211,6 @@ async function handleSimpleResponse(phone, text, quotedText) {
         if (med) {
           const atualizado = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
           await prisma.memory.delete({ where: { id: match.memoryId } }).catch(() => {});
-          await prisma.memory.create({ data: { userId: user.id, type: 'dose_confirmada', content: med.name } }).catch(() => {});
-          if (atualizado.remaining <= 0) await memory.acompanharFimDeRemedio(user.id, med.name);
           await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${atualizado.remaining} doses. 💊`, 400, quotedText);
           return true;
         }
@@ -266,10 +227,8 @@ async function handleSimpleResponse(phone, text, quotedText) {
     if (ehTextoTomeiForte) {
       const med = await getRemedioRecente(user.id);
       if (med) {
-        const atualizadoFb = await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
-        await prisma.memory.create({ data: { userId: user.id, type: 'dose_confirmada', content: med.name } }).catch(() => {});
-        if (atualizadoFb.remaining <= 0) await memory.acompanharFimDeRemedio(user.id, med.name);
-        await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${atualizadoFb.remaining} doses. 💊`, 400, quotedText);
+        await prisma.medication.update({ where: { id: med.id }, data: { remaining: { decrement: 1 } } });
+        await sendMessage(phone, `✅ Tomado! *${med.name}* registrado. Restam ${med.remaining - 1} doses. 💊`, 400, quotedText);
         return true;
       }
     }
@@ -279,34 +238,7 @@ async function handleSimpleResponse(phone, text, quotedText) {
     const lembrete = await getLembretePendente(user.id, phone, quotedText);
     if (lembrete) {
       await prisma.reminder.update({ where: { id: lembrete.id }, data: { confirmed: true } });
-      // Salva como conversa pra houveConversaRecente bloquear proativas
-      // (sem isso, "Tomado fedo" não aparecia no histórico e a proativa
-      // de manhã achava que você estava sumido e mandava mensagem carente)
-      await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
-      // 1ª msg: confirmação do sistema — curta, neutra, sem personalidade
       await sendMessage(phone, `✅ Feito! "${lembrete.message}" concluído.`, 400, quotedText);
-      // 2ª msg: Clara só entra SE tiver algo genuíno a dizer. A confirmação de
-      // sistema (acima) já cumpriu o papel funcional. Ela não precisa comentar
-      // toda tarefa — só quando aquilo especificamente merece uma reação de
-      // amiga. Se for algo trivial (beber água, tarefa comum), ela fica quieta.
-      ;(async () => {
-        try {
-          await new Promise(r => setTimeout(r, 2000));
-          const prefs = await memory.getUserPreference(user.id).catch(() => ({}));
-          const memAfetiva = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
-          const apelido = memAfetiva?.apelido_usuario || prefs?.name || '';
-          if (!geminiDisponivel() || todosModelosEsgotados()) return;
-          const sistema = buildPersonality(prefs?.tom || 'carinhoso', apelido, false) + `\n\n[TAREFA CONCLUÍDA] O usuário confirmou que fez: "${lembrete.message}". O sistema JÁ confirmou pra ele — você NÃO precisa dizer que foi concluído nem repetir a tarefa.\n\nDECIDA: essa tarefa específica merece uma reação sua de amiga? Só reaja se for algo com peso genuíno (uma conquista, algo que ele estava adiando, algo importante da vida dele, algo com graça real). Se for trivial/rotineiro (beber água, tarefa comum do dia), responda APENAS "SKIP" — sem reação, deixa quieto.\n\nSe for reagir: 1 linha curta, no seu tom, sobre ISSO especificamente. NÃO puxe outros assuntos (Isis, saúde de familiares, pendências, agenda). NÃO diga bom dia. NUNCA seja genérica ("boa!", "arrasou!" soltos são proibidos) — se não tem nada específico e genuíno a dizer, é SKIP.`;
-          const comentario = await geminiFreeResponse([
-            { role: 'system', content: sistema },
-            { role: 'user', content: `Acabei de confirmar que fiz: "${lembrete.message}"` }
-          ], { temperature: 0.85, maxTokens: 120 }).catch(() => null);
-          if (comentario && comentario.trim().length > 3 && !/^SKIP/i.test(comentario.trim())) {
-            await sendMessage(phone, comentario);
-            await memory.saveConversationMessage(user.id, 'assistant', comentario).catch(() => {});
-          }
-        } catch(e) { console.error('[LembreteConfirm] Erro no comentário:', e.message); }
-      })();
       return true;
     }
   }
@@ -359,21 +291,15 @@ router.post('/', async (req, res) => {
         console.log(`[Webhook] messageId duplicado ignorado (cache memória): ${messageId}`);
         return res.json({ ok: true });
       }
-      // CORRIGIDO (corrida de duplicação): a marca em memória agora vem ANTES
-      // do await. Antes ela vinha DEPOIS do findFirst — se o mesmo webhook
-      // chegasse duas vezes quase juntas (retry da UazAPI ou webhook registrado
-      // em duplicidade), as duas passavam o .has() como false e processavam em
-      // dobro, gerando DUAS respostas (classify estocástico → respostas
-      // diferentes). Marcar síncrono aqui, antes de qualquer await, fecha a
-      // janela: a segunda entrega vê a marca na hora e é ignorada.
-      marcarMessageIdProcessado(messageId);
       const jaProcessadoDB = await prisma.memory.findFirst({
         where: { type: 'webhook_msgid', content: messageId }
       }).catch(() => null);
       if (jaProcessadoDB) {
         console.log(`[Webhook] messageId duplicado ignorado (banco, sobreviveu a restart): ${messageId}`);
+        marcarMessageIdProcessado(messageId);
         return res.json({ ok: true });
       }
+      marcarMessageIdProcessado(messageId);
       prisma.memory.create({ data: { userId: 'system', type: 'webhook_msgid', content: messageId } }).catch(() => {});
     } else {
       console.log('[Webhook] messageId não encontrado neste payload — chaves disponíveis:', Object.keys(body.message || {}).join(', '));
@@ -396,14 +322,7 @@ router.post('/', async (req, res) => {
       console.log(`[Webhook] conteúdo duplicado ignorado (2ª camada): ${phone} — "${text.slice(0, 60)}"`);
       return res.json({ ok: true });
     }
-    // Terceira camada: phone+text sem quotedText, janela 10s
-    // Captura retries da UazAPI com messageId diferente e/ou quotedText diferente
-    if (text && textJaProcessadoRecente(phone, text)) {
-      console.log(`[Webhook] conteúdo duplicado ignorado (3ª camada, 10s): ${phone} — "${text.slice(0, 60)}"`);
-      return res.json({ ok: true });
-    }
     if (text) marcarConteudoProcessado(phone, text, quotedText);
-    if (text) marcarTextProcessado(phone, text);
 
     const textComContexto = quotedText && text ? `[Mensagem citada: "${quotedText.slice(0, 200)}"]\n${text}` : text;
 
