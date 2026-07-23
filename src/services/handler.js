@@ -1028,7 +1028,10 @@ async function handleMessage(phone, text, location = null) {
     }
 
     if (classified.tipo === 'busca' && classified.query) {
-      const cidade = await memory.getCidadeAtual(user.id).catch(() => '');
+      const cidade = await (typeof memory.getCidadeAtual === 'function'
+        ? memory.getCidadeAtual(user.id)
+        : Promise.resolve('')
+      ).catch(() => '');
       const tomBusca = preferences?.tom || 'carinhoso';
       const apelidoBusca = (await memory.getMemoriaAfetiva(user.id).catch(() => {}))?.apelido_usuario || preferences?.name || '';
       const resultadoBusca = await searchWeb(classified.query, cidadeParaBusca(classified.query, cidade), apelidoBusca, tomBusca);
