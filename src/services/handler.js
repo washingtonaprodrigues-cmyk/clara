@@ -648,24 +648,24 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
             let meta = {}; try { meta = JSON.parse(e.metadata || '{}'); } catch {}
             const idade = agora - new Date(e.createdAt).getTime();
             const pendente = meta.resultado === 'pendente';
+            const resolvido = meta.resolvidoEm || (!pendente && meta.resultado !== 'neutro');
 
-            // Muito recente (< 2 dias): sempre mostra independente do status
-            if (idade < RECENTE_MS) return true;
+            // Resolvido explicitamente pelo sistema → nunca aparece proativamente
+            if (resolvido) return false;
 
-            // Resolvido: mostra por mais 2 dias pra ela poder comentar, depois some
-            if (!pendente) return idade < RESOLVIDO_MS;
+            // Muito recente (< 2 dias): mostra se ainda pendente
+            if (idade < RECENTE_MS) return pendente;
 
             // Pendente com prazo definido: só mostra quando o prazo chegou
             if (meta.acompanhar_em_dias) {
-              // Usa next_check_at se foi reiniciado ("ainda não"), senão usa createdAt
               const baseCheck = meta.next_check_at
                 ? new Date(meta.next_check_at).getTime()
                 : new Date(e.createdAt).getTime() + (meta.acompanhar_em_dias * 24 * 60 * 60 * 1000);
-              return agora >= baseCheck;
+              return agora >= baseCheck && pendente;
             }
 
             // Pendente sem prazo: mostra por até 5 dias
-            return idade < 5 * 24 * 60 * 60 * 1000;
+            return pendente && idade < 5 * 24 * 60 * 60 * 1000;
           }).slice(0, 3);
 
           if (filtrados.length > 0) {
@@ -725,6 +725,11 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       if (pendenciaSaude && !temAssuntoAberto && !ehConfirmacaoRemedio) {
         const resumoLower = (pendenciaSaude.resumo || '').toLowerCase();
         const ehRemedio = /rem[eé]dio|medicamento|comp|dose|tomar/.test(resumoLower);
+        // Filtro de freshness: saúde geral só aparece se é recente (< 48h)
+        // Episódios antigos resolvidos não devem ser trazidos proativamente
+        const criadoEm = pendenciaSaude.criadoEm ? new Date(pendenciaSaude.criadoEm) : null;
+        const horas = criadoEm ? (Date.now() - criadoEm.getTime()) / (60 * 60 * 1000) : 0;
+        const ehRecente = !criadoEm || horas < 48;
         if (ehRemedio) {
           // Só mostra se algum remédio ativo tem horário dentro de 2h
           const now2 = nowBRT();
@@ -740,7 +745,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           });
           mostrarPendenciaSaude = dentroJanela;
         } else {
-          mostrarPendenciaSaude = true; // saúde geral — comportamento anterior
+          mostrarPendenciaSaude = ehRecente; // só mostra saúde geral se < 48h
         }
       }
       if (mostrarPendenciaSaude) {
@@ -1139,7 +1144,39 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       } catch {}
     })();
 
-    // ── Personagem Clara: salva o que ela inventou sobre si mesma ──
+    // ── Detecção de resolução de episódios ativos ──────────────────────────
+    // Quando o usuário menciona que algo foi resolvido ("fui liberado", "já
+    // resolvi", "sarou", "deu certo"), o episódio muda de pendente → resolvido
+    // e para de aparecer proativamente no contexto.
+    ;(async () => {
+      try {
+        const sinaisResolucao = /\b(liberad[oa]|resolvemos|resolvi|já resolvi|consegui|funcionou|ficou bom|melhorou|sarou|tá bem|está bem|terminou|acabou|já fiz|já fui|já foi|tá ok|deu certo|deu tudo certo|alta médica|atestado|me deram alta|concluído|concluida)\b/i.test(text);
+        if (!sinaisResolucao) return;
+        const epsPendentes = await prisma.memory.findMany({
+          where: { userId: user.id, type: 'episodio_vida', createdAt: { gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) } },
+          orderBy: { createdAt: 'desc' }, take: 5
+        }).catch(() => []);
+        const pendentes = epsPendentes.filter(e => {
+          let m = {}; try { m = JSON.parse(e.metadata || '{}'); } catch {}
+          return m.resultado === 'pendente';
+        });
+        if (pendentes.length === 0) return;
+        const lista = pendentes.map((e, i) => `${i + 1}. ${e.content}`).join('\n');
+        const check = await geminiFreeResponse([
+          { role: 'user', content: `Mensagem: "${text.slice(0, 200)}"\n\nEpisódios pendentes:\n${lista}\n\nO usuário resolveu/encerrou algum desses episódios? Responda APENAS JSON: {"resolveu":true,"indice":N,"resultado":"positivo|negativo|neutro"} ou {"resolveu":false}` }
+        ], { temperature: 0.1, maxTokens: 60 }).catch(() => null);
+        if (!check) return;
+        const parsed = JSON.parse(check.replace(/```json|```/g, '').trim());
+        if (!parsed?.resolveu || !parsed?.indice) return;
+        const ep = pendentes[parsed.indice - 1];
+        if (!ep) return;
+        let meta = {}; try { meta = JSON.parse(ep.metadata || '{}'); } catch {}
+        meta.resultado = parsed.resultado || 'positivo';
+        meta.resolvidoEm = new Date().toISOString();
+        await prisma.memory.update({ where: { id: ep.id }, data: { metadata: JSON.stringify(meta) } }).catch(() => {});
+        console.log(`[EpisódioResolvido] "${ep.content.slice(0, 50)}" → ${meta.resultado}`);
+      } catch {}
+    })();
     // Detecta detalhes concretos que ela mencionou (amigas, lugares, atividades)
     // e salva pra manter consistência — a Bia e a Carol continuam sendo a Bia e a Carol.
     ;(async () => {
