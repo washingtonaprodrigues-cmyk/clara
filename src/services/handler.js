@@ -370,7 +370,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         }),
         prisma.medication.findMany({ where: { userId: user.id, active: true, remaining: { gt: 0 } } }),
         preferences.saldo != null ? prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } } }) : Promise.resolve([]),
-        buildPersonalContext(user.id).catch(() => ''),
+        buildPersonalContext(user.id, text || '').catch(() => ''),
         prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null),
         // ── Pendência de saúde ainda não cobrada ──
         // Se o usuário chamar a Clara DEPOIS do horário de check-in
@@ -727,6 +727,31 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     }
 
     updateRelationshipSummary(user.id, history, respStr).catch(() => {});
+
+    // ── Memória relacional: categoriza e salva o que vale lembrar ──────────
+    // PERMANENTE: apelidos novos, brincadeiras internas, quem são juntos
+    // ACONTECIMENTO: saúde, trabalho, família — dura 1 ano
+    // DESCARTA: lembretes, listas, agenda, operacional sem carga emocional
+    ;(async () => {
+      try {
+        const histMR = await memory.getConversationHistory(user.id, 8).catch(() => []);
+        if (histMR.length < 3) return;
+        const resumoMR = histMR.slice(-6).map(m =>
+          `${m.role === 'user' ? 'Ele' : 'Clara'}: ${(m.content || '').slice(0, 120)}`
+        ).join('\n');
+        const extracted = await geminiFreeResponse([
+          { role: 'user', content: `Conversa:\n${resumoMR}\n\nO que dessa conversa merece ser lembrado?\n\nPERMANENTE (nunca apaga): novo apelido criado, brincadeira interna nova, algo que define quem são juntos, papel de pessoa importante na vida dele (filha Isis, esposa/patroa).\nACONTECIMENTO (1 ano): saúde marcante, trabalho com carga emocional, momento familiar importante, algo emotivamente significativo que aconteceu.\nDESCARTAR: lembrete, lista, gasto, agenda, pão de queijo, qualquer coisa operacional sem peso emocional.\n\nPara cada memória relevante: {"categoria":"permanente|acontecimento","conteudo":"1 frase natural","tags":["tag1","tag2"]}\nResposta APENAS como JSON array. Se nada relevante: []` }
+        ], { temperature: 0.1, maxTokens: 200 }).catch(() => null);
+        if (!extracted) return;
+        const clean = extracted.replace(/```json|```/g, '').trim();
+        const itens = JSON.parse(clean.startsWith('[') ? clean : '[]');
+        if (!Array.isArray(itens) || itens.length === 0) return;
+        for (const item of itens) {
+          if (!item?.conteudo || item.categoria === 'descartar') continue;
+          await memory.salvarMemoriaRelacional(user.id, item.conteudo, item.categoria, item.tags || []);
+        }
+      } catch {}
+    })();
 
     // ── Clara Personagem: salva o que ela disse de si mesma ──────────────
     // Quando ela se chama de "fraquinha", inventa que foi ao barzinho com a
