@@ -233,7 +233,7 @@ async function getProximaCuriosidade(userId, contextoAtual = 'qualquer') {
   return candidatos[Math.floor(Math.random() * candidatos.length)];
 }
 
-async function buildPersonalContext(userId) {
+async function buildPersonalContext(userId, textoAtual = '') {
   const infos = await getPersonalInfo(userId);
   
   // Resumo evolutivo — contexto mais importante, nunca some
@@ -353,6 +353,43 @@ ${resumo}`;
     if (claraPersonagem.length > 0) {
       texto += '\n\n[COISAS QUE VOCÊ JÁ DISSE SOBRE SI — sua memória própria. Quando ele tocar nesses assuntos, você lembra naturalmente, sem tratar como novidade]\n';
       texto += claraPersonagem.map(m => `• ${m.content}`).join('\n');
+    }
+  } catch {}
+
+  // ── Memória Relacional ────────────────────────────────────────────────
+  try {
+    const agora1a = Date.now();
+    const seteDias = new Date(agora1a - 7*24*60*60*1000);
+    const umAno   = new Date(agora1a - 365*24*60*60*1000);
+    const [permanentes, recentes, antigas] = await Promise.all([
+      prisma.memory.findMany({ where: { userId, type: 'memoria_relacional', metadata: { contains: '"permanente"' } }, orderBy: { createdAt: 'desc' }, take: 20 }).catch(() => []),
+      prisma.memory.findMany({ where: { userId, type: 'memoria_relacional', metadata: { contains: '"acontecimento"' }, createdAt: { gte: seteDias } }, orderBy: { createdAt: 'desc' }, take: 5 }).catch(() => []),
+      textoAtual ? prisma.memory.findMany({ where: { userId, type: 'memoria_relacional', metadata: { contains: '"acontecimento"' }, createdAt: { gte: umAno, lt: seteDias } }, orderBy: { createdAt: 'desc' }, take: 100 }).catch(() => []) : Promise.resolve([]),
+    ]);
+    if (permanentes.length > 0) {
+      texto += '\n\n[MEMÓRIA PERMANENTE — quem vocês são juntos. Não liste, use naturalmente quando relevante]\n';
+      texto += permanentes.map(m => `• ${m.content}`).join('\n');
+    }
+    if (recentes.length > 0) {
+      texto += '\n\n[ACONTECIMENTOS RECENTES — o que está acontecendo agora na vida dele]\n';
+      texto += recentes.map(m => {
+        let meta = {}; try { meta = JSON.parse(m.metadata || '{}'); } catch {}
+        return `• [${meta.data || ''}] ${m.content}`;
+      }).join('\n');
+    }
+    if (textoAtual && antigas.length > 0) {
+      const tl = textoAtual.toLowerCase();
+      const relevantes = antigas.filter(m => {
+        let meta = {}; try { meta = JSON.parse(m.metadata || '{}'); } catch {}
+        return (meta.tags || []).some(t => tl.includes(t.toLowerCase()));
+      }).slice(0, 3);
+      if (relevantes.length > 0) {
+        texto += '\n\n[MEMÓRIA CONECTADA — você viveu isso com ele, traga naturalmente se fizer sentido]\n';
+        texto += relevantes.map(m => {
+          let meta = {}; try { meta = JSON.parse(m.metadata || '{}'); } catch {}
+          return `• [${meta.data || ''}] ${m.content}`;
+        }).join('\n');
+      }
     }
   } catch {}
 
@@ -792,31 +829,26 @@ async function getResumoRelacionamento(userId) {
 
 // ====================== EXPORTS ======================
 
-// ── getCidadeAtual: retorna cidade do usuário ─────────────────────────────
-// 1ª tentativa: GPS recente (ultima_localizacao, < 7 dias)
-// 2ª tentativa: tipo 'cidade' salvo explicitamente
-// 3ª tentativa: info_pessoal com chave de cidade/moradia (ex: Carlópolis)
-async function getCidadeAtual(userId) {
+// ── Memória Relacional ────────────────────────────────────────────────────
+// Permanente: apelidos, brincadeiras, quem são juntos — nunca apaga
+// Acontecimento: saúde, trabalho, família — 1 ano
+// A busca por relevância usa as tags pra trazer só o que é pertinente agora
+
+async function salvarMemoriaRelacional(userId, conteudo, categoria, tags = []) {
   try {
-    const gps = await prisma.memory.findFirst({ where: { userId, type: 'ultima_localizacao' } }).catch(() => null);
-    if (gps) {
-      const d = JSON.parse(gps.content);
-      if (d.cidade && (!d.ts || Date.now() - d.ts < 7 * 24 * 60 * 60 * 1000)) return d.cidade;
-    }
+    const palavraChave = conteudo.slice(0, 40).toLowerCase();
+    const existe = await prisma.memory.findFirst({
+      where: { userId, type: 'memoria_relacional', content: { contains: palavraChave.slice(0, 20) } }
+    }).catch(() => null);
+    if (existe) return;
+    const data = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+    await prisma.memory.create({ data: {
+      userId, type: 'memoria_relacional',
+      content: conteudo.slice(0, 300),
+      metadata: JSON.stringify({ categoria, tags, data, criadoEm: new Date().toISOString() })
+    }}).catch(() => {});
+    console.log(`[MemóriaRelacional] ${categoria}: "${conteudo.slice(0, 60)}"`);
   } catch {}
-  try {
-    const t = await prisma.memory.findFirst({ where: { userId, type: 'cidade' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
-    if (t?.content) return t.content;
-  } catch {}
-  try {
-    const infos = await prisma.memory.findMany({ where: { userId, type: 'info_pessoal' }, take: 60 }).catch(() => []);
-    for (const info of infos) {
-      let meta = {}; try { meta = JSON.parse(info.metadata || '{}'); } catch {}
-      const chave = (meta.chave || '').toLowerCase();
-      if (/cidade|mora|moradia|reside|residência|local/.test(chave)) return info.content;
-    }
-  } catch {}
-  return '';
 }
 
 module.exports = {
@@ -837,4 +869,5 @@ module.exports = {
   salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao, getCidadeAtual,
   salvarMemoriaAfetiva, getMemoriaAfetiva,
   salvarResumoRelacionamento, getResumoRelacionamento,
+  salvarMemoriaRelacional,
 };
