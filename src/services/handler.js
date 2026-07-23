@@ -1721,7 +1721,7 @@ async function handleMessage(phone, text, location = null) {
                 : ehLocal && ehEspecifica
                 ? `\n\n[VOCÊ JÁ DEU O QUE ELE PEDIU ESPECIFICAMENTE] Ele pediu uma opção específica e você mandou. Não pergunte se quer mais — faça UM comentário natural e curto (brincadeira, observação, algo dela), ou responda APENAS: SKIP se não tiver nada genuíno a dizer.`
                 : ehLocal
-                ? `\n\n[VOCÊ JÁ DEU AS OPÇÕES LOCAIS] Você mandou as opções de "${classified.query}". Na sua segunda mensagem: diga brevemente que tem mais opções se quiser uma específica, no seu tom. Exemplo: "Se quiser uma específica ou mais opções é só me dizer!" ou "Tem mais por aí se quiser que eu vasculhe!". MÁXIMO 1 frase curta. Não repita o que já mandou.`
+                ? `\n\n[VOCÊ JÁ BUSCOU E ACHOU] A busca foi bem-sucedida — você encontrou opções de "${classified.query}" e já mandou. Não questione a busca, não diga que faltou informação. Faça UM comentário curtíssimo oferecendo mais: algo como "Se quiser uma específica é só falar!" ou "Tem mais opções se precisar!" — no seu tom. MÁXIMO 1 frase. NÃO repita o que mandou. NUNCA diga que não sabe a cidade ou que faltou algo.`
                 : `\n\n[VOCÊ JÁ EXPLICOU] Você acabou de mandar a explicação sobre "${classified.query}", mas ela saiu meio seca. Dê UM toque pessoal curtíssimo — um conselho, uma preocupação ou uma brincadeira leve.\n\nREGRAS: MÁXIMO 1 frase curta. NÃO repita a explicação. NUNCA use __BUSCAR__. Se não tiver toque genuíno, responda APENAS: SKIP`;
               const sysComent = buildPersonality(tomBuscaClassify, apelidoReal, false) + promptComent;
               const coment = await geminiFreeResponse([
