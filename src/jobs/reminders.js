@@ -430,20 +430,42 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
         }
 
         if (primeiroEvento) {
-          // Espera de 3 a 10 minutos depois do disparo do evento — janela
-          // curta pra não ficar nem colado (robótico) nem atrasado demais.
           const minutosDesdeEvento = (now - primeiroEvento) / 60000;
-          if (minutosDesdeEvento >= 3 && minutosDesdeEvento <= 10) {
+
+          // ── Caminho 1: usuário confirmou o remédio/lembrete ──────────────
+          // Verifica se há mensagem recente de confirmação no histórico.
+          // Se sim, bom dia chega entre 10-15 min depois da confirmação.
+          const histConf = await memory.getConversationHistory(user.id, 6).catch(() => []);
+          const ultimaUserMsg = histConf.filter(m => m.role === 'user').pop();
+          if (ultimaUserMsg) {
+            const msgConteudo = (ultimaUserMsg.content || '').toLowerCase();
+            const ehConfirmacao = /\b(tomad[oa]|tomei|tomou|feito|fiz|ok|já tomei|já fiz|pronto)\b/.test(msgConteudo);
+            const minutosDesdeConf = ultimaUserMsg.createdAt
+              ? (Date.now() - new Date(ultimaUserMsg.createdAt).getTime()) / 60000
+              : 999;
+            if (ehConfirmacao && minutosDesdeConf >= 10 && minutosDesdeConf <= 20) {
+              podeEnviarAgora = true;
+              console.log(`[Bom dia] Caminho 1 — confirmação detectada (${Math.round(minutosDesdeConf)} min atrás)`);
+            }
+          }
+
+          // ── Caminho 2: sem confirmação depois de 30 min ──────────────────
+          // Ela não fica esperando pra sempre — se passaram 30 min sem resposta,
+          // o bom dia vem mesmo assim, como quem "lembrou de você".
+          if (!podeEnviarAgora && minutosDesdeEvento >= 30 && minutosDesdeEvento <= 120) {
             podeEnviarAgora = true;
+            console.log(`[Bom dia] Caminho 2 — sem confirmação após ${Math.round(minutosDesdeEvento)} min`);
           }
         }
 
-        // ── REDE DE SEGURANÇA — 8h, sempre, independente de ter tido evento ──
-        // Se tinha remédio/lembrete de manhã mas a janela de 3-10min falhou por
-        // qualquer motivo (rate limit, erro de API, etc), não fica sem bom dia
-        // o dia inteiro — 8h-8h10 garante que ela manda de qualquer jeito.
-        if (!podeEnviarAgora && now.getHours() === 8 && now.getMinutes() < 30) {
-          podeEnviarAgora = true;
+        // ── Caminho 3: sem evento matinal — rede de segurança 7h-9h ─────────
+        // Dias sem remédio ou lembrete pela manhã: bom dia vem proativamente.
+        if (!podeEnviarAgora && !primeiroEvento) {
+          const h = now.getHours();
+          if (h >= 7 && h < 9) {
+            podeEnviarAgora = true;
+            console.log(`[Bom dia] Caminho 3 — sem eventos matinais, rede de segurança ${h}h`);
+          }
         }
 
         if (!podeEnviarAgora) continue;
@@ -1547,7 +1569,7 @@ cron.schedule('0 * * * *', async () => {
       ;(async () => {
         try {
           const history = await memory.getConversationHistory(ep.userId, 4).catch(() => []);
-          const prefs = await memory.getUserPreferences(ep.userId).catch(() => ({}));
+          const prefs = await memory.getUserPreference(ep.userId).catch(() => ({}));
           prefs._contexto = ctx;
           prefs._skipSaveHistory = true;
           const resposta = await Promise.race([
