@@ -792,6 +792,33 @@ async function getResumoRelacionamento(userId) {
 
 // ====================== EXPORTS ======================
 
+// ── getCidadeAtual: retorna cidade do usuário ─────────────────────────────
+// 1ª tentativa: GPS recente (ultima_localizacao, < 7 dias)
+// 2ª tentativa: tipo 'cidade' salvo explicitamente
+// 3ª tentativa: info_pessoal com chave de cidade/moradia (ex: Carlópolis)
+async function getCidadeAtual(userId) {
+  try {
+    const gps = await prisma.memory.findFirst({ where: { userId, type: 'ultima_localizacao' } }).catch(() => null);
+    if (gps) {
+      const d = JSON.parse(gps.content);
+      if (d.cidade && (!d.ts || Date.now() - d.ts < 7 * 24 * 60 * 60 * 1000)) return d.cidade;
+    }
+  } catch {}
+  try {
+    const t = await prisma.memory.findFirst({ where: { userId, type: 'cidade' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+    if (t?.content) return t.content;
+  } catch {}
+  try {
+    const infos = await prisma.memory.findMany({ where: { userId, type: 'info_pessoal' }, take: 60 }).catch(() => []);
+    for (const info of infos) {
+      let meta = {}; try { meta = JSON.parse(info.metadata || '{}'); } catch {}
+      const chave = (meta.chave || '').toLowerCase();
+      if (/cidade|mora|moradia|reside|residência|local/.test(chave)) return info.content;
+    }
+  } catch {}
+  return '';
+}
+
 module.exports = {
   prisma,
   getOrCreateUser,
@@ -807,7 +834,7 @@ module.exports = {
   saveContact, getContacts, findContactByName,
   savePendencia,
   getPendenciasAbertas, salvarOuAtualizarPendencia, fecharPendencia, fecharPendenciasPorResolucao, fecharPendenciaLembrete,
-  salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao,
+  salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao, getCidadeAtual,
   salvarMemoriaAfetiva, getMemoriaAfetiva,
   salvarResumoRelacionamento, getResumoRelacionamento,
 };
