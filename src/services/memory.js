@@ -332,6 +332,21 @@ ${resumo}`;
     if (textoAfetivo) texto += `\n\n[MEMÓRIA DO RELACIONAMENTO — USE SEMPRE, define o tom da conversa]${textoAfetivo}`;
   }
 
+  // ── Clara Personagem: o que ela disse de si mesma ──
+  // Quando ele tocar em algo que ela disse ("você falou que era fraquinha"),
+  // ela lembra — não como novidade, mas como memória própria.
+  try {
+    const claraPersonagem = await prisma.memory.findMany({
+      where: { userId, type: 'clara_personagem' },
+      orderBy: { createdAt: 'desc' },
+      take: 15
+    }).catch(() => []);
+    if (claraPersonagem.length > 0) {
+      texto += '\n\n[COISAS QUE VOCÊ JÁ DISSE SOBRE SI — sua memória própria. Quando ele tocar nesses assuntos, você lembra naturalmente, sem tratar como novidade]\n';
+      texto += claraPersonagem.map(m => `• ${m.content}`).join('\n');
+    }
+  } catch {}
+
   return texto ? `\n\n[PERFIL DO USUÁRIO — use para personalizar respostas e ser proativa]${texto}` : '';
 }
 
