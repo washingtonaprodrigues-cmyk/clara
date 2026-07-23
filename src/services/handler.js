@@ -407,10 +407,21 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           const horaBRT = d.toLocaleTimeString('pt-BR', {timeZone:'America/Sao_Paulo', hour:'2-digit', minute:'2-digit'});
           return `• ${dStr} às ${horaBRT} — ${r.message}`;
         };
-        // Injeta agenda só se relevante — evita Clara puxar compromissos em papo casual
-        if (falaDeAgenda || ehManha) {
+        // Filtra: só mostra lembretes dentro de 40 min no contexto automático
+        // Lembretes distantes só entram se o usuário perguntar sobre agenda
+        const agora = nowBRT();
+        const lembretesProximos = lembretes.filter(r => {
+          const diffMin = (new Date(r.scheduledAt).getTime() - agora.getTime()) / 60000;
+          return diffMin >= -5 && diffMin <= 40; // janela: até 5 min atrás até 40 min à frente
+        });
+        if (falaDeAgenda && lembretes.length > 0) {
+          // Usuário perguntou sobre agenda → mostra tudo
           contexto += `\n\n[AGENDA — mencione SOMENTE se o usuário trouxer o assunto ou perguntar. Nunca puxe por iniciativa em conversa sobre outro assunto]\n${lembretes.map(fmtLemb).join('\n')}`;
+        } else if (lembretesProximos.length > 0) {
+          // Lembrete próximo (< 40 min) → injeta só esse, como toque de passagem
+          contexto += `\n\n[LEMBRETE PRÓXIMO — pode mencionar de passagem UMA VEZ se natural, não force]\n${lembretesProximos.map(fmtLemb).join('\n')}`;
         }
+        // Lembretes distantes sem pergunta de agenda = invisíveis no contexto
       }
 
       try {
@@ -521,7 +532,10 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           });
           mostrarPendenciaSaude = dentroJanela;
         } else {
-          mostrarPendenciaSaude = true; // saúde geral — comportamento anterior
+          // Saúde geral: só mostra se recente (< 48h) — evita dado stale de dias atrás
+          const criadoEm = pendenciaSaude.criadoEm ? new Date(pendenciaSaude.criadoEm) : null;
+          const horasAtras = criadoEm ? (Date.now() - criadoEm.getTime()) / (60 * 60 * 1000) : 999;
+          mostrarPendenciaSaude = horasAtras < 48;
         }
       }
       if (mostrarPendenciaSaude) {
