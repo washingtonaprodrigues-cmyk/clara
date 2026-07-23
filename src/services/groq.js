@@ -1370,9 +1370,9 @@ function filtrarResposta(t) {
   // Ex: [MEMÓRIA DO RELACIONAMENTO]\n• Humor: ...\n• Expressões: ...\n\nResposta real
   t = t.replace(/^\[[^\]]+\][\s\S]*?\n\n/gm, '').trim();
   // Fallback: remove linhas onde [TAG] vem com texto na mesma linha (ex: [HORA ATUAL] Agora são...)
-  t = t.replace(/^\[[A-ZÁÉÍÓÚÃÕÇÜ\s_]+\]\s+[^\n]+\n?/gm, '').trim();
+  t = t.replace(/^\[[^\]]+\]\s+[^\n]+\n?/gm, '').trim();
   // Fallback: remove linhas isoladas de marcadores (abertura e fechamento)
-  t = t.replace(/^\[\/?\s*[A-ZÁÉÍÓÚÃÕÇÜ\s]+\]\s*\n?/gm, '').trim();
+  t = t.replace(/^\[\/?\s*[^\]]+\]\s*\n?/gm, '').trim();
   // Remove linhas de confirmação de ação que o Gemini às vezes lista
   // Ex: ": Lembrete "X" marcado como "Concluído"" ou ": Lembrete "X" foi removido."
   t = t.replace(/^:?\s*Lembrete\s+".+?"\s+(marcado como|foi removido|concluído)[^\n]*/gim, '').trim();
