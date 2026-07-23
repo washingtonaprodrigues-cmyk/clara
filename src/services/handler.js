@@ -1741,6 +1741,12 @@ async function detectarEsalvarHumor(userId, textoUsuario, respostaClara) {
   const t = (textoUsuario || '').toLowerCase();
 
   // Sinais de estados negativos
+  // Atividade atual — onde ele está / o que está fazendo agora
+  const TRABALHANDO = /(chegando|cheguei|fui|vou|estou|tô|vim).{0,20}(trabalh|escritório|escritorio|servi[cç]o|empresa|firma)|no trabalho|no serviço/i;
+  const EM_CASA     = /cheg(ando|uei) em casa|tô em casa|estou em casa|voltei pra casa|já em casa/i;
+  const ALMOCANDO   = /almo[cç](ando|ar|ei)|no almoço|hora do almoço|pausa do almoço/i;
+  const VIAJANDO    = /viajando|na estrada|no carro|no ônibus|no avião|dirigindo|de viagem/i;
+
   const DOENTE = /hospital|médico|medico|fui pro ps|passando mal|internado|operação|cirurgia|exame|consultório|consultor|enjoado|febre|dor de cabeça|pressão alta|remédio novo/i;
   const CANSADO = /cansad[oa]|exaust[oa]|sem energia|morto de cansaço|destruído|destruido|esgotad[oa]|não aguento|nao aguento|pesado demais|foi pesado/i;
   const ESTRESSADO = /estressad[oa]|nervos[oa]|irritad[oa]|raiva|bravo|brava|ódio|odio|dia horrível|horrivel|péssimo|pessimo|terrível|terrivel|foi uma merda|tá uma merda/i;
@@ -1754,7 +1760,12 @@ async function detectarEsalvarHumor(userId, textoUsuario, respostaClara) {
   let intensidade = 'leve';
   let motivo = null;
 
-  if (DOENTE.test(t)) {
+  // Atividade tem prioridade — onde ele está define o contexto do dia
+  if (TRABALHANDO.test(t))   { estado = 'trabalhando'; motivo = 'no trabalho'; }
+  else if (ALMOCANDO.test(t)) { estado = 'almoçando'; }
+  else if (EM_CASA.test(t))   { estado = 'em_casa'; }
+  else if (VIAJANDO.test(t))  { estado = 'viajando'; }
+  else if (DOENTE.test(t)) {
     estado = 'doente';
     intensidade = 'intenso';
     const matchMotivo = t.match(/hospital|médico|ps|internado|operação|exame/i);
