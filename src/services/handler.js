@@ -1,10 +1,7 @@
 // v2 - consulta direta sem LLM
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
-// Sessao 12 (10/07/2026): confirmacoes de sistema em 1 linha (Feito!/Tomado!/Anotado!),
-// Clara comenta separada so se genuino (nunca generico). Ver webhook.js LembreteConfirm.
-const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, apararRespostaCortada, detectarPadraoReacao, filtrarResposta } = require('./groq');
-const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('./gemini');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback } = require('./groq');
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
 // O classify() já recebe uma tabela com a data exata de cada dia da semana
@@ -33,43 +30,6 @@ function corrigirDataDiaSemana(textoOriginal, classified) {
     classified.data = dataCorreta;
   }
   return classified;
-}
-
-// Peça 2 da dedução: resolve a DATA DE FIM de um tratamento a partir de texto
-// livre ("na segunda", "até sexta", "amanhã", "hoje"). Retorna Date (fim do dia
-// em BRT) ou null. Reusa o mapa de dias-da-semana do infoDatas().
-function resolverDataFim(texto) {
-  const t = (texto || '').toLowerCase();
-  if (/\bhoje\b/.test(t)) { const d = nowBRT(); d.setHours(23, 59, 59, 0); return d; }
-  if (/\bamanh[ãa]\b/.test(t)) { const d = nowBRT(); d.setDate(d.getDate() + 1); d.setHours(23, 59, 59, 0); return d; }
-  const m = t.match(DIAS_SEMANA_REGEX);
-  if (m) {
-    const raw = m[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const mapaNorm = { domingo: 'domingo', segunda: 'segunda', terca: 'terça', quarta: 'quarta', quinta: 'quinta', sexta: 'sexta', sabado: 'sábado' };
-    const nome = mapaNorm[raw];
-    try {
-      const { mapa } = infoDatas();
-      const ds = nome && mapa[nome]; // 'YYYY-MM-DD' (próxima ocorrência)
-      if (ds) return new Date(`${ds}T23:59:59-03:00`);
-    } catch {}
-  }
-  return null;
-}
-
-// Item 4: decide se a cidade do usuário deve entrar na busca. Só entra quando a
-// intenção é claramente LOCAL e a query NÃO traz cidade explícita — senão
-// "hotel em Curitiba" viraria "...em <cidade do user>". Conservador: na dúvida,
-// NÃO injeta (busca sem cidade funciona; busca poluída com cidade errada, não).
-function cidadeParaBusca(query, cidade) {
-  if (!cidade) return '';
-  const q = (query || '');
-  const qLow = q.toLowerCase();
-  const intencaoLocal = /(perto|pr[óo]xim|\baqui\b|por aqui|perto de mim|na minha (cidade|regi[ãa]o|[áa]rea)|farm[áa]cia|drogaria|restaurante|lanchonete|pizzaria|posto|mercado|supermercado|padaria|hospital|pronto.?socorro|cl[íi]nica|dentista|cinema|shopping|\bloja\b|barbearia|sal[ãa]o|previs[ãa]o do tempo|\bclima\b|\btempo (hoje|amanh|agora|de hoje)|vai chover|temperatura|tr[âa]nsito)/.test(qLow);
-  if (!intencaoLocal) return '';
-  // cidade explícita na própria query (ex: "em Curitiba", "no Rio") → não injeta
-  const temCidadeExplicita = /(^|\s)(em|no|na|nos|nas|pra|para)\s+[A-ZÀ-Ú]/.test(q);
-  if (temCidadeExplicita) return '';
-  return cidade;
 }
 
 // Importa whatsapp de forma segura com fallback direto via axios
@@ -359,89 +319,9 @@ function formatarListaWhatsApp(listaResult) {
   return `🛒 *${listaNome}*\n\n${itens}\n\n_${done}/${listaItems.length} itens marcados_`;
 }
 
-// Gera um comentário de personalidade curto via Gemini puro — sem cascata
-// pra Groq. Usado nos backgrounds opcionais (pós-lembrete, pós-medicamento,
-// pós-multiplas_tarefas). Se Gemini falhar, espera 4s e tenta mais uma vez
-// antes de desistir — cobre casos de retorno vazio momentâneo.
-async function comentarioGemini(systemPrompt, userMessage, maxTokens = 150) {
-  const tentarUmaVez = async () => {
-    if (!geminiDisponivel() || todosModelosEsgotados()) return null;
-    const resp = await geminiFreeResponse([
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage }
-    ], { temperature: 0.85, maxTokens });
-    return resp && resp.trim().length > 3 ? resp.trim() : null;
-  };
-  try {
-    const resultado = await tentarUmaVez();
-    if (resultado) return resultado;
-    // Primeira tentativa retornou vazio — espera 4s e tenta de novo
-    await new Promise(r => setTimeout(r, 4000));
-    return await tentarUmaVez();
-  } catch {
-    try {
-      await new Promise(r => setTimeout(r, 4000));
-      return await tentarUmaVez();
-    } catch { return null; }
-  }
-}
-
-// Monta o pedacinho de contexto relacional (apelidos, piadas internas, tom
-// da relação) usado pra deixar a busca soar "ela 100%" e não só a
-// personalidade base — a mesma memória usada no fluxo normal de conversa.
-async function buscarContextoRelacional(userId) {
-  try {
-    const relMemoria = await prisma.memory.findFirst({ where: { userId, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
-    return relMemoria?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoria.content}` : '';
-  } catch { return ''; }
-}
-
-// Gera o aviso de "deixa eu checar" NA VOZ da Clara — nada de lupa nem recado
-// fixo. Usado nos caminhos de busca via __BUSCAR__ (o caminho de busca
-// classificada já gera o dele inline). Se a geração falhar, cai em frases
-// fixas COM personalidade (estilo do backup) — nunca uma lupa seca.
-async function gerarAvisoBusca(text, tom = 'carinhoso', apelido = '') {
-  // Frases fixas por tom — mais confiável que geração. O Gemini era criativo
-  // demais no aviso e acabava respondendo a pergunta antes de buscar.
-  // Frases curtas, naturais, no tom dela, sem revelar nenhuma informação.
-  const n = apelido || '';
-  const por_tom = {
-    carinhoso: n ? [
-      `Pera aí que vou dar uma olhada pra gente, ${n}! 💜`,
-      `Já vejo isso pra você, ${n}! 😊`,
-      `Um segundo que já checo aqui!`,
-    ] : [
-      `Pera aí que vou dar uma olhada pra gente! 💜`,
-      `Já vejo isso! 😊`,
-      `Um segundo que já checo aqui!`,
-    ],
-    direto: [`Verificando.`, `Um segundo.`, `Já checo.`],
-    divertido: n ? [
-      `Pera aí que vou dar uma olhada pra gente, ${n}! 😄`,
-      `Já vejo isso, ${n}!`,
-      `Um segundo que já checo!`,
-    ] : [
-      `Pera aí que vou dar uma olhada pra gente! 😄`,
-      `Já vejo isso!`,
-      `Um segundo que já checo!`,
-    ],
-    sarcastico: n ? [
-      `Pera aí que vou dar uma olhada pra gente, ${n}. 😉`,
-      `Já vejo isso, ${n}.`,
-      `Um segundo.`,
-    ] : [
-      `Pera aí que vou dar uma olhada pra gente. 😉`,
-      `Já vejo isso.`,
-      `Um segundo.`,
-    ],
-  };
-  const opcoes = por_tom[tom] || por_tom.carinhoso;
-  return opcoes[Math.floor(Math.random() * opcoes.length)];
-}
-
 async function responderLivre(user, phone, text, contextoExtra = '', skipContext = false, acaoConfirmacao = null, confirmacaoSeparada = null) {
   try {
-    const history = await memory.getConversationHistory(user.id, 16);
+    const history = await memory.getConversationHistory(user.id, 10);
     const preferences = await memory.getUserPreference(user.id);
     preferences._phone = phone;
 
@@ -452,7 +332,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       // mas precisa saber que o lembrete FOI criado, pra responder coerente
       // (comentar/brincar) sem dizer que vai anotar no futuro nem repetir
       // título/hora — isso já vem logo depois, cru.
-      preferences._dicaAcao = 'O lembrete que o usuário pediu JÁ foi anotado — a confirmação detalhada (título + horário) será enviada logo após. Responda de forma NATURAL, como se o lembrete fosse algo implícito e já resolvido. PROIBIDO: NÃO mencione horário, data nem título; NÃO diga "criei", "anotei", "registrei", "já até criei", "marquei", "agendei" nem qualquer variação — o usuário vai ver a confirmação em seguida. Foque em conversar sobre o assunto em si, pode comentar, brincar, reagir.';
+      preferences._dicaAcao = 'O lembrete que o usuário pediu JÁ foi anotado com sucesso (a confirmação detalhada será enviada logo após sua mensagem). Responda de forma natural e no seu tom — pode comentar, brincar, reagir — mas NÃO repita o título nem o horário, e NÃO diga que "vai anotar" (já está feito).';
     }
 
     if (skipContext) {
@@ -460,9 +340,8 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       const resp = await freeResponse(text, history, preferences);
       if (resp === null) return;
       if (resp && resp.includes('__BUSCAR:')) {
-        const memAfSC = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
-        const avSC = await gerarAvisoBusca(text, preferences?.tom || 'carinhoso', memAfSC?.apelido_usuario || preferences?.name || '');
-        await sendMessage(phone, avSC);
+        // improvável em saudações, mas tratamos igual
+        await sendMessage(phone, 'Deixa eu pesquisar isso! 🔍');
         return;
       }
       await memory.saveConversationMessage(user.id, 'user', text);
@@ -490,7 +369,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           orderBy: { scheduledAt: 'asc' }, take: 20
         }),
         prisma.medication.findMany({ where: { userId: user.id, active: true, remaining: { gt: 0 } } }),
-        prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } } }),
+        preferences.saldo != null ? prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } } }) : Promise.resolve([]),
         buildPersonalContext(user.id).catch(() => ''),
         prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null),
         // ── Pendência de saúde ainda não cobrada ──
@@ -514,17 +393,11 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       ]);
 
       // ── Detecção de relevância por assunto da mensagem ───────────────────
-      // Regexes amplas de propósito: cobrem as formas NATURAIS de falar, não só
-      // as palavras óbvias. Melhor injetar o contexto a mais (a instrução já diz
-      // pra ela não puxar por iniciativa) do que ela ficar "cega" quando o
-      // usuário claramente tocou no assunto. Ex: "olha quanto sobrou", "minha
-      // grana", "tô liso" → tudo dinheiro.
       const txtLow = (text||'').toLowerCase();
-      const falaDeAgenda = /hoje|amanhã|amanha|horário|horario|quando|agenda|compromisso|reuni[ãa]o|consulta|m[ée]dico|dentista|semana|m[êe]s|marcad|agendad|hor[áa]rio|que horas|tenho algo|tenho que|preciso ir|calendário|calendario/.test(txtLow);
-      const falaDeRemedio = /rem[ée]dio|comprimido|tomar|dose|farm[áa]cia|medicament|triglicere|toroide|holmis|landizin|rem[ée]dinho|cápsula|capsula|antibi[óo]tico|p[íi]lula|bula|receita/.test(txtLow);
-      const faladeDinheiro = /dinheiro|gast|saldo|or[çc]amento|(paga|minha|a|essa|de)\s+conta|pagar|pagamento|reais|r\$|grana|sobrou|sobra|quanto tenho|quanto sobr|dispon[íi]vel|t[ôo] liso|falido|guap|bufunfa|extrato|finan[çc]|despesa|\bbanco\b|\bpix\b|d[íi]vida|divida|custou|custa|economiz|meu bolso|no vermelho/.test(txtLow)
-        || (typeof classified !== 'undefined' && classified && (classified.tipo === 'consulta_saldo' || classified.tipo === 'relatorio_financeiro'));
-      const falaDeLista = /lista|mercado|compras|item|comprar|feira|supermercado/.test(txtLow);
+      const falaDeAgenda = /hoje|amanhã|horário|quando|agenda|compromisso|reunião|consulta|médico|dentista|semana|mês/.test(txtLow);
+      const falaDeRemedio = /remédio|comprimido|tomar|dose|farmácia|medicamento|triglicere|toroide|holmis|landizin/.test(txtLow);
+      const faladeDinheiro = /dinheiro|gasto|gastei|saldo|orçamento|conta|pagar|pagamento|real|reais|r\$/.test(txtLow);
+      const falaDeLista = /lista|mercado|compras|item|comprar/.test(txtLow);
       const ehManha = now.getHours() >= 6 && now.getHours() < 11;
 
       if (lembretes.length > 0) {
@@ -561,49 +434,14 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         contexto += `\n\n[MEDICAMENTOS]\n${meds.map(fmtMed).join('\n')}`;
       }
 
-      // Financeiro — só injeta se falar de dinheiro. FLUXO DE CAIXA MENSAL:
-      // saldo do mês = entradas − gastos. Se o usuário mencionar um mês
-      // específico ("saldo de junho", "quanto gastei em maio"), busca AQUELE
-      // mês; senão, usa o mês vigente (gastos já carregados).
-      if (faladeDinheiro) {
-        const MESES_NOMES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
-        const MESES_ALT = { 'marco':2, 'setembro':8 }; // sem acento
-        // Detecta menção a mês por nome
-        let mesAlvo = null; // 0-11, ou null = mês vigente
-        for (let i = 0; i < MESES_NOMES.length; i++) {
-          if (new RegExp(`\\b${MESES_NOMES[i]}\\b`, 'i').test(txtLow)) { mesAlvo = i; break; }
-        }
-        if (mesAlvo === null && /\bmarco\b/i.test(txtLow)) mesAlvo = 2;
-
-        let gastosParaCalcular = gastos; // padrão: mês vigente (já carregado)
-        let nomeMesLabel = now.toLocaleDateString('pt-BR', { month: 'long', timeZone: 'America/Sao_Paulo' });
-        let ehMesEspecifico = false;
-
-        if (mesAlvo !== null && mesAlvo !== now.getMonth()) {
-          // Busca os gastos daquele mês específico. Considera o ano atual; se o
-          // mês for futuro (ex: pergunta em jan sobre dezembro), usa ano passado.
-          const anoAlvo = (mesAlvo - now.getMonth() > 6) ? now.getFullYear() - 1 : now.getFullYear();
-          const inicioMesAlvo = new Date(anoAlvo, mesAlvo, 1);
-          const fimMesAlvo = new Date(anoAlvo, mesAlvo + 1, 0, 23, 59, 59);
-          gastosParaCalcular = await prisma.expense.findMany({
-            where: { userId: user.id, createdAt: { gte: inicioMesAlvo, lte: fimMesAlvo } }
-          }).catch(() => []);
-          nomeMesLabel = MESES_NOMES[mesAlvo];
-          ehMesEspecifico = true;
-        }
-
-        const saidas = gastosParaCalcular.filter(g => g.value > 0);
-        const entradas = gastosParaCalcular.filter(g => g.value < 0);
+      // Financeiro — só injeta se falar de dinheiro
+      if (preferences.saldo != null && faladeDinheiro) {
+        const saidas = gastos.filter(g => g.value > 0);
+        const entradas = gastos.filter(g => g.value < 0);
         const totalGasto = saidas.reduce((a, g) => a + g.value, 0);
         const totalEntradas = entradas.reduce((a, g) => a + Math.abs(g.value), 0);
-        const saldoMes = totalEntradas - totalGasto;
-        const labelMes = ehMesEspecifico ? `${nomeMesLabel} (mês que o usuário perguntou)` : `${nomeMesLabel} (mês vigente)`;
-
-        if (totalEntradas > 0 || totalGasto > 0) {
-          contexto += `\n\n[FINANCEIRO — ${labelMes}]\nEntradas (recebido): R$ ${totalEntradas.toFixed(2)}\nGastos: R$ ${totalGasto.toFixed(2)}\nSaldo do mês (entradas − gastos): R$ ${saldoMes.toFixed(2)}\n\n[INSTRUÇÃO] O usuário perguntou das finanças. RESPONDA com esses números concretos no seu tom (ex: "esse mês você recebeu X, gastou Y, sobrou Z"). NÃO responda de forma vaga nem só pergunte "algum gasto te surpreendeu?" — mostre os valores reais primeiro, aí sim pode comentar.`;
-        } else {
-          contexto += `\n\n[FINANCEIRO — ${labelMes}]\nNenhum lançamento nesse mês (nem salário nem gastos registrados).\n\n[INSTRUÇÃO] Diga claramente que não há nada registrado nesse mês ainda — nem entradas nem gastos. Não invente números.`;
-        }
+        const restante = preferences.saldo - totalGasto + totalEntradas;
+        contexto += `\n\n[FINANCEIRO]\nOrçamento: R$ ${preferences.saldo.toFixed(2)}\nGasto: R$ ${totalGasto.toFixed(2)}\nEntradas: R$ ${totalEntradas.toFixed(2)}\nSaldo: R$ ${restante.toFixed(2)}`;
       }
 
       // Listas — só injeta se falar de lista/compras
@@ -628,76 +466,22 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       if (relMemoria?.content) contexto += `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemoria.content}`;
 
       // ── Episódios recentes da vida do usuário ─────────────────────────
-      // Lógica temporal: episódio só aparece no contexto quando for o momento
-      // certo — como uma amiga que lembra de perguntar na hora certa, não toda
-      // hora. Isso evita puxar assunto de semanas atrás como se fosse agora.
+      // Eventos concretos que aconteceram ou vão acontecer — informa o
+      // contexto de vida sem sobrecarregar (máx 3, pendentes primeiro)
       try {
         const episodios = await prisma.memory.findMany({
           where: {
             userId: user.id, type: 'episodio_vida',
-            createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+            createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
           },
-          orderBy: { createdAt: 'desc' }, take: 10
+          orderBy: { createdAt: 'desc' }, take: 3
         });
         if (episodios.length > 0) {
-          const agora = Date.now();
-          const RECENTE_MS    = 2 * 24 * 60 * 60 * 1000; // 0-2 dias: sempre mostra
-          const RESOLVIDO_MS  = 2 * 24 * 60 * 60 * 1000; // resolvido: mostra por 2 dias
-
-          const filtrados = episodios.filter(e => {
+          const listaEp = episodios.map(e => {
             let meta = {}; try { meta = JSON.parse(e.metadata || '{}'); } catch {}
-            const idade = agora - new Date(e.createdAt).getTime();
-            const pendente = meta.resultado === 'pendente';
-            const resolvido = meta.resolvidoEm || (!pendente && meta.resultado !== 'neutro');
-
-            // Resolvido explicitamente pelo sistema → nunca aparece proativamente
-            if (resolvido) return false;
-
-            // Muito recente (< 2 dias): mostra se ainda pendente
-            if (idade < RECENTE_MS) return pendente;
-
-            // Pendente com prazo definido: só mostra quando o prazo chegou
-            if (meta.acompanhar_em_dias) {
-              const baseCheck = meta.next_check_at
-                ? new Date(meta.next_check_at).getTime()
-                : new Date(e.createdAt).getTime() + (meta.acompanhar_em_dias * 24 * 60 * 60 * 1000);
-              return agora >= baseCheck && pendente;
-            }
-
-            // Pendente sem prazo: mostra por até 5 dias
-            return pendente && idade < 5 * 24 * 60 * 60 * 1000;
-          }).slice(0, 3);
-
-          if (filtrados.length > 0) {
-            const listaEp = filtrados.map(e => {
-              let meta = {}; try { meta = JSON.parse(e.metadata || '{}'); } catch {}
-              return `• ${e.content}${meta.resultado === 'pendente' ? ' (ainda vai acontecer ou não atualizou)' : ''}`;
-            }).join('\n');
-            contexto += `\n\n[CONTEXTO DE VIDA RECENTE — use naturalmente se relevante, nunca force]\n${listaEp}`;
-          }
-        }
-      } catch(e) {}
-
-      // ── Conhecimento que Clara adquiriu pesquisando em sessões anteriores ──
-      // Quando ela pesquisou algo pra si mesma (modo 'participar'), guarda
-      // aqui. Nas próximas conversas, se o assunto aparecer, ela já sabe —
-      // não precisa anunciar que vai buscar como se fosse novidade.
-      try {
-        const conhecimentos = await prisma.memory.findMany({
-          where: {
-            userId: user.id,
-            type: 'conhecimento_adquirido',
-            createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
-          },
-          orderBy: { createdAt: 'desc' },
-          take: 5
-        });
-        if (conhecimentos.length > 0) {
-          const lista = conhecimentos.map(c => {
-            let meta = {}; try { meta = JSON.parse(c.metadata || '{}'); } catch {}
-            return `• ${c.content}${meta.resumo ? ': ' + meta.resumo.slice(0, 120) : ''}`;
+            return `• ${e.content}${meta.resultado === 'pendente' ? ' (ainda vai acontecer)' : ''}`;
           }).join('\n');
-          contexto += `\n\n[ASSUNTOS QUE JÁ PESQUISEI — já conheço, posso entrar na conversa direto]\n${lista}`;
+          contexto += `\n\n[CONTEXTO DE VIDA RECENTE — use naturalmente se relevante, nunca force]\n${listaEp}`;
         }
       } catch(e) {}
 
@@ -718,18 +502,10 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       const temAssuntoAberto = (perfilPessoal || '').includes('[ASSUNTOS EM ABERTO');
       let mostrarPendenciaSaude = false;
       // Não injeta saúde em aberto se a mensagem atual é confirmação de remédio
-      // GUARDA: mensagens longas (> 50 chars) NUNCA são confirmações de remédio —
-      // evita falso positivo quando usuário fala sobre remédio em conversa normal
-      const ehConfirmacaoRemedio = (text||'').trim().length <= 50 &&
-        /^(tomado|tomei|já tomei|tomou|feito)\s*(fedo)?\.?$/i.test((text||'').trim());
+      const ehConfirmacaoRemedio = /^(tomado|tomei|já tomei|tomou|feito)\s*(fedo)?\.?$/i.test((text||'').trim());
       if (pendenciaSaude && !temAssuntoAberto && !ehConfirmacaoRemedio) {
         const resumoLower = (pendenciaSaude.resumo || '').toLowerCase();
         const ehRemedio = /rem[eé]dio|medicamento|comp|dose|tomar/.test(resumoLower);
-        // Filtro de freshness: saúde geral só aparece se é recente (< 48h)
-        // Episódios antigos resolvidos não devem ser trazidos proativamente
-        const criadoEm = pendenciaSaude.criadoEm ? new Date(pendenciaSaude.criadoEm) : null;
-        const horas = criadoEm ? (Date.now() - criadoEm.getTime()) / (60 * 60 * 1000) : 0;
-        const ehRecente = !criadoEm || horas < 48;
         if (ehRemedio) {
           // Só mostra se algum remédio ativo tem horário dentro de 2h
           const now2 = nowBRT();
@@ -745,7 +521,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           });
           mostrarPendenciaSaude = dentroJanela;
         } else {
-          mostrarPendenciaSaude = ehRecente; // só mostra saúde geral se < 48h
+          mostrarPendenciaSaude = true; // saúde geral — comportamento anterior
         }
       }
       if (mostrarPendenciaSaude) {
@@ -763,15 +539,6 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         contexto += `\n\n[SAÚDE EM ABERTO] Mais cedo a pessoa mencionou: "${pendenciaSaude.resumo}".${agendaRelac} Se fizer sentido natural na conversa, pergunte com carinho genuíno como está — referencie a agenda acima se relevante. NUNCA cite remédios, doses ou medicamentos aqui. Não force se a mensagem for sobre outro assunto.`;
       }
 
-      // Injeta perfil pessoal — usa o buildPersonalContext do memory.js
-      // que já consolida todas as categorias do info_pessoal do Dashboard
-      try {
-        const perfilCompleto = await memory.buildPersonalContext(user.id).catch(() => null);
-        if (perfilCompleto && perfilCompleto.trim().length > 10) {
-          contexto += `\n\n[QUEM ELE É — memória acumulada]\n${perfilCompleto}`;
-        }
-      } catch {}
-
       // Injeta hora atual e período do dia (em horário de Brasília) para a Clara
       // não chutar "bom dia"/"hora do almoço" errado. Bug antigo: o modelo
       // não recebia a hora e inventava o período baseado em UTC.
@@ -784,30 +551,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         : horaBRTnum < 18 ? 'tarde'
         : horaBRTnum < 22 ? 'noite'
         : 'fim da noite';
-      contexto += `\n\n[HORA ATUAL] Agora são ${horaBRTfmt} (Brasília), período: ${periodoDia}. Use isso pra saudar corretamente — NUNCA diga "bom dia" se não for manhã (5h-11h), NUNCA "boa tarde" se não for tarde (12h-18h), NUNCA "boa noite" se não for noite (18h-22h). Às ${horaBRTfmt} o correto é: ${periodoDia === 'madrugada' || periodoDia === 'fim da noite' ? 'NÃO usar saudação de período — só conversa normal' : `"bom ${periodoDia === 'manhã' ? 'dia' : periodoDia === 'horário de almoço' ? 'dia ainda' : periodoDia === 'tarde' ? 'tarde' : 'noite'}"`}.`;
-
-      // Injeta tempo desde a última mensagem — ela pode usar isso naturalmente
-      // pra notar ausências ("saudade já?", "voltou!", "sumiu por X minutos")
-      // MAS só quando você voltou a falar. Se ela já mandou algo sem resposta,
-      // mencionar sumiço vira cobrança — nesse caso ela muda de assunto.
-      try {
-        const ultimaMsgUser = await prisma.memory.findFirst({
-          where: { userId: user.id, type: 'conversa', content: { not: { startsWith: '[Clara]' } } },
-          orderBy: { createdAt: 'desc' }
-        }).catch(() => null);
-
-        if (ultimaMsgUser) {
-          const minAusente = Math.round((Date.now() - new Date(ultimaMsgUser.createdAt).getTime()) / 60000);
-          // Só nota ausência depois de 2h — menos que isso é conversa normal,
-          // não tem sentido chamar de sumido quem saiu pra almoçar.
-          if (minAusente >= 120) {
-            const tempoDesc = minAusente >= 60
-              ? `${Math.round(minAusente / 60)}h${minAusente % 60 > 0 ? Math.round(minAusente % 60) + 'min' : ''}`
-              : `${minAusente} minutos`;
-            contexto += `\n\n[AUSÊNCIA — faz ${tempoDesc}] Se tiver assunto pendente ou contexto da vida dele pra puxar (episódio, o que estava acontecendo, algo que ele mencionou antes), use isso de forma natural e no seu tom — "e aí fedo, almoçou bem?", "e a macarronada da sogra, tava boa?" — sem mencionar que sumiu. Se não tiver assunto concreto, aí pode fazer um check-in leve e íntimo conforme o tom — "oi sumido, como tá por aí?", "cadê você?", "voltou!" — nunca como cobrança, sempre como intimidade. Não force se não combinar com o clima da conversa.`;
-          }
-        }
-      } catch(eAus) { /* silencioso */ }
+      contexto += `\n\n[HORA ATUAL] Agora são ${horaBRTfmt} (Brasília), período: ${periodoDia}. Use isso pra saudar corretamente — não diga "bom dia" à tarde nem "hora do almoço" de manhã.`;
 
       // ── BOM DIA EMENDADO (proativo na resposta) ──
       // Se é de manhã (5h-11h), esta é a PRIMEIRA mensagem do usuário no dia,
@@ -831,23 +575,20 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
             }).catch(() => null);
             // O usuário já cumprimentou nesta mensagem?
             const jaCumprimentou = /\b(bom dia|bomdia|oi|ola|opa|eai|e ai|salve|bom diaa+)\b/i.test(normalizar(text));
-            // Não emenda bom dia se a primeira mensagem for confirmação de
-            // remédio/lembrete — a Clara deve responder só sobre o remédio
-            // e o bom dia vem separado pelo cron alguns minutos depois.
-            const ehConfirmacaoAcao = text.trim().length <= 50 &&
-              /^(feito|tomei|tomado|já tomei|fiz|concluído|ok|feito fedo|tomou|pronto)[.! ]*(fedo)?[.!]?$/i.test(text.trim());
-            if (!conversaAnteriorHoje && !jaCumprimentou && !ehConfirmacaoAcao) {
+            if (!conversaAnteriorHoje && !jaCumprimentou) {
               contexto += `\n\n[BOM DIA — IMPORTANTE] Esta é a PRIMEIRA mensagem do usuário hoje e ele NÃO te deu bom dia — foi direto ao assunto. Antes (ou junto) de responder o que ele pediu, EMENDE um bom dia SEU no SEU tom atual, de forma natural e curta. Exemplos conforme o tom: se for sarcástica/sem filtro, algo como "bom dia primeiro, né, grosso 🙄" ou "nem um oi, mas tá bom kk bom dia"; se for carinhosa/simpática, algo como "hummm acordou cedinho! bom dia, fedo 💜" ou "bom dia! 😊". Se souber algo do dia anterior ou do estado dele pela memória, pode puxar com humanidade ("dormiu bem?", "como você tá hoje?", "melhorou de ontem?"). NÃO seja robótica nem repita a mesma frase de sempre — varie. Depois disso, responda normalmente o que ele pediu.`;
+              // Marca o lock agora pra o cron não duplicar (ela vai cumprimentar nesta resposta)
               await prisma.memory.create({
                 data: { userId: user.id, type: 'bom_dia_lock', content: hojeStr }
               }).catch(() => {});
             } else if (jaCumprimentou && !conversaAnteriorHoje) {
+              // Usuário já deu bom dia primeiro — ela responde no clima, mas
+              // marcamos o lock mesmo assim pra o cron não mandar um bom dia
+              // redundante depois.
               await prisma.memory.create({
                 data: { userId: user.id, type: 'bom_dia_lock', content: hojeStr }
               }).catch(() => {});
             }
-            // Se for confirmação de ação (remédio/lembrete), não seta lock
-            // — o cron do bom dia ainda pode disparar separado
           }
         }
       } catch (eBomDia) {
@@ -897,70 +638,34 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
     // Garante que resp é string — o Gemini pode retornar objeto em casos de erro
     const respStr = typeof resp === 'string' ? resp : String(resp || '');
-    if (!respStr) {
-      console.error(`[${phone}] Resposta gerada mas vazia após freeResponse — não enviando`);
-      return;
-    }
-
-    // Mensagem realmente parece pedido de informação? (pergunta, "que
-    // horas", "quando", etc). Usado tanto pra tag BUSCAR quanto pra
-    // detecção de promessa de busca mais abaixo — evita ela mesma criar
-    // uma busca do nada em cima de comentário/comemoração sem pedido real.
-    const pareceuPedidoInfo = /\?|que horas|quando|onde fica|onde é|qual (é|o|a)|quanto (custa|é|vale)|quem (é|foi|ganhou|joga)/i.test(text);
-    const buscaMatch = respStr.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
+    if (!respStr) return;
 
     // ── Busca proativa: Clara sinalizou que quer pesquisar ──
-    // REMOVIDO: o caminho antigo que mandava respSemTag (texto antes da tag)
-    // e parava sem buscar quando !pareceuPedidoInfo. Isso causava mensagens
-    // truncadas ("Nimesulida é um anti-inflamatório mais...") sem a busca.
-    // Agora: se o modelo gerou __BUSCAR__, sempre busca — independente de
-    // pareceuPedidoInfo. O aviso substitui o respSemTag.
+    const buscaMatch = respStr.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
     if (buscaMatch) {
       const query = buscaMatch[1].trim();
+      // Avisa que vai pesquisar, no estilo da Clara
       const tom = preferences?.tom || 'carinhoso';
-      const memAfetivaBusca = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
-      const apelidoBusca = memAfetivaBusca?.apelido_usuario || preferences?.name || '';
-      const aviso = await gerarAvisoBusca(text, tom, apelidoBusca);
+      const name = preferences?.name || '';
+      const fedo = name || 'fedo';
+      console.log(`[Busca] tom=${tom} name=${name}`);
+      const avisos = {
+        carinhoso: [`✨ Pera aí que já busco pra gente!`, `Um segundo, ${fedo}! 🔍`, `Deixa eu dar uma olhada aqui! ✨`],
+        direto: [`🔍 Buscando.`, `Já procuro.`, `Um segundo.`],
+        divertido: [`Espera que vou garimpar isso pra você! 😄`, `Deixa eu fuçar aqui! 🔍`, `Um segundo que já acho! ✨`],
+        sarcastico: [`Tá bom, ${fedo}… deixa eu ver porque você não ia achar sozinho mesmo. 🙄`, `Pera aí que vou buscar pra gente. 😏`, `Já procuro, ${fedo}. 🔍`],
+      };
+      const opcoes = avisos[tom] || avisos.carinhoso;
+      const aviso = opcoes[Math.floor(Math.random() * opcoes.length)];
       await sendMessage(phone, aviso);
 
       try {
-        const contextoRelBusca = await buscarContextoRelacional(user.id);
-        const cidadeBusca = await memory.getCidadeAtual(user.id).catch(() => '');
-        const resultado = await searchWeb(query, cidadeParaBusca(query, cidadeBusca), apelidoBusca, preferences?.tom || 'carinhoso', contextoRelBusca, 'informar', '', text);
+        const resultado = await searchWeb(query, '', preferences?.name || '');
         if (resultado) {
           await memory.saveConversationMessage(user.id, 'user', text);
           await memory.saveConversationMessage(user.id, 'assistant', resultado);
           await sendMessage(phone, resultado);
           updateRelationshipSummary(user.id, history, resultado).catch(() => {});
-
-          // Comentário depois da busca — sempre gera pra manter ela presente
-          // após a info. Saúde → preocupação genuína. Outros → toque pessoal se seco.
-          const ehSaudeBusca = /(sintoma|saúde|doença|pressão|febre|\bdor\b|dores|remédio|medicamento|médico|hospital|exame de saúde|consulta|enjoo|tontura|náusea|cansaço|infecção|alergia|gripe|emergência)/i.test(query + ' ' + text);
-          const respLower = (resultado || '').toLowerCase();
-          const jaTemCalor = /(fedo|meu bem|viu\?|hein\?|fica de olho|eita|nossa)/i.test(respLower) || /[\u{1F300}-\u{1FAFF}]/u.test(resultado || '');
-          if (ehSaudeBusca || !jaTemCalor) {
-            ;(async () => {
-              try {
-                await new Promise(r => setTimeout(r, 1500));
-                if (!geminiDisponivel() || todosModelosEsgotados()) return;
-                const ehLocalBusca = /(farmácia|farmacia|médico|medico|clínica|clinica|hospital|consultório|consultorio|cardiologista|dentista|laboratorio|laboratório|serviço|servico|loja|mercado|restaurante|oficina|mecânico|mecanico)/i.test(query + ' ' + text);
-                const promptPos = ehSaudeBusca
-                  ? `\n\n[VOCÊ JÁ DEU A INFO DE SAÚDE] Você explicou sobre "${query}". Mande UM comentário curto de amiga preocupada — pergunte se ele tá sentindo algo, se é ele ou alguém da família. MÁXIMO 1 frase. Não repita a explicação.`
-                  : ehLocalBusca
-                  ? `\n\n[VOCÊ JÁ DEU A INFO LOCAL] Info sobre "${query}" enviada. Ofereça buscar mais a fundo se necessário — algo como "Quer que eu busque mais opções?" ou "Se quiser mais detalhes é só falar!". MÁXIMO 1 frase curta.`
-                  : `\n\n[VOCÊ JÁ EXPLICOU] Info sobre "${query}" enviada. Dê UM toque pessoal curtíssimo — opinião, brincadeira leve ou pergunta genuína. MÁXIMO 1 frase. NÃO repita. Se não tiver toque genuíno, responda APENAS: SKIP`;
-                const coment = await geminiFreeResponse([
-                  { role: 'system', content: buildPersonality(tom, apelidoBusca, false) + promptPos },
-                  { role: 'user', content: text }
-                ], { temperature: 0.85, maxTokens: 60 }).catch(() => null);
-                const comentLimpo = filtrarResposta((coment || '').replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '').replace(/🔍/g, '').trim());
-                if (comentLimpo && comentLimpo.length > 3 && !/^SKIP/i.test(comentLimpo)) {
-                  await sendMessage(phone, comentLimpo);
-                  await memory.saveConversationMessage(user.id, 'assistant', comentLimpo).catch(() => {});
-                }
-              } catch {}
-            })();
-          }
         } else {
           await sendMessage(phone, 'Pesquisei mas não encontrei nada útil sobre isso agora 😕');
         }
@@ -975,86 +680,15 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     await memory.saveConversationMessage(user.id, 'assistant', respStr);
     await sendMessage(phone, respStr);
 
-    // Gap 1: registra hora da mensagem pra aprender rotina de presença
-    ;(async () => {
-      try {
-        await prisma.memory.create({
-          data: { userId: user.id, type: 'presenca_hora', content: String(nowBRT().getHours()) }
-        });
-        const limite30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        await prisma.memory.deleteMany({
-          where: { userId: user.id, type: 'presenca_hora', createdAt: { lt: limite30d } }
-        });
-      } catch {}
-    })();
-
-    // Gap 2: extrai estado emocional/tópico do dia após cada troca
-    // Salva como 'estado_do_dia' com TTL de 24h — injeta nas proativas e boa noite
-    ;(async () => {
-      try {
-        const histEstado = await memory.getConversationHistory(user.id, 6).catch(() => []);
-        if (histEstado.length < 2) return;
-        const resumoTroca = histEstado.slice(-4).map(m =>
-          `${m.role === 'user' ? 'Ele' : 'Você'}: ${m.content}`
-        ).join('\n');
-        const estadoResp = await geminiFreeResponse([
-          { role: 'system', content: `Extraia em UMA linha o estado emocional e tópico principal desta troca de mensagens. Formato: "humor: [animado/preocupado/tranquilo/brincalhão/cansado], assunto: [tópico resumido em 5 palavras]". Exemplo: "humor: animado, assunto: saída com a Isis no parquinho". Se não der pra extrair, responda: SKIP` },
-          { role: 'user', content: resumoTroca }
-        ], { temperature: 0.3, maxTokens: 50 }).catch(() => null);
-        if (!estadoResp || estadoResp === 'SKIP') return;
-        // Salva/atualiza estado do dia
-        await prisma.memory.deleteMany({ where: { userId: user.id, type: 'estado_do_dia' } });
-        await prisma.memory.create({
-          data: {
-            userId: user.id, type: 'estado_do_dia',
-            content: estadoResp.trim(),
-            metadata: JSON.stringify({ expira: Date.now() + 24 * 60 * 60 * 1000 })
-          }
-        });
-      } catch {}
-    })();
-
     // ── Detecção de promessa de busca não executada ───────────────────
-    // Só vale como promessa de busca de verdade se a MENSAGEM ORIGINAL do
-    // usuário tiver cara de pedido de informação (pergunta, "que horas",
-    // "quando", etc). Sem isso, uma frase de efeito dela tipo "deixa eu ver
-    // que horas" numa resposta a um convite/comentário ("bora torcermos")
-    // disparava busca escondida sem ninguém ter pedido nada.
-    const prometeuBuscar = pareceuPedidoInfo && /peraí que vou ver|deixa eu (dar uma olhada|pesquisar|verificar|checar|buscar)|vou (pesquisar|buscar|dar uma olhada|verificar)|deixa eu ver|um segundo que|rapidinho aqui/i.test(respStr);
+    const prometeuBuscar = /peraí que vou ver|deixa eu (dar uma olhada|pesquisar|verificar|checar|buscar)|vou (pesquisar|buscar|dar uma olhada|verificar)|deixa eu ver|um segundo que|rapidinho aqui/i.test(respStr);
     if (prometeuBuscar && !buscaMatch) {
+      // Tenta extrair query do texto do usuário (mais relevante que da resposta da IA)
+      const queryBusca = text.trim();
       ;(async () => {
         try {
           await new Promise(r => setTimeout(r, 1500));
-          // Extrai o assunto que ela REALMENTE prometeu pesquisar — usar a
-          // mensagem inteira do usuário como query dava resultado errado
-          // quando ele misturava mais de um assunto na mesma mensagem
-          // (ex: falou de café E do jogo do Brasil — a busca trazia café).
-          const queryBusca = await extrairQueryBusca(text, respStr);
-          const memAfetivaProm = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
-          const apelidoProm = memAfetivaProm?.apelido_usuario || preferences?.name || '';
-          const contextoRelProm = await buscarContextoRelacional(user.id);
-          // Se o usuário estava CONTANDO algo (não perguntando), Clara buscou
-          // pra ela mesma ficar por dentro — usa modo 'participar' pra não
-          // explicar de volta pro usuário algo que ele mesmo já sabe.
-          const modoBusca = pareceuPedidoInfo ? 'informar' : 'participar';
-          const resultado = await searchWeb(queryBusca, '', apelidoProm, preferences?.tom || 'carinhoso', contextoRelProm, modoBusca);
-          // Modo 'participar': salva na memória de longa duração o que ela
-          // aprendeu — nas próximas sessões ela já sabe do assunto e não
-          // precisa anunciar que vai pesquisar de novo como se fosse novidade.
-          if (modoBusca === 'participar' && resultado && !isRespostaFallback(resultado)) {
-            await prisma.memory.create({
-              data: {
-                userId: user.id,
-                type: 'conhecimento_adquirido',
-                content: queryBusca,
-                metadata: JSON.stringify({
-                  resumo: resultado.slice(0, 300),
-                  dataAprendido: new Date().toISOString(),
-                  expira: Date.now() + 30 * 24 * 60 * 60 * 1000 // 30 dias
-                })
-              }
-            }).catch(() => {});
-          }
+          const resultado = await searchWeb(queryBusca, '', preferences?.name || '');
           if (resultado && !isRespostaFallback(resultado)) {
             await memory.saveConversationMessage(user.id, 'assistant', resultado).catch(() => {});
             await sendMessage(phone, resultado);
@@ -1079,233 +713,6 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     }
 
     updateRelationshipSummary(user.id, history, respStr).catch(() => {});
-
-    // ── Memória narrativa contínua — diário cronológico da relação ──
-    // Diferente do relationship_summary (que substitui) e dos episódios (que expiram),
-    // essa linha do tempo só ACUMULA. Uma entrada por dia, nunca deletada,
-    // lida em ordem cronológica. É o fio condutor que impede ela de regredir.
-    ;(async () => {
-      try {
-        const histTimeline = await memory.getConversationHistory(user.id, 10).catch(() => []);
-        if (histTimeline.length < 3) return;
-        const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-        // Evita duplicar entradas do mesmo dia — atualiza se já existe
-        const entradaHoje = await prisma.memory.findFirst({
-          where: { userId: user.id, type: 'memoria_continua', content: { startsWith: `[${hoje}]` } }
-        }).catch(() => null);
-        const resumoConv = histTimeline.slice(-6).map(m =>
-          `${m.role === 'user' ? 'Ele' : 'Clara'}: ${(m.content || '').slice(0, 100)}`
-        ).join('\n');
-        const entrada = await geminiFreeResponse([
-          { role: 'user', content: `Conversa de hoje (${hoje}):\n${resumoConv}\n\nEm 1-2 frases diretas, qual o ponto mais importante? Fatos concretos, estado emocional, decisões, eventos. Exemplos: "Washington preocupado com pressão 14/10, tentando equilibrar remédios.", "Habilitação pendente amanhã no almoço. Fala sobre briga com patroa sobre onde morar.". Se não tem nada relevante, responda: SKIP.` }
-        ], { temperature: 0.1, maxTokens: 80 }).catch(() => null);
-        if (!entrada || /^SKIP/i.test(entrada.trim())) return;
-        const conteudo = `[${hoje}] ${entrada.trim().slice(0, 200)}`;
-        if (entradaHoje) {
-          await prisma.memory.update({ where: { id: entradaHoje.id }, data: { content: conteudo } }).catch(() => {});
-        } else {
-          await prisma.memory.create({ data: { userId: user.id, type: 'memoria_continua', content: conteudo, metadata: JSON.stringify({ data: new Date().toISOString() }) } }).catch(() => {});
-        }
-        console.log(`[Timeline] ${conteudo.slice(0, 80)}`);
-      } catch {}
-    })();
-
-    // Ponto 3: detecta padrão de reação em background
-    ;(async () => {
-      try {
-        const histPadrao = await memory.getConversationHistory(user.id, 8).catch(() => []);
-        if (histPadrao.length >= 4) {
-          const padrao = await detectarPadraoReacao(histPadrao);
-          if (padrao) await memory.salvarPadraoReacao(user.id, padrao.tema, padrao.padrao);
-        }
-      } catch {}
-    })();
-
-    // ── "Ainda não" → reinicia contador do episódio ──
-    // Quando Clara perguntou sobre algo e o usuário responde "ainda não",
-    // reinicia o timer pra ela voltar a perguntar em 3 dias — não amanhã.
-    ;(async () => {
-      try {
-        const aindaNao = /ainda\s*n[aã]o|n[aã]o\s*(ainda|consegui|rolou|deu|fiz|resolvi)|por\s*enquanto\s*n[aã]o|n[aã]o\s*ainda/i.test(text);
-        if (!aindaNao) return;
-        // Verifica se há episódio pendente recente (criado nos últimos 7 dias)
-        const epsPendentes = await prisma.memory.findMany({
-          where: { userId: user.id, type: 'episodio_vida', createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
-          orderBy: { createdAt: 'desc' }, take: 3
-        }).catch(() => []);
-        for (const ep of epsPendentes) {
-          let meta = {}; try { meta = JSON.parse(ep.metadata || '{}'); } catch {}
-          if (meta.resultado !== 'pendente') continue;
-          // Reinicia: next_check_at = agora + 3 dias
-          meta.next_check_at = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
-          await prisma.memory.update({ where: { id: ep.id }, data: { metadata: JSON.stringify(meta) } }).catch(() => {});
-          console.log(`[Episodio] "Ainda não" detectado — next_check_at em 3 dias: "${ep.content.slice(0, 50)}"`);
-        }
-      } catch {}
-    })();
-
-    // ── Detecção de resolução de episódios ativos ──────────────────────────
-    // Quando o usuário menciona que algo foi resolvido ("fui liberado", "já
-    // resolvi", "sarou", "deu certo"), o episódio muda de pendente → resolvido
-    // e para de aparecer proativamente no contexto.
-    ;(async () => {
-      try {
-        const sinaisResolucao = /\b(liberad[oa]|resolvemos|resolvi|já resolvi|consegui|funcionou|ficou bom|melhorou|sarou|tá bem|está bem|terminou|acabou|já fiz|já fui|já foi|tá ok|deu certo|deu tudo certo|alta médica|atestado|me deram alta|concluído|concluida)\b/i.test(text);
-        if (!sinaisResolucao) return;
-        const epsPendentes = await prisma.memory.findMany({
-          where: { userId: user.id, type: 'episodio_vida', createdAt: { gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) } },
-          orderBy: { createdAt: 'desc' }, take: 5
-        }).catch(() => []);
-        const pendentes = epsPendentes.filter(e => {
-          let m = {}; try { m = JSON.parse(e.metadata || '{}'); } catch {}
-          return m.resultado === 'pendente';
-        });
-        if (pendentes.length === 0) return;
-        const lista = pendentes.map((e, i) => `${i + 1}. ${e.content}`).join('\n');
-        const check = await geminiFreeResponse([
-          { role: 'user', content: `Mensagem: "${text.slice(0, 200)}"\n\nEpisódios pendentes:\n${lista}\n\nO usuário resolveu/encerrou algum desses episódios? Responda APENAS JSON: {"resolveu":true,"indice":N,"resultado":"positivo|negativo|neutro"} ou {"resolveu":false}` }
-        ], { temperature: 0.1, maxTokens: 60 }).catch(() => null);
-        if (!check) return;
-        const parsed = JSON.parse(check.replace(/```json|```/g, '').trim());
-        if (!parsed?.resolveu || !parsed?.indice) return;
-        const ep = pendentes[parsed.indice - 1];
-        if (!ep) return;
-        let meta = {}; try { meta = JSON.parse(ep.metadata || '{}'); } catch {}
-        meta.resultado = parsed.resultado || 'positivo';
-        meta.resolvidoEm = new Date().toISOString();
-        await prisma.memory.update({ where: { id: ep.id }, data: { metadata: JSON.stringify(meta) } }).catch(() => {});
-        console.log(`[EpisódioResolvido] "${ep.content.slice(0, 50)}" → ${meta.resultado}`);
-      } catch {}
-    })();
-    // Detecta detalhes concretos que ela mencionou (amigas, lugares, atividades)
-    // e salva pra manter consistência — a Bia e a Carol continuam sendo a Bia e a Carol.
-    ;(async () => {
-      try {
-        if (!respStr || respStr.length < 40) return;
-        const temVidaPropria = /\b(tô|tava|fui|estava|estou|saí|vou sair|fiz|comi|assisti|ouvi|encontrei|fiquei|cheguei|saindo|curtindo|passei)\b/i.test(respStr);
-        if (!temVidaPropria) return;
-        const extracted = await geminiFreeResponse([
-          { role: 'user', content: `Resposta da Clara: "${respStr.slice(0, 400)}"\n\nSe Clara mencionou algo CONCRETO sobre a VIDA DELA (nome de amiga, bar/lugar específico, atividade que fez), liste em JSON: [{"item":"descrição curta"}]. Máx 3. Se nada concreto, responda: []` }
-        ], { temperature: 0.1, maxTokens: 100 }).catch(() => null);
-        if (!extracted) return;
-        const limpo = extracted.replace(/```json|```/g, '').trim();
-        const items = JSON.parse(limpo.startsWith('[') ? limpo : '[]');
-        for (const it of items) {
-          if (!it?.item || it.item.length < 5) continue;
-          const palavraChave = it.item.split(' ').slice(0, 2).join(' ').toLowerCase();
-          const existe = await prisma.memory.findFirst({
-            where: { userId: user.id, type: 'clara_personagem', content: { contains: palavraChave } }
-          }).catch(() => null);
-          if (!existe) {
-            await prisma.memory.create({ data: {
-              userId: user.id, type: 'clara_personagem',
-              content: it.item.slice(0, 150),
-              metadata: JSON.stringify({ data: new Date().toISOString() })
-            }}).catch(() => {});
-            console.log(`[ClaraPersonagem] "${it.item.slice(0, 60)}"`);
-          }
-        }
-      } catch {}
-    })();
-
-    // ── Linha do tempo: detecta eventos futuros que o usuário mencionou ──
-    // Funciona com ou sem hora específica: "amanhã levo as crianças" também captura.
-    ;(async () => {
-      try {
-        const temFuturo = /amanhã|depois de amanhã|semana que vem|hoje.{0,20}(à noite|mais tarde|depois)|às \d+\s*h\b|daqui \d+|próxim[ao]/i.test(text);
-        if (!temFuturo) return;
-        const agora = new Date();
-        const ev = await geminiFreeResponse([
-          { role: 'user', content: `Mensagem: "${text.slice(0, 300)}"\nData/hora atual: ${agora.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\n\nSe o usuário mencionou um evento futuro específico (com OU sem horário exato), extraia:\n{"evento":"descrição curta","quando":"texto do quando","horas_ate_evento":N,"followup_horas_apos":M}\n\nhoras_ate_evento = quantas horas do MOMENTO ATUAL até o evento acontecer (ex: "amanhã às 9h" quando são 23h45 = ~9.25h)\nfollowup_horas_apos = quantas horas DEPOIS do evento perguntar como foi (padrão: 2-3h para eventos com hora específica, 6h para eventos sem hora)\n\nSe não há evento futuro claro, responda: NADA.` }
-        ], { temperature: 0.1, maxTokens: 100 }).catch(() => null);
-        if (!ev || /^NADA/i.test((ev || '').trim())) return;
-        const parsed = JSON.parse(ev.replace(/```json|```/g, '').trim());
-        if (!parsed?.evento) return;
-        const horasAteEvento = parsed.horas_ate_evento || 12;
-        const followupHoras = parsed.followup_horas_apos || 2;
-        // followup_at = agora + horas até o evento + horas de follow-up
-        const followupAt = new Date(agora.getTime() + (horasAteEvento + followupHoras) * 60 * 60 * 1000);
-        await prisma.memory.create({ data: {
-          userId: user.id, type: 'linha_tempo',
-          content: parsed.evento.slice(0, 150),
-          metadata: JSON.stringify({
-            quando: parsed.quando,
-            followup_at: followupAt.toISOString(),
-            criadoEm: agora.toISOString(),
-            status: 'pendente'
-          })
-        }}).catch(() => {});
-        console.log(`[LinhaTempo] "${parsed.evento}" — follow-up previsto: ${followupAt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`);
-      } catch {}
-    })();
-
-    // Item 4: resumo de fim de sessão
-    // Se a mensagem atual veio depois de 2h+ de silêncio, significa que
-    // a sessão anterior encerrou. Gera um resumo mais rico dessa sessão
-    // antes de começar a nova — captura o que aconteceu de importante,
-    // referências compartilhadas, humor, highlights — pra ela lembrar
-    // entre sessões.
-    ;(async () => {
-      try {
-        const ultimaMsgAnterior = await prisma.memory.findFirst({
-          where: {
-            userId: user.id, type: 'conversa',
-            content: { not: { startsWith: '[Clara]' } },
-            createdAt: { lt: new Date(Date.now() - 100) } // antes da atual
-          },
-          orderBy: { createdAt: 'desc' }
-        }).catch(() => null);
-
-        if (!ultimaMsgAnterior) return;
-        const minGap = (Date.now() - new Date(ultimaMsgAnterior.createdAt).getTime()) / 60000;
-        if (minGap < 120) return; // menos de 2h → mesma sessão, não consolida
-
-        // Sessão anterior encerrou — consolida o que aconteceu
-        const lockSessao = `sessao_resumo_${new Date(ultimaMsgAnterior.createdAt).toISOString().slice(0,13)}`;
-        const jaConsolidou = await prisma.memory.findFirst({
-          where: { userId: user.id, type: 'sessao_resumo_lock', content: lockSessao }
-        }).catch(() => null);
-        if (jaConsolidou) return;
-
-        await prisma.memory.create({
-          data: { userId: user.id, type: 'sessao_resumo_lock', content: lockSessao }
-        }).catch(() => {});
-
-        // Busca mensagens da sessão anterior (até 2h antes da última msg)
-        const fimSessao = new Date(ultimaMsgAnterior.createdAt);
-        const inicioSessao = new Date(fimSessao.getTime() - 3 * 60 * 60 * 1000);
-        const msgsSessao = await prisma.memory.findMany({
-          where: { userId: user.id, type: 'conversa', createdAt: { gte: inicioSessao, lte: fimSessao } },
-          orderBy: { createdAt: 'asc' }, take: 20
-        }).catch(() => []);
-
-        if (msgsSessao.length < 3) return;
-
-        const textoSessao = msgsSessao.map(m => {
-          const isClara = m.content.startsWith('[Clara]');
-          return `${isClara ? 'Clara' : 'Ele'}: ${m.content.replace('[Clara]', '').trim()}`;
-        }).join('\n');
-
-        // Usa o generateRelationshipSummary com foco em highlights da sessão
-        const current = await prisma.memory.findFirst({
-          where: { userId: user.id, type: 'relationship_summary' },
-          orderBy: { createdAt: 'desc' }
-        }).catch(() => null);
-
-        const novoResumo = await generateRelationshipSummary(
-          msgsSessao.map(m => ({
-            role: m.content.startsWith('[Clara]') ? 'assistant' : 'user',
-            content: m.content.replace('[Clara]', '').trim()
-          })),
-          current?.content || ''
-        );
-
-        if (novoResumo) {
-          await upsertMemoryPorTipo(user.id, 'relationship_summary', novoResumo).catch(() => {});
-          console.log(`[SessãoResumo] ${user.id} — sessão de ${msgsSessao.length} msgs consolidada`);
-        }
-      } catch {}
-    })();
 
     // ── Detecção de assunto em aberto (fire-and-forget) ──────────────
     // Roda após a resposta, sem adicionar latência. Se a conversa gerou
@@ -1489,111 +896,6 @@ async function handleMessage(phone, text, location = null) {
 
     if (modoAtual === 'conversar') return await responderLivre(user, phone, text);
 
-    // ── Interceptação determinística: SONECA / ADIAR de UMA dose de remédio ──
-    // Caso do print: o usuário responde ao "💊 Hora do medicamento!" pedindo
-    // "remarca pra daqui 20 minutos". Isso NÃO é:
-    //   • ajustar_remedio  → esse muda o horário FIXO diário do remédio;
-    //   • editar_lembrete  → esse só olha a tabela `reminder`, e remédio vive
-    //                        na tabela `medication`, então nunca acha
-    //                        ("Não encontrei nenhum lembrete com ...").
-    // É uma soneca de UMA dose: reagenda só aquela dose pra daqui X, criando
-    // um lembrete one-off que reenvia o alerta — SEM tocar no schedule fixo.
-    // Determinístico (regex, sem LLM) e disparado só quando o contexto é
-    // claramente de remédio + tempo relativo + verbo de adiar, pra não roubar
-    // pedidos legítimos de lembrete novo ("me lembra daqui 20 min de X").
-    {
-      const tNorm = (text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const verboAdiar = /\b(remarc\w*|adia\w*|adianta\w*|soneca|de novo|mais\s+\d+\s*min)\b/.test(tNorm);
-      const contextoRemedio = /\b(remedio|medicamento|dose|comprimido|capsula)\b/.test(tNorm);
-      const quandoRelativo = calcularHorarioRelativo(text); // Date (agora+X) ou null
-
-      if (verboAdiar && contextoRemedio && quandoRelativo) {
-        // Descobre QUAL dose adiar: 1º pelas pendências de confirmação abertas
-        // (o remédio acabou de disparar), 2º pelo nome citado na mensagem.
-        const pendMems = await prisma.memory.findMany({
-          where: { userId: user.id, type: 'confirmacao_pendente' },
-          orderBy: { createdAt: 'desc' }
-        }).catch(() => []);
-        const dosesPendentes = pendMems
-          .map(p => { try { const d = JSON.parse(p.content); return d.tipo === 'remedio_dose' ? d : null; } catch { return null; } })
-          .filter(Boolean);
-
-        let alvo = null;
-        if (dosesPendentes.length === 1) {
-          alvo = dosesPendentes[0];
-        } else if (dosesPendentes.length > 1) {
-          alvo = dosesPendentes.find(d =>
-            (d.medNome || '').toLowerCase().split(' ').filter(w => w.length > 3)
-              .some(w => tNorm.includes(w.normalize('NFD').replace(/[\u0300-\u036f]/g, '')))
-          ) || null;
-        }
-        // Fallback: sem pendência aberta, casa pelo nome de um remédio ativo
-        // citado (via swipe-reply, o texto vem com "[Mensagem citada: ...]").
-        if (!alvo) {
-          const medsAtivos = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
-          const medCitado = medsAtivos.find(m =>
-            (m.name || '').toLowerCase().split(' ').filter(w => w.length > 3)
-              .some(w => tNorm.includes(w.normalize('NFD').replace(/[\u0300-\u036f]/g, '')))
-          );
-          if (medCitado) alvo = { medId: medCitado.id, medNome: medCitado.name };
-        }
-
-        if (alvo) {
-          // Cria o lembrete one-off que reenvia o alerta no horário pedido.
-          // Não mexemos em medication.times (schedule permanente) nem criamos
-          // nova confirmacao_pendente — a que veio do disparo original ainda
-          // vale (expira em 3h), então "tomei" continua descontando a dose.
-          await prisma.reminder.create({
-            data: {
-              userId: user.id,
-              phone,
-              message: `💊 ${alvo.medNome} (dose remarcada)`,
-              scheduledAt: quandoRelativo
-            }
-          }).catch(e => console.error('[soneca_remedio] erro ao criar:', e.message));
-
-          const horaFmt = quandoRelativo.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-          await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
-          console.log(`[soneca_remedio] ${alvo.medNome} adiado p/ ${horaFmt} (${phone})`);
-          return await sendMessage(phone, `Beleza, adiei o *${alvo.medNome}* pra ${horaFmt} — te chamo de novo nesse horário 💊`);
-        }
-      }
-    }
-
-    // ── Peça 2 da dedução: "parar de tomar X na segunda" → data de fim ──────
-    // Detecção determinística. Grava endDate no remédio; um cron diário (em
-    // reminders.js) desativa e cria o acompanhamento (reusa a Peça 1) quando a
-    // data chega. Conservador: exige gatilho de FIM + menção a remédio + data.
-    {
-      const tLow = (text || '').toLowerCase();
-      const gatilhoFim = /\b(parar|paro|parei|pare|chega de|[uú]ltimo dia|s[óo] at[eé]|at[eé] (a |o )?(segunda|ter[cç]a|quarta|quinta|sexta|s[áa]bado|domingo|amanh[ãa]|hoje))\b/.test(tLow)
-        || /n[ãa]o (vou|preciso) mais (tomar|de)/.test(tLow);
-      const falaDeRemedio = /\b(rem[eé]dio|medicamento|tomar|comprimido|c[áa]psula|antibi[óo]tico)\b/.test(tLow);
-      // "forte" = substantivo explícito de remédio (sem "tomar", que é ambíguo:
-      // "parar de tomar café" não pode virar fim de tratamento).
-      const falaDeRemedioForte = /\b(rem[eé]dio|medicamento|comprimido|c[áa]psula|antibi[óo]tico)\b/.test(tLow);
-      if (gatilhoFim && falaDeRemedio) {
-        const dataFim = resolverDataFim(text);
-        if (dataFim) {
-          const medsAtivos = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
-          let med = medsAtivos.find(m =>
-            (m.name || '').toLowerCase().split(' ').filter(w => w.length > 3)
-              .some(w => tLow.includes(w.normalize('NFD').replace(/[\u0300-\u036f]/g, '')))
-          );
-          // Fallback "só um remédio ativo → é ele" SÓ quando há substantivo de
-          // remédio explícito, pra não confundir com "parar de tomar café".
-          if (!med && medsAtivos.length === 1 && falaDeRemedioForte) med = medsAtivos[0];
-          if (med) {
-            await prisma.medication.update({ where: { id: med.id }, data: { endDate: dataFim } }).catch(e => console.error('[endDate]', e.message));
-            const fmt = dataFim.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-            await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
-            console.log(`[FimTratamento] ${med.name} → endDate ${fmt} (${phone})`);
-            return await sendMessage(phone, `Anotado! Você para o *${med.name}* em ${fmt} 💜 Depois disso eu paro de te lembrar e te pergunto como foi.`);
-          }
-        }
-      }
-    }
-
     // ── Passa contexto da conversa para o classify resolver referências vagas ──
     // Inclui: histórico recente + lembretes pendentes (para concluir_lembrete funcionar sem swipe)
     let contextoClassify = '';
@@ -1629,53 +931,6 @@ async function handleMessage(phone, text, location = null) {
       classified.tipo = 'editar_lembrete';
     }
 
-    // ── GUARDA: resposta a uma PERGUNTA da Clara não vira lembrete/tarefa ────
-    // Mesma família do falso positivo do concluir. Se ele responde a uma
-    // ── Guardrail: plano informal → nunca tarefa ─────────────────────────
-    // "amanhã compro outro santo" → Gemini classificou como tarefa (falso
-    // positivo). O prompt já proíbe isso, mas o modelo erra ocasionalmente.
-    // Regra determinística de segurança: verbo de ação pessoal no futuro
-    // (compro, faço, vou, pego, passo, resolvo...) SEM gatilho explícito
-    // ("me lembra", "anota", "agenda", "daqui X min", "às HH") = plano
-    // informal = conversa, não tarefa.
-    if (classified.tipo === 'tarefa' || classified.tipo === 'multiplas_tarefas') {
-      const tLowGuard = (text || '').toLowerCase();
-      const temGatilhoGuard = /(me lembr|me avis|me cutuc|anota a[ií]|anota isso|j[áa] anota|um lembrete|cria(r)? lembrete|agenda isso|n[ãa]o me deixa esquecer|n[ãa]o deixa eu esquecer|me lembre|daqui a?\s*\d+|em\s+\d+\s*(min|hora)|às?\s*\d{1,2}h\b|às?\s*\d{1,2}:\d{2})/i.test(tLowGuard);
-      const temVerboPessoal = /\b(compro|pego|paso|passo|resolvo|ligo|falo|vou buscar|vou comprar|vou fazer|vou l[áa]|chego|trago|levo|busco|acho|arrumo|resolvo|deixo|coloco)\b/i.test(tLowGuard);
-      if (!temGatilhoGuard && temVerboPessoal) {
-        console.log(`[Guardrail] tarefa-fantasma interceptada (plano informal sem gatilho): "${(text||'').slice(0,60)}"`);
-        classified.tipo = 'outro';
-      }
-      // "Vou tentar renovar minha habilitação daqui a pouco" = intenção, não pedido
-      // Se a frase começa com "vou/quero/preciso" sem gatilho explícito, é conversa
-      if (classified.tipo !== 'outro') {
-        const ehIntencao = /^(eu\s+)?(vou\s+(tentar|precisar|lá|fazer|buscar|ver|resolver|passar|pegar)|quero|preciso)\s+/i.test((text||'').trim());
-        if (ehIntencao && !temGatilhoGuard) {
-          console.log(`[Guardrail] Afirmação de intenção ≠ tarefa — tratando como conversa: "${(text||'').slice(0,60)}"`);
-          classified.tipo = 'outro';
-        }
-      }
-    }
-
-    // pergunta da Clara (ex: "como foi o Detran? resolveu?" → "só na quinta
-    // fedo"), o classify às vezes lê a data ("quinta") e cria um lembrete-
-    // fantasma (e ainda perguntava "que horas?"). Se ele CITOU uma pergunta
-    // dela (tem "?" e não é alerta) e NÃO há gatilho explícito de lembrete no
-    // texto, é conversa — responde no tom, não cria tarefa nenhuma.
-    if (classified.tipo === 'tarefa' || classified.tipo === 'multiplas_tarefas') {
-      const mCitT = (text || '').match(/\[Mensagem citada:\s*"([\s\S]*?)"\]/i);
-      const citadoT = mCitT ? mCitT[1] : '';
-      const citouAlertaT = /🔔|💊|hora do medicamento|lembrete/i.test(citadoT);
-      const citouPerguntaT = /\?/.test(citadoT) && !citouAlertaT;
-      const temGatilhoLembrete = /(me lembr|me avis|me cutuc|anota a[ií]|anota isso|j[áa] anota|um lembrete|cria lembrete|agenda isso|n[ãa]o me deixa esquecer|n[ãa]o deixa eu esquecer|me lembre|daqui a?\s*\d+|em\s+\d+\s*(min|hora))/i.test(text || '');
-      if (citouPerguntaT && !temGatilhoLembrete) {
-        console.log('[tarefa] falso positivo (resposta a pergunta da Clara) — tratando como conversa');
-        await responderLivre(user, phone, text, '', false, null);
-        extractAndSavePersonalInfo(user.id, text).catch(() => {});
-        return;
-      }
-    }
-
     if (LISTA_TIPOS.includes(classified.tipo)) {
       const listaResult = await executeListaAction(user, phone, classified);
       let contextoExtra = '';
@@ -1704,79 +959,45 @@ async function handleMessage(phone, text, location = null) {
     }
 
     if (classified.tipo === 'busca' && classified.query) {
-      const preferencesBusca = await memory.getUserPreference(user.id).catch(() => null);
       const cidade = await memory.getCidadeAtual(user.id).catch(() => '');
-      // Usa o apelido REAL que a Clara já usa pra ele (ex: "fedo"), não o
-      // nome formal cadastrado — passar só "Washington" pro reprocessamento
-      // fazia o modelo inventar um apelido próprio (ex: "Wash") do nada.
-      const memAfetiva = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
-      const apelidoReal = memAfetiva?.apelido_usuario || preferencesBusca?.name || '';
-      const contextoRelBuscaClassify = await buscarContextoRelacional(user.id);
-      const tomBuscaClassify = preferencesBusca?.tom || 'carinhoso';
-
-      // Aviso pré-busca: usa as frases fixas do gerarAvisoBusca —
-      // curtas, no tom dela, sem responder a pergunta antes de buscar.
-      // O Gemini com maxTokens=60 aqui estava gerando respostas completas
-      // cortadas no meio ("Bom dia, fedo! 🙄 Pra soltar a barriga..."),
-      // que ficavam ótimas mas truncadas. Agora a frase é fixa e curta;
-      // a resposta completa e contextual vem na síntese da busca.
-      const avisoFixo = await gerarAvisoBusca(text, tomBuscaClassify, apelidoReal);
-      await sendMessage(phone, avisoFixo);
-      await memory.saveConversationMessage(user.id, 'assistant', avisoFixo).catch(() => {});
-
-      const resultadoBusca = await searchWeb(classified.query, cidadeParaBusca(classified.query, cidade), apelidoReal, tomBuscaClassify, contextoRelBuscaClassify, 'informar', '', text);
+      const tomBusca = preferences?.tom || 'carinhoso';
+      const apelidoBusca = (await memory.getMemoriaAfetiva(user.id).catch(() => {}))?.apelido_usuario || preferences?.name || '';
+      const resultadoBusca = await searchWeb(classified.query, cidadeParaBusca(classified.query, cidade), apelidoBusca, tomBusca);
       if (resultadoBusca) {
         await memory.saveConversationMessage(user.id, 'user', text);
         await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca);
         await sendMessage(phone, resultadoBusca);
         extractAndSavePersonalInfo(user.id, text).catch(() => {});
 
-        // 2ª mensagem: SÓ entra se a resposta da busca veio SECA/TÉCNICA. Se a
-        // Clara já respondeu no tom dela (com apelido, emoji, calor), o toque
-        // pessoal já está lá e a 3ª mensagem seria redundante. Detecta "seca":
-        // sem apelido do usuário, sem emoji, sem expressões calorosas dela.
+        // Comentário pós-busca: saúde → preocupação, local → oferta de mais, outros → toque se seco
         const respLower = (resultadoBusca || '').toLowerCase();
-        const temApelido = apelidoReal && respLower.includes(apelidoReal.toLowerCase());
-        const temEmoji = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2764}]/u.test(resultadoBusca || '');
-        const temCalor = /(fedo|meu bem|viu\?|hein\?|fica de olho|se cuida|👀|kkk|haha|olha|nossa|eita|opa|é isso|tá\?)/i.test(resultadoBusca || '');
-        const respostaJaEhPessoal = temApelido || temEmoji || temCalor;
-
-        // Saúde: SEMPRE gera comentário de preocupação — uma amiga que explica
-        // sintomas também pergunta "e você tá bem?", independente de emojis.
-        const ehSaude = /(sintoma|saúde|doença|pressão|febre|\bdor\b|dores|remédio|medicamento|médico|hospital|exame de saúde|consulta|enjoo|tontura|náusea|cansaço|infecção|alergia|gripe|covid|emergência)/i.test((classified.query || '') + ' ' + (text || ''));
-        const ehLocal = /(farmácia|farmacia|médico|medico|clínica|clinica|hospital|cardiologista|dentista|laboratório|laboratorio|serviço|loja|mercado|restaurante|oficina|mecânico|móvel|movel|moveis|móveis)/i.test((classified.query || '') + ' ' + (text || ''));
-        // Busca específica = usuário pediu um lugar pelo nome ("o da Casa e Casa", "da Farmácia X")
-        const ehEspecifica = /\b(o da|a da|da |do |de )\s*[A-ZÀ-Ú]/.test(text || '') || /\b[A-ZÀ-Ú][a-zà-ú]+ [A-ZÀ-Ú][a-zà-ú]+/.test(classified.query || '');
-
-        if (!respostaJaEhPessoal || ehSaude || ehLocal) {
+        const temCalor = /(fedo|meu bem|viu\?|eita|nossa)/i.test(respLower) || /[\u{1F300}-\u{1FAFF}]/u.test(resultadoBusca || '');
+        const ehSaude = /(sintoma|saúde|doença|pressão|febre|\bdor\b|remédio|médico|hospital|consulta)/i.test((classified.query || '') + ' ' + text);
+        const ehLocal = /(farmácia|farmacia|médico|medico|clínica|clinica|cardiologista|loja|mercado|restaurante|oficina|móveis|moveis)/i.test((classified.query || '') + ' ' + text);
+        const ehEspecifica = /\b(o da|a da|da |do )\s*[A-ZÀ-Ú]/.test(text);
+        if (ehSaude || ehLocal || !temCalor) {
           ;(async () => {
             try {
               await new Promise(r => setTimeout(r, 1500));
               if (!geminiDisponivel() || todosModelosEsgotados()) return;
               const promptComent = ehSaude
-                ? `\n\n[VOCÊ JÁ DEU A INFO DE SAÚDE] Você explicou sobre "${classified.query}". Agora mande UM comentário curto de amiga preocupada — pergunte se ele tá sentindo algo, se é ele ou alguém da família, se tá bem. MÁXIMO 1 frase (menos de 15 palavras). Não repita a explicação.`
+                ? `\n\n[INFO DE SAÚDE ENVIADA] Mande UM comentário de amiga preocupada — pergunte se é ele ou alguém. MÁXIMO 1 frase.`
                 : ehLocal && ehEspecifica
-                ? `\n\n[VOCÊ JÁ DEU O QUE ELE PEDIU ESPECIFICAMENTE] Ele pediu uma opção específica e você mandou o telefone/contato. A tarefa está concluída. Faça UM comentário curtíssimo e natural (brincadeira, observação) — mas NUNCA faça perguntas de follow-up como "pra que dia quer agendar?" ou "quer mais alguma coisa?". Se não tiver algo genuíno e curto a dizer, responda APENAS: SKIP`
+                ? `\n\n[DADO ESPECÍFICO ENVIADO] Tarefa concluída. Comentário curto natural ou SKIP.`
                 : ehLocal
-                ? `\n\n[VOCÊ JÁ BUSCOU E ACHOU] A busca foi bem-sucedida — você encontrou opções de "${classified.query}" e já mandou. Não questione a busca, não diga que faltou informação. Faça UM comentário curtíssimo oferecendo mais: algo como "Se quiser uma específica é só falar!" ou "Tem mais opções se precisar!" — no seu tom. MÁXIMO 1 frase. NÃO repita o que mandou. NUNCA diga que não sabe a cidade ou que faltou algo.`
-                : `\n\n[VOCÊ JÁ EXPLICOU] Você acabou de mandar a explicação sobre "${classified.query}", mas ela saiu meio seca. Dê UM toque pessoal curtíssimo — um conselho, uma preocupação ou uma brincadeira leve.\n\nREGRAS: MÁXIMO 1 frase curta. NÃO repita a explicação. NUNCA use __BUSCAR__. Se não tiver toque genuíno, responda APENAS: SKIP`;
-              const sysComent = buildPersonality(tomBuscaClassify, apelidoReal, false) + promptComent;
+                ? `\n\n[OPÇÕES LOCAIS ENVIADAS] Ofereça buscar mais em 1 frase curta. NUNCA diga que faltou info.`
+                : `\n\n[INFO ENVIADA] Toque pessoal curtíssimo ou SKIP.`;
               const coment = await geminiFreeResponse([
-                { role: 'system', content: sysComent },
-                { role: 'user', content: `Acabei de perguntar sobre: ${text}` }
+                { role: 'system', content: buildPersonality(tomBusca, apelidoBusca, false) + promptComent },
+                { role: 'user', content: text }
               ], { temperature: 0.85, maxTokens: 60 }).catch(() => null);
-              const comentLimpo = filtrarResposta((coment || '')
-                .replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '')
-                .replace(/🔍/g, '')
-                .trim());
+              const comentLimpo = filtrarResposta((coment || '').replace(/[*_]{0,2}BUSCAR[*_]{0,2}:[^\n]*/gi, '').trim());
               if (comentLimpo && comentLimpo.length > 3 && !/^SKIP/i.test(comentLimpo)) {
                 await sendMessage(phone, comentLimpo);
                 await memory.saveConversationMessage(user.id, 'assistant', comentLimpo).catch(() => {});
               }
-            } catch (e) { console.error('[Busca comentário] Erro:', e.message); }
+            } catch {}
           })();
-        } else {
-          console.log('[Busca] Resposta já veio pessoal — pulando comentário extra');
         }
         return;
       }
@@ -1784,15 +1005,8 @@ async function handleMessage(phone, text, location = null) {
       return;
     }
 
-    // Card completo (relatório visual) SÓ quando o usuário pede explicitamente
-    // "relatório", "detalhado" ou "completo". Qualquer outra forma casual de
-    // perguntar de finanças ("como tão minhas contas?", "mostra o saldo de
-    // agosto") cai no fluxo normal, onde a Clara responde NO TOM DELA com os
-    // números (o contexto [FINANCEIRO] já é injetado). Assim: casual = ela;
-    // "relatório" = card. A intenção está nas palavras, sem precisar perguntar.
-    const pediuRelatorioExplicito = /relat[óo]rio|detalhad|complet|planilha|extrato detalhad/i.test(text || '');
-    if ((classified.tipo === 'relatorio_financeiro' || classified.tipo === 'consulta_saldo') && pediuRelatorioExplicito) {
-      await gerarRelatorioFinanceiroWhatsApp(user, phone, text);
+    if (classified.tipo === 'relatorio_financeiro' || classified.tipo === 'consulta_saldo') {
+      await gerarRelatorioFinanceiroWhatsApp(user, phone);
       return;
     }
 
@@ -1872,17 +1086,8 @@ async function handleMessage(phone, text, location = null) {
         }
       }).catch(() => {});
       const dataFmt = new Date(`${classified.data}T12:00:00-03:00`).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-      // Pergunta de horário no tom dela — não como sistema
-      // BUG CORRIGIDO: usava `prefs` (inexistente neste escopo) → crash
-      // "prefs is not defined". Busca local resolve.
-      const prefsHora = await memory.getUserPreference(user.id).catch(() => ({}));
-      await freeResponse(`Preciso perguntar o horário pro lembrete "${classified.titulo}" no dia ${dataFmt}.`, [], {
-        name: prefsHora?.name, tom: prefsHora?.tom || 'carinhoso',
-        _contexto: `[SEM HORÁRIO] Você acabou de tentar criar o lembrete "${classified.titulo}" pro dia ${dataFmt} mas sem horário definido. Pergunte de forma natural e no seu tom qual horário colocar. Se a pessoa não souber, diga pra te passar quando souber que você ajusta. NÃO sugira horário provisório. Máximo 1-2 linhas.`,
-        _maxTokens: 80
-      }).then(async (resp) => {
-        if (resp) await sendMessage(phone, resp);
-      }).catch(() => sendMessage(phone, `Que horas vai ser "${classified.titulo}" no dia ${dataFmt}? Me diz quando souber 😊`));
+      await sendMessage(phone, `Anotado: "${classified.titulo}" no dia ${dataFmt} 📌\n\nQue horas devo colocar esse lembrete? Se não souber, me diz que eu deixo às 09:00 provisoriamente 😊`);
+      await memory.saveMemory(user.id, 'tarefa', classified.titulo, { data: classified.data, hora: null });
       extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
       return;
     }
@@ -1891,7 +1096,6 @@ async function handleMessage(phone, text, location = null) {
     // para sabermos o número real de doses resultante antes de confirmar —
     // evita a Clara "inventar" ou ficar vaga sobre a quantidade.
     let confirmacaoAjusteRemedio = null;
-    let acaoRespondeu = false;
     if (classified.tipo === 'ajustar_remedio') {
       confirmacaoAjusteRemedio = await executeAjustarRemedio(user, classified).catch(e => {
         console.error('Erro ajustar_remedio:', e.message);
@@ -1910,14 +1114,7 @@ async function handleMessage(phone, text, location = null) {
       // banco (bug observado: lembrete confirmado por mensagem mas que
       // nunca disparou). Agora esperamos a gravação terminar de verdade
       // antes de seguir pra mensagem de confirmação.
-      acaoRespondeu = await executeAction(user, phone, classified, text).catch(e => { console.error('Erro executeAction:', e.message); return false; });
-    }
-    // Se o executeAction já respondeu ao usuário (pediu horário/título que
-    // faltava, ou confirmou chamada combinada), encerra aqui: nada de
-    // confirmação de sistema nem responderLivre final por cima.
-    if (acaoRespondeu) {
-      extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
-      return;
+      await executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
     }
     const isSaudacao = classified.tipo === 'saudacao';
 
@@ -1961,26 +1158,18 @@ async function handleMessage(phone, text, location = null) {
         if (ehHoje) {
           confirmacaoTarefa = `✅ Anotado! "${classified.titulo}" às ${horaFmt} ⏰`;
         } else {
-          confirmacaoTarefa = `✅ Lembrete criado!\n\n📌 ${classified.titulo}\n🕐 ${dataFmt}, ${horaFmt}`;
+          confirmacaoTarefa = `✅ Lembrete criado!\n\n📌 ${classified.titulo}\n🕒 ${dataFmt}, ${horaFmt}\n\nVou te avisar no horário certinho.`;
         }
       } catch (e) {
         // mantém fallback genérico em caso de erro de parsing
       }
     }
 
-    const medFreq = classified.frequencia || classified.horarios?.length || 1;
-    const medDur = classified.duracao_dias || null;
-    const medQtd = classified.quantidade || (medDur ? medDur * medFreq : 0);
-    const medHorarios = (classified.horarios || ['08:00']).join(', ');
-    let medConfirmacao = `✅ Medicamento cadastrado!\n\n💊 *${classified.nome || 'Remédio'}*\n⏰ Horários: ${medHorarios}`;
-    if (medDur) medConfirmacao += `\n📅 Duração: ${medDur} ${medDur === 1 ? 'dia' : 'dias'}`;
-    if (medQtd) medConfirmacao += `\n📦 Estoque: ${medQtd} doses`;
-
     const CONFIRMACOES_ACAO = {
       tarefa: confirmacaoTarefa,
       gasto: '✅ Gasto registrado!',
       entrada_financeira: '✅ Entrada registrada!',
-      medicamento: medConfirmacao,
+      medicamento: '✅ Medicamento cadastrado!',
       anotacao: '✅ Anotado!',
       ajustar_remedio: confirmacaoAjusteRemedio || '😕 Não encontrei esse remédio. Me diz o nome certinho?',
     };
@@ -2009,63 +1198,8 @@ async function handleMessage(phone, text, location = null) {
     // dizendo que criou tarefas que não foram processadas. A confirmação
     // lista exatamente o que foi gravado no banco.
     if (classified.tipo === 'multiplas_tarefas' && acaoConfirmacao) {
-      // 1ª msg: confirmação estruturada com a lista
       await sendMessage(phone, acaoConfirmacao);
-      // Salva marcador de conversa pra proativa não disparar por cima
-      await memory.saveConversationMessage(user.id, 'assistant', acaoConfirmacao).catch(() => {});
       emitirAtualizacao(phone, 'lembretes');
-      // 2ª msg: Clara sendo ela — comentário natural sobre os lembretes,
-      // igual ao fluxo de tarefa única mas em background pra não atrasar.
-      ;(async () => {
-        try {
-          await new Promise(r => setTimeout(r, 1800));
-          const prefsMulti = await memory.getUserPreference(user.id).catch(() => ({}));
-          const memAfetivaMulti = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
-          const apelidoMulti = memAfetivaMulti?.apelido_usuario || prefsMulti?.name || '';
-          const relMemMulti = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
-          const ctxRelMulti = relMemMulti?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemMulti.content}` : '';
-          const histMulti = await memory.getConversationHistory(user.id, 8).catch(() => []);
-          const resumoHistMulti = histMulti.length > 0
-            ? `\n\n[CONVERSA ANTES DOS LEMBRETES]\n${histMulti.slice(-6).map(m => `${m.role === 'user' ? 'Ele' : 'Você'}: ${m.content}`).join('\n')}`
-            : '';
-          const sistemaMulti = buildPersonality(prefsMulti?.tom || 'carinhoso', apelidoMulti, false) + ctxRelMulti + resumoHistMulti + `\n\n[LEMBRETES CRIADOS] Ele criou ${classified.tarefas?.length || 'vários'} lembretes. Confirmação enviada. Continue a conversa naturalmente — priorize o que estava rolando antes se tiver assunto. O lembrete foi um aparte. Máximo 2 linhas. NÃO liste os lembretes, NÃO repita que vai avisar.`;
-          const comentarioMulti = await comentarioGemini(sistemaMulti, text, 120);
-          if (comentarioMulti && !isRespostaFallback(comentarioMulti)) {
-            await sendMessage(phone, comentarioMulti);
-            await memory.saveConversationMessage(user.id, 'assistant', comentarioMulti).catch(() => {});
-          }
-        } catch(e) { console.error('[MultitaskComment] Erro:', e.message); }
-      })();
-      return;
-    }
-
-    if (classified.tipo === 'medicamento' && acaoConfirmacao) {
-      // 1ª msg: confirmação estruturada
-      await sendMessage(phone, acaoConfirmacao);
-      // Salva marcador pra proativa não disparar por cima
-      await memory.saveConversationMessage(user.id, 'assistant', '[Clara] medicamento cadastrado').catch(() => {});
-      emitirAtualizacao(phone, 'remedios');
-      // 2ª msg: Clara sendo ela — se não tem estoque cadastrado, pergunta
-      // sobre a embalagem de forma natural (comprimidos/ml), que é a
-      // informação certa pra controlar o estoque, não "quantas doses".
-      ;(async () => {
-        try {
-          await new Promise(r => setTimeout(r, 1800));
-          const prefsMed = await memory.getUserPreference(user.id).catch(() => ({}));
-          const memAfetivaMed = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
-          const apelidoMed = memAfetivaMed?.apelido_usuario || prefsMed?.name || '';
-          const relMemMed = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
-          const ctxRelMed = relMemMed?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemMed.content}` : '';
-          const temEstoque = !!(classified.quantidade || (classified.duracao_dias && medFreq));
-          
-          const sistemaMed = buildPersonality(prefsMed?.tom || 'carinhoso', apelidoMed, false) + ctxRelMed + `\n\n[MEDICAMENTO CADASTRADO] Você acabou de cadastrar ${classified.nome || 'um remédio'}. A confirmação estruturada já foi enviada. ${temEstoque ? 'Reaja de forma natural e curta — comente, incentive ou faça uma pergunta leve.' : 'Pergunte de forma natural quantos comprimidos ou ml vem na embalagem — pra controlar o estoque e avisar quando acabar. Não use a palavra "doses". Máximo 2 linhas.'}`;
-          const comentarioMed = await comentarioGemini(sistemaMed, text, 120);
-          if (comentarioMed && !isRespostaFallback(comentarioMed)) {
-            await sendMessage(phone, comentarioMed);
-            await memory.saveConversationMessage(user.id, 'assistant', comentarioMed).catch(() => {});
-          }
-        } catch(e) { console.error('[MedComment] Erro:', e.message); }
-      })();
       return;
     }
 
@@ -2074,124 +1208,9 @@ async function handleMessage(phone, text, location = null) {
     // recebe a confirmação no contexto, pra não confirmar embutido e duplicar);
     // a confirmação estruturada é enviada logo depois dentro de responderLivre.
     if (classified.tipo === 'tarefa' && acaoConfirmacao) {
-      // 1ª: confirmação do sistema (fatos, sem personalidade)
-      await sendMessage(phone, acaoConfirmacao);
-      await memory.saveConversationMessage(user.id, 'assistant', acaoConfirmacao).catch(() => {});
-      emitirAtualizacao(phone, 'lembretes');
-      // 2ª: Clara sendo ela — tem acesso ao histórico recente da conversa,
-      // então pode finalizar um assunto que estava rolando antes do lembrete,
-      // ou usar o lembrete como gancho natural se fizer sentido. Não precisa
-      // comentar sobre o lembrete — pode simplesmente continuar a conversa.
-      ;(async () => {
-        try {
-          await new Promise(r => setTimeout(r, 1800));
-          const prefsTarefa = await memory.getUserPreference(user.id).catch(() => ({}));
-          const memAfetivaTarefa = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
-          const apelidoTarefa = memAfetivaTarefa?.apelido_usuario || prefsTarefa?.name || '';
-          const relMemTarefa = await prisma.memory.findFirst({ where: { userId: user.id, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
-          const ctxRelTarefa = relMemTarefa?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemTarefa.content}` : '';
-          const histTarefa = await memory.getConversationHistory(user.id, 8).catch(() => []);
-          const resumoHistorico = histTarefa.length > 0
-            ? `\n\n[CONVERSA RECENTE ANTES DO LEMBRETE]\n${histTarefa.slice(-6).map(m => `${m.role === 'user' ? 'Ele' : 'Você'}: ${m.content}`).join('\n')}`
-            : '';
-          const sistemaTarefa = buildPersonality(prefsTarefa?.tom || 'carinhoso', apelidoTarefa, false) + ctxRelTarefa + resumoHistorico +
-            `\n\n[LEMBRETE CRIADO] No meio da conversa ele criou o lembrete "${classified.titulo}"${classified.hora ? ` às ${classified.hora}` : ''}. A confirmação já foi enviada como sistema. Agora você pode: (a) continuar o assunto que estava rolando antes do lembrete, como uma conversa humana faria — o lembrete foi um aparte, não o fim do papo; (b) ou usar o lembrete como gancho natural SE for algo interessante de comentar. Priorize a continuidade da conversa. Máximo 2 linhas. NÃO diga "vou te avisar", "não esquece", "anotei".`;
-          const comentarioTarefa = await comentarioGemini(sistemaTarefa, text, 120);
-          if (comentarioTarefa && !isRespostaFallback(comentarioTarefa)) {
-            await sendMessage(phone, comentarioTarefa);
-            await memory.saveConversationMessage(user.id, 'assistant', comentarioTarefa).catch(() => {});
-          }
-        } catch(e) { console.error('[TarefaComment] Erro:', e.message); }
-      })();
+      await responderLivre(user, phone, text, '', isSaudacao, null, acaoConfirmacao);
       extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
-      return;
-    }
-
-    // CONFIRMAÇÃO DE LEMBRETE/REMÉDIO pelo handler (classificado como
-    // concluir_lembrete/concluir_remedio). A confirmação de SISTEMA já foi
-    // enviada (webhook handleSimpleResponse) OU será — aqui a Clara NÃO deve
-    // soltar resposta genérica ("Aí sim! Pra isso que eu existo"). Ela só
-    // comenta se tiver algo genuíno, senão fica quieta. Mesma regra do
-    // LembreteConfirm, agora também nesse caminho (era o que vazava genérico).
-    if (classified.tipo === 'concluir_lembrete' || classified.tipo === 'concluir_remedio') {
-      // ── GUARDA ANTI-FALSO-POSITIVO ──────────────────────────────────────
-      // O classify às vezes lê "deu certo"/"consegui"/"foi"/"resolvi" como
-      // conclusão de tarefa. Mas muitas vezes é o usuário RESPONDENDO a uma
-      // PERGUNTA da Clara (ex: o acompanhamento "e aí, como foi o Detran?").
-      // No caso do print: ele respondeu "Deu certo fedo" citando a pergunta,
-      // isso virou concluir_lembrete, a resposta foi ENGOLIDA (nem salva no
-      // histórico nem respondida) e logo depois a Clara ainda reclamou que
-      // estava sendo ignorada — porque, pra ela, ele nunca tinha respondido.
-      //
-      // Regra: só tratar como conclusão de verdade quando há SINAL FORTE —
-      //   (a) citou o próprio alerta (🔔 Lembrete / 💊 Hora do medicamento);
-      //   (b) o título casa com um lembrete pendente de confirmação;
-      //   (c) citou um código (#1, "o 2"...) que aponta pra um pendente.
-      // Se ele citou uma PERGUNTA da Clara (tem "?" e não é alerta), ou não
-      // há match nenhum, então NÃO é conclusão: deixa seguir pro papo normal
-      // (responderLivre), que reconhece a resposta e salva o turno.
-      const mCit = (text || '').match(/\[Mensagem citada:\s*"([\s\S]*?)"\]/i);
-      const citado = mCit ? mCit[1] : '';
-      const citouAlerta = /🔔|💊|hora do medicamento|lembrete/i.test(citado);
-      const citouPergunta = /\?/.test(citado) && !citouAlerta;
-
-      let ehConclusaoReal = false;
-      if (!citouPergunta) {
-        const pendentesConf = await getLembretesPendentesConfirmacao(user.id).catch(() => []);
-        const codigoConcl = extrairCodigoLembrete(text);
-        if (codigoConcl && pendentesConf[codigoConcl - 1]) {
-          ehConclusaoReal = true;
-        } else if (classified.titulo && pendentesConf.length) {
-          const tt = classified.titulo.toLowerCase();
-          ehConclusaoReal = pendentesConf.some(r =>
-            r.message.toLowerCase().includes(tt) || tt.includes(r.message.toLowerCase().substring(0, 10))
-          );
-        }
-        if (!ehConclusaoReal && citouAlerta) ehConclusaoReal = true;
-      }
-
-      if (!ehConclusaoReal) {
-        // Falso positivo — é conversa de verdade. Segue pro fluxo normal.
-        console.log(`[Concluir] falso positivo (citouPergunta=${citouPergunta}) — tratando como conversa`);
-        await responderLivre(user, phone, text, '', isSaudacao, acaoConfirmacao);
-        extractAndSavePersonalInfo(user.id, text).catch(() => {});
-        return;
-      }
-
-      // Envia confirmação estruturada — o handleSimpleResponse faz isso no caminho
-      // rápido, mas aqui no caminho classify ninguém mandava. Fix.
-      const tituloConf = classified.titulo || 'tarefa';
-      const msgConf = `✅ Feito! "${tituloConf}" concluído.`;
-      await sendMessage(phone, msgConf);
-      await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
-      await memory.saveConversationMessage(user.id, 'assistant', msgConf).catch(() => {});
-
-      ;(async () => {
-        try {
-          await new Promise(r => setTimeout(r, 1500));
-          if (!geminiDisponivel() || todosModelosEsgotados()) return;
-          // BUG CORRIGIDO: aqui usava `preferences?.tom` e `apelidoReal`, mas
-          // essas variáveis só existem dentro de responderLivre / do sub-bloco
-          // de busca — no escopo do handleMessage NÃO existem, então o bloco
-          // lançava "preferences is not defined" TODA vez e a Clara nunca
-          // reagia a uma conclusão (morria em silêncio). Busca local resolve.
-          const prefsConcl = await memory.getUserPreference(user.id).catch(() => ({}));
-          const memAfConcl = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
-          const apelidoConcl = memAfConcl?.apelido_usuario || prefsConcl?.name || '';
-          const oQueFoi = classified.titulo || 'aquilo';
-          const sysConcl = buildPersonality(prefsConcl?.tom || 'carinhoso', apelidoConcl, false) + `\n\n[TAREFA CONCLUÍDA] O usuário confirmou que fez/tomou: "${oQueFoi}". O sistema JÁ confirmou pra ele — você NÃO precisa dizer que registrou nem repetir a tarefa.\n\nDECIDA: isso merece uma reação sua de amiga? Só reaja se tiver peso genuíno (uma conquista, algo importante, algo com graça real). Se for rotineiro (tomar remédio do dia a dia, tarefa comum), responda APENAS "SKIP" — fica quieta, o sistema já cuidou.\n\nSe for reagir: 1 linha curta, no seu tom, sobre ISSO. NÃO puxe outros assuntos (saúde de familiares, agenda, pendências). NÃO faça pergunta genérica tipo "como está se sentindo?" toda vez. NUNCA seja genérica ("boa!", "arrasou!", "pra isso que eu existo" são proibidos). Se não tem nada específico e genuíno, é SKIP.`;
-          const coment = await geminiFreeResponse([
-            { role: 'system', content: sysConcl },
-            { role: 'user', content: `Confirmei: "${oQueFoi}"` }
-          ], { temperature: 0.85, maxTokens: 100 }).catch(() => null);
-          const comentLimpo = filtrarResposta((coment || '').replace(/[*_]{0,2}BUSCAR:[^*_\n]*[*_]{0,2}/gi, '').trim());
-          if (comentLimpo && comentLimpo.length > 3 && !/^SKIP/i.test(comentLimpo)) {
-            await sendMessage(phone, comentLimpo);
-            await memory.saveConversationMessage(user.id, 'assistant', comentLimpo).catch(() => {});
-          }
-        } catch (e) { console.error('[ConcluirComment] Erro:', e.message); }
-      })();
-      extractAndSavePersonalInfo(user.id, text).catch(() => {});
+      emitirAtualizacao(phone, 'lembretes');
       return;
     }
 
@@ -2207,87 +1226,34 @@ async function handleMessage(phone, text, location = null) {
   }
 }
 
-async function gerarRelatorioFinanceiroWhatsApp(user, phone, textoUsuario = '') {
+async function gerarRelatorioFinanceiroWhatsApp(user, phone) {
   try {
     const now = nowBRT();
-    const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-    const mesesLow = meses.map(m => m.toLowerCase());
-
-    // Detecta mês específico na pergunta ("finanças de junho"); senão, vigente.
-    const txtLow = (textoUsuario || '').toLowerCase();
-    let mesAlvo = now.getMonth();
-    let anoAlvo = now.getFullYear();
-    for (let i = 0; i < mesesLow.length; i++) {
-      if (new RegExp(`\\b${mesesLow[i]}\\b`, 'i').test(txtLow) || (i === 2 && /\bmarco\b/i.test(txtLow))) {
-        mesAlvo = i;
-        // Ano: por padrão o atual. Só considera ano PASSADO se o mês pedido
-        // está muito à frente (mais de 6 meses no futuro) — aí provavelmente
-        // a pessoa quer o passado (ex: em janeiro perguntar "novembro" = ano
-        // passado). Meses próximos no futuro (agosto pedido em julho) usam o
-        // ano atual, porque o usuário pode registrar lançamentos futuros.
-        if (i - now.getMonth() > 6) anoAlvo = now.getFullYear() - 1;
-        break;
-      }
-    }
-    const inicioMes = new Date(anoAlvo, mesAlvo, 1);
-    const fimMes = new Date(anoAlvo, mesAlvo + 1, 0, 23, 59, 59);
-    const nomeMes = meses[mesAlvo];
-
-    const gastos = await prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes, lte: fimMes } }, orderBy: { createdAt: 'desc' } });
+    const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
+    const preferences = await memory.getUserPreference(user.id);
+    const gastos = await prisma.expense.findMany({ where: { userId: user.id, createdAt: { gte: inicioMes } }, orderBy: { createdAt: 'desc' } });
     const saidas = gastos.filter(g => g.value > 0);
     const entradas = gastos.filter(g => g.value < 0);
     const totalGasto = saidas.reduce((a, g) => a + g.value, 0);
     const totalEntradas = entradas.reduce((a, g) => a + Math.abs(g.value), 0);
-    const saldo = totalEntradas - totalGasto;
-
-    // Formata em pt-BR: R$ 1.919,07 (ponto de milhar, vírgula decimal)
-    const brl = v => 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
+    const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const nomeMes = meses[now.getMonth()];
     const catIcones = { alimentacao:'🍔', mercado:'🛒', transporte:'🚗', saude:'💊', lazer:'🎮', moradia:'🏠', educacao:'📚', entrada:'💰', outro:'📦' };
-    const catNomes = { alimentacao:'Alimentação', mercado:'Mercado', transporte:'Transporte', saude:'Saúde', lazer:'Lazer', moradia:'Moradia', educacao:'Educação', entrada:'Entrada', outro:'Outros' };
     const porCategoria = {};
-    saidas.forEach(g => { const cat = g.category || 'outro'; porCategoria[cat] = (porCategoria[cat] || 0) + g.value; });
-
-    if (gastos.length === 0) {
-      await sendButtons(phone, `📊 *Finanças • ${nomeMes} de ${anoAlvo}*\n\nNenhum lançamento nesse mês ainda 😊`, [{ id: 'novo_gasto', label: '➕ Registrar gasto' }, { id: 'menu', label: '🏠 Menu' }]);
-      return;
-    }
-
-    // ── Cabeçalho ──
-    let texto = `📊 *Finanças • ${nomeMes} de ${anoAlvo}*\n\n`;
-    texto += `💰 *Entradas:* ${brl(totalEntradas)}\n`;
-    texto += `💸 *Gastos:* ${brl(totalGasto)}\n`;
-    const emojiSaldo = saldo < 0 ? '📉' : '📈';
-    texto += `${emojiSaldo} *Saldo:* ${brl(saldo)}\n`;
-
-    // ── Principais gastos ──
-    if (Object.keys(porCategoria).length > 0) {
-      texto += `\n*Principais gastos*\n`;
-      Object.entries(porCategoria).sort((a, b) => b[1] - a[1]).forEach(([cat, val]) => {
-        texto += `${catIcones[cat] || '📦'} ${catNomes[cat] || cat.charAt(0).toUpperCase() + cat.slice(1)}: ${brl(val)}\n`;
-      });
-    }
-
-    // ── Últimos lançamentos ──
-    const ultimos = saidas.slice(0, 5);
-    if (ultimos.length > 0) {
-      texto += `\n*Últimos lançamentos*\n`;
-      ultimos.forEach(g => {
-        const nome = g.description && g.description !== g.category ? g.description : (catNomes[g.category] || g.category);
-        texto += `• ${nome} — ${brl(g.value)}\n`;
-      });
-    }
-
-    // ── Resumo final (a linha que fecha com sentido) ──
+    saidas.forEach(g => { const cat = g.category || 'outro'; if (!porCategoria[cat]) porCategoria[cat] = 0; porCategoria[cat] += g.value; });
+    let texto = `📊 *Relatório de ${nomeMes}*\n\n`;
+    if (entradas.length > 0) texto += `💰 *Entradas:* R$ ${totalEntradas.toFixed(2)}\n`;
+    texto += `💸 *Total gasto:* R$ ${totalGasto.toFixed(2)}\n`;
+    if (preferences.saldo != null) { const saldo = preferences.saldo - totalGasto + totalEntradas; texto += `💵 *Saldo restante:* R$ ${saldo.toFixed(2)}\n`; }
     texto += `\n`;
-    if (saldo < 0) {
-      texto += `⚠️ Seus gastos ultrapassaram as entradas em ${brl(Math.abs(saldo))}, fechando ${nomeMes.toLowerCase()} com um saldo de ${brl(saldo)}.`;
-    } else if (totalEntradas > 0) {
-      texto += `✅ Você fechou ${nomeMes.toLowerCase()} no positivo, com ${brl(saldo)} de saldo. Mandou bem!`;
-    } else {
-      texto += `📌 Você ainda não registrou entradas em ${nomeMes.toLowerCase()}. Registre seu salário pra ver o saldo real do mês.`;
+    if (Object.keys(porCategoria).length > 0) {
+      texto += `*Por categoria:*\n`;
+      Object.entries(porCategoria).sort((a, b) => b[1] - a[1]).forEach(([cat, val]) => { texto += `${catIcones[cat] || '📦'} ${cat.charAt(0).toUpperCase() + cat.slice(1)}: R$ ${val.toFixed(2)}\n`; });
+      texto += `\n`;
     }
-
+    const ultimos = saidas.slice(0, 5);
+    if (ultimos.length > 0) { texto += `*Últimos lançamentos:*\n`; ultimos.forEach(g => { const nome = g.description && g.description !== g.category ? g.description : g.category; texto += `• ${catIcones[g.category]||'📦'} ${nome} — R$ ${g.value.toFixed(2)}\n`; }); }
+    if (gastos.length === 0) texto = `📊 *Relatório de ${nomeMes}*\n\nNenhum lançamento este mês ainda 😊`;
     await sendButtons(phone, texto, [{ id: 'novo_gasto', label: '➕ Registrar gasto' }, { id: 'menu', label: '🏠 Menu' }]);
   } catch (e) {
     console.error('[gerarRelatorioFinanceiro]', e.message);
@@ -2366,7 +1332,7 @@ async function listarGastos(user, phone) {
     let texto = `💰 *${meses[now.getMonth()]} — Resumo*\n\n`;
     if (entradas.length > 0) texto += `💰 Entradas: *R$ ${totalEntradas.toFixed(2)}*\n`;
     texto += `💸 Gastos: *R$ ${totalGasto.toFixed(2)}*\n`;
-    { const saldo = totalEntradas - totalGasto; texto += `💵 Saldo do mês: *R$ ${saldo.toFixed(2)}*\n`; }
+    if (preferences.saldo != null) { const saldo = preferences.saldo - totalGasto + totalEntradas; texto += `💵 Saldo: *R$ ${saldo.toFixed(2)}*\n`; }
     texto += `\n`;
     gastos.slice(0, 8).forEach(g => { const isEntrada = g.value < 0; const absVal = Math.abs(g.value); const nome = g.description && g.description !== g.category ? g.description : g.category; const sinal = isEntrada ? '+' : '-'; const icon = isEntrada ? '💰' : (catIcones[g.category] || '📦'); texto += `${icon} ${nome} — *${sinal}R$ ${absVal.toFixed(2)}*\n`; });
     texto += `\n_${gastos.length} lançamento${gastos.length !== 1 ? 's' : ''} este mês_`;
@@ -2469,11 +1435,6 @@ async function executeAjustarRemedio(user, classified) {
 }
 
 async function executeAction(user, phone, classified, originalText) {
-  // Retorna true se JÁ respondeu ao usuário aqui dentro (pediu o horário/título
-  // que faltava, ou confirmou a chamada combinada). Nesses casos o handleMessage
-  // NÃO deve mandar confirmação de sistema nem chamar o responderLivre final —
-  // senão sai mensagem duplicada.
-  let respondeuAqui = false;
   switch (classified.tipo) {
     case 'ponto_multiplo':
       await salvarPontoSilencioso(user, classified.acoes);
@@ -2489,65 +1450,53 @@ async function executeAction(user, phone, classified, originalText) {
       let horaFinal = horaJaInformada;
 
       if (!horaFinal) {
-        // Sem horário — calcula baseado no CONTEXTO da conversa primeiro,
-        // depois na agenda (remédios + compromissos), com 21h como último recurso
+        // Sem horário — calcula baseado na agenda (remédios + compromissos)
         try {
           const agora = nowBRT();
           const hojeISO = dateBRT();
           const hAtual = agora.getHours() * 60 + agora.getMinutes();
 
+          // Pega remédios do dia
+          const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
+          const horariosMeds = [];
+          for (const m of meds) {
+            let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
+            for (const t of times) {
+              const [h, min] = t.split(':').map(Number);
+              const hMin = h * 60 + min;
+              if (hMin > hAtual) horariosMeds.push(hMin); // só futuros hoje
+            }
+          }
+
+          // Pega próximo compromisso do dia
+          const proximoComp = await prisma.reminder.findFirst({
+            where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: new Date(`${hojeISO}T${String(agora.getHours()).padStart(2,'0')}:${String(agora.getMinutes()).padStart(2,'0')}:00-03:00`) } },
+            orderBy: { scheduledAt: 'asc' }
+          }).catch(() => null);
+
           let horaBaseMin = null;
 
-          // 1) Pista do CONTEXTO — se ela sabe que ele tá saindo pra almoçar,
-          // jantar, tirar uma soneca etc, faz mais sentido chamar depois
-          // disso do que ir direto pro padrão fixo da noite.
-          const textoContexto = (originalText || text || '').toLowerCase();
-          if (/almo[çc]|almo[çc]ando|almo[çc]ar/.test(textoContexto)) {
-            horaBaseMin = 14 * 60 + 30; // meio da tarde, depois do almoço
-          } else if (/jant|jantando/.test(textoContexto)) {
-            horaBaseMin = 21 * 60; // à noite
-          } else if (/dormir|dormindo|sesta|cochilo|soneca/.test(textoContexto)) {
-            horaBaseMin = hAtual + 120; // ~2h depois, dá tempo de descansar
+          if (horariosMeds.length > 0) {
+            // Tem remédio — chama 30min depois do primeiro remédio futuro
+            const primeiroMed = Math.min(...horariosMeds);
+            horaBaseMin = primeiroMed + 30;
+          } else if (proximoComp) {
+            // Tem compromisso — chama 1h antes
+            const compMin = new Date(proximoComp.scheduledAt).getHours() * 60 + new Date(proximoComp.scheduledAt).getMinutes();
+            horaBaseMin = compMin - 60;
           }
 
-          // 2) Sem pista de contexto — usa a agenda real (remédio/compromisso)
-          if (horaBaseMin === null) {
-            const meds = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
-            const horariosMeds = [];
-            for (const m of meds) {
-              let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
-              for (const t of times) {
-                const [h, min] = t.split(':').map(Number);
-                const hMin = h * 60 + min;
-                if (hMin > hAtual) horariosMeds.push(hMin); // só futuros hoje
-              }
-            }
-
-            const proximoComp = await prisma.reminder.findFirst({
-              where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: new Date(`${hojeISO}T${String(agora.getHours()).padStart(2,'0')}:${String(agora.getMinutes()).padStart(2,'0')}:00-03:00`) } },
-              orderBy: { scheduledAt: 'asc' }
-            }).catch(() => null);
-
-            if (horariosMeds.length > 0) {
-              // Tem remédio — chama 30min depois do primeiro remédio futuro
-              horaBaseMin = Math.min(...horariosMeds) + 30;
-            } else if (proximoComp) {
-              // Tem compromisso — chama 1h antes
-              horaBaseMin = new Date(proximoComp.scheduledAt).getHours() * 60 + new Date(proximoComp.scheduledAt).getMinutes() - 60;
-            }
+          // Garante que está no range 20h-23h e tem pelo menos 1h de folga
+          if (!horaBaseMin || horaBaseMin < 20 * 60 || horaBaseMin > 23 * 60) {
+            horaBaseMin = 21 * 60; // padrão: 21h
           }
-
-          // 3) Nada disso deu pista — padrão seguro: 21h
-          if (!horaBaseMin) horaBaseMin = 21 * 60;
-
-          // Sempre no mínimo 30min a partir de agora (nunca no passado/em cima)
-          if (horaBaseMin < hAtual + 30) horaBaseMin = hAtual + 30;
-          // Nunca depois das 23h (cron de disparo só roda até 23h)
-          horaBaseMin = Math.min(horaBaseMin, 23 * 60);
+          if (horaBaseMin < hAtual + 60) {
+            horaBaseMin = hAtual + 60; // mínimo 1h a partir de agora
+          }
 
           // Variação de ±15 min pra não parecer alarme
           const variacao = Math.floor(Math.random() * 31) - 15;
-          horaBaseMin = Math.min(Math.max(horaBaseMin + variacao, hAtual + 15), 23 * 60);
+          horaBaseMin = Math.min(Math.max(horaBaseMin + variacao, hAtual + 30), 23 * 60);
 
           const h = Math.floor(horaBaseMin / 60);
           const m = horaBaseMin % 60;
@@ -2557,41 +1506,20 @@ async function executeAction(user, phone, classified, originalText) {
         }
       }
 
-      // Salva a chamada combinada com o CONTEXTO DA CONVERSA — o que estava
-      // sendo discutido quando o combinado foi feito. Quando o cron disparar
-      // no horário combinado, ele usa esse contexto pra gerar a mensagem certa
-      // em vez de aparecer genérico ("e aí fedo, o que tá fazendo?").
-      await prisma.memory.deleteMany({ where: { userId: user.id, type: 'chamada_combinada' } }).catch(() => {});
-      
-      // Salva últimas 4 mensagens como contexto do combinado
-      const histCombinado = await memory.getConversationHistory(user.id, 6).catch(() => []);
-      const ctxCombinado = histCombinado.slice(-4).map(m =>
-        `${m.role === 'user' ? 'Ele' : 'Você'}: ${m.content}`
-      ).join('\n');
-
+      // Salva a chamada combinada
       await prisma.memory.create({
         data: {
           userId: user.id,
           type: 'chamada_combinada',
           content: horaFinal,
-          metadata: JSON.stringify({
-            hora: horaFinal,
-            expira: Date.now() + 24 * 60 * 60 * 1000,
-            contexto: ctxCombinado,  // o que estava rolando quando combinou
-            assunto: (originalText || text || '').slice(0, 200) // a mensagem que gerou o combinado
-          })
+          metadata: JSON.stringify({ hora: horaFinal, expira: Date.now() + 24 * 60 * 60 * 1000 })
         }
       }).catch(() => {});
 
-      const foiSaudade = /saudade|quando sentir|quando quiser|quando der/i.test(originalText || '');
-      // Confirma a chamada combinada NO TOM dela, aqui mesmo (executeAction),
-      // passando a dica como contextoExtra do responderLivre. Marca respondeuAqui
-      // pro handleMessage não mandar outra resposta por cima.
-      const dicaChamada = foiSaudade
+      const foiSaudade = /saudade|quando sentir|quando quiser|quando der/i.test(originalText || text);
+      preferences._dicaAcao = foiSaudade
         ? `\n\n[CHAMADA COMBINADA] Usuário disse pra chamar quando sentir saudade — você decidiu que vai chamar às ${horaFinal}. Responda de forma natural e carinhosa/zoeira conforme o tom, sem revelar que calculou o horário. Ex: "Pode deixar, uma hora dessas eu apareço 😏" — não mencione o horário exato, só confirme que vai aparecer.`
-        : `\n\n[CHAMADA COMBINADA] Usuário pediu pra ser chamado${horaJaInformada ? ` às ${horaFinal}` : ` — você escolheu às ${horaFinal}`}. Confirme de forma natural e animada. ${!horaJaInformada ? `Como você calculou o horário sozinha, varie entre duas formas de confirmar: (a) só dizer algo como "combinado, apareço mais tarde 😉" sem revelar a hora exata, ou (b) oferecer deixar ele escolher, tipo "Chamo sim! Se quiser me dizer uma hora melhor, é só falar que eu te chamo quando você quiser 😉" — escolha a que soar mais natural pro momento.` : `Ex: "Combinado! Te chamo às ${horaFinal} 😏"`}`;
-      await responderLivre(user, phone, originalText || '', dicaChamada).catch(e => console.error('[chamada_combinada resp]', e.message));
-      respondeuAqui = true;
+        : `\n\n[CHAMADA COMBINADA] Usuário pediu pra ser chamado${horaJaInformada ? ` às ${horaFinal}` : ` — você escolheu às ${horaFinal}`}. Confirme de forma natural e animada. ${!horaJaInformada ? 'Como você calculou o horário, pode dizer algo como "combinado, apareço mais tarde 😉" sem revelar a hora exata.' : `Ex: "Combinado! Te chamo às ${horaFinal} 😏"`}`;
       break;
     }
     case 'tarefa': {
@@ -2612,11 +1540,8 @@ async function executeAction(user, phone, classified, originalText) {
             })
           }
         }).catch(() => {});
-        const ctx = `\n\nSITUAÇÃO: O usuário pediu um lembrete mas o título ficou incompleto: "${resultTarefa.tituloIncompleto}". Pergunte de forma natural e com seu jeito — ex: "Opa, cobrar quem? 😄" ou "Espera, ${resultTarefa.tituloIncompleto} quem? Não me deixa curiosa! 🤔" — curto, no seu tom, sem criar nada ainda.`;
-        // Faz a pergunta aqui e sinaliza que já respondeu (evita "Anotado!" falso
-        // e o responderLivre final — que sairiam por cima, já que nada foi criado).
-        await responderLivre(user, phone, originalText || '', ctx).catch(e => console.error('[perguntarTitulo]', e.message));
-        respondeuAqui = true;
+        const ctx = `\n\n[TÍTULO INCOMPLETO] O usuário pediu um lembrete mas o título ficou incompleto: "${resultTarefa.tituloIncompleto}". Pergunte de forma natural e com seu jeito — ex: "Opa, cobrar quem? 😄" ou "Espera, ${resultTarefa.tituloIncompleto} quem? Não me deixa curiosa! 🤔" — curto, no seu tom, sem criar nada ainda.`;
+        preferences._dicaAcao = ctx;
       } else if (resultTarefa?.perguntarHora) {
         // Salva pendência de coleta — aguarda data/hora do usuário
         const expira = Date.now() + 15 * 60 * 1000; // 15 min
@@ -2635,10 +1560,8 @@ async function executeAction(user, phone, classified, originalText) {
         }).catch(() => {});
         // A Clara pergunta de forma natural no seu tom
         const temData = !!resultTarefa.lembreteData;
-        const ctx = `\n\nSITUAÇÃO: O usuário pediu pra lembrar de "${resultTarefa.lembreteTitulo}"${temData ? ` para ${resultTarefa.lembreteData}` : ''} mas não disse ${temData ? 'o horário' : 'quando'}. Pergunte ${temData ? 'que horas' : 'quando e que horas'} de forma natural e com seu jeito — ex: "Que legal! A que horas vai ser?" ou "Pode deixar! Pra quando você quer que eu te lembre?" — varie conforme o contexto. Não crie o lembrete ainda.`;
-        // Faz a pergunta aqui e sinaliza que já respondeu (ver nota acima).
-        await responderLivre(user, phone, originalText || '', ctx).catch(e => console.error('[perguntarHora]', e.message));
-        respondeuAqui = true;
+        const ctx = `\n\n[COLETA DE LEMBRETE] O usuário pediu pra lembrar de "${resultTarefa.lembreteTitulo}"${temData ? ` para ${resultTarefa.lembreteData}` : ''} mas não disse ${temData ? 'o horário' : 'quando'}. Responda naturalmente no seu tom e pergunte ${temData ? 'que horas' : 'quando e que horas'} — de forma humana, não robótica. Ex: "Que legal! A que horas vai ser?" ou "Pode deixar! Pra quando você quer que eu te lembre?" — varie conforme o contexto. NÃO crie o lembrete ainda.`;
+        preferences._dicaAcao = ctx;
       }
       break;
     }
@@ -2682,19 +1605,7 @@ async function executeAction(user, phone, classified, originalText) {
       }
       break;
     case 'medicamento':
-      if (classified.nome) {
-        const freq = classified.frequencia || classified.horarios?.length || 1;
-        const durDias = classified.duracao_dias || null;
-        // Calcula estoque: duracao × frequencia, ou o que veio no classified
-        let qtd = classified.quantidade || 0;
-        if (!qtd && durDias && freq) qtd = durDias * freq;
-        await memory.saveMedication(user.id, {
-          nome: classified.nome,
-          quantidade: qtd,
-          frequencia: freq,
-          horarios: classified.horarios || ['08:00']
-        });
-      }
+      if (classified.nome) await memory.saveMedication(user.id, { nome: classified.nome, quantidade: classified.quantidade || 0, frequencia: classified.frequencia || 1, horarios: classified.horarios || ['08:00'] });
       break;
     case 'preferencia':
       if (classified.tom && typeof classified.tom === 'string' && classified.tom.trim()) {
@@ -2749,7 +1660,6 @@ async function executeAction(user, phone, classified, originalText) {
       if (classified.valor !== undefined && classified.valor !== null) await memory.saveUserPreference(user.id, null, null, parseFloat(classified.valor));
       break;
   }
-  return respondeuAqui;
 }
 
 // ── Detector de humor ──────────────────────────────────────────────────
@@ -2868,48 +1778,24 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
   }
   await memory.saveMemory(user.id, 'tarefa', titulo, { data: classified.data, hora: classified.hora });
   let scheduledAt = null;
-
-  // 1ª tentativa: tempo relativo no texto original ("daqui 30 minutos", "em 1 hora")
-  // Tem prioridade sobre classified.hora porque o modelo às vezes não converte
-  // tempos relativos pra absoluto corretamente.
-  const textoParaRelativo = originalText || classified.titulo || '';
-  if (textoParaRelativo) {
-    const relativo = calcularHorarioRelativo(textoParaRelativo);
-    if (relativo) { scheduledAt = relativo; }
-  }
-
-  // 2ª tentativa: hora absoluta extraída pelo classify
+  if (originalText) { const relativo = calcularHorarioRelativo(originalText); if (relativo) { scheduledAt = relativo; } }
   if (!scheduledAt && classified.hora) {
-    try {
-      const hoje = dateBRT();
-      let dataUsada = hoje;
-      if (classified.data) {
-        const dataObj = new Date(classified.data + 'T12:00:00-03:00');
-        const anoClassify = dataObj.getFullYear();
-        const anoAtual = new Date().getFullYear();
-        if (anoClassify >= anoAtual && anoClassify <= anoAtual + 1) dataUsada = classified.data;
-        else console.warn(`[DATA_INVALIDA] phone=${phone} titulo="${classified.titulo}" data_groq="${classified.data}" — ignorada, usando hoje`);
-      }
-      const [h, m] = classified.hora.split(':').map(Number);
-      if (!isNaN(h) && !isNaN(m)) {
-        scheduledAt = new Date(`${dataUsada}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
-        if (!classified.data && scheduledAt < nowBRT()) { scheduledAt.setDate(scheduledAt.getDate() + 1); }
-      }
-    } catch (e) {
-      console.warn(`[salvarTarefa] Erro ao parsear hora "${classified.hora}":`, e.message);
+    const hoje = dateBRT();
+    let dataUsada = hoje;
+    if (classified.data) {
+      const dataObj = new Date(classified.data + 'T12:00:00-03:00');
+      const anoClassify = dataObj.getFullYear();
+      const anoAtual = new Date().getFullYear();
+      if (anoClassify >= anoAtual && anoClassify <= anoAtual + 1) dataUsada = classified.data;
+      else console.warn(`[DATA_INVALIDA] phone=${phone} titulo="${classified.titulo}" data_groq="${classified.data}" — ignorada, usando hoje`);
     }
+    const [h, m] = classified.hora.split(':').map(Number);
+    scheduledAt = new Date(`${dataUsada}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
+    if (!classified.data && scheduledAt < nowBRT()) { scheduledAt.setDate(scheduledAt.getDate() + 1); }
   }
-  // ── SEM HORA E SEM DATA — pede o horário antes de criar ──
-  // Guarda: se o texto original tem expressão de tempo relativo mas
-  // calcularHorarioRelativo falhou por algum motivo, tenta de novo
-  // com uma janela mais ampla antes de pedir ao usuário.
-  const textoTemRelativo = /daqui\s+\d+|em\s+\d+\s*(min|hora|h\b)/i.test(textoParaRelativo);
-  if (!scheduledAt && textoTemRelativo) {
-    // Tem "daqui X" ou "em X min/hora" mas parse falhou — usa 30 min como fallback seguro
-    console.warn(`[salvarTarefa] Tempo relativo detectado mas parse falhou, usando 30min como fallback`);
-    scheduledAt = new Date(Date.now() + 30 * 60 * 1000);
-  }
-
+  // ── SEM HORA E SEM DATA — sempre pede o horário antes de criar ──
+  // Ex: "não me deixa esquecer de marcar os exames" → não tem hora nem data
+  // → retorna perguntarHora para a Clara perguntar quando quer ser lembrado
   if (!scheduledAt && !classified.hora && !classified.data) {
     return { perguntarHora: true, lembreteTitulo: classified.titulo, lembreteData: null };
   }
@@ -3032,23 +1918,6 @@ async function editarLembrete(user, phone, classified, contextoClassify = '', or
     }
 
     let novoScheduledAt = new Date(encontrado.scheduledAt);
-    // Se classify não extraiu nova_hora, tenta extrair do texto diretamente
-    // ("pra 10 horas", "às 10", "10h", "10:00" etc.)
-    if (!classified.nova_hora && originalText) {
-      const textN = originalText.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const mHM = textN.match(/(\d{1,2})[:h](\d{2})/);
-      const mH = textN.match(/(\d{1,2})\s*h(?:oras?)?\b/);
-      const mAs = textN.match(/[a]s?\s+(\d{1,2})\b/);
-      const mPra = textN.match(/pr[ao]\s+(\d{1,2})\b/);
-      const m = mHM || mH || mAs || mPra;
-      if (m) {
-        let h = parseInt(mHM ? m[1] : m[1]);
-        let min = mHM ? parseInt(m[2]) : 0;
-        if (/tarde|noite/.test(textN) && h < 12) h += 12;
-        classified.nova_hora = `${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}`;
-      }
-    }
-
     if (classified.nova_hora) {
       const [h, m] = classified.nova_hora.split(':').map(Number);
       const dataBase = classified.nova_data || new Date(encontrado.scheduledAt).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
@@ -3063,7 +1932,7 @@ async function editarLembrete(user, phone, classified, contextoClassify = '', or
 
     const horaFormatada = novoScheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
     const dataFormatada = novoScheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short' });
-    await sendMessage(phone, `✅ Remarcado!\n\n📌 ${encontrado.message}\n🕐 ${dataFormatada} às ${horaFormatada}`);
+    await sendMessage(phone, `✅ Remarcado!\n\n📌 ${encontrado.message}\n🕒 ${dataFormatada} às ${horaFormatada}`);
 
   } catch(e) {
     console.error('[editarLembrete]', e.message);
@@ -3252,10 +2121,6 @@ async function checkConfirmacaoPendente(user, phone, text) {
         frequencia: null
       };
       const resultFinal = await salvarTarefaSilenciosa(user, phone, classifiedCompleto, text);
-      // BUG CORRIGIDO: usava `preferences._dicaAcao` (preferences inexistente
-      // neste escopo → crash) e passava '' pro responderLivre, então a pergunta
-      // "que horas?" nunca chegava. Agora o ctx vai direto como contextoExtra.
-      let dicaAcao = '';
       if (resultFinal?.perguntarHora) {
         const expira = Date.now() + 15 * 60 * 1000;
         await prisma.memory.create({
@@ -3264,9 +2129,10 @@ async function checkConfirmacaoPendente(user, phone, text) {
             content: JSON.stringify({ tipo: 'coleta_lembrete', titulo: tituloCompleto, data: dados.data, turno: 'hora', expira })
           }
         }).catch(() => {});
-        dicaAcao = `\n\n[COLETA] Lembrete "${tituloCompleto}" — ainda falta o horário. Pergunte que horas de forma natural.`;
+        const ctx = `\n\n[COLETA] Lembrete "${tituloCompleto}" — ainda falta o horário. Pergunte que horas de forma natural.`;
+        preferences._dicaAcao = ctx;
       }
-      await responderLivre(user, phone, text, dicaAcao || `\n\n[TÍTULO COMPLETADO] Lembrete "${tituloCompleto}" foi criado. Confirme naturalmente.`);
+      await responderLivre(user, phone, text, preferences._dicaAcao ? '' : `\n\n[TÍTULO COMPLETADO] Lembrete "${tituloCompleto}" foi criado. Confirme naturalmente.`);
       return;
     }
 
@@ -3318,7 +2184,8 @@ async function checkConfirmacaoPendente(user, phone, text) {
         const ctx = !dataFinal
           ? `\n\n[COLETA] Usuário ainda não disse quando é "${titulo}". Pergunte a data de forma natural e curta.`
           : `\n\n[COLETA] Usuário disse que é ${dataFinal} mas não disse o horário de "${titulo}". Pergunte que horas de forma natural — pode sugerir um horário inteligente ex: "às 16h pra dar tempo de se preparar?" dependendo do contexto.`;
-        await responderLivre(user, phone, text, ctx, false, null, null);
+        preferences._dicaAcao = ctx;
+        await responderLivre(user, phone, text, '', false, null, null);
         return;
       }
 
@@ -3379,53 +2246,30 @@ async function checkConfirmacaoPendente(user, phone, text) {
     }
 
     if (dados.tipo === 'hora_lembrete') {
-      // Detecção de cancelamento — "não precisa", "deixa", "cancela" = encerra sem criar
-      const cancelou = /n[aã]o\s*(precisa|quero|vai|vou|vem|tem|queremos)|cancela|esquece|deixa\s*pra\s*l[aá]|desisti|mudei\s*de\s*ideia/i.test(text);
-      if (cancelou) {
-        await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
-        console.log(`[HoraLembrete] Cancelado pelo usuário — "${dados.titulo}"`);
-        return false; // deixa a resposta natural do freeResponse cuidar
-      }
-
-      // Emoji puro (😂, ❤️, 👍) = reação, não tentativa de dar horário — ignora
-      const apenasEmoji = text.trim().length <= 4 || /^[\p{Emoji}\s]+$/u.test(text.trim());
-      if (apenasEmoji) return false;
+      // Tenta extrair um horário do texto (ex: "10h", "14:30", "10 da manhã", "2 da tarde")
       let horaEscolhida = null;
-      const matchHM = textNorm.match(/(d{1,2})[:h](d{2})/);
-      const matchH = textNorm.match(/(d{1,2})s*h(?:oras)?b/);
-      const matchAs = textNorm.match(/[àa]s?s+(d{1,2})b/);
-      const matchNum = (!matchHM && !matchH && !matchAs) ? textNorm.match(/^[^0-9]*(d{1,2})[^0-9]*$/) : null;
+      const matchHM = textNorm.match(/(\d{1,2})[:h](\d{2})/);
+      const matchH = textNorm.match(/(\d{1,2})\s*h(?:oras)?\b/);
+      const matchNum = !matchHM && !matchH ? textNorm.match(/^(\d{1,2})$/) : null;
       if (matchHM) {
         horaEscolhida = `${String(parseInt(matchHM[1])).padStart(2,'0')}:${matchHM[2]}`;
-      } else if (matchH) {
-        let h = parseInt(matchH[1]);
-        if (/tarde|noite/.test(textNorm) && h < 12) h += 12;
-        horaEscolhida = `${String(h).padStart(2,'0')}:00`;
-      } else if (matchAs) {
-        let h = parseInt(matchAs[1]);
-        if (/tarde|noite/.test(textNorm) && h < 12) h += 12;
-        horaEscolhida = `${String(h).padStart(2,'0')}:00`;
-      } else if (matchNum) {
-        let h = parseInt(matchNum[1]);
-        if (/tarde|noite/.test(textNorm) && h < 12) h += 12;
+      } else if (matchH || matchNum) {
+        let h = parseInt((matchH || matchNum)[1]);
+        if (/tarde/.test(textNorm) && h < 12) h += 12;
+        else if (/noite/.test(textNorm) && h < 12) h += 12;
         horaEscolhida = `${String(h).padStart(2,'0')}:00`;
       }
 
-      // Se não souber → aguarda, não sugere horário provisório
-      const naoSabe = /nao sei|não sei|qualquer|tanto faz|vc escolhe|voce escolhe|decide voce|sei nao|quando souber|te aviso|depois/.test(textNorm);
+      // Se não souber / não informou hora → usa 09:00 provisório
+      const naoSabe = /nao sei|não sei|qualquer|tanto faz|vc escolhe|voce escolhe|decide voce|sei nao/.test(textNorm);
 
       if (!horaEscolhida && !naoSabe) {
-        await sendMessage(phone, 'Não entendi o horário 😅 Me diz assim: "10h" ou "14:30", que eu anoto na hora.');
+        // Não entendeu a resposta — pede de novo, mantendo o pendente
+        await sendMessage(phone, 'Não entendi o horário 😅 Pode me dizer assim: "10h" ou "14:30"? Ou diga "não sei" que eu deixo às 09:00.');
         return true;
       }
 
-      const horaFinal = horaEscolhida || null;
-      if (!horaFinal) {
-        // Não sabe ainda — mantém a pendência ativa pra quando souber
-        await sendMessage(phone, `Tudo bem! Quando souber o horário, me fala que eu anoto "${dados.titulo}" certinho 😊`);
-        return true;
-      }
-
+      const horaFinal = horaEscolhida || '09:00';
       const [h, m] = horaFinal.split(':').map(Number);
       const scheduledAt = new Date(`${dados.data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
 
@@ -3437,13 +2281,11 @@ async function checkConfirmacaoPendente(user, phone, text) {
       }
 
       const dataFmt = scheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-      const msgConfirm = `✅ Anotado! "${dados.titulo}" pra ${dataFmt} às ${horaFinal} 📌`;
-      await sendMessage(phone, msgConfirm);
-      await memory.saveConversationMessage(user.id, 'assistant', msgConfirm).catch(() => {});
-
-      // Sem continuação automática — se o usuário quiser continuar o assunto,
-      // ele manda uma mensagem e o freeResponse normal cuida com o contexto
-      // do histórico. Mais simples e sem risco de ressuscitar conversa encerrada.
+      if (!horaEscolhida) {
+        await sendMessage(phone, `✅ Combinado! Deixei "${dados.titulo}" pra ${dataFmt} às 09:00 (provisório) — se descobrir o horário certo depois, me avisa que eu remarco 😊`);
+      } else {
+        await sendMessage(phone, `✅ Pronto! "${dados.titulo}" agendado pra ${dataFmt} às ${horaFinal} 📌`);
+      }
       return true;
     }
 
@@ -3526,11 +2368,8 @@ async function checkConfirmacaoPendente(user, phone, text) {
       return true;
     }
     if (dados.tipo === 'urgente_confirmacao') {
-      // CORRIGIDO: regex anterior tinha `s` e `n` como opções sem boundary,
-      // então "Sobre o cartão..." casa com `s` e "nada disso..." com `n`.
-      // \b garante que só palavras completas disparam — "s" sozinho, "sim", etc.
-      const sim = /^(sim|claro|pode|quero|yes|ok|manda|ativa|coloca)\b|^s$/.test(textNorm);
-      const nao = /^(n[aã]o|nao|n[aã]o precisa|dispenso|deixa|ta bom|tá bom)\b|^n$/.test(textNorm);
+      const sim = /^(sim|s|claro|pode|quero|yes|ok|manda|ativa|coloca)/.test(textNorm);
+      const nao = /^(n[aã]o|nao|n|não precisa|dispenso|deixa|tá bom|ta bom)/.test(textNorm);
       if (sim || nao) {
         await prisma.memory.delete({ where: { id: pendente.id } });
         if (sim) {
@@ -3559,47 +2398,11 @@ async function checkConfirmacaoPendente(user, phone, text) {
 async function extractAndSavePersonalInfo(userId, text) {
   const infos = await extractPersonalInfo(text);
   if (infos && infos.length > 0) {
-    for (const { chave, valor, categoria, duracao, deletar, chave_errada } of infos) {
-      // Item de deleção: corrige atribuição errada removendo a entrada incorreta
-      if (deletar && chave_errada) {
-        const erradas = await prisma.memory.findMany({
-          where: { userId, type: 'info_pessoal' }
-        }).catch(() => []);
-        for (const e of erradas) {
-          let meta = {}; try { meta = JSON.parse(e.metadata || '{}'); } catch {}
-          if ((meta.chave || '').toLowerCase().includes(chave_errada.toLowerCase())) {
-            await prisma.memory.delete({ where: { id: e.id } }).catch(() => {});
-            console.log(`[memória] CORRIGIDA: deletada entrada errada "${meta.chave}"`);
-          }
-        }
-        continue;
-      }
+    for (const { chave, valor, categoria } of infos) {
       if (!chave || !valor) continue;
-      await savePersonalInfo(userId, chave, valor, categoria || 'outro', duracao || 'permanente');
-      console.log(`[memória pessoal] salvo: ${chave} = "${valor}" (${duracao || 'permanente'})`);
+      await savePersonalInfo(userId, chave, valor, categoria || 'outro');
+      console.log(`[memória pessoal] salvo: ${chave} = "${valor}"`);
     }
-  }
-
-  // ── Ponte "depois te conto" ──────────────────────────────────────────
-  // Se o usuário prometeu contar algo depois, vira pendência de PRIORIDADE
-  // ALTA (o memory.js dá 5 dias de vida e coloca sempre em primeiro na fila
-  // da proativa da noite). É o assunto que ele mesmo prometeu — a Clara puxa
-  // 1x/dia presumindo o melhor, sem cobrar. Detecção simples por regex; o
-  // assunto exato é o que veio antes/depois da promessa na própria frase.
-  try {
-    const REGEX_DEPOIS_CONTO = /\b(depois (eu )?te conto|te conto (depois|mais tarde|logo)|te falo (depois|mais tarde|logo)|logo (eu )?te conto|(depois|mais tarde) (eu )?te falo|te explico depois|amanh[ãa] te conto)\b/i;
-    if (REGEX_DEPOIS_CONTO.test(text)) {
-      await memory.salvarOuAtualizarPendencia(userId, {
-        assunto: 'algo que ele prometeu te contar',
-        contexto: `Ele disse que ia te contar algo depois: "${text.slice(0, 150)}"`,
-        como_retomar: 'puxe com leveza, presumindo o melhor — "ontem você ia me contar uma coisa, né? 👀", sem cobrar',
-        prioridade: 'alta',
-        origem: 'depois_te_conto'
-      }).catch(() => {});
-      console.log(`[depois te conto] pendência ALTA criada para ${userId}`);
-    }
-  } catch (eConto) {
-    console.error('[depois te conto] erro:', eConto.message);
   }
 
   // ── Memória episódica: eventos concretos da vida do usuário ──────────
