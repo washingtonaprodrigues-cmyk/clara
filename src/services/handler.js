@@ -714,6 +714,36 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
     updateRelationshipSummary(user.id, history, respStr).catch(() => {});
 
+    // ── Clara Personagem: salva o que ela disse de si mesma ──────────────
+    // Quando ela se chama de "fraquinha", inventa que foi ao barzinho com a
+    // Bia e Carol, ou faz uma afirmação memorável sobre si — salva pra lembrar
+    // quando o assunto voltar. Ela não pode se esquecer do que ela mesma disse.
+    ;(async () => {
+      try {
+        if (!respStr || respStr.length < 30) return;
+        // Detecta se ela fez afirmação sobre si mesma (atividade, apelido, qualidade)
+        const temAutoReferencia = /\b(tô|tava|sou|me chamo|sou a|me\s+\w+|minha|minhas|aqui eu|aqui a|fraquinha|aqui tô|acabei de|eu que|eu já|eu também|eu adoro|eu odeio|eu gosto|eu sou)\b/i.test(respStr);
+        if (!temAutoReferencia) return;
+        const extraido = await geminiFreeResponse([
+          { role: 'user', content: `Mensagem da Clara: "${respStr.slice(0, 400)}"\n\nSe Clara disse algo MEMORÁVEL sobre si mesma — um apelido que usou ("fraquinha"), algo que inventou sobre sua vida (amiga, lugar, atividade), ou uma afirmação marcante sobre quem ela é — extraia em 1 frase curta. Se não há nada memorável, responda: NADA.` }
+        ], { temperature: 0.1, maxTokens: 80 }).catch(() => null);
+        if (!extraido || /^NADA/i.test(extraido.trim())) return;
+        const conteudo = extraido.trim().slice(0, 150);
+        // Verifica se já existe entrada similar para não duplicar
+        const existe = await prisma.memory.findFirst({
+          where: { userId: user.id, type: 'clara_personagem', content: { contains: conteudo.split(' ').slice(0, 3).join(' ') } }
+        }).catch(() => null);
+        if (!existe) {
+          await prisma.memory.create({ data: {
+            userId: user.id, type: 'clara_personagem',
+            content: conteudo,
+            metadata: JSON.stringify({ data: new Date().toISOString() })
+          }}).catch(() => {});
+          console.log(`[ClaraPersonagem] "${conteudo.slice(0, 60)}"`);
+        }
+      } catch {}
+    })();
+
     // ── Detecção de assunto em aberto (fire-and-forget) ──────────────
     // Roda após a resposta, sem adicionar latência. Se a conversa gerou
     // um assunto relevante não resolvido (saúde, trabalho, evento esperado),
