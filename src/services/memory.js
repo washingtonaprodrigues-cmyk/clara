@@ -73,23 +73,21 @@ const PERSONAL_INFO_TYPE = 'info_pessoal';
 // Categorias do perfil rico — usadas pelo extractPersonalInfo (groq.js)
 // e exibidas no Dashboard > Memórias com labels amigáveis
 const CATEGORIAS_PERFIL = {
-  familia:              { label: '👨‍👩‍👧 Família',                  emoji: '👨‍👩‍👧' },
-  relacionamento:       { label: '❤️ Relacionamento',             emoji: '❤️' },
-  filhos:               { label: '👶 Filhos',                     emoji: '👶' },
-  trabalho:             { label: '💼 Trabalho',                   emoji: '💼' },
-  hobbies:              { label: '🎯 Hobbies',                    emoji: '🎯' },
-  entretenimento:       { label: '🎬 Entretenimento',             emoji: '🎬' },
-  alimentacao:          { label: '🍔 Alimentação',                emoji: '🍔' },
-  metas:                { label: '🎯 Metas',                      emoji: '🎯' },
-  personalidade:        { label: '✨ Personalidade',              emoji: '✨' },
-  saude:                { label: '💊 Saúde (dele)',               emoji: '💊' },
-  saude_familia:        { label: '🏥 Saúde da Família',          emoji: '🏥' },
-  datas:                { label: '📅 Datas importantes',          emoji: '📅' },
-  rotina:               { label: '⏰ Rotina',                     emoji: '⏰' },
-  objetivos:            { label: '🚀 Objetivos',                  emoji: '🚀' },
-  referencias_compartilhadas: { label: '🤝 Referências & Piadas', emoji: '🤝' },
-  relacionamento_clara: { label: '💜 Relação com a Clara',        emoji: '💜' },
-  outro:                { label: '📌 Informações gerais',         emoji: '📌' },
+  familia:         { label: '👨‍👩‍👧 Família',          emoji: '👨‍👩‍👧' },
+  relacionamento:  { label: '❤️ Relacionamento',     emoji: '❤️' },
+  filhos:          { label: '👶 Filhos',              emoji: '👶' },
+  trabalho:        { label: '💼 Trabalho',            emoji: '💼' },
+  hobbies:         { label: '🎯 Hobbies',             emoji: '🎯' },
+  entretenimento:  { label: '🎬 Entretenimento',      emoji: '🎬' },
+  alimentacao:     { label: '🍔 Alimentação',         emoji: '🍔' },
+  metas:           { label: '🎯 Metas',               emoji: '🎯' },
+  personalidade:   { label: '✨ Personalidade',       emoji: '✨' },
+  saude:           { label: '💊 Saúde',               emoji: '💊' },
+  datas:           { label: '📅 Datas importantes',   emoji: '📅' },
+  rotina:          { label: '⏰ Rotina',              emoji: '⏰' },
+  objetivos:       { label: '🚀 Objetivos',           emoji: '🚀' },
+  outro:           { label: '📌 Informações gerais',  emoji: '📌' },
+  relacionamento_clara: { label: '💜 Relação com a Clara', emoji: '💜' },
 };
 
 // Campos que a Clara ainda não conhece e pode perguntar organicamente.
@@ -124,27 +122,7 @@ const CAMPOS_CURIOSIDADE = [
   { chave: 'meta_financeira', categoria: 'metas',           pergunta: 'você tem alguma meta financeira que está perseguindo?',  contexto: 'financeiro' },
 ];
 
-async function savePersonalInfo(userId, chave, valor, categoria = 'outro', duracao = 'permanente') {
-  // FILTRO HARD: nunca salvar info pessoal / referência compartilhada de
-  // conteúdo íntimo/sexual. Cobre o caso de "referencias_compartilhadas" ou
-  // qualquer categoria capturar uma conversa íntima de ontem e a Clara trazer
-  // isso por iniciativa (bom dia, proativa). A instrução no prompt não basta —
-  // esse bloqueio no código é a rede final.
-  const textoCheck = `${chave || ''} ${valor || ''}`.toLowerCase();
-  const FILTRO_INTIMO = /erótic|erotic|sexo|sexual|cena quente|cena de sexo|nudez|nud[ae]s\b|pelad|transar|transa\b|tesão|tesao|gemid|orgasm|excita|masturb|penetra|preliminar|amass|conteúdo sexual/i;
-  if (FILTRO_INTIMO.test(textoCheck)) {
-    console.log(`[InfoPessoal] BLOQUEADA (conteúdo íntimo): "${chave}"`);
-    return null;
-  }
-
-  // Duração do fato: 'permanente' (quem a pessoa é, história, gosto — fica pra
-  // sempre) ou 'temporaria' (algo acontecendo que vai passar). Fatos temporários
-  // ganham uma data de expiração; permanentes nunca expiram. Isso é o que
-  // permite a Clara lembrar "você foi DJ" pra sempre, mas esquecer "o carro deu
-  // problema" depois que resolve.
-  const ehTemporaria = duracao === 'temporaria';
-  const expiraEm = ehTemporaria ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() : null;
-
+async function savePersonalInfo(userId, chave, valor, categoria = 'outro') {
   const existing = await prisma.memory.findFirst({
     where: {
       userId,
@@ -155,17 +133,11 @@ async function savePersonalInfo(userId, chave, valor, categoria = 'outro', durac
 
   if (existing) {
     if (existing.content === valor) return existing;
-    // Ao atualizar, se virou permanente (ex: "o carro deu problema" → depois
-    // "consertei o carro, ficou ótimo"), mantém permanente. Uma vez permanente,
-    // não volta a ser temporário.
-    let metaAntiga = {}; try { metaAntiga = JSON.parse(existing.metadata || '{}'); } catch {}
-    const jaEraPermanente = metaAntiga.duracao === 'permanente';
-    const duracaoFinal = jaEraPermanente ? 'permanente' : duracao;
     return prisma.memory.update({
       where: { id: existing.id },
       data: {
         content: valor,
-        metadata: JSON.stringify({ chave, categoria, duracao: duracaoFinal, expiraEm: duracaoFinal === 'temporaria' ? expiraEm : null, updatedAt: new Date().toISOString() }),
+        metadata: JSON.stringify({ chave, categoria, updatedAt: new Date().toISOString() }),
       },
     });
   }
@@ -175,7 +147,7 @@ async function savePersonalInfo(userId, chave, valor, categoria = 'outro', durac
       userId,
       type: PERSONAL_INFO_TYPE,
       content: valor,
-      metadata: JSON.stringify({ chave, categoria, duracao, expiraEm, createdAt: new Date().toISOString() }),
+      metadata: JSON.stringify({ chave, categoria, createdAt: new Date().toISOString() }),
     },
   });
 }
@@ -210,16 +182,12 @@ async function getPersonalInfo(userId, categoria = null) {
     orderBy: { createdAt: 'desc' },
   });
 
-  const agora = Date.now();
   const result = {};
   for (const m of mems) {
     let meta = {};
     try { meta = JSON.parse(m.metadata || '{}'); } catch {}
     if (categoria && meta.categoria !== categoria) continue;
-    // Fatos temporários expirados não entram no contexto — "o carro deu
-    // problema" some depois de resolver/expirar. Permanentes nunca expiram.
-    if (meta.duracao === 'temporaria' && meta.expiraEm && new Date(meta.expiraEm).getTime() < agora) continue;
-    result[meta.chave || m.id] = { id: m.id, valor: m.content, categoria: meta.categoria || 'outro', duracao: meta.duracao || 'permanente' };
+    result[meta.chave || m.id] = { id: m.id, valor: m.content, categoria: meta.categoria || 'outro' };
   }
   return result;
 }
@@ -364,92 +332,6 @@ ${resumo}`;
     if (textoAfetivo) texto += `\n\n[MEMÓRIA DO RELACIONAMENTO — USE SEMPRE, define o tom da conversa]${textoAfetivo}`;
   }
 
-  // ── Ponto 3: padrões de reação ──
-  // Como ele REAGE em situações específicas — não fatos sobre ele, mas
-  // comportamentos observados. Ajuda a Clara a calibrar o tom antes que
-  // ele precise dizer que está estressado, animado, frustrado etc.
-  const padroesReacao = await getPadroesReacao(userId).catch(() => []);
-  if (padroesReacao.length > 0) {
-    const linhas = padroesReacao.map(p => `• ${p.tema}: ${p.padrao}`).join('\n');
-    texto += `\n\n[COMO ELE REAGE — calibre seu tom antes que ele precise dizer]\n${linhas}`;
-  }
-
-  // ── Personagem Clara: o que ela já contou sobre si mesma ──
-  // Detalhes que ela inventou (amigas, lugares, atividades) — mantém consistência.
-  // "Bia e Carol" continuam sendo Bia e Carol nas próximas conversas.
-  const claraPersonagem = await prisma.memory.findMany({
-    where: { userId, type: 'clara_personagem' },
-    orderBy: { createdAt: 'desc' },
-    take: 15
-  }).catch(() => []);
-  if (claraPersonagem.length > 0) {
-    texto += '\n\n[DETALHES DA SUA PRÓPRIA VIDA — mantenha consistência, são coisas que você já contou]\n';
-    texto += claraPersonagem.map(m => `• ${m.content}`).join('\n');
-  }
-
-  // ── Linha do tempo: eventos que o usuário mencionou ──
-  // Se o evento já passou (baseado em criadoEm + followup_horas), Clara sabe
-  // que aconteceu e pode perguntar como foi de forma natural.
-  const agora = new Date();
-  const linhaTempo = await prisma.memory.findMany({
-    where: { userId, type: 'linha_tempo', createdAt: { gte: new Date(agora.getTime() - 72*60*60*1000) } },
-    orderBy: { createdAt: 'desc' },
-    take: 5
-  }).catch(() => []);
-  if (linhaTempo.length > 0) {
-    const itensLinha = linhaTempo.map(m => {
-      let meta = {}; try { meta = JSON.parse(m.metadata || '{}'); } catch {}
-      // Usa followup_at absoluto se disponível, senão cálculo legado
-      let jaPassou = false;
-      if (meta.followup_at) {
-        jaPassou = agora > new Date(meta.followup_at);
-      } else {
-        const criadoEm = new Date(meta.criadoEm || m.createdAt);
-        const followupAt = new Date(criadoEm.getTime() + (meta.followup_horas || 24) * 60 * 60 * 1000);
-        jaPassou = agora > followupAt;
-      }
-      return { content: m.content, quando: meta.quando || '', jaPassou };
-    });
-    const passados = itensLinha.filter(i => i.jaPassou);
-    const futuros = itensLinha.filter(i => !i.jaPassou);
-    if (passados.length > 0 || futuros.length > 0) {
-      texto += '\n\n[LINHA DO TEMPO — o que o usuário mencionou]\n';
-      if (passados.length > 0) {
-        texto += 'Já aconteceu (se o momento for natural, pergunte como foi — 1 vez, sem insistir):\n';
-        texto += passados.map(i => `• ${i.content}${i.quando ? ` (${i.quando})` : ''}`).join('\n') + '\n';
-      }
-      if (futuros.length > 0) {
-        texto += 'Ainda vai acontecer:\n';
-        texto += futuros.map(i => `• ${i.content}${i.quando ? ` (${i.quando})` : ''}`).join('\n') + '\n';
-      }
-    }
-  }
-
-  // ── Memória narrativa contínua — linha do tempo que nunca regride ──
-  // Diferente do summary (substitui) e episódios (expiram), essa só acumula.
-  // Lida em ordem cronológica pra Clara saber o fio do que foi acontecendo.
-  const memoriaContínua = await prisma.memory.findMany({
-    where: { userId, type: 'memoria_continua' },
-    orderBy: { createdAt: 'asc' },
-    take: 21 // ~3 semanas de entradas diárias
-  }).catch(() => []);
-  if (memoriaContínua.length > 0) {
-    texto += '\n\n[LINHA DO TEMPO — o que foi acontecendo, em ordem cronológica. Use como fio condutor da conversa]\n';
-    texto += memoriaContínua.map(m => m.content).join('\n');
-  }
-
-  // ── DEDUÇÃO — Peça 3: conectar os pontos ──
-  // Nota: a memória é bilateral — o relationship summary captura tanto o que
-  // o usuário disse quanto o que Clara disse (bom dia, proativas, boa noite
-  // agora são salvas em conversa). Clara lembra dos dois lados naturalmente,
-  // sem precisar de uma seção explícita "o que eu disse".
-  // Faz a Clara ligar o que a pessoa fala AGORA ao que ela já sabe (pessoas,
-  // lugares, temas recorrentes, tratamentos) em vez de tratar tudo como novo —
-  // é o que faz parecer uma amiga que presta atenção, não um robô com amnésia.
-  if (texto) {
-    texto += `\n\n[CONECTE OS PONTOS — como uma amiga que lembra das coisas]\nAntes de responder, veja se o que ele está falando agora se liga a algo que você JÁ SABE dele acima (uma pessoa, um lugar, um tratamento, um assunto recorrente). Se ligar, CONECTE de forma natural em vez de tratar como novidade solta. Ex: se ele cita um remédio e você sabe que a filha dele estava doente, associe ("é pra Isis?"); se cita um nome novo num contexto que você já conhece (barbeiro, trabalho, vizinho), assuma o vínculo provável e confirme leve. NUNCA invente fato que não está na memória — na dúvida, pergunte com curiosidade em vez de afirmar. Uma conexão certeira vale mais que dez forçadas.`;
-  }
-
   return texto ? `\n\n[PERFIL DO USUÁRIO — use para personalizar respostas e ser proativa]${texto}` : '';
 }
 
@@ -504,13 +386,6 @@ async function saveConversationMessage(userId, role, content, privateMode = fals
   await prisma.memory.create({
     data: { userId, type: 'conversa', content: JSON.stringify({ role, content, ts: Date.now() }) },
   });
-  // Aprendizado de janela: registra a hora em que o USUÁRIO fala, pra Clara ir
-  // entendendo a rotina (que horas ele mais conversa de manhã/almoço/noite).
-  // Silencioso, não afeta nada agora — só alimenta dados pra proativas ficarem
-  // mais certeiras com o tempo. Só conta mensagem real, não confirmação curta.
-  if (role === 'user' && content && content.trim().length > 6) {
-    registrarHorarioConversa(userId).catch(() => {});
-  }
   const msgs = await prisma.memory.findMany({
     where: { userId, type: 'conversa' },
     orderBy: { createdAt: 'desc' },
@@ -519,44 +394,6 @@ async function saveConversationMessage(userId, role, content, privateMode = fals
     const toDelete = msgs.slice(40).map((m) => m.id);
     await prisma.memory.deleteMany({ where: { id: { in: toDelete } } });
   }
-}
-
-// Registra a hora atual (BRT) numa contagem por período. Guarda um histograma
-// simples: quantas vezes o usuário falou em cada hora do dia. A proativa lê
-// isso pra escolher o melhor horário dentro de cada janela.
-async function registrarHorarioConversa(userId) {
-  const horaBRT = parseInt(new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getHours(), 10);
-  const reg = await prisma.memory.findFirst({
-    where: { userId, type: 'padrao_horario' }
-  }).catch(() => null);
-  let hist = {};
-  if (reg) { try { hist = JSON.parse(reg.content) || {}; } catch { hist = {}; } }
-  hist[horaBRT] = (hist[horaBRT] || 0) + 1;
-  if (reg) {
-    await prisma.memory.update({ where: { id: reg.id }, data: { content: JSON.stringify(hist) } }).catch(() => {});
-  } else {
-    await prisma.memory.create({ data: { userId, type: 'padrao_horario', content: JSON.stringify(hist) } }).catch(() => {});
-  }
-}
-
-// Lê o horário preferido do usuário dentro de uma janela [horaIni, horaFim).
-// Retorna a hora com mais registros na janela, ou null se ainda não há dados
-// suficientes (< 3 registros na janela = usa o padrão da proativa).
-async function getHorarioPreferido(userId, horaIni, horaFim) {
-  const reg = await prisma.memory.findFirst({
-    where: { userId, type: 'padrao_horario' }
-  }).catch(() => null);
-  if (!reg) return null;
-  let hist = {};
-  try { hist = JSON.parse(reg.content) || {}; } catch { return null; }
-  let melhorHora = null, maxCount = 0, totalJanela = 0;
-  for (let h = horaIni; h < horaFim; h++) {
-    const c = hist[h] || 0;
-    totalJanela += c;
-    if (c > maxCount) { maxCount = c; melhorHora = h; }
-  }
-  if (totalJanela < 3) return null; // dados insuficientes → proativa usa padrão
-  return melhorHora;
 }
 
 async function getConversationHistory(userId, limit = 10) {
@@ -677,39 +514,14 @@ async function getPendenciasAbertas(userId) {
     take: 10,
   }).catch(() => []);
   const agora = Date.now();
-  const EXPIRY_MS = 3 * 24 * 60 * 60 * 1000;
-  const EXPIRY_ALTA_MS = 5 * 24 * 60 * 60 * 1000; // "depois te conto" dura mais
-  const lista = mems
-    .map(m => { try { return { id: m.id, criadoEm: m.createdAt, prioridade: 'normal', origem: 'conversa', cobrancas: 0, ...JSON.parse(m.content) }; } catch { return null; } })
+  const EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+  return mems
+    .map(m => { try { return { id: m.id, criadoEm: m.createdAt, ...JSON.parse(m.content) }; } catch { return null; } })
     .filter(Boolean)
-    .filter(p => {
-      if (p.encerrado) return false;
-      const idade = agora - new Date(p.criadoEm).getTime();
-      const limite = p.prioridade === 'alta' ? EXPIRY_ALTA_MS : EXPIRY_MS;
-      return idade < limite;
-    });
-  // Ordena: prioridade alta ("depois te conto") primeiro, depois por mais recente
-  lista.sort((a, b) => {
-    if (a.prioridade === 'alta' && b.prioridade !== 'alta') return -1;
-    if (b.prioridade === 'alta' && a.prioridade !== 'alta') return 1;
-    return new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime();
-  });
-  return lista;
+    .filter(p => !p.encerrado && (agora - new Date(p.criadoEm).getTime()) < EXPIRY_MS);
 }
 
-async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_retomar, prioridade = 'normal', origem = 'conversa' }) {
-  // FILTRO HARD: nunca salvar pendência de conteúdo íntimo/sexual/romântico.
-  // A instrução no prompt do detectarAssuntoEmAberto às vezes é ignorada pela
-  // IA, então esse bloqueio no código é a rede de segurança final. Se qualquer
-  // campo tiver esses termos, descarta silenciosamente — não vira pendência,
-  // não é retomado em proativas, não vaza.
-  const textoCompleto = `${assunto || ''} ${contexto || ''} ${como_retomar || ''}`.toLowerCase();
-  const FILTRO_INTIMO = /erótic|erotic|sexo|sexual|cena quente|cena de sexo|nudez|nud[ae]s\b|pelad|transar|transa\b|tesão|tesao|gemid|orgasm|excita|masturb|penetra|preliminar|amass|conteúdo sexual/i;
-  if (FILTRO_INTIMO.test(textoCompleto)) {
-    console.log(`[Pendência] BLOQUEADA (conteúdo íntimo): "${assunto}"`);
-    return;
-  }
-
+async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_retomar }) {
   const existentes = await getPendenciasAbertas(userId);
 
   // Atualiza se já existe assunto parecido
@@ -718,60 +530,29 @@ async function salvarOuAtualizarPendencia(userId, { assunto, contexto, como_reto
     assunto?.toLowerCase().includes(p.assunto?.toLowerCase()?.split(' ')[0])
   );
   if (mesmoAssunto) {
-    // Preserva a prioridade mais alta se já existia (um "depois te conto" não
-    // vira "normal" por uma atualização qualquer)
-    const prioridadeFinal = mesmoAssunto.prioridade === 'alta' ? 'alta' : prioridade;
     await prisma.memory.update({
       where: { id: mesmoAssunto.id },
-      data: { content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false, prioridade: prioridadeFinal, origem: mesmoAssunto.origem || origem, cobrancas: mesmoAssunto.cobrancas || 0 }) }
+      data: { content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false }) }
     }).catch(() => {});
     return;
   }
 
-  // Limite de 3 pendências ativas — remove a mais antiga de prioridade NORMAL
-  // se estourar (nunca remove uma de prioridade alta / "depois te conto").
+  // Limite de 3 pendências ativas — remove a mais antiga se estourar
+  // Evita acúmulo de assuntos irrelevantes que nunca são resolvidos
   if (existentes.length >= 3) {
-    const removivel = existentes.filter(p => p.prioridade !== 'alta');
-    if (removivel.length > 0) {
-      const maisAntiga = removivel[removivel.length - 1];
-      await prisma.memory.delete({ where: { id: maisAntiga.id } }).catch(() => {});
-      console.log(`[Pendência] Removida antiga: "${maisAntiga.assunto}" (limite 3)`);
-    }
+    const maisAntiga = existentes[existentes.length - 1]; // já vem desc, então [last] é a mais antiga
+    await prisma.memory.delete({ where: { id: maisAntiga.id } }).catch(() => {});
+    console.log(`[Pendência] Removida antiga: "${maisAntiga.assunto}" (limite 3)`);
   }
 
   await prisma.memory.create({
-    data: { userId, type: 'pendencia_conversa', content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false, prioridade, origem, cobrancas: 0 }) }
+    data: { userId, type: 'pendencia_conversa', content: JSON.stringify({ assunto, contexto, como_retomar, encerrado: false }) }
   }).catch(() => {});
-  console.log(`[Pendência] Salva: "${assunto}"${prioridade === 'alta' ? ' [PRIORIDADE ALTA — depois te conto]' : ''}`);
+  console.log(`[Pendência] Salva: "${assunto}"`);
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// DEDUÇÃO — Peça 1: remédio acabou → pendência de acompanhamento
-// ═══════════════════════════════════════════════════════════════════════
-// Quando o estoque de um remédio ZERA (última dose tomada), vira um assunto
-// em aberto. A Clara NÃO empurra nada — a pendência entra no contexto e ela
-// puxa numa conversa natural quando houver abertura. O vínculo remédio↔pessoa
-// (ex: "amoxilina é da Isis, que tava doente") vem da MEMÓRIA dela, que o
-// buildPersonalContext já injeta — então ao formular ela conecta os pontos
-// sozinha ("e a Isis, melhorou? vi que a amoxilina já acabou 💜"). Retentora
-// de informação + amiga.
-async function acompanharFimDeRemedio(userId, medNome) {
-  if (!userId || !medNome) return;
-  try {
-    await salvarOuAtualizarPendencia(userId, {
-      // Assunto começa pelo NOME do remédio: o dedup casa pela 1ª palavra, então
-      // isso evita que "amoxilina..." e "triglicérides..." se fundam num só.
-      assunto: `${medNome} (tratamento) terminou`,
-      contexto: `O estoque de ${medNome} acabou — a pessoa tomou a última dose. Se pela memória de vocês você souber pra QUEM ou pra qual situação era esse remédio (ex: alguém que estava doente), pergunte com carinho e de forma natural se melhorou / como foi o tratamento. Se você NÃO souber o motivo (ex: remédio de uso contínuo), então NÃO pergunte "melhorou" — no máximo comente de leve se vai repor. Nunca soe como robô de farmácia.`,
-      como_retomar: `Puxar numa conversa natural quando houver abertura, conectando com o que você já sabe sobre ${medNome} e sobre as pessoas da vida dele.`,
-      prioridade: 'normal',
-      origem: 'remedio_acabou'
-    });
-    console.log(`[Acompanhamento remédio] "${medNome}" zerou → pendência criada (user ${userId})`);
-  } catch (e) { console.error('[acompanharFimDeRemedio]', e.message); }
-}
-
-async function fecharPendencia(userId, pendenciaId) {  const mem = await prisma.memory.findUnique({ where: { id: pendenciaId } }).catch(() => null);
+async function fecharPendencia(userId, pendenciaId) {
+  const mem = await prisma.memory.findUnique({ where: { id: pendenciaId } }).catch(() => null);
   if (!mem || mem.userId !== userId) return;
   try {
     const dados = JSON.parse(mem.content);
@@ -820,17 +601,17 @@ async function fecharPendenciasPorResolucao(userId, textoUsuario) {
     await fecharPendencia(userId, id);
   }
 
-  // ── Limpeza automática de pendências velhas (> 3 dias) ──
-  // Assunto de mais de 3 dias sem resolução já não é relevante pra puxar numa
-  // proativa — vira aquele "notebook do Réveillon" ressuscitado. Remove.
-  const seteDiasAtras = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  // ── Limpeza automática de pendências velhas (> 7 dias) ──
+  // Assunto de mais de uma semana sem resolução provavelmente já não é relevante.
+  // Remove silenciosamente para não acumular lixo.
+  const seteDiasAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const velhas = pendencias.filter(p =>
     !fechadas.includes(p.id) &&
     p.criadoEm && new Date(p.criadoEm) < seteDiasAtras
   );
   for (const p of velhas) {
     await fecharPendencia(userId, p.id);
-    console.log(`[Pendência] Expirada por idade (>3 dias): "${p.assunto}"`);
+    console.log(`[Pendência] Expirada por idade (>7 dias): "${p.assunto}"`);
   }
 }
 
@@ -904,37 +685,8 @@ async function salvarLocalizacao(userId, dados) {
   } catch {}
 }
 
-// Item 4: cidade ATUAL do usuário pra buscas locais. Prioriza a última
-// localização por GPS (reverse-geocode) numa janela de 7 dias — cidade é
-// estável por dias, diferente do getLocalizacao (4h) que é pra "perto de mim".
-// Cai pro que o usuário disse em texto. Retorna '' se não souber.
-async function getCidadeAtual(userId) {
+async function getLocalizacao(userId) {
   try {
-    const m = await prisma.memory.findFirst({ where: { userId, type: 'ultima_localizacao' } }).catch(() => null);
-    if (m) {
-      const d = JSON.parse(m.content);
-      if (d.cidade && (!d.ts || Date.now() - d.ts < 7 * 24 * 60 * 60 * 1000)) return d.cidade;
-    }
-  } catch {}
-  try {
-    const t = await prisma.memory.findFirst({ where: { userId, type: 'cidade' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
-    if (t?.content) return t.content;
-  } catch {}
-  // Fallback: busca em info_pessoal por chaves de cidade/moradia
-  try {
-    const infos = await prisma.memory.findMany({ where: { userId, type: 'info_pessoal' }, take: 50 }).catch(() => []);
-    for (const info of infos) {
-      let meta = {}; try { meta = JSON.parse(info.metadata || '{}'); } catch {}
-      const chave = (meta.chave || '').toLowerCase();
-      if (/cidade|mora|moradia|reside|residência|local|hometown/.test(chave)) {
-        return info.content;
-      }
-    }
-  } catch {}
-  return '';
-}
-
-async function getLocalizacao(userId) {  try {
     const m = await prisma.memory.findFirst({ where: { userId, type: 'ultima_localizacao' } }).catch(() => null);
     if (!m) return null;
     const d = JSON.parse(m.content);
@@ -1016,48 +768,6 @@ async function getResumoRelacionamento(userId) {
 
 // ====================== EXPORTS ======================
 
-// ── Ponto 3: padrões de reação ────────────────────────────────────────────
-// Salva como a pessoa REAGE em situações específicas (não o que ela gosta —
-// isso vai em info_pessoal). Max 15 padrões por usuário; upsert por tema.
-async function salvarPadraoReacao(userId, tema, padrao) {
-  try {
-    const chave = tema.toLowerCase().trim().slice(0, 50);
-    const existente = await prisma.memory.findFirst({
-      where: { userId, type: 'padrao_reacao', metadata: { contains: chave } }
-    }).catch(() => null);
-    const content = padrao.slice(0, 120);
-    const meta = JSON.stringify({ tema: chave, updatedAt: new Date().toISOString() });
-    if (existente) {
-      await prisma.memory.update({ where: { id: existente.id }, data: { content, metadata: meta } }).catch(() => {});
-    } else {
-      // Limita a 15 padrões — remove o mais antigo se passar
-      const total = await prisma.memory.count({ where: { userId, type: 'padrao_reacao' } }).catch(() => 0);
-      if (total >= 15) {
-        const maisAntigo = await prisma.memory.findFirst({
-          where: { userId, type: 'padrao_reacao' }, orderBy: { createdAt: 'asc' }
-        }).catch(() => null);
-        if (maisAntigo) await prisma.memory.delete({ where: { id: maisAntigo.id } }).catch(() => {});
-      }
-      await prisma.memory.create({ data: { userId, type: 'padrao_reacao', content, metadata: meta } }).catch(() => {});
-    }
-    console.log(`[PadraoReacao] Salvo: "${chave}" → "${content.slice(0, 60)}"`);
-  } catch (e) { console.error('[salvarPadraoReacao]', e.message); }
-}
-
-async function getPadroesReacao(userId) {
-  try {
-    const rows = await prisma.memory.findMany({
-      where: { userId, type: 'padrao_reacao' },
-      orderBy: { updatedAt: 'desc' },
-      take: 15
-    }).catch(() => []);
-    return rows.map(r => {
-      let tema = ''; try { tema = JSON.parse(r.metadata || '{}').tema || ''; } catch {}
-      return { tema, padrao: r.content };
-    }).filter(p => p.tema && p.padrao);
-  } catch { return []; }
-}
-
 module.exports = {
   prisma,
   getOrCreateUser,
@@ -1067,14 +777,13 @@ module.exports = {
   getCamposDesconhecidos, getProximaCuriosidade, CAMPOS_CURIOSIDADE, CATEGORIAS_PERFIL,
   saveMemory, getRecentMemories,
   setTemporaryContext, getTemporaryContext, clearTemporaryContext,
-  saveConversationMessage, getConversationHistory, getHorarioPreferido,
+  saveConversationMessage, getConversationHistory,
   saveMedication, saveTask,
   saveExpense, getMonthExpenses,
   saveContact, getContacts, findContactByName,
   savePendencia,
-  getPendenciasAbertas, salvarOuAtualizarPendencia, acompanharFimDeRemedio, fecharPendencia, fecharPendenciasPorResolucao, fecharPendenciaLembrete,
-  salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao, getCidadeAtual,
-  salvarPadraoReacao, getPadroesReacao,
+  getPendenciasAbertas, salvarOuAtualizarPendencia, fecharPendencia, fecharPendenciasPorResolucao, fecharPendenciaLembrete,
+  salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao,
   salvarMemoriaAfetiva, getMemoriaAfetiva,
   salvarResumoRelacionamento, getResumoRelacionamento,
 };
