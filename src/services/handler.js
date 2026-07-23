@@ -1707,7 +1707,9 @@ async function handleMessage(phone, text, location = null) {
         // Saúde: SEMPRE gera comentário de preocupação — uma amiga que explica
         // sintomas também pergunta "e você tá bem?", independente de emojis.
         const ehSaude = /(sintoma|saúde|doença|pressão|febre|\bdor\b|dores|remédio|medicamento|médico|hospital|exame de saúde|consulta|enjoo|tontura|náusea|cansaço|infecção|alergia|gripe|covid|emergência)/i.test((classified.query || '') + ' ' + (text || ''));
-        const ehLocal = /(farmácia|farmacia|médico|medico|clínica|clinica|hospital|cardiologista|dentista|laboratório|laboratorio|serviço|loja|mercado|restaurante|oficina|mecânico)/i.test((classified.query || '') + ' ' + (text || ''));
+        const ehLocal = /(farmácia|farmacia|médico|medico|clínica|clinica|hospital|cardiologista|dentista|laboratório|laboratorio|serviço|loja|mercado|restaurante|oficina|mecânico|móvel|movel|moveis|móveis)/i.test((classified.query || '') + ' ' + (text || ''));
+        // Busca específica = usuário pediu um lugar pelo nome ("o da Casa e Casa", "da Farmácia X")
+        const ehEspecifica = /\b(o da|a da|da |do |de )\s*[A-ZÀ-Ú]/.test(text || '') || /\b[A-ZÀ-Ú][a-zà-ú]+ [A-ZÀ-Ú][a-zà-ú]+/.test(classified.query || '');
 
         if (!respostaJaEhPessoal || ehSaude || ehLocal) {
           ;(async () => {
@@ -1716,8 +1718,10 @@ async function handleMessage(phone, text, location = null) {
               if (!geminiDisponivel() || todosModelosEsgotados()) return;
               const promptComent = ehSaude
                 ? `\n\n[VOCÊ JÁ DEU A INFO DE SAÚDE] Você explicou sobre "${classified.query}". Agora mande UM comentário curto de amiga preocupada — pergunte se ele tá sentindo algo, se é ele ou alguém da família, se tá bem. MÁXIMO 1 frase (menos de 15 palavras). Não repita a explicação.`
+                : ehLocal && ehEspecifica
+                ? `\n\n[VOCÊ JÁ DEU O QUE ELE PEDIU ESPECIFICAMENTE] Ele pediu uma opção específica e você mandou. Não pergunte se quer mais — faça UM comentário natural e curto (brincadeira, observação, algo dela), ou responda APENAS: SKIP se não tiver nada genuíno a dizer.`
                 : ehLocal
-                ? `\n\n[VOCÊ JÁ DEU A INFO LOCAL] Info sobre "${classified.query}" enviada. Ofereça buscar mais a fundo — algo como "Quer que eu busque mais opções?" ou "Se precisar de mais detalhes é só falar!". MÁXIMO 1 frase curta no seu tom.`
+                ? `\n\n[VOCÊ JÁ DEU AS OPÇÕES LOCAIS] Você mandou as opções de "${classified.query}". Na sua segunda mensagem: diga brevemente que tem mais opções se quiser uma específica, no seu tom. Exemplo: "Se quiser uma específica ou mais opções é só me dizer!" ou "Tem mais por aí se quiser que eu vasculhe!". MÁXIMO 1 frase curta. Não repita o que já mandou.`
                 : `\n\n[VOCÊ JÁ EXPLICOU] Você acabou de mandar a explicação sobre "${classified.query}", mas ela saiu meio seca. Dê UM toque pessoal curtíssimo — um conselho, uma preocupação ou uma brincadeira leve.\n\nREGRAS: MÁXIMO 1 frase curta. NÃO repita a explicação. NUNCA use __BUSCAR__. Se não tiver toque genuíno, responda APENAS: SKIP`;
               const sysComent = buildPersonality(tomBuscaClassify, apelidoReal, false) + promptComent;
               const coment = await geminiFreeResponse([
