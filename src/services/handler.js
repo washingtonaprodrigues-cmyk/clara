@@ -1509,6 +1509,7 @@ async function executeAjustarRemedio(user, classified) {
 }
 
 async function executeAction(user, phone, classified, originalText) {
+  let respondeuAqui = false;
   switch (classified.tipo) {
     case 'ponto_multiplo':
       await salvarPontoSilencioso(user, classified.acoes);
@@ -1769,6 +1770,7 @@ async function executeAction(user, phone, classified, originalText) {
       if (classified.valor !== undefined && classified.valor !== null) await memory.saveUserPreference(user.id, null, null, parseFloat(classified.valor));
       break;
   }
+  return respondeuAqui;
 }
 
 // ── Detector de humor ──────────────────────────────────────────────────
