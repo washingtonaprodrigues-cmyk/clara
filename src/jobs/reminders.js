@@ -1649,18 +1649,22 @@ cron.schedule('* * * * *', async () => {
       const prefs = await memory.getUserPreference(userId).catch(() => ({}));
       const nome = prefs?.name || '';
 
-      const ctx = `[CHAMADA COMBINADA] Você combinou de chamar ${nome || 'o usuário'} agora (${horaCombinada}). Apareça de forma natural — pode ser curiosidade, uma piada, ou simplesmente aparecer. NÃO diga "passei para ver se você está bem" de forma genérica. Use o contexto da última conversa se souber de algo. Ex: "ei, tô por aqui 😏", "e aí fedo, lembrou de mim?", ou puxe algo específico que ficou pendente.`;
+      // IMPORTANTE: não usar [TAG] no ctx — filtrarResposta remove linhas que começam com [TAG]
+      // e o modelo ecoa o tag, deixando a resposta vazia após filtro → retries → falha.
+      const ctx = `Você combinou de chamar ${nome || 'o usuário'} agora (${horaCombinada}). Apareça de forma natural no seu tom — pode ser curiosidade, uma piada, ou simplesmente aparecer. NÃO diga "passei para ver se você está bem" de forma genérica. Use o contexto da última conversa se souber de algo. Ex: "ei, tô por aqui 😏", "e aí fedo, lembrou de mim?", ou puxe algo específico que ficou pendente. NUNCA use __BUSCAR__ nem tags de sistema.`;
 
       const resposta = await Promise.race([
         freeResponse('', history, { ...prefs, _contexto: ctx }),
         new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 10000))
       ]).catch(() => null);
 
-      if (resposta && !isRespostaFallback(resposta)) {
-        await sendMessage(phone, resposta);
-        await memory.saveConversationMessage(userId, 'assistant', resposta).catch(() => {});
-        console.log(`[ChamadaCombinada] Disparada para ${phone} às ${hAtual}`);
-      }
+      const msgParaEnviar = (resposta && !isRespostaFallback(resposta))
+        ? resposta
+        : `Ei, ${nome || 'fedo'}! Aqui estou, na hora combinada 😏`;
+
+      await sendMessage(phone, msgParaEnviar);
+      await memory.saveConversationMessage(userId, 'assistant', msgParaEnviar).catch(() => {});
+      console.log(`[ChamadaCombinada] Disparada para ${phone} às ${hAtual}`);
     }
   } catch(e) { console.error('[ChamadaCombinada] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
