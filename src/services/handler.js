@@ -1579,13 +1579,19 @@ async function executeAction(user, phone, classified, originalText) {
         }
       }
 
-      // Salva a chamada combinada
+      // Salva a chamada combinada — apaga entradas anteriores primeiro
+      // pra garantir que só existe UMA no banco e dispara no horário certo
+      await prisma.memory.deleteMany({ where: { userId: user.id, type: 'chamada_combinada' } }).catch(() => {});
+      const histCombinado = await memory.getConversationHistory(user.id, 6).catch(() => []);
+      const ctxCombinado = histCombinado.slice(-4).map(m =>
+        `${m.role === 'user' ? 'Ele' : 'Você'}: ${(m.content || '').slice(0, 100)}`
+      ).join('\n');
       await prisma.memory.create({
         data: {
           userId: user.id,
           type: 'chamada_combinada',
           content: horaFinal,
-          metadata: JSON.stringify({ hora: horaFinal, expira: Date.now() + 24 * 60 * 60 * 1000 })
+          metadata: JSON.stringify({ hora: horaFinal, ctxCombinado, expira: Date.now() + 24 * 60 * 60 * 1000 })
         }
       }).catch(() => {});
 
