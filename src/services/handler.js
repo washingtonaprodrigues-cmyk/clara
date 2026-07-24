@@ -1,7 +1,8 @@
 // v2 - consulta direta sem LLM
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
-const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, apararRespostaCortada, detectarPadraoReacao, filtrarResposta, geminiFreeResponse } = require('./groq');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, apararRespostaCortada, detectarPadraoReacao, filtrarResposta } = require('./groq');
+const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('./gemini');
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
 // O classify() já recebe uma tabela com a data exata de cada dia da semana
@@ -1526,10 +1527,12 @@ async function executeAction(user, phone, classified, originalText) {
       if (!horaFinal) {
         const relativo = calcularHorarioRelativo(originalText || '');
         if (relativo) {
-          const h = relativo.getHours();
-          const m = relativo.getMinutes();
-          horaFinal = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-          console.log(`[ChamadaCombinada] Tempo relativo → ${horaFinal}`);
+          // Converte para horário BRT explicitamente — servidor Railway está em UTC
+          const horaBRT = relativo.toLocaleString('pt-BR', {
+            timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false
+          });
+          horaFinal = horaBRT.replace(',', '').trim().slice(0, 5);
+          console.log(`[ChamadaCombinada] Tempo relativo → ${horaFinal} (BRT)`);
         }
       }
 
