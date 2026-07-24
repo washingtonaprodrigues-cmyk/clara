@@ -1636,8 +1636,8 @@ cron.schedule('* * * * *', async () => {
       }
 
       // Não dispara se usuário já conversou nos últimos 15 min — já está em papo
-      if (await houveConversaRecente(userId, 15)) {
-        console.log(`[ChamadaCombinada] Cancelando — usuário já está conversando com ${phone}`);
+      if (await houveConversaRecente(userId, 5)) {
+        console.log(`[ChamadaCombinada] Adiando — usuário conversou nos últimos 5min ${phone}`);
         continue;
       }
 
