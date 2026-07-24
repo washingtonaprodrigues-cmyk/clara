@@ -628,7 +628,7 @@ const BOA_NOITE_GARANTIDA = [
   'Por hoje é só. Boa noite!',
   'Boa noite! Até amanhã 💜',
 ];
-cron.schedule('0 23 * * *', async () => {
+cron.schedule('45 23 * * *', async () => {
   try {
     const hoje = dateBRT(nowBRT());
     const users = await prisma.user.findMany({ where: { blocked: false } });
