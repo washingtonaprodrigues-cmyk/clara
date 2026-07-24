@@ -1647,24 +1647,55 @@ cron.schedule('* * * * *', async () => {
 
       const history = await memory.getConversationHistory(userId, 4).catch(() => []);
       const prefs = await memory.getUserPreference(userId).catch(() => ({}));
-      const nome = prefs?.name || '';
+      const memAfetivaChamada = await memory.getMemoriaAfetiva(userId).catch(() => ({}));
+      const nome = memAfetivaChamada?.apelido_usuario || prefs?.name || '';
+      const relMemChamada = await prisma.memory.findFirst({ where: { userId, type: 'relationship_summary' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+      const contextoRelChamada = relMemChamada?.content ? `\n\n[MEMÓRIA DO RELACIONAMENTO]\n${relMemChamada.content}` : '';
 
-      // IMPORTANTE: não usar [TAG] no ctx — filtrarResposta remove linhas que começam com [TAG]
-      // e o modelo ecoa o tag, deixando a resposta vazia após filtro → retries → falha.
-      const ctx = `Você combinou de chamar ${nome || 'o usuário'} agora (${horaCombinada}). Apareça de forma natural no seu tom — pode ser curiosidade, uma piada, ou simplesmente aparecer. NÃO diga "passei para ver se você está bem" de forma genérica. Use o contexto da última conversa se souber de algo. Ex: "ei, tô por aqui 😏", "e aí fedo, lembrou de mim?", ou puxe algo específico que ficou pendente. NUNCA use __BUSCAR__ nem tags de sistema.`;
+      // Contexto salvo no momento do combinado (assunto que estava rolando)
+      let ctxCombinado = '';
+      try {
+        const metaCtx = JSON.parse(chamada.metadata || '{}');
+        if (metaCtx.ctxCombinado) {
+          ctxCombinado = `\n\n[CONTEXTO DO COMBINADO — o que estavam conversando quando combinou]\n${metaCtx.ctxCombinado}`;
+        }
+      } catch {}
 
-      const resposta = await Promise.race([
-        freeResponse('', history, { ...prefs, _contexto: ctx }),
-        new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 10000))
-      ]).catch(() => null);
+      const ctx = `[CHAMADA COMBINADA] Você combinou de chamar ${nome || 'o usuário'} agora (${horaCombinada}). Apareça de forma natural — retome o assunto que ficou pendente, use o contexto abaixo. NÃO apareça genérica. NÃO diga "passei pra ver se você está bem".${ctxCombinado}${contextoRelChamada}`;
 
-      const msgParaEnviar = (resposta && !isRespostaFallback(resposta))
-        ? resposta
-        : `Ei, ${nome || 'fedo'}! Aqui estou, na hora combinada 😏`;
+      // Tenta gerar mensagem contextual — retry duplo + fallback garantido
+      let resposta = null;
+      try {
+        resposta = await Promise.race([
+          freeResponse('', history, { ...prefs, _contexto: ctx }),
+          new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 10000))
+        ]);
+      } catch {}
 
-      await sendMessage(phone, msgParaEnviar);
-      await memory.saveConversationMessage(userId, 'assistant', msgParaEnviar).catch(() => {});
-      console.log(`[ChamadaCombinada] Disparada para ${phone} às ${hAtual}`);
+      if (!resposta || isRespostaFallback(resposta)) {
+        await new Promise(r => setTimeout(r, 4000));
+        try {
+          resposta = await Promise.race([
+            freeResponse('', history, { ...prefs, _contexto: ctx }),
+            new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000))
+          ]);
+        } catch {}
+      }
+
+      // Fallback sempre garante que ela aparece — nunca silêncio
+      if (!resposta || isRespostaFallback(resposta)) {
+        const fallbacks = nome
+          ? [`e aí, ${nome}? 😏`, `oi ${nome}! apareci 😄`, `${nome}... chegou a hora 😏`]
+          : [`e aí? 😏`, `oi! apareci 😄`, `chegou a hora 😏`];
+        resposta = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+        console.log(`[ChamadaCombinada] Fallback para ${phone}`);
+      }
+
+      if (resposta) {
+        await sendMessage(phone, resposta);
+        await memory.saveConversationMessage(userId, 'assistant', resposta).catch(() => {});
+        console.log(`[ChamadaCombinada] Disparada para ${phone} às ${hAtual}`);
+      }
     }
   } catch(e) { console.error('[ChamadaCombinada] Erro:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
