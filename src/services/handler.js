@@ -1596,10 +1596,24 @@ async function executeAction(user, phone, classified, originalText) {
       }).catch(() => {});
 
       const foiSaudade = /saudade|quando sentir|quando quiser|quando der/i.test(originalText || text || '');
+      // Busca preferências e apelido para personalizar a confirmação
+      const prefsChamada = await memory.getUserPreference(user.id).catch(() => ({}));
+      const afetivaChamada = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+      const apelidoChamada = afetivaChamada?.apelido_usuario || prefsChamada?.name || '';
       const dicaChamada = foiSaudade
-        ? `\n\n[CHAMADA COMBINADA] Usuário disse pra chamar quando sentir saudade — você decidiu que vai chamar às ${horaFinal}. Responda de forma natural e carinhosa/zoeira conforme o tom, sem revelar que calculou o horário. Ex: "Pode deixar, uma hora dessas eu apareço 😏" — não mencione o horário exato, só confirme que vai aparecer.`
-        : `\n\n[CHAMADA COMBINADA] Usuário pediu pra ser chamado${horaJaInformada ? ` às ${horaFinal}` : ` — você escolheu às ${horaFinal}`}. Confirme de forma natural e animada. ${!horaJaInformada ? `Como você calculou o horário, varie entre: (a) "combinado, apareço mais tarde 😉" sem revelar a hora exata, ou (b) "Chamo sim! Se quiser me dizer uma hora melhor, é só falar 😉".` : `Ex: "Combinado! Te chamo às ${horaFinal} 😏"`}`;
-      await responderLivre(user, phone, originalText || '', dicaChamada).catch(e => console.error('[chamada_combinada resp]', e.message));
+        ? `Usuário disse pra chamar quando sentir saudade — você decidiu que vai chamar às ${horaFinal}. Responda de forma natural e carinhosa/zoeira conforme o tom, sem revelar que calculou o horário. Confirme que vai aparecer, sem mencionar a hora exata. NUNCA use __BUSCAR__ nem tags de sistema.`
+        : `Usuário pediu pra ser chamado${horaJaInformada ? ` às ${horaFinal}` : ` — você escolheu às ${horaFinal}`}. Confirme de forma natural e animada no seu tom. ${!horaJaInformada ? `Como você calculou o horário, pode dizer algo como "combinado, apareço mais tarde 😉"` : `Ex: "Combinado! Te chamo às ${horaFinal} 😏"`}. NUNCA use __BUSCAR__ nem tags de sistema.`;
+      const systemChamada = buildPersonality(prefsChamada?.tom || 'carinhoso', apelidoChamada, false) + `\n\n${dicaChamada}`;
+      const confMsg = await geminiFreeResponse([
+        { role: 'system', content: systemChamada },
+        { role: 'user', content: originalText || text || 'ok' }
+      ], { temperature: 0.85, maxTokens: 80 }).catch(() => null);
+      const confLimpo = (confMsg || '').replace(/\[.*?\]/g, '').trim();
+      const msgFinal = confLimpo && confLimpo.length > 3
+        ? confLimpo
+        : (foiSaudade ? `Combinado, apareço quando a saudade bater 😏` : `Combinado! Te chamo às ${horaFinal} 😉`);
+      await sendMessage(phone, msgFinal);
+      await memory.saveConversationMessage(user.id, 'assistant', msgFinal).catch(() => {});
       respondeuAqui = true;
       break;
     }
