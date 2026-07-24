@@ -434,15 +434,16 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         }
       } catch(e) {}
 
-      // Medicamentos — só injeta se falar de remédio ou for manhã (horário de tomar)
-      if (meds.length > 0 && (falaDeRemedio || ehManha)) {
+      // Medicamentos — FORA do contexto conversacional
+      // O alerta dedicado (cron) cuida do horário e da dose.
+      // Clara só menciona se o usuário trouxer o assunto de remédio/saúde.
+      if (meds.length > 0 && falaDeRemedio) {
         const fmtMed = (m) => {
           let times = []; try { times = JSON.parse(m.times || '[]'); } catch {}
           const proxima = times.find(t => t >= hm) || times[0] || '—';
-          const quando = times.find(t => t >= hm) ? 'hoje' : 'amanhã';
-          return `• ${m.name} — próxima dose: ${proxima} (${quando}), ${m.remaining} doses restantes`;
+          return `• ${m.name} — próxima dose: ${proxima}, ${m.remaining} doses restantes`;
         };
-        contexto += `\n\n[MEDICAMENTOS]\n${meds.map(fmtMed).join('\n')}`;
+        contexto += `\n\n[MEDICAMENTOS — usuário trouxe o assunto]\n${meds.map(fmtMed).join('\n')}`;
       }
 
       // Financeiro — só injeta se falar de dinheiro
