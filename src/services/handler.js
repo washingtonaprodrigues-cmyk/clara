@@ -1595,10 +1595,12 @@ async function executeAction(user, phone, classified, originalText) {
         }
       }).catch(() => {});
 
-      const foiSaudade = /saudade|quando sentir|quando quiser|quando der/i.test(originalText || text);
-      preferences._dicaAcao = foiSaudade
+      const foiSaudade = /saudade|quando sentir|quando quiser|quando der/i.test(originalText || text || '');
+      const dicaChamada = foiSaudade
         ? `\n\n[CHAMADA COMBINADA] Usuário disse pra chamar quando sentir saudade — você decidiu que vai chamar às ${horaFinal}. Responda de forma natural e carinhosa/zoeira conforme o tom, sem revelar que calculou o horário. Ex: "Pode deixar, uma hora dessas eu apareço 😏" — não mencione o horário exato, só confirme que vai aparecer.`
-        : `\n\n[CHAMADA COMBINADA] Usuário pediu pra ser chamado${horaJaInformada ? ` às ${horaFinal}` : ` — você escolheu às ${horaFinal}`}. Confirme de forma natural e animada. ${!horaJaInformada ? 'Como você calculou o horário, pode dizer algo como "combinado, apareço mais tarde 😉" sem revelar a hora exata.' : `Ex: "Combinado! Te chamo às ${horaFinal} 😏"`}`;
+        : `\n\n[CHAMADA COMBINADA] Usuário pediu pra ser chamado${horaJaInformada ? ` às ${horaFinal}` : ` — você escolheu às ${horaFinal}`}. Confirme de forma natural e animada. ${!horaJaInformada ? `Como você calculou o horário, varie entre: (a) "combinado, apareço mais tarde 😉" sem revelar a hora exata, ou (b) "Chamo sim! Se quiser me dizer uma hora melhor, é só falar 😉".` : `Ex: "Combinado! Te chamo às ${horaFinal} 😏"`}`;
+      await responderLivre(user, phone, originalText || '', dicaChamada).catch(e => console.error('[chamada_combinada resp]', e.message));
+      respondeuAqui = true;
       break;
     }
     case 'tarefa': {
