@@ -1,7 +1,7 @@
 // v2 - consulta direta sem LLM
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
-const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback } = require('./groq');
+const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, apararRespostaCortada, detectarPadraoReacao, filtrarResposta, geminiFreeResponse } = require('./groq');
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
 // O classify() já recebe uma tabela com a data exata de cada dia da semana
@@ -1521,6 +1521,17 @@ async function executeAction(user, phone, classified, originalText) {
     case 'chamada_combinada': {
       const horaJaInformada = classified.hora;
       let horaFinal = horaJaInformada;
+
+      // Suporte a tempo relativo: "daqui 15 minutos", "em 30 min"
+      if (!horaFinal) {
+        const relativo = calcularHorarioRelativo(originalText || '');
+        if (relativo) {
+          const h = relativo.getHours();
+          const m = relativo.getMinutes();
+          horaFinal = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+          console.log(`[ChamadaCombinada] Tempo relativo → ${horaFinal}`);
+        }
+      }
 
       if (!horaFinal) {
         // Sem horário — calcula baseado na agenda (remédios + compromissos)
