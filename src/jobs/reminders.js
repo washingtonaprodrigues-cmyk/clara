@@ -248,7 +248,11 @@ async function tentarLockMinuto(tipo) {
 
 async function houveConversaRecente(userId, minutos = 5) {
   const limite = new Date(Date.now() - minutos * 60 * 1000);
-  return !!(await prisma.memory.findFirst({ where: { userId, type: 'conversa', createdAt: { gte: limite } } }).catch(() => null));
+  // Só mensagens do USUÁRIO — mensagens da Clara não contam como "conversa ativa"
+  const msgs = await prisma.memory.findMany({ where: { userId, type: 'conversa', createdAt: { gte: limite } }, take: 10 }).catch(() => []);
+  return msgs.some(m => {
+    try { const p = JSON.parse(m.content); return p.role === 'user'; } catch { return false; }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════
