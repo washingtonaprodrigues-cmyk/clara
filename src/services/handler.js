@@ -1188,7 +1188,13 @@ async function handleMessage(phone, text, location = null) {
       // banco (bug observado: lembrete confirmado por mensagem mas que
       // nunca disparou). Agora esperamos a gravação terminar de verdade
       // antes de seguir pra mensagem de confirmação.
-      await executeAction(user, phone, classified, text).catch(e => console.error('Erro executeAction:', e.message));
+      const acaoRespondeu = await executeAction(user, phone, classified, text).catch(e => { console.error('Erro executeAction:', e.message); return false; });
+      // Se executeAction já respondeu ao usuário (ex: chamada_combinada),
+      // não gera mais resposta — apenas salva info pessoal em background.
+      if (acaoRespondeu) {
+        extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
+        return;
+      }
     }
     const isSaudacao = classified.tipo === 'saudacao';
 
