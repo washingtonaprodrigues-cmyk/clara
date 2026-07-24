@@ -485,16 +485,48 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         const episodios = await prisma.memory.findMany({
           where: {
             userId: user.id, type: 'episodio_vida',
-            createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+            createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
           },
-          orderBy: { createdAt: 'desc' }, take: 3
+          orderBy: { createdAt: 'desc' }, take: 10
         });
         if (episodios.length > 0) {
-          const listaEp = episodios.map(e => {
+          const agora = Date.now();
+          const RECENTE_MS   = 2 * 24 * 60 * 60 * 1000; // 0-2 dias: sempre mostra
+          const RESOLVIDO_MS = 2 * 24 * 60 * 60 * 1000; // resolvido: mostra por 2 dias pra ela comentar
+
+          const filtradosEp = episodios.filter(e => {
             let meta = {}; try { meta = JSON.parse(e.metadata || '{}'); } catch {}
-            return `• ${e.content}${meta.resultado === 'pendente' ? ' (ainda vai acontecer)' : ''}`;
-          }).join('\n');
-          contexto += `\n\n[CONTEXTO DE VIDA RECENTE — use naturalmente se relevante, nunca force]\n${listaEp}`;
+            const idade = agora - new Date(e.createdAt).getTime();
+            const pendente = meta.resultado === 'pendente';
+
+            // Resolvido explicitamente pelo sistema → some imediatamente
+            if (meta.resolvidoEm) return false;
+
+            // Muito recente (< 2 dias): sempre mostra
+            if (idade < RECENTE_MS) return true;
+
+            // Resolvido (positivo/negativo): mostra por 2 dias pra ela poder comentar
+            if (!pendente) return idade < RESOLVIDO_MS;
+
+            // Pendente com prazo: só mostra quando o prazo chegou
+            if (meta.acompanhar_em_dias) {
+              const baseCheck = meta.next_check_at
+                ? new Date(meta.next_check_at).getTime()
+                : new Date(e.createdAt).getTime() + (meta.acompanhar_em_dias * 24 * 60 * 60 * 1000);
+              return agora >= baseCheck;
+            }
+
+            // Pendente sem prazo: mostra por até 5 dias
+            return idade < 5 * 24 * 60 * 60 * 1000;
+          }).slice(0, 3);
+
+          if (filtradosEp.length > 0) {
+            const listaEp = filtradosEp.map(e => {
+              let meta = {}; try { meta = JSON.parse(e.metadata || '{}'); } catch {}
+              return `• ${e.content}${meta.resultado === 'pendente' ? ' (ainda vai acontecer ou não atualizou)' : ''}`;
+            }).join('\n');
+            contexto += `\n\n[CONTEXTO DE VIDA RECENTE — use naturalmente se relevante, nunca force]\n${listaEp}`;
+          }
         }
       } catch(e) {}
 
