@@ -863,7 +863,7 @@ function emitirAtualizacao(phone, tipo) {
   } catch {}
 }
 
-async function handleMessage(phone, text, location = null) {
+async function handleMessage(phone, text, location = null, quotedText = null) {
   try {
     const user = await memory.getOrCreateUser(phone);
 
@@ -1220,7 +1220,7 @@ async function handleMessage(phone, text, location = null) {
       // banco (bug observado: lembrete confirmado por mensagem mas que
       // nunca disparou). Agora esperamos a gravação terminar de verdade
       // antes de seguir pra mensagem de confirmação.
-      const acaoRespondeu = await executeAction(user, phone, classified, text).catch(e => { console.error('Erro executeAction:', e.message); return false; });
+      const acaoRespondeu = await executeAction(user, phone, classified, text, quotedText).catch(e => { console.error('Erro executeAction:', e.message); return false; });
       // Se executeAction já respondeu ao usuário (ex: chamada_combinada),
       // não gera mais resposta — apenas salva info pessoal em background.
       if (acaoRespondeu) {
@@ -1546,7 +1546,7 @@ async function executeAjustarRemedio(user, classified) {
   return `✅ Ajustado! "${med.name}" agora tem ${partesConfirmacao.join(' e ')}.`;
 }
 
-async function executeAction(user, phone, classified, originalText) {
+async function executeAction(user, phone, classified, originalText, quotedText = null) {
   let respondeuAqui = false;
   switch (classified.tipo) {
     case 'ponto_multiplo':
@@ -1801,6 +1801,10 @@ async function executeAction(user, phone, classified, originalText) {
         await prisma.reminder.update({ where: { id: match.id }, data: { confirmed: true } });
         fecharPendenciaLembrete(user.id, match.message).catch(() => {});
         emitirAtualizacao(phone, 'lembretes');
+        const msgConfirmacao = `✅ Marquei como feito: "${match.message}" 📌`;
+        await sendMessage(phone, msgConfirmacao);
+        await memory.saveConversationMessage(user.id, 'assistant', msgConfirmacao).catch(() => {});
+        respondeuAqui = true;
       }
       break;
     }
