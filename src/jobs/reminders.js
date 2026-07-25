@@ -640,7 +640,7 @@ cron.schedule('0 8 * * *', async () => {
 // primeira que tiver algo genuíno pra dizer (e passar a chancela
 // cacheada do dia) manda a mensagem; as outras tentativas da mesma
 // janela só seguem adiante se a anterior não mandou nada.
-// Manhã: 08:00–09:30 | Almoço: 11:30–13:30 | Noite: 19:30–21:30
+// Manhã: 08:00–09:30 | Almoço: 11:30–13:30 | Noite: 20:30–21:45
 cron.schedule('*/15 8 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
 cron.schedule('0,15,30 9 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
 
@@ -648,10 +648,8 @@ cron.schedule('30,45 11 * * *', async () => proativaInteligente('almoco'), { tim
 cron.schedule('*/15 12 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
 cron.schedule('0,15,30 13 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
 
-cron.schedule('30,45 19 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('*/15 20 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0,15,30 21 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0,15,30,45 22 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('30,45 20 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
+cron.schedule('0,15,30,45 21 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
 async function proativaInteligente(periodo) {
   try {
     const users = await prisma.user.findMany({ where: { blocked: false } });
