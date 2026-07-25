@@ -1481,12 +1481,15 @@ cron.schedule('* * * * *', async () => {
       const horaCombinada = chamada.content || meta.hora;
       if (!horaCombinada) continue;
 
-      // Verifica se está na janela de ±5min do horário combinado
+      // Verifica se está na janela de 0 a +5min do horário combinado —
+      // NUNCA antes do prometido (antes usava ±5min, o que disparava a
+      // chamada até 5min ANTES da hora combinada — quebra a promessa e
+      // ainda confundia a IA sobre que horas realmente eram).
       const [hC, mC] = horaCombinada.split(':').map(Number);
       const minCombinado = hC * 60 + mC;
       const minAtual = agora.getHours() * 60 + agora.getMinutes();
-      const diff = Math.abs(minAtual - minCombinado);
-      if (diff > 5) continue; // fora da janela
+      const diff = minAtual - minCombinado;
+      if (diff < 0 || diff > 5) continue; // ainda não chegou a hora, ou já passou da janela
 
       // Deleta antes de disparar (evita duplicata)
       await prisma.memory.delete({ where: { id: chamada.id } }).catch(() => {});
