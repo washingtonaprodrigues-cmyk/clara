@@ -598,10 +598,10 @@ async function fecharPendenciasPorResolucao(userId, textoUsuario) {
   const SINAIS_GERAIS = /\b(estou bem|tá bem|já passou|passou|deu certo|foi ótimo|foi bem|resolvido|resolveu|já fiz|normal|tranquilo|melhorei|melhor|alta|cheguei em casa|chegou|saiu|terminou|acabou|tudo certo|tudo bem|sem problema|não foi nada|era nada|nada grave|liberado|já bebi|já tomei|já fiz|já foi|feito|concluído|concluido|pronto|ok feito|fiz isso)\b/i;
 
   // ── Verifica cada pendência individualmente ──
-  // Uma pendência é fechada se:
-  // 1. O texto menciona palavras do assunto E tem sinal de resolução
-  // 2. O texto menciona palavras do assunto E verbo no passado ("já X", "fiz X", "tomei X")
-  // 3. Tem sinal geral E a pendência é a mais recente (fallback)
+  // Uma pendência só fecha se o texto realmente menciona esse assunto E:
+  // 1. Tem sinal de resolução ("resolvido", "tudo bem", "passou"...), ou
+  // 2. Tem verbo no passado referente a ele ("já fiz", "já tomei"...)
+  // Nunca fecha por sinal genérico isolado, sem menção ao assunto.
   const VERBOS_PASSADO = /\b(já |fiz |tomei |bebi |fui |foi |terminei |acabei |resolvi |concluí |fez |foram )\b/i;
 
   const fechadas = [];
@@ -616,10 +616,11 @@ async function fecharPendenciasPorResolucao(userId, textoUsuario) {
     }
   }
 
-  // Se não casou nenhum assunto específico mas tem sinal geral → fecha a mais recente
-  if (!fechadas.length && SINAIS_GERAIS.test(textoUsuario)) {
-    fechadas.push(pendencias[0].id);
-  }
+  // Fechamento só acontece quando o texto realmente menciona o assunto —
+  // nunca por sinal genérico isolado. Antes, uma frase solta como "tá tudo
+  // bem" ou "normal" (comuns em qualquer conversa, sobre QUALQUER coisa)
+  // fechava a pendência mais recente mesmo sem nenhuma relação com ela —
+  // isso fazia assuntos em aberto "sumirem" no meio do dia sem motivo real.
 
   for (const id of fechadas) {
     await fecharPendencia(userId, id);
