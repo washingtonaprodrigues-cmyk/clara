@@ -320,11 +320,60 @@ function formatarListaWhatsApp(listaResult) {
   return `🛒 *${listaNome}*\n\n${itens}\n\n_${done}/${listaItems.length} itens marcados_`;
 }
 
+// Gera o aviso de "deixa eu checar" NA VOZ da Clara — nada de mensagem fixa
+// genérica. Usa o apelido real guardado na memória afetiva (ex: "fedo"),
+// nunca um fallback hardcoded. Se a geração por IA falhar, cai em frases
+// fixas COM personalidade, ainda assim usando o apelido quando disponível.
+async function gerarAvisoBusca(text, tom = 'carinhoso', apelido = '') {
+  const n = apelido || '';
+  const por_tom = {
+    carinhoso: n ? [
+      `Pera aí que vou dar uma olhada pra gente, ${n}! 💜`,
+      `Já vejo isso pra você, ${n}! 😊`,
+      `Um segundo que já checo aqui!`,
+    ] : [
+      `Pera aí que vou dar uma olhada pra gente! 💜`,
+      `Já vejo isso! 😊`,
+      `Um segundo que já checo aqui!`,
+    ],
+    direto: [`Verificando.`, `Um segundo.`, `Já checo.`],
+    divertido: n ? [
+      `Pera aí que vou dar uma olhada pra gente, ${n}! 😄`,
+      `Já vejo isso, ${n}!`,
+      `Um segundo que já checo!`,
+    ] : [
+      `Pera aí que vou dar uma olhada pra gente! 😄`,
+      `Já vejo isso!`,
+      `Um segundo que já checo!`,
+    ],
+    sarcastico: n ? [
+      `Pera aí que vou dar uma olhada pra gente, ${n}. 😉`,
+      `Já vejo isso, ${n}.`,
+      `Um segundo.`,
+    ] : [
+      `Pera aí que vou dar uma olhada pra gente. 😉`,
+      `Já vejo isso.`,
+      `Um segundo.`,
+    ],
+  };
+  const opcoes = por_tom[tom] || por_tom.carinhoso;
+  return opcoes[Math.floor(Math.random() * opcoes.length)];
+}
+
 async function responderLivre(user, phone, text, contextoExtra = '', skipContext = false, acaoConfirmacao = null, confirmacaoSeparada = null) {
   try {
     const history = await memory.getConversationHistory(user.id, 10);
     const preferences = await memory.getUserPreference(user.id);
     preferences._phone = phone;
+
+    // Usa o apelido carinhoso (ex: "fedo") em vez do nome real sempre que
+    // existir — sem isso, freeResponse/buildPersonality recebem só o nome
+    // cadastrado (Washington) e a Clara depende só do histórico/memória do
+    // relacionamento pra "lembrar" de te chamar do jeito carinhoso, o que é
+    // inconsistente. Isso restaura o apelido em TODA resposta, não só em
+    // pontos isolados.
+    const memAfetivaGeral = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+    if (memAfetivaGeral?.apelido_usuario) preferences.name = memAfetivaGeral.apelido_usuario;
 
     if (acaoConfirmacao) preferences._acaoConfirmacao = acaoConfirmacao;
     if (confirmacaoSeparada) {
@@ -341,8 +390,9 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       const resp = await freeResponse(text, history, preferences);
       if (resp === null) return;
       if (resp && resp.includes('__BUSCAR:')) {
-        // improvável em saudações, mas tratamos igual
-        await sendMessage(phone, 'Deixa eu pesquisar isso! 🔍');
+        const memAfSC = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+        const avSC = await gerarAvisoBusca(text, preferences?.tom || 'carinhoso', memAfSC?.apelido_usuario || preferences?.name || '');
+        await sendMessage(phone, avSC);
         return;
       }
       await memory.saveConversationMessage(user.id, 'user', text);
@@ -702,23 +752,16 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     const buscaMatch = respStr.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
     if (buscaMatch) {
       const query = buscaMatch[1].trim();
-      // Avisa que vai pesquisar, no estilo da Clara
+      // Avisa que vai pesquisar, no estilo da Clara — com o apelido real
       const tom = preferences?.tom || 'carinhoso';
-      const name = preferences?.name || '';
-      const fedo = name || 'fedo';
-      console.log(`[Busca] tom=${tom} name=${name}`);
-      const avisos = {
-        carinhoso: [`✨ Pera aí que já busco pra gente!`, `Um segundo, ${fedo}! 🔍`, `Deixa eu dar uma olhada aqui! ✨`],
-        direto: [`🔍 Buscando.`, `Já procuro.`, `Um segundo.`],
-        divertido: [`Espera que vou garimpar isso pra você! 😄`, `Deixa eu fuçar aqui! 🔍`, `Um segundo que já acho! ✨`],
-        sarcastico: [`Tá bom, ${fedo}… deixa eu ver porque você não ia achar sozinho mesmo. 🙄`, `Pera aí que vou buscar pra gente. 😏`, `Já procuro, ${fedo}. 🔍`],
-      };
-      const opcoes = avisos[tom] || avisos.carinhoso;
-      const aviso = opcoes[Math.floor(Math.random() * opcoes.length)];
+      const memAfetivaBusca = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+      const apelidoBusca = memAfetivaBusca?.apelido_usuario || preferences?.name || '';
+      const aviso = await gerarAvisoBusca(text, tom, apelidoBusca);
       await sendMessage(phone, aviso);
 
       try {
-        const resultado = await searchWeb(query, '', preferences?.name || '');
+        const cidadeBusca = await memory.getCidadeAtual(user.id).catch(() => '');
+        const resultado = await searchWeb(query, cidadeBusca, apelidoBusca, tom);
         if (resultado) {
           await memory.saveConversationMessage(user.id, 'user', text);
           await memory.saveConversationMessage(user.id, 'assistant', resultado);
@@ -746,7 +789,10 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       ;(async () => {
         try {
           await new Promise(r => setTimeout(r, 1500));
-          const resultado = await searchWeb(queryBusca, '', preferences?.name || '');
+          const memAfetivaProm = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+          const apelidoProm = memAfetivaProm?.apelido_usuario || preferences?.name || '';
+          const cidadeProm = await memory.getCidadeAtual(user.id).catch(() => '');
+          const resultado = await searchWeb(queryBusca, cidadeProm, apelidoProm, preferences?.tom || 'carinhoso');
           if (resultado && !isRespostaFallback(resultado)) {
             await memory.saveConversationMessage(user.id, 'assistant', resultado).catch(() => {});
             await sendMessage(phone, resultado);
