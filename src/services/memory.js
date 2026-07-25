@@ -434,6 +434,34 @@ async function getConversationHistory(userId, limit = 10) {
   }).filter(Boolean);
 }
 
+// ── Noção de tempo real entre mensagens ──────────────────────────────────
+// O histórico (getConversationHistory) só guarda texto — a IA não tem como
+// saber quanto tempo passou de verdade entre uma troca e outra. Isso fazia
+// ela tratar planos futuros ("vou almoçar", "te chamo daqui a pouco") como
+// se já tivessem acontecido, só porque fazia sentido textualmente. Essa
+// função calcula o gap real desde a ÚLTIMA mensagem trocada (antes da atual),
+// pra virar uma frase natural que a IA usa como referência de tempo.
+async function getGapUltimaMensagem(userId) {
+  const ultima = await prisma.memory.findFirst({
+    where: { userId, type: 'conversa' },
+    orderBy: { createdAt: 'desc' },
+  }).catch(() => null);
+  if (!ultima) return null;
+
+  const diffMs = Date.now() - new Date(ultima.createdAt).getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+
+  if (diffMin < 1) return 'menos de 1 minuto';
+  if (diffMin < 60) return `${diffMin} minuto${diffMin !== 1 ? 's' : ''}`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) {
+    const restoMin = diffMin % 60;
+    return restoMin > 0 ? `${diffH}h${restoMin}min` : `${diffH} hora${diffH !== 1 ? 's' : ''}`;
+  }
+  const diffD = Math.floor(diffH / 24);
+  return `${diffD} dia${diffD !== 1 ? 's' : ''}`;
+}
+
 // ====================== MEDICAMENTOS ======================
 
 async function saveMedication(userId, data) {
@@ -843,7 +871,7 @@ module.exports = {
   getCamposDesconhecidos, getProximaCuriosidade, CAMPOS_CURIOSIDADE, CATEGORIAS_PERFIL,
   saveMemory, getRecentMemories,
   setTemporaryContext, getTemporaryContext, clearTemporaryContext,
-  saveConversationMessage, getConversationHistory,
+  saveConversationMessage, getConversationHistory, getGapUltimaMensagem,
   saveMedication, saveTask,
   saveExpense, getMonthExpenses,
   saveContact, getContacts, findContactByName,
