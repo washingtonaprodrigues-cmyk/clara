@@ -348,7 +348,7 @@ router.post('/', async (req, res) => {
 
       const handled = await handleSimpleResponse(phone, text, quotedText);
       if (!handled) {
-        handleMessage(phone, textComContexto).catch(console.error);
+        handleMessage(phone, textComContexto, null, quotedText).catch(console.error);
       }
       return res.json({ ok: true });
     }
