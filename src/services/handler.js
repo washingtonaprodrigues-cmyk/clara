@@ -675,6 +675,16 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         await prisma.memory.delete({ where: { id: avisoPendente.id } }).catch(() => {});
       }
 
+      // ── Noção de tempo real entre mensagens ────────────────────────────
+      // O histórico só tem texto, sem timestamp — sem isso a IA podia tratar
+      // um plano futuro ("vou almoçar", "te chamo daqui a pouco", "domingo
+      // vou lá") como se já tivesse acontecido, só porque fazia sentido no
+      // texto. Aqui a gente dá a ela o tempo real desde a última troca.
+      const gapTempo = await memory.getGapUltimaMensagem(user.id).catch(() => null);
+      if (gapTempo) {
+        contexto += `\n\n[NOÇÃO DE TEMPO — IMPORTANTE] A última troca de mensagens foi há ${gapTempo}. Use isso pra calibrar se algo mencionado (almoço, chegar em algum lugar, ligar, sair, dormir etc) já teve tempo real de acontecer — se o tempo foi curto, trate como ainda por vir, NUNCA pergunte "e aí, como foi?" sobre algo que não teve tempo de rolar. Da mesma forma, se um plano foi combinado pra uma data ou horário específico no futuro (ex: "domingo", "às 12:40", "mais tarde"), trate como algo que AINDA VAI acontecer até esse momento chegar de verdade — nunca antecipe como se já tivesse passado.`;
+      }
+
       if (contextoExtra) contexto += contextoExtra;
       preferences._contexto = contexto;
     } catch (e) {
@@ -1066,9 +1076,10 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
         ? memory.getCidadeAtual(user.id)
         : Promise.resolve('')
       ).catch(() => '');
-      const tomBusca = preferences?.tom || 'carinhoso';
-      const apelidoBusca = (await memory.getMemoriaAfetiva(user.id).catch(() => {}))?.apelido_usuario || preferences?.name || '';
-      const resultadoBusca = await searchWeb(classified.query, cidadeParaBusca(classified.query, cidade), apelidoBusca, tomBusca);
+      const preferencesBusca = await memory.getUserPreference(user.id).catch(() => ({}));
+      const tomBusca = preferencesBusca?.tom || 'carinhoso';
+      const apelidoBusca = (await memory.getMemoriaAfetiva(user.id).catch(() => {}))?.apelido_usuario || preferencesBusca?.name || '';
+      const resultadoBusca = await searchWeb(classified.query, cidade, apelidoBusca, tomBusca);
       if (resultadoBusca) {
         await memory.saveConversationMessage(user.id, 'user', text);
         await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca);
@@ -1202,6 +1213,7 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
     // para sabermos o número real de doses resultante antes de confirmar —
     // evita a Clara "inventar" ou ficar vaga sobre a quantidade.
     let confirmacaoAjusteRemedio = null;
+    let contextoAcaoExtra = '';
     if (classified.tipo === 'ajustar_remedio') {
       confirmacaoAjusteRemedio = await executeAjustarRemedio(user, classified).catch(e => {
         console.error('Erro ajustar_remedio:', e.message);
@@ -1220,7 +1232,8 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
       // banco (bug observado: lembrete confirmado por mensagem mas que
       // nunca disparou). Agora esperamos a gravação terminar de verdade
       // antes de seguir pra mensagem de confirmação.
-      const acaoRespondeu = await executeAction(user, phone, classified, text, quotedText).catch(e => { console.error('Erro executeAction:', e.message); return false; });
+      const { respondeuAqui: acaoRespondeu, contextoParaResposta } = await executeAction(user, phone, classified, text, quotedText).catch(e => { console.error('Erro executeAction:', e.message); return { respondeuAqui: false, contextoParaResposta: '' }; });
+      contextoAcaoExtra = contextoParaResposta || '';
       // Se executeAction já respondeu ao usuário (ex: chamada_combinada),
       // não gera mais resposta — apenas salva info pessoal em background.
       if (acaoRespondeu) {
@@ -1326,7 +1339,7 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
       return;
     }
 
-    await responderLivre(user, phone, text, '', isSaudacao, acaoConfirmacao);
+    await responderLivre(user, phone, text, contextoAcaoExtra, isSaudacao, acaoConfirmacao);
     extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
   } catch (error) {
     console.error('Erro handleMessage:', error.message);
@@ -1548,6 +1561,7 @@ async function executeAjustarRemedio(user, classified) {
 
 async function executeAction(user, phone, classified, originalText, quotedText = null) {
   let respondeuAqui = false;
+  let contextoParaResposta = '';
   switch (classified.tipo) {
     case 'ponto_multiplo':
       await salvarPontoSilencioso(user, classified.acoes);
@@ -1648,7 +1662,7 @@ async function executeAction(user, phone, classified, originalText, quotedText =
         }
       }).catch(() => {});
 
-      const foiSaudade = /saudade|quando sentir|quando quiser|quando der/i.test(originalText || text || '');
+      const foiSaudade = /saudade|quando sentir|quando quiser|quando der/i.test(originalText || '');
       // Busca preferências e apelido para personalizar a confirmação
       const prefsChamada = await memory.getUserPreference(user.id).catch(() => ({}));
       const afetivaChamada = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
@@ -1659,7 +1673,7 @@ async function executeAction(user, phone, classified, originalText, quotedText =
       const systemChamada = buildPersonality(prefsChamada?.tom || 'carinhoso', apelidoChamada, false) + `\n\n${dicaChamada}`;
       const confMsg = await geminiFreeResponse([
         { role: 'system', content: systemChamada },
-        { role: 'user', content: originalText || text || 'ok' }
+        { role: 'user', content: originalText || 'ok' }
       ], { temperature: 0.85, maxTokens: 80 }).catch(() => null);
       const confLimpo = (confMsg || '').replace(/\[.*?\]/g, '').trim();
       const msgFinal = confLimpo && confLimpo.length > 3
@@ -1689,7 +1703,7 @@ async function executeAction(user, phone, classified, originalText, quotedText =
           }
         }).catch(() => {});
         const ctx = `\n\n[TÍTULO INCOMPLETO] O usuário pediu um lembrete mas o título ficou incompleto: "${resultTarefa.tituloIncompleto}". Pergunte de forma natural e com seu jeito — ex: "Opa, cobrar quem? 😄" ou "Espera, ${resultTarefa.tituloIncompleto} quem? Não me deixa curiosa! 🤔" — curto, no seu tom, sem criar nada ainda.`;
-        preferences._dicaAcao = ctx;
+        contextoParaResposta = ctx;
       } else if (resultTarefa?.perguntarHora) {
         // Salva pendência de coleta — aguarda data/hora do usuário
         const expira = Date.now() + 15 * 60 * 1000; // 15 min
@@ -1709,7 +1723,7 @@ async function executeAction(user, phone, classified, originalText, quotedText =
         // A Clara pergunta de forma natural no seu tom
         const temData = !!resultTarefa.lembreteData;
         const ctx = `\n\n[COLETA DE LEMBRETE] O usuário pediu pra lembrar de "${resultTarefa.lembreteTitulo}"${temData ? ` para ${resultTarefa.lembreteData}` : ''} mas não disse ${temData ? 'o horário' : 'quando'}. Responda naturalmente no seu tom e pergunte ${temData ? 'que horas' : 'quando e que horas'} — de forma humana, não robótica. Ex: "Que legal! A que horas vai ser?" ou "Pode deixar! Pra quando você quer que eu te lembre?" — varie conforme o contexto. NÃO crie o lembrete ainda.`;
-        preferences._dicaAcao = ctx;
+        contextoParaResposta = ctx;
       }
       break;
     }
@@ -1812,7 +1826,7 @@ async function executeAction(user, phone, classified, originalText, quotedText =
       if (classified.valor !== undefined && classified.valor !== null) await memory.saveUserPreference(user.id, null, null, parseFloat(classified.valor));
       break;
   }
-  return respondeuAqui;
+  return { respondeuAqui, contextoParaResposta };
 }
 
 // ── Detector de humor ──────────────────────────────────────────────────
@@ -2285,6 +2299,7 @@ async function checkConfirmacaoPendente(user, phone, text) {
         frequencia: null
       };
       const resultFinal = await salvarTarefaSilenciosa(user, phone, classifiedCompleto, text);
+      let ctxParaResposta = `\n\n[TÍTULO COMPLETADO] Lembrete "${tituloCompleto}" foi criado. Confirme naturalmente.`;
       if (resultFinal?.perguntarHora) {
         const expira = Date.now() + 15 * 60 * 1000;
         await prisma.memory.create({
@@ -2293,10 +2308,9 @@ async function checkConfirmacaoPendente(user, phone, text) {
             content: JSON.stringify({ tipo: 'coleta_lembrete', titulo: tituloCompleto, data: dados.data, turno: 'hora', expira })
           }
         }).catch(() => {});
-        const ctx = `\n\n[COLETA] Lembrete "${tituloCompleto}" — ainda falta o horário. Pergunte que horas de forma natural.`;
-        preferences._dicaAcao = ctx;
+        ctxParaResposta = `\n\n[COLETA] Lembrete "${tituloCompleto}" — ainda falta o horário. Pergunte que horas de forma natural.`;
       }
-      await responderLivre(user, phone, text, preferences._dicaAcao ? '' : `\n\n[TÍTULO COMPLETADO] Lembrete "${tituloCompleto}" foi criado. Confirme naturalmente.`);
+      await responderLivre(user, phone, text, ctxParaResposta);
       return;
     }
 
@@ -2348,8 +2362,7 @@ async function checkConfirmacaoPendente(user, phone, text) {
         const ctx = !dataFinal
           ? `\n\n[COLETA] Usuário ainda não disse quando é "${titulo}". Pergunte a data de forma natural e curta.`
           : `\n\n[COLETA] Usuário disse que é ${dataFinal} mas não disse o horário de "${titulo}". Pergunte que horas de forma natural — pode sugerir um horário inteligente ex: "às 16h pra dar tempo de se preparar?" dependendo do contexto.`;
-        preferences._dicaAcao = ctx;
-        await responderLivre(user, phone, text, '', false, null, null);
+        await responderLivre(user, phone, text, ctx, false, null, null);
         return;
       }
 
