@@ -641,17 +641,18 @@ cron.schedule('0 8 * * *', async () => {
 // primeira que tiver algo genuíno pra dizer (e passar a chancela
 // cacheada do dia) manda a mensagem; as outras tentativas da mesma
 // janela só seguem adiante se a anterior não mandou nada.
-// Manhã: 08:00–09:30 | Almoço: 11:30–13:30
-// Noite: removida — a conversa já flui naturalmente sozinha (puxando
-// assunto e conectando o dia todo), e a chamada combinada já cobre o
-// "te chamo mais tarde". A proativa noturna só estava puxando assunto
-// encerrado horas atrás — sem valor, só ruído. Resta o boa noite.
-cron.schedule('*/15 8 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0,15,30 9 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
-
-cron.schedule('30,45 11 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('*/15 12 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0,15,30 13 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
+// Manhã e Almoço: removidas — Washington decidiu manter só bom dia, boa
+// noite e chamada combinada. Proativa genérica (tipo comentário sobre
+// gastos, ou "bom dia" duplicado às 11:30) soava artificial/redundante
+// comparado com bom dia real + boa noite + a conversa fluindo sozinha.
+// proativaInteligente() fica definida mas sem cron chamando — reativar
+// é só descomentar os cron.schedule abaixo se um dia fizer sentido de novo.
+//
+// cron.schedule('*/15 8 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
+// cron.schedule('0,15,30 9 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
+// cron.schedule('30,45 11 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
+// cron.schedule('*/15 12 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
+// cron.schedule('0,15,30 13 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
 
 async function proativaInteligente(periodo) {
   try {
@@ -955,7 +956,11 @@ cron.schedule('30 9 * * 0', async () => {
           const desvioMedio = dias.map(d => Math.abs(d - media)).reduce((a, d) => a + d, 0) / dias.length;
           if (desvioMedio <= 3) {
             const jaAvisado = await prisma.memory.findFirst({ where: { userId: user.id, type: 'padrao_dia_avisado', content: cat } });
-            if (!jaAvisado) insights.push({ tipo: 'padrao_dia', categoria: cat, diaAproximado: Math.round(media) });
+            if (!jaAvisado) {
+              const descricoes = [...new Set(lista.map(g => g.description).filter(Boolean))];
+              const exemplo = descricoes.slice(0, 2).join(' e ') || null;
+              insights.push({ tipo: 'padrao_dia', categoria: cat, exemplo, diaAproximado: Math.round(media) });
+            }
           }
         }
         const inicioMesAtual = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -971,18 +976,20 @@ cron.schedule('30 9 * * 0', async () => {
           if (!mediasHistoricas.length) continue;
           const mediaHistorica = mediasHistoricas.reduce((a, v) => a + v, 0) / mediasHistoricas.length;
           if (mediaHistorica > 0 && totalAtual > mediaHistorica * 1.4) {
-            insights.push({ tipo: 'gasto_fora_padrao', categoria: cat, percentual: Math.round((totalAtual / mediaHistorica - 1) * 100), valorAtual: totalAtual, valorMedio: mediaHistorica });
+            const descricoesAtual = [...new Set(listaAtual.map(g => g.description).filter(Boolean))];
+            const exemplo = descricoesAtual.slice(0, 2).join(' e ') || null;
+            insights.push({ tipo: 'gasto_fora_padrao', categoria: cat, exemplo, percentual: Math.round((totalAtual / mediaHistorica - 1) * 100), valorAtual: totalAtual, valorMedio: mediaHistorica });
           }
         }
         if (!insights.length) continue;
         const prefs = await memory.getUserPreference(user.id).catch(() => null);
         const insightsTexto = insights.map(i => i.tipo === 'padrao_dia'
-          ? `- "${i.categoria}" costuma ter gastos por volta do dia ${i.diaAproximado}.`
-          : `- Gasto com "${i.categoria}" este mês: R$ ${i.valorAtual.toFixed(2)}, ${i.percentual}% acima da média (R$ ${i.valorMedio.toFixed(2)}).`
+          ? `- Gastos${i.exemplo ? ` como "${i.exemplo}"` : ` na categoria "${i.categoria}"`} costumam acontecer por volta do dia ${i.diaAproximado}.`
+          : `- Gasto${i.exemplo ? ` com "${i.exemplo}"` : ` na categoria "${i.categoria}"`} este mês: R$ ${i.valorAtual.toFixed(2)}, ${i.percentual}% acima da média (R$ ${i.valorMedio.toFixed(2)}).`
         ).join('\n');
         const msg = await freeResponse('Mensagem de radar/padrões.', [], {
           _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso',
-          _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''} Tom: ${prefs?.tom || 'carinhoso'}. Padrões notados:\n${insightsTexto}\nEnvie UMA mensagem natural (2-3 linhas) comentando como observação genuína. NÃO use tópicos. NÃO termine com saudação de período.`
+          _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''} Tom: ${prefs?.tom || 'carinhoso'}. Padrões notados:\n${insightsTexto}\nEnvie UMA mensagem natural (2-3 linhas) comentando como observação genuína sobre o GASTO EM SI (o que a pessoa comprou/pagou), nunca sobre o nome da categoria — "categoria" é só um rótulo interno do sistema, não fale dela como se fosse uma coisa real ou tivesse "assinatura com uma data". NÃO use tópicos. NÃO termine com saudação de período.`
         });
         if (!msg || isRespostaFallback(msg)) continue;
         await sendMessage(user.phone, msg);
@@ -1185,13 +1192,33 @@ cron.schedule('* * * * *', async () => {
         const isFollowup = grupo.reminders.length === 1 && /^__followup_origem__[^_]+__/.test(grupo.reminders[0].message);
         if (isFollowup) {
           msg = grupo.reminders[0].message.replace(/^__followup_origem__[^_]+__/, '');
-        } else if (grupo.reminders.length === 1) {
-          const r = grupo.reminders[0];
-          msg = `🔔 Lembrete\n\n${r.message}\n⏰ ${grupo.hora}\n\n${finalParaLembrete(r)}`;
         } else {
-          const titulos = grupo.reminders.map((r, i) => `${i + 1}. ${r.message}`).join('\n');
-          const rRef = grupo.reminders[0];
-          msg = `🔔 Você tem ${grupo.reminders.length} lembretes agora\n\n${titulos}\n\n⏰ ${grupo.hora}\n\n${finalParaLembrete(rRef)}`;
+          // Se está rolando conversa ativa (últimos 5 min), avisa de forma
+          // natural misturada no papo, em vez do template de sistema —
+          // isso existia antes e se perdeu numa sessão anterior.
+          const conversaAtiva = await houveConversaRecente(grupo.reminders[0].userId, 5).catch(() => false);
+          let msgNatural = null;
+          if (conversaAtiva) {
+            try {
+              const prefsNat = await memory.getUserPreference(grupo.reminders[0].userId).catch(() => ({}));
+              const afetivaNat = await memory.getMemoriaAfetiva(grupo.reminders[0].userId).catch(() => ({}));
+              const nomeNat = afetivaNat?.apelido_usuario || prefsNat?.name || '';
+              const titulosNat = grupo.reminders.map(r => r.message).join(', ');
+              const systemLembreteNatural = `Vocês estão no meio de uma conversa agora. Chegou a hora de um lembrete que ${nomeNat || 'a pessoa'} pediu: "${titulosNat}". Avise de forma NATURAL, misturado no papo — nada de formato de notificação, nada de emoji de sino, nada de "⏰ hora". Só um comentário curto no seu tom lembrando. Ex: "Ei, lembrando que é hora de X!" ou "Opa, bateu a hora de Y aqui 👀".`;
+              const respNatural = await freeResponse('(lembrete durante conversa)', [], { _contexto: '', name: prefsNat?.name || '', tom: prefsNat?.tom || 'carinhoso', _systemOverride: systemLembreteNatural, _maxTokens: 100 });
+              if (respNatural && !isRespostaFallback(respNatural)) msgNatural = respNatural;
+            } catch (eNat) { console.error('[Reminder] Erro ao gerar lembrete natural:', eNat.message); }
+          }
+          if (msgNatural) {
+            msg = msgNatural;
+          } else if (grupo.reminders.length === 1) {
+            const r = grupo.reminders[0];
+            msg = `🔔 Lembrete\n\n${r.message}\n⏰ ${grupo.hora}\n\n${finalParaLembrete(r)}`;
+          } else {
+            const titulos = grupo.reminders.map((r, i) => `${i + 1}. ${r.message}`).join('\n');
+            const rRef = grupo.reminders[0];
+            msg = `🔔 Você tem ${grupo.reminders.length} lembretes agora\n\n${titulos}\n\n⏰ ${grupo.hora}\n\n${finalParaLembrete(rRef)}`;
+          }
         }
       } catch (e) {
         const r = grupo.reminders[0];
@@ -1484,15 +1511,14 @@ cron.schedule('* * * * *', async () => {
       const horaCombinada = chamada.content || meta.hora;
       if (!horaCombinada) continue;
 
-      // Verifica se está na janela de 0 a +5min do horário combinado —
-      // NUNCA antes do prometido (antes usava ±5min, o que disparava a
-      // chamada até 5min ANTES da hora combinada — quebra a promessa e
-      // ainda confundia a IA sobre que horas realmente eram).
+      // Janela de -3 a 0min do horário combinado — chega um pouco ANTES,
+      // nunca depois. Decisão explícita: dá sensação humana (quem liga
+      // raramente acerta o minuto exato, geralmente chama um tico antes).
       const [hC, mC] = horaCombinada.split(':').map(Number);
       const minCombinado = hC * 60 + mC;
       const minAtual = agora.getHours() * 60 + agora.getMinutes();
       const diff = minAtual - minCombinado;
-      if (diff < 0 || diff > 5) continue; // ainda não chegou a hora, ou já passou da janela
+      if (diff < -3 || diff > 0) continue; // só dispara de 3min antes até a hora exata, nunca depois
 
       // Deleta antes de disparar (evita duplicata)
       await prisma.memory.delete({ where: { id: chamada.id } }).catch(() => {});
