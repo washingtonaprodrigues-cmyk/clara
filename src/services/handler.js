@@ -1294,7 +1294,7 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
     let confirmacaoTarefa = classified.titulo
       ? `✅ Anotado! "${classified.titulo}" — vou te lembrar 😉`
       : '✅ Anotado! Vou te lembrar.';
-    if (classified.tipo === 'tarefa' && classified.hora) {
+    if (classified.tipo === 'tarefa' && (classified.hora || calcularHorarioRelativo(text))) {
       // Calcula o mesmo scheduledAt que salvarTarefaSilenciosa vai gravar,
       // para dar uma confirmação com data/hora reais — igual ao formato
       // "Pronto! '...' agendado pra DD/MM às HH:MM 📌" usado em outros fluxos
@@ -2038,7 +2038,24 @@ async function salvarTarefaSilenciosa(user, phone, classified, originalText) {
     }
   }
   if (scheduledAt) {
-    const novoLembrete = await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
+    let novoLembrete = await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } });
+    // ── Verificação de segurança pós-escrita ──
+    // Relê o registro recém-criado antes de seguir. Isso não deveria ser
+    // necessário (o await já garante que o Postgres confirmou a escrita),
+    // mas protege contra o cenário raro visto em produção: o processo é
+    // encerrado (ex: restart do Railway no meio de um deploy) bem entre o
+    // create() resolver e o restante do fluxo continuar — nesses casos a
+    // Clara confirmava "Anotado!" para o usuário, mas o lembrete nunca
+    // existiu de fato no banco. Custo é uma leitura indexada por ID (rápida)
+    // e só dispara uma recriação no caso raro de não encontrar.
+    const verificacao = await prisma.reminder.findUnique({ where: { id: novoLembrete.id } }).catch(() => null);
+    if (!verificacao) {
+      console.warn(`[Lembrete] Verificação pós-escrita falhou para "${classified.titulo}" — recriando`);
+      novoLembrete = await prisma.reminder.create({ data: { userId: user.id, phone, message: classified.titulo, scheduledAt } }).catch(e => {
+        console.error('[Lembrete] Recriação também falhou:', e.message);
+        return novoLembrete; // mantém referência original — não interrompe o fluxo
+      });
+    }
     if (detectarUrgencia(classified.titulo)) {
       await prisma.memory.create({ data: { userId: user.id, type: 'lembrete_urgente', content: novoLembrete.id } }).catch(() => {});
       const expira = Date.now() + 5 * 60 * 1000;
