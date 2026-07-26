@@ -440,9 +440,10 @@ REGRAS:
 
 
 // ═══════════════════════════════════════════════════════════════════════
-// BOA NOITE (21:30) — curta, calorosa, só preview de amanhã
+// BOA NOITE (22:30–23:40) — curta, calorosa, só preview de amanhã
 // ═══════════════════════════════════════════════════════════════════════
-// Boa noite roda às 21:30 E às 22:30 (para quem estava conversando no primeiro disparo)
+// Duas tentativas dentro da janela: 22:30 (primeira) e 23:10 (retry pra
+// quem ainda estava conversando ou pegou rate limit no primeiro disparo).
 cron.schedule('30 22 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
 async function boaNoiteInteligente() {
   try {
@@ -522,10 +523,10 @@ REGRAS ABSOLUTAS:
   } catch (e) { console.error('[Boa noite] Erro geral:', e.message); }
 }
 
-cron.schedule('30 21 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
+cron.schedule('10 23 * * *', async () => boaNoiteInteligente(), { timezone: 'America/Sao_Paulo' });
 
-// ── REDE DE SEGURANÇA FINAL — 23:00 ──
-// Se, depois das duas tentativas (21:30 e 22:30, geradas por IA), o boa
+// ── REDE DE SEGURANÇA FINAL — 23:40 (fim da janela) ──
+// Se, depois das duas tentativas (22:30 e 23:10, geradas por IA), o boa
 // noite ainda não saiu por algum motivo (rate limit total, erro etc),
 // manda uma mensagem fixa — sem IA, não tem como falhar. Boa noite é o
 // único disparo que Washington pediu pra NUNCA faltar.
@@ -535,7 +536,7 @@ const BOA_NOITE_GARANTIDA = [
   'Por hoje é só. Boa noite!',
   'Boa noite! Até amanhã 💜',
 ];
-cron.schedule('45 23 * * *', async () => {
+cron.schedule('40 23 * * *', async () => {
   try {
     const hoje = dateBRT(nowBRT());
     const users = await prisma.user.findMany({ where: { blocked: false } });
@@ -640,7 +641,11 @@ cron.schedule('0 8 * * *', async () => {
 // primeira que tiver algo genuíno pra dizer (e passar a chancela
 // cacheada do dia) manda a mensagem; as outras tentativas da mesma
 // janela só seguem adiante se a anterior não mandou nada.
-// Manhã: 08:00–09:30 | Almoço: 11:30–13:30 | Noite: 20:30–21:45
+// Manhã: 08:00–09:30 | Almoço: 11:30–13:30
+// Noite: removida — a conversa já flui naturalmente sozinha (puxando
+// assunto e conectando o dia todo), e a chamada combinada já cobre o
+// "te chamo mais tarde". A proativa noturna só estava puxando assunto
+// encerrado horas atrás — sem valor, só ruído. Resta o boa noite.
 cron.schedule('*/15 8 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
 cron.schedule('0,15,30 9 * * *', async () => proativaInteligente('manha'), { timezone: 'America/Sao_Paulo' });
 
@@ -648,8 +653,6 @@ cron.schedule('30,45 11 * * *', async () => proativaInteligente('almoco'), { tim
 cron.schedule('*/15 12 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
 cron.schedule('0,15,30 13 * * *', async () => proativaInteligente('almoco'), { timezone: 'America/Sao_Paulo' });
 
-cron.schedule('30,45 20 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
-cron.schedule('0,15,30,45 21 * * *', async () => proativaInteligente('noite'), { timezone: 'America/Sao_Paulo' });
 async function proativaInteligente(periodo) {
   try {
     const users = await prisma.user.findMany({ where: { blocked: false } });
