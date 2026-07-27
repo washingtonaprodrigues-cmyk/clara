@@ -77,6 +77,23 @@ const memory = require('./memory');
 const { tentarConsultaDireta } = require('./consultaDireta');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+
+// ── Retry automático em falha de conexão (mesma lógica de memory.js) ──
+prisma.$use(async (params, next) => {
+  const MAX_TENTATIVAS = 3;
+  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
+    try {
+      return await next(params);
+    } catch (e) {
+      const ehErroConexao = e?.code === 'P1001' || /can't reach database server/i.test(e?.message || '');
+      if (!ehErroConexao || tentativa >= MAX_TENTATIVAS) throw e;
+      const espera = 300 * tentativa;
+      console.warn(`[Prisma] Conexão falhou (tentativa ${tentativa}/${MAX_TENTATIVAS}), retry em ${espera}ms — ${params.model}.${params.action}`);
+      await new Promise(r => setTimeout(r, espera));
+    }
+  }
+});
+
 const { buildPersonalContext, savePersonalInfo, saveContact, getContacts, findContactByName, savePendencia, fecharPendenciaLembrete, salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao, salvarMemoriaAfetiva } = memory;
 
 // Substitui prisma.memory.upsert({ where: { userId_type: {...} } }) — esse
