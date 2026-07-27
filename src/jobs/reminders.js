@@ -117,6 +117,22 @@ const { getHumorDia, getLocalizacao, getCamposDesconhecidos, getProximaCuriosida
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+// ── Retry automático em falha de conexão (mesma lógica de memory.js) ──
+prisma.$use(async (params, next) => {
+  const MAX_TENTATIVAS = 3;
+  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
+    try {
+      return await next(params);
+    } catch (e) {
+      const ehErroConexao = e?.code === 'P1001' || /can't reach database server/i.test(e?.message || '');
+      if (!ehErroConexao || tentativa >= MAX_TENTATIVAS) throw e;
+      const espera = 300 * tentativa;
+      console.warn(`[Prisma] Conexão falhou (tentativa ${tentativa}/${MAX_TENTATIVAS}), retry em ${espera}ms — ${params.model}.${params.action}`);
+      await new Promise(r => setTimeout(r, espera));
+    }
+  }
+});
+
 function nowBRT() { return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })); }
 function pad(n) { return String(n).padStart(2, '0'); }
 function dateBRT(d = nowBRT()) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
