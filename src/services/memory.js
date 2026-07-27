@@ -233,6 +233,51 @@ async function getProximaCuriosidade(userId, contextoAtual = 'qualquer') {
   return candidatos[Math.floor(Math.random() * candidatos.length)];
 }
 
+// ── Suspeita de perfil ──────────────────────────────────────────────────
+// A atualização noturna (reminders.js) não salva o que INFERE direto como
+// fato — guarda como suspeita. A Clara pergunta organicamente na próxima
+// conversa (mesmo mecanismo de curiosidade, MÁXIMO 1 por conversa, nunca
+// força) e só vira fato de verdade (info_pessoal) quando o usuário
+// confirma. Isso evita ela "aprender" e arquivar silenciosamente algo
+// que pode estar errado (uma piada interpretada como fato, por exemplo).
+async function salvarSuspeitaPerfil(userId, { chave, valor, categoria, pergunta }) {
+  if (!chave || !valor) return;
+  try {
+    // Já é fato confirmado? Não precisa suspeitar.
+    const jaConhecido = await prisma.memory.findFirst({
+      where: { userId, type: 'info_pessoal', metadata: { contains: `"chave":"${chave}"` } }
+    }).catch(() => null);
+    if (jaConhecido) return;
+    // Já existe suspeita igual? Não duplica.
+    const jaSuspeita = await prisma.memory.findFirst({
+      where: { userId, type: 'suspeita_perfil', metadata: { contains: `"chave":"${chave}"` } }
+    }).catch(() => null);
+    if (jaSuspeita) return;
+    await prisma.memory.create({
+      data: {
+        userId, type: 'suspeita_perfil', content: valor,
+        metadata: JSON.stringify({ chave, categoria: categoria || 'outro', pergunta: pergunta || `Você ${valor}?`, criadoEm: new Date().toISOString() })
+      }
+    }).catch(() => {});
+  } catch {}
+}
+
+async function getSuspeitasPerfil(userId) {
+  try {
+    const mems = await prisma.memory.findMany({ where: { userId, type: 'suspeita_perfil' }, orderBy: { createdAt: 'desc' } }).catch(() => []);
+    if (!mems.length) return [];
+    const chavesConhecidas = new Set(Object.keys(await getPersonalInfo(userId)));
+    const resultado = [];
+    for (const m of mems) {
+      let meta = {}; try { meta = JSON.parse(m.metadata || '{}'); } catch { continue; }
+      // Já foi confirmada (virou fato de verdade)? Não pergunta mais, some da lista.
+      if (chavesConhecidas.has(meta.chave)) continue;
+      resultado.push({ chave: meta.chave, valor: m.content, categoria: meta.categoria, pergunta: meta.pergunta });
+    }
+    return resultado;
+  } catch { return []; }
+}
+
 async function buildPersonalContext(userId) {
   const infos = await getPersonalInfo(userId);
   
@@ -291,10 +336,16 @@ ${resumo}`;
   // ── Campos que a Clara ainda não conhece (para curiosidade orgânica) ──
   // Passa no contexto como dica para o modelo saber o que pode perguntar,
   // sem forçar — só aparece quando a conversa estiver esfriando.
+  // Suspeitas (palpites da atualização noturna, específicos dessa pessoa)
+  // vêm PRIMEIRO — valem mais que as perguntas genéricas de template.
+  const suspeitas = await getSuspeitasPerfil(userId).catch(() => []);
   const desconhecidos = await getCamposDesconhecidos(userId);
-  if (desconhecidos.length > 0) {
-    const exemplos = desconhecidos.slice(0, 4).map(c => c.pergunta).join('; ');
-    texto += `\n\n[AINDA NÃO SEI — posso perguntar organicamente quando a conversa permitir, MÁXIMO 1 por conversa, NUNCA force]: ${exemplos}`;
+  if (suspeitas.length > 0 || desconhecidos.length > 0) {
+    const perguntasSuspeitas = suspeitas.slice(0, 2).map(s => s.pergunta);
+    const perguntasGenericas = desconhecidos.slice(0, Math.max(0, 4 - perguntasSuspeitas.length)).map(c => c.pergunta);
+    const todasPerguntas = [...perguntasSuspeitas, ...perguntasGenericas];
+    const nota = suspeitas.length > 0 ? ' As primeiras são palpites seus de observar conversas recentes — priorize confirmá-las se fizer sentido no papo.' : '';
+    texto += `\n\n[CURIOSIDADE — posso perguntar organicamente quando a conversa permitir, MÁXIMO 1 por conversa, NUNCA force.${nota}]: ${todasPerguntas.join('; ')}`;
   }
 
   // ── Humor do dia — contexto emocional ──
@@ -852,6 +903,51 @@ async function getCidadeAtual(userId) {
   return '';
 }
 
+// ── Janela de conversa recorrente ──────────────────────────────────────
+// Detecta se existe um padrão real: conversaram nessa mesma janela de
+// horário em N dias seguidos (não intercalados). Isso é o que autoriza
+// a Clara a SUGERIR uma chamada nesse horário — sem esse padrão, ela
+// nunca sugere, só age se o usuário pedir (chamada_combinada explícita).
+const JANELAS_HORARIO = {
+  almoco: { inicio: 11 * 60 + 30, fim: 13 * 60 + 30 }, // 11:30–13:30
+  noite:  { inicio: 19 * 60,      fim: 22 * 60 },      // 19:00–22:00
+};
+async function getJanelaConversaConsecutiva(userId, periodo, diasNecessarios = 3) {
+  const janela = JANELAS_HORARIO[periodo];
+  if (!janela) return false;
+  try {
+    const desde = new Date(Date.now() - (diasNecessarios + 1) * 24 * 60 * 60 * 1000);
+    const msgs = await prisma.memory.findMany({
+      where: { userId, type: 'conversa', createdAt: { gte: desde } },
+      orderBy: { createdAt: 'asc' }
+    }).catch(() => []);
+    if (!msgs.length) return false;
+
+    // Agrupa por dia (BRT) se teve pelo menos 1 mensagem dentro da janela
+    const diasComConversaNaJanela = new Set();
+    for (const m of msgs) {
+      const d = new Date(m.createdAt);
+      const brt = new Date(d.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      const minutosDoDia = brt.getHours() * 60 + brt.getMinutes();
+      if (minutosDoDia >= janela.inicio && minutosDoDia <= janela.fim) {
+        const diaKey = `${brt.getFullYear()}-${brt.getMonth()}-${brt.getDate()}`;
+        diasComConversaNaJanela.add(diaKey);
+      }
+    }
+
+    // Confere se os últimos `diasNecessarios` dias (não contando hoje)
+    // TODOS têm conversa nessa janela — precisa ser consecutivo, não só
+    // "aconteceu 3 vezes esse mês".
+    const hojeBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    for (let i = 1; i <= diasNecessarios; i++) {
+      const dia = new Date(hojeBRT); dia.setDate(dia.getDate() - i);
+      const diaKey = `${dia.getFullYear()}-${dia.getMonth()}-${dia.getDate()}`;
+      if (!diasComConversaNaJanela.has(diaKey)) return false;
+    }
+    return true;
+  } catch { return false; }
+}
+
 // ── salvarMemoriaRelacional ────────────────────────────────────────────────
 async function salvarMemoriaRelacional(userId, conteudo, categoria, tags = []) {
   try {
@@ -876,6 +972,7 @@ module.exports = {
   saveUserPreference, getUserPreference,
   savePersonalInfo, deletePersonalInfo, getPersonalInfo, buildPersonalContext,
   getCamposDesconhecidos, getProximaCuriosidade, CAMPOS_CURIOSIDADE, CATEGORIAS_PERFIL,
+  salvarSuspeitaPerfil, getSuspeitasPerfil,
   saveMemory, getRecentMemories,
   setTemporaryContext, getTemporaryContext, clearTemporaryContext,
   saveConversationMessage, getConversationHistory, getGapUltimaMensagem,
@@ -887,5 +984,5 @@ module.exports = {
   salvarHumorDia, getHumorDia, salvarLocalizacao, getLocalizacao, getCidadeAtual,
   salvarMemoriaAfetiva, getMemoriaAfetiva,
   salvarResumoRelacionamento, getResumoRelacionamento,
-  salvarMemoriaRelacional,
+  salvarMemoriaRelacional, getJanelaConversaConsecutiva,
 };
