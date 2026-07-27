@@ -1009,66 +1009,63 @@ cron.schedule('30 9 * * 0', async () => {
 // Cron de sexta-feira 17h removido — não era parte do comportamento padrão
 
 // ═══════════════════════════════════════════════════════════════════════
-// TRADIÇÃO DOMINGO (19:00)
+// TRADIÇÃO DOMINGO (19:00) — REMOVIDA
 // ═══════════════════════════════════════════════════════════════════════
-cron.schedule('0 19 * * 0', async () => {
-  try {
-    const users = await prisma.user.findMany({ where: { blocked: false } });
-    const now = nowBRT();
-    const semanaQ = new Date(now); semanaQ.setDate(now.getDate() + 1);
-    const fimSemanaQ = new Date(now); fimSemanaQ.setDate(now.getDate() + 7);
-    for (const user of users) {
-      try {
-        if (!(await tentarLockDiario(user.id, 'domingo_enviado'))) {
-          console.log(`[Domingo] ja enviado hoje para ${user.phone}`); continue;
-        }
-        const [lembretesSemana, { prefs }, infoPessoal] = await Promise.all([
-          prisma.reminder.findMany({ where: { userId: user.id, confirmed: false, sent: false, scheduledAt: { gte: semanaQ, lte: fimSemanaQ } }, orderBy: { scheduledAt: 'asc' }, take: 5 }),
-          getUserContext(user),
-          memory.buildPersonalContext(user.id)
-        ]);
-        const ctx = `É domingo à noite, véspera de uma nova semana.\n${lembretesSemana.length > 0 ? `Próximos compromissos:\n${lembretesSemana.map(r => `• ${r.message}`).join('\n')}` : 'Sem compromissos agendados para a semana.'}\n${infoPessoal}`;
-        const msg = await freeResponse('Envie mensagem de domingo.', [], {
-          _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
-          _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} Envie uma mensagem de domingo à noite — tranquila, motivadora e breve (2-3 linhas). NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.\n${ctx}`
-        });
-        if (!msg || isRespostaFallback(msg)) { console.log(`[Domingo] Rate limit ou fallback, pulado para ${user.phone}`); continue; }
-        await sendMessage(user.phone, msg);
-        console.log(`[Domingo] Enviado para ${user.phone}`);
-      } catch (e) { console.error(`[Domingo] Erro ${user.phone}:`, e.message); }
-    }
-  } catch (e) { console.error('[Domingo] Erro geral:', e.message); }
-}, { timezone: 'America/Sao_Paulo' });
+// Mesma decisão do manhã/almoço: só bom dia, boa noite e chamada combinada.
+// cron.schedule('0 19 * * 0', async () => {
+//   try {
+//     const users = await prisma.user.findMany({ where: { blocked: false } });
+//     const now = nowBRT();
+//     const semanaQ = new Date(now); semanaQ.setDate(now.getDate() + 1);
+//     const fimSemanaQ = new Date(now); fimSemanaQ.setDate(now.getDate() + 7);
+//     for (const user of users) {
+//       try {
+//         if (!(await tentarLockDiario(user.id, 'domingo_enviado'))) continue;
+//         const [lembretesSemana, { prefs }, infoPessoal] = await Promise.all([
+//           prisma.reminder.findMany({ where: { userId: user.id, confirmed: false, sent: false, scheduledAt: { gte: semanaQ, lte: fimSemanaQ } }, orderBy: { scheduledAt: 'asc' }, take: 5 }),
+//           getUserContext(user),
+//           memory.buildPersonalContext(user.id)
+//         ]);
+//         const ctx = `É domingo à noite, véspera de uma nova semana.\n${lembretesSemana.length > 0 ? `Próximos compromissos:\n${lembretesSemana.map(r => `• ${r.message}`).join('\n')}` : 'Sem compromissos agendados para a semana.'}\n${infoPessoal}`;
+//         const msg = await freeResponse('Envie mensagem de domingo.', [], {
+//           _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
+//           _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} Envie uma mensagem de domingo à noite — tranquila, motivadora e breve (2-3 linhas). NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.\n${ctx}`
+//         });
+//         if (!msg || isRespostaFallback(msg)) continue;
+//         await sendMessage(user.phone, msg);
+//       } catch (e) { console.error(`[Domingo] Erro ${user.phone}:`, e.message); }
+//     }
+//   } catch (e) { console.error('[Domingo] Erro geral:', e.message); }
+// }, { timezone: 'America/Sao_Paulo' });
 
 // ═══════════════════════════════════════════════════════════════════════
-// SUMIÇO — 5+ dias sem conversar (09:00)
+// SUMIÇO — REMOVIDA (mesma decisão: só bom dia, boa noite, chamada combinada)
 // ═══════════════════════════════════════════════════════════════════════
-cron.schedule('0 9 * * *', async () => {
-  try {
-    const users = await prisma.user.findMany({ where: { blocked: false } });
-    const now = nowBRT();
-    for (const user of users) {
-      try {
-        const lockKey = `sumico_${dateBRT()}`;
-        if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'sumico_lock', content: lockKey } })) continue;
-        const ultimaConversa = await prisma.memory.findFirst({ where: { userId: user.id, type: 'conversa' }, orderBy: { createdAt: 'desc' } });
-        if (!ultimaConversa) continue;
-        const diasSemConversa = Math.round((now - new Date(ultimaConversa.createdAt)) / (1000 * 60 * 60 * 24));
-        if (diasSemConversa < 5 || diasSemConversa > 7) continue;
-        const { prefs } = await getUserContext(user);
-        const infoPessoal = await memory.buildPersonalContext(user.id);
-        const msg = await freeResponse('Mensagem para usuário que sumiu.', [], {
-          _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
-          _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} O usuário não conversa com você há ${diasSemConversa} dias. Envie uma mensagem curta e genuína perguntando como ele está — sem ser dramática, sem cobrar. Máx 2 linhas. Tom: ${prefs.tom || 'carinhoso'}.\n${infoPessoal}`
-        });
-        if (!msg || isRespostaFallback(msg)) continue;
-        await sendMessage(user.phone, msg);
-        await prisma.memory.create({ data: { userId: user.id, type: 'sumico_lock', content: lockKey } });
-        console.log(`[Sumiço] ${user.phone} — ${diasSemConversa} dias sem conversar`);
-      } catch (e) { console.error(`[Sumiço] Erro ${user.phone}:`, e.message); }
-    }
-  } catch (e) { console.error('[Sumiço] Erro geral:', e.message); }
-}, { timezone: 'America/Sao_Paulo' });
+// cron.schedule('0 9 * * *', async () => {
+//   try {
+//     const users = await prisma.user.findMany({ where: { blocked: false } });
+//     const now = nowBRT();
+//     for (const user of users) {
+//       try {
+//         const lockKey = `sumico_${dateBRT()}`;
+//         if (await prisma.memory.findFirst({ where: { userId: user.id, type: 'sumico_lock', content: lockKey } })) continue;
+//         const ultimaConversa = await prisma.memory.findFirst({ where: { userId: user.id, type: 'conversa' }, orderBy: { createdAt: 'desc' } });
+//         if (!ultimaConversa) continue;
+//         const diasSemConversa = Math.round((now - new Date(ultimaConversa.createdAt)) / (1000 * 60 * 60 * 24));
+//         if (diasSemConversa < 5 || diasSemConversa > 7) continue;
+//         const { prefs } = await getUserContext(user);
+//         const infoPessoal = await memory.buildPersonalContext(user.id);
+//         const msg = await freeResponse('Mensagem para usuário que sumiu.', [], {
+//           _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
+//           _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} O usuário não conversa com você há ${diasSemConversa} dias. Envie uma mensagem curta e genuína perguntando como ele está — sem ser dramática, sem cobrar. Máx 2 linhas. Tom: ${prefs.tom || 'carinhoso'}.\n${infoPessoal}`
+//         });
+//         if (!msg || isRespostaFallback(msg)) continue;
+//         await sendMessage(user.phone, msg);
+//         await prisma.memory.create({ data: { userId: user.id, type: 'sumico_lock', content: lockKey } });
+//       } catch (e) { console.error(`[Sumiço] Erro ${user.phone}:`, e.message); }
+//     }
+//   } catch (e) { console.error('[Sumiço] Erro geral:', e.message); }
+// }, { timezone: 'America/Sao_Paulo' });
 
 // ═══════════════════════════════════════════════════════════════════════
 // LEMBRETES — a cada minuto
@@ -1816,8 +1813,8 @@ cron.schedule('0 4 * * *', async () => {
 
 // ═══════════════════════════════════════════════════════════════════════
 // ALERTAS PROATIVOS — Perfil rico da Clara 3.0
-// Roda junto com alertas de datas (08:00) mas separado pra clareza.
-// Verifica: aniversários de filhos, cônjuge, relacionamento, metas, etc.
+// Aniversários de filhos, cônjuge, relacionamento, metas — mantido a
+// pedido explícito (baseado em dado real cadastrado, não papo genérico).
 // ═══════════════════════════════════════════════════════════════════════
 cron.schedule('15 8 * * *', async () => {
   try {
