@@ -4,6 +4,22 @@ const memory = require('../services/memory');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+// ── Retry automático em falha de conexão (mesma lógica de memory.js) ──
+prisma.$use(async (params, next) => {
+  const MAX_TENTATIVAS = 3;
+  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
+    try {
+      return await next(params);
+    } catch (e) {
+      const ehErroConexao = e?.code === 'P1001' || /can't reach database server/i.test(e?.message || '');
+      if (!ehErroConexao || tentativa >= MAX_TENTATIVAS) throw e;
+      const espera = 300 * tentativa;
+      console.warn(`[Prisma] Conexão falhou (tentativa ${tentativa}/${MAX_TENTATIVAS}), retry em ${espera}ms — ${params.model}.${params.action}`);
+      await new Promise(r => setTimeout(r, espera));
+    }
+  }
+});
+
 // sendMessage/sendButtons com fallback direto via axios — mesmo padrão
 // usado em handler.js e reminders.js, evita "sendButtons is not a function"
 // quando require('../services/whatsapp') falha ao carregar.
