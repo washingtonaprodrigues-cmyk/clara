@@ -571,11 +571,17 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           }).slice(0, 3);
 
           if (filtradosEp.length > 0) {
+            const formatarIdadeEp = (createdAt) => {
+              const dias = Math.floor((agora - new Date(createdAt).getTime()) / (24 * 60 * 60 * 1000));
+              if (dias <= 0) return 'hoje';
+              if (dias === 1) return 'ontem';
+              return `há ${dias} dias`;
+            };
             const listaEp = filtradosEp.map(e => {
               let meta = {}; try { meta = JSON.parse(e.metadata || '{}'); } catch {}
-              return `• ${e.content}${meta.resultado === 'pendente' ? ' (ainda vai acontecer ou não atualizou)' : ''}`;
+              return `• (mencionado ${formatarIdadeEp(e.createdAt)}) ${e.content}${meta.resultado === 'pendente' ? ' (ainda vai acontecer ou não atualizou)' : ''}`;
             }).join('\n');
-            contexto += `\n\n[CONTEXTO DE VIDA RECENTE — use naturalmente se relevante, nunca force]\n${listaEp}`;
+            contexto += `\n\n[CONTEXTO DE VIDA RECENTE — use naturalmente se relevante, nunca force. NUNCA trate algo mencionado "ontem" ou "há dias" como se tivesse acabado de acontecer agora]\n${listaEp}`;
           }
         }
       } catch(e) {}
