@@ -3,6 +3,28 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+// ── Retry automático em falha de conexão ──────────────────────────────
+// O Postgres do Railway às vezes tem soluços momentâneos ("Can't reach
+// database server") — sem retry, isso derruba a operação inteira (ex:
+// getOrCreateUser falhando trava a mensagem inteira do usuário). Aqui a
+// gente tenta de novo (até 3x, com pequena espera crescente) só pra esse
+// tipo específico de erro de conexão — outros erros (dado inválido, etc)
+// continuam falhando na hora, sem retry, como deveria ser.
+prisma.$use(async (params, next) => {
+  const MAX_TENTATIVAS = 3;
+  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
+    try {
+      return await next(params);
+    } catch (e) {
+      const ehErroConexao = e?.code === 'P1001' || /can't reach database server/i.test(e?.message || '');
+      if (!ehErroConexao || tentativa >= MAX_TENTATIVAS) throw e;
+      const espera = 300 * tentativa; // 300ms, 600ms
+      console.warn(`[Prisma] Conexão falhou (tentativa ${tentativa}/${MAX_TENTATIVAS}), retry em ${espera}ms — ${params.model}.${params.action}`);
+      await new Promise(r => setTimeout(r, espera));
+    }
+  }
+});
+
 // ====================== HELPERS ======================
 
 function parseDateSafely(date) {
