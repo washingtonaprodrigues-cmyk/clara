@@ -1038,6 +1038,34 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
     }
 
 
+    // Intercepta ANTES do classify: confirmação de remédio via citação.
+    // Remédio vive numa tabela separada (Medication), não em Reminder —
+    // sem esse intercept, "Feito" citando "💊 Hora do medicamento!" caía
+    // na busca de LEMBRETES, nunca achava correspondência real ali, e
+    // acabava confirmando por engano outro lembrete pendente qualquer
+    // (bug observado: remédio da Toroide virou "Ver sobre a matéria do
+    // Jornal" — coisas completamente sem relação).
+    if (quotedText && /hora do medicamento|💊/i.test(quotedText) && /^(feito|tomei|pronto|ok|tomado|já tomei|jah tomei)\b/i.test(text.trim())) {
+      const medNomeMatch = quotedText.match(/\*(.+?)\*/);
+      const medNomeCitado = medNomeMatch ? medNomeMatch[1].toLowerCase() : null;
+      const medicamentosAtivos = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
+      let medEncontrado = null;
+      if (medNomeCitado) {
+        medEncontrado = medicamentosAtivos.find(m =>
+          m.name.toLowerCase().includes(medNomeCitado) || medNomeCitado.includes(m.name.toLowerCase().split(' ')[0])
+        );
+      }
+      if (!medEncontrado && medicamentosAtivos.length === 1) medEncontrado = medicamentosAtivos[0];
+      if (medEncontrado) {
+        const novoRemaining = Math.max(0, medEncontrado.remaining - 1);
+        await prisma.medication.update({ where: { id: medEncontrado.id }, data: { remaining: novoRemaining } });
+        await sendMessage(phone, `✅ Marquei "${medEncontrado.name}" como tomado! ${novoRemaining} dose${novoRemaining === 1 ? '' : 's'} restante${novoRemaining === 1 ? '' : 's'}.`);
+        emitirAtualizacao(phone, 'remedios');
+        return;
+      }
+      // Não achou o remédio específico — segue fluxo normal em vez de travar
+    }
+
     // Intercepta ANTES do classify (LLM): se o usuário citou um código e há
     // lembretes recém-disparados aguardando confirmação, marca direto o
     // correspondente como concluído — evita depender do LLM classificar
@@ -1885,6 +1913,7 @@ async function executeAction(user, phone, classified, originalText, quotedText =
         match = pendentes.find(r => r.message.toLowerCase().includes(titulo) || titulo.includes(r.message.toLowerCase().substring(0, 10)));
       }
       // Sem título e sem código explícito: tenta inferir pelo texto da mensagem
+      let matchMultiplo = null;
       if (!match && !codigo) {
         if (pendentes.length === 1) {
           // Só 1 pendente — assume ele
@@ -1892,18 +1921,37 @@ async function executeAction(user, phone, classified, originalText, quotedText =
         } else {
           // Múltiplos pendentes — tenta casar pelo texto da mensagem ou quotedText
           const textoParaBusca = ((originalText || '') + ' ' + (quotedText || '')).toLowerCase();
-          match = pendentes.find(r => {
+          const candidatos = pendentes.filter(r => {
             const palavras = r.message.toLowerCase().split(/\s+/).filter(w => w.length > 3);
             return palavras.some(p => textoParaBusca.includes(p));
           });
-          // Fallback: usa o mais recente que já foi disparado (sent:true)
-          if (!match) {
+          if (candidatos.length > 1) {
+            // Bateu com mais de um pendente ao mesmo tempo — normalmente
+            // porque ele respondeu ao AVISO AGRUPADO inteiro ("🔔 Você tem
+            // N lembretes agora") com um "feito" genérico, sem apontar
+            // item específico. Interpreta como "todos concluídos" — bug
+            // observado: 2 lembretes disparados juntos, resposta genérica
+            // só marcava o primeiro, deixando o segundo pendente à toa.
+            matchMultiplo = candidatos;
+          } else if (candidatos.length === 1) {
+            match = candidatos[0];
+          } else {
+            // Fallback: usa o mais recente que já foi disparado (sent:true)
             match = pendentes.find(r => r.sent) || pendentes[0];
           }
         }
       }
 
-      if (match) {
+      if (matchMultiplo) {
+        await prisma.reminder.updateMany({ where: { id: { in: matchMultiplo.map(m => m.id) } }, data: { confirmed: true } });
+        for (const m of matchMultiplo) fecharPendenciaLembrete(user.id, m.message).catch(() => {});
+        emitirAtualizacao(phone, 'lembretes');
+        const listaConfirmada = matchMultiplo.map(m => `"${m.message}"`).join(' e ');
+        const msgConfirmacaoMultipla = `✅ Marquei como feito: ${listaConfirmada} 📌`;
+        await sendMessage(phone, msgConfirmacaoMultipla);
+        await memory.saveConversationMessage(user.id, 'assistant', msgConfirmacaoMultipla).catch(() => {});
+        respondeuAqui = true;
+      } else if (match) {
         await prisma.reminder.update({ where: { id: match.id }, data: { confirmed: true } });
         fecharPendenciaLembrete(user.id, match.message).catch(() => {});
         emitirAtualizacao(phone, 'lembretes');
