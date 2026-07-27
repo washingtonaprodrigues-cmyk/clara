@@ -269,14 +269,21 @@ ${resumo}`;
   // Prioridade: mostra o MAIS RECENTE em destaque para manter o assunto
   // vivo. Se houver outros abertos, aparecem como contexto secundário
   // (menor peso) para não sobrecarregar a resposta.
+  const formatarIdade = (criadoEm) => {
+    if (!criadoEm) return '';
+    const dias = Math.floor((Date.now() - new Date(criadoEm).getTime()) / (24 * 60 * 60 * 1000));
+    if (dias <= 0) return ' (hoje)';
+    if (dias === 1) return ' (ontem)';
+    return ` (há ${dias} dias)`;
+  };
   const pendencias = await getPendenciasAbertas(userId);
   if (pendencias.length > 0) {
     // [0] = mais recente (orderBy createdAt desc em getPendenciasAbertas)
     const principal = pendencias[0];
-    texto += `\n\n[ASSUNTO EM ABERTO — prioridade máxima, retome quando houver abertura natural]\n• ${principal.assunto}: ${principal.contexto} → ${principal.como_retomar}`;
+    texto += `\n\n[ASSUNTO EM ABERTO${formatarIdade(principal.criadoEm)} — prioridade máxima, retome quando houver abertura natural. Use a idade acima pra calibrar: se foi ontem ou há dias, não trate como se tivesse acabado de acontecer]\n• ${principal.assunto}: ${principal.contexto} → ${principal.como_retomar}`;
     // Demais assuntos: mencionados de forma mais leve, sem forçar
     if (pendencias.length > 1) {
-      const outros = pendencias.slice(1, 3).map(p => `• ${p.assunto}: ${p.contexto}`).join('\n');
+      const outros = pendencias.slice(1, 3).map(p => `• ${p.assunto}${formatarIdade(p.criadoEm)}: ${p.contexto}`).join('\n');
       texto += `\n\n[OUTROS ASSUNTOS EM ABERTO — só retome se surgir oportunidade muito natural]\n${outros}`;
     }
   }
