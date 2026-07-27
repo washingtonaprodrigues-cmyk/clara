@@ -111,6 +111,7 @@ async function sendMessage(phone, msg, delay) {
 }
 
 const { freeResponse, isRespostaFallback } = require('../services/groq');
+const { geminiFreeResponse } = require('../services/gemini');
 const memory = require('../services/memory');
 const { getHumorDia, getLocalizacao, getCamposDesconhecidos, getProximaCuriosidade, salvarResumoRelacionamento, getResumoRelacionamento, getMemoriaAfetiva } = memory;
 const { PrismaClient } = require('@prisma/client');
@@ -1777,7 +1778,7 @@ cron.schedule('0 3 * * *', async () => {
     await prisma.memory.deleteMany({
       where: {
         // NUNCA inclua: resumo_relacionamento, memoria_afetiva, info_pessoal — são permanentes
-        type: { in: ['med_lock','alerta_data_lock','proativa_lock','sumico_lock','bom_dia_lock','boa_noite_lock','meu_dia_criado','radar_lock','parceira_lock','reminder_lock','alerta_perfil_lock','hora_extra_lock','ponto_proativa_lock','msg_dedup_lock','fechamento_dia_lock'] },
+        type: { in: ['med_lock','alerta_data_lock','proativa_lock','sumico_lock','bom_dia_lock','boa_noite_lock','meu_dia_criado','radar_lock','parceira_lock','reminder_lock','alerta_perfil_lock','hora_extra_lock','ponto_proativa_lock','msg_dedup_lock','fechamento_dia_lock','atualizacao_noturna_lock','sugestao_chamada_lock'] },
         createdAt: { lt: ontem }
       }
     });
@@ -1790,8 +1791,78 @@ cron.schedule('0 3 * * *', async () => {
     for (const p of pendenciasEncerradas) {
       try { const d = JSON.parse(p.content); if (d.encerrado) await prisma.memory.delete({ where: { id: p.id } }); } catch {}
     }
+    // Suspeitas de perfil nunca confirmadas depois de 30 dias — expira,
+    // pra não acumular palpites velhos na fila de curiosidade pra sempre.
+    const trintaDiasAtras = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    await prisma.memory.deleteMany({ where: { type: 'suspeita_perfil', createdAt: { lt: trintaDiasAtras } } }).catch(() => {});
     console.log('[Cleanup] Locks antigos e pendências expiradas removidos');
   } catch (e) { console.error('[Cleanup] Erro:', e.message); }
+}, { timezone: 'America/Sao_Paulo' });
+
+// ═══════════════════════════════════════════════════════════════════════
+// ATUALIZAÇÃO NOTURNA DE MEMÓRIA (04:30)
+// ═══════════════════════════════════════════════════════════════════════
+// Reanalisa a conversa do dia INTEIRA (não msg a msg) pra pegar padrões
+// que só aparecem olhando o conjunto. NÃO salva como fato direto — guarda
+// como suspeita (memory.salvarSuspeitaPerfil). A Clara pergunta de forma
+// natural na próxima conversa (curiosidade orgânica) e só vira fato de
+// verdade quando o usuário confirmar. Evita ela "aprender" e arquivar
+// silenciosamente algo errado (uma piada interpretada como fato real).
+//
+// Horário afastado de propósito do cleanup/restart das 3h — dois crons
+// pesados perto do horário em que containers costumam reiniciar aumenta
+// a chance de colisão (um morrer no meio, outro assumir e reprocessar).
+// Lock diário por usuário garante que, mesmo que rode duas vezes por
+// algum motivo (restart no meio, troca de instância dona dos crons), o
+// dia só é processado uma vez de verdade.
+cron.schedule('30 4 * * *', async () => {
+  try {
+    const users = await prisma.user.findMany({ where: { blocked: false } });
+    const ontemInicio = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    for (const user of users) {
+      try {
+        if (!(await tentarLockDiario(user.id, 'atualizacao_noturna_lock'))) continue;
+        const conversas = await prisma.memory.findMany({
+          where: { userId: user.id, type: 'conversa', createdAt: { gte: ontemInicio } },
+          orderBy: { createdAt: 'asc' }
+        }).catch(() => []);
+        if (conversas.length < 6) continue; // pouco histórico, não vale a pena reprocessar
+
+        const historicoTexto = conversas.map(m => {
+          try {
+            const d = JSON.parse(m.content);
+            return `${d.role === 'user' ? 'Usuário' : 'Clara'}: ${(d.content || '').slice(0, 200)}`;
+          } catch { return null; }
+        }).filter(Boolean).join('\n');
+
+        const jaConhecido = await memory.getPersonalInfo(user.id).catch(() => ({}));
+        const chavesConhecidas = Object.keys(jaConhecido).join(', ') || 'nenhuma ainda';
+
+        const extraido = await geminiFreeResponse([
+          { role: 'user', content: `Aqui está a conversa completa de ontem entre a Clara (assistente) e o usuário:\n\n${historicoTexto}\n\nInformações que já sabemos sobre ele: ${chavesConhecidas}\n\nAnalisando a conversa do dia INTEIRA (não mensagem por mensagem), existe algo NOVO e relevante sobre a vida dele que só fica claro olhando o conjunto — um padrão, uma preferência, uma informação que ele deu aos poucos? Ignore o que já sabemos (lista acima) e ignore operacional (lembretes, gastos, agenda). Isso é um PALPITE seu, não confirmado — inclua também uma pergunta curta e natural (no seu jeito) pra confirmar com ele depois, numa conversa futura.\n\nResponda APENAS um JSON array, cada item: {"chave":"nome_curto","valor":"1 frase afirmativa","categoria":"familia|relacionamento|filhos|trabalho|hobbies|entretenimento|alimentacao|metas|personalidade|saude|datas|rotina|objetivos|outro","pergunta":"pergunta curta e natural pra confirmar, ex: Ei, você não trabalha com vendas, né?"}\nSe nada de novo: []` }
+        ], { temperature: 0.2, maxTokens: 350 }).catch(() => null);
+
+        if (!extraido) continue;
+        const clean = extraido.replace(/```json|```/g, '').trim();
+        let itens = [];
+        try { itens = JSON.parse(clean.startsWith('[') ? clean : '[]'); } catch { continue; }
+        if (!Array.isArray(itens) || !itens.length) continue;
+
+        let salvos = 0;
+        for (const item of itens) {
+          if (!item?.chave || !item?.valor) continue;
+          // Guarda como SUSPEITA, não como fato — só vira info_pessoal de
+          // verdade quando o usuário confirmar organicamente na conversa
+          // (evita ela "aprender" e arquivar silenciosamente algo errado).
+          await memory.salvarSuspeitaPerfil(user.id, {
+            chave: item.chave, valor: item.valor, categoria: item.categoria || 'outro', pergunta: item.pergunta
+          }).catch(() => {});
+          salvos++;
+        }
+        console.log(`[AtualizaçãoNoturna] ${user.phone}: ${salvos} suspeita(s) nova(s) pra confirmar depois`);
+      } catch (e) { console.error(`[AtualizaçãoNoturna] Erro ${user.phone}:`, e.message); }
+    }
+  } catch (e) { console.error('[AtualizaçãoNoturna] Erro geral:', e.message); }
 }, { timezone: 'America/Sao_Paulo' });
 
 // Limpeza de med_lock a cada hora
