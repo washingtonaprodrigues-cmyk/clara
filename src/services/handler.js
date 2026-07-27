@@ -1076,7 +1076,7 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
       if (medEncontrado) {
         const novoRemaining = Math.max(0, medEncontrado.remaining - 1);
         await prisma.medication.update({ where: { id: medEncontrado.id }, data: { remaining: novoRemaining } });
-        await sendMessage(phone, `✅ Marquei "${medEncontrado.name}" como tomado! ${novoRemaining} dose${novoRemaining === 1 ? '' : 's'} restante${novoRemaining === 1 ? '' : 's'}.`);
+        await sendMessage(phone, `✅ Tomado! *${medEncontrado.name}* registrado. Restam ${novoRemaining} dose${novoRemaining === 1 ? '' : 's'}. 🩹`);
         emitirAtualizacao(phone, 'remedios');
         return;
       }
@@ -1097,7 +1097,7 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
           if (escolhido) {
             await prisma.reminder.update({ where: { id: escolhido.id }, data: { confirmed: true } });
             fecharPendenciaLembrete(user.id, escolhido.message).catch(() => {});
-            await sendMessage(phone, `✅ Marquei como feito: "${escolhido.message}" 📌`);
+            await sendMessage(phone, `✅ Feito! "${escolhido.message}" concluído.`);
             return;
           } else {
             await sendMessage(phone, `Não achei o lembrete #${codigoRapido} 😕 Você tem ${pendentes.length} pendente${pendentes.length > 1 ? 's' : ''} (#1 a #${pendentes.length}).`);
@@ -1964,7 +1964,7 @@ async function executeAction(user, phone, classified, originalText, quotedText =
         for (const m of matchMultiplo) fecharPendenciaLembrete(user.id, m.message).catch(() => {});
         emitirAtualizacao(phone, 'lembretes');
         const listaConfirmada = matchMultiplo.map(m => `"${m.message}"`).join(' e ');
-        const msgConfirmacaoMultipla = `✅ Marquei como feito: ${listaConfirmada} 📌`;
+        const msgConfirmacaoMultipla = `✅ Feito! ${listaConfirmada} concluído${matchMultiplo.length > 1 ? 's' : ''}.`;
         await sendMessage(phone, msgConfirmacaoMultipla);
         await memory.saveConversationMessage(user.id, 'assistant', msgConfirmacaoMultipla).catch(() => {});
         respondeuAqui = true;
@@ -1972,7 +1972,7 @@ async function executeAction(user, phone, classified, originalText, quotedText =
         await prisma.reminder.update({ where: { id: match.id }, data: { confirmed: true } });
         fecharPendenciaLembrete(user.id, match.message).catch(() => {});
         emitirAtualizacao(phone, 'lembretes');
-        const msgConfirmacao = `✅ Marquei como feito: "${match.message}" 📌`;
+        const msgConfirmacao = `✅ Feito! "${match.message}" concluído.`;
         await sendMessage(phone, msgConfirmacao);
         await memory.saveConversationMessage(user.id, 'assistant', msgConfirmacao).catch(() => {});
         respondeuAqui = true;
