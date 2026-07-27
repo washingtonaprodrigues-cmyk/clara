@@ -741,6 +741,46 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         contexto += `\n\n[NOÇÃO DE TEMPO — IMPORTANTE] A última troca de mensagens foi há ${gapTempo}. Use isso pra calibrar se algo mencionado (almoço, chegar em algum lugar, ligar, sair, dormir etc) já teve tempo real de acontecer — se o tempo foi curto, trate como ainda por vir, NUNCA pergunte "e aí, como foi?" sobre algo que não teve tempo de rolar. Da mesma forma, se um plano foi combinado pra uma data ou horário específico no futuro (ex: "domingo", "às 12:40", "mais tarde"), trate como algo que AINDA VAI acontecer até esse momento chegar de verdade — nunca antecipe como se já tivesse passado.`;
       }
 
+      // ── Sugestão de chamada inteligente ─────────────────────────────────
+      // Só sugere quando existe PADRÃO REAL: conversaram nesse mesmo
+      // horário (almoço/noite) em 3+ dias SEGUIDOS. Sem esse padrão, ela
+      // nunca sugere — só age se o usuário pedir explicitamente (chamada
+      // combinada normal). Gatilho: um assunto ficou em aberto na conversa
+      // recente (últimas 3h) e ainda dá tempo de perguntar antes do
+      // próximo período (manhã→pergunta sobre almoço, tarde→sobre noite).
+      try {
+        const horaAgora = now.getHours();
+        const periodoAlvo = (horaAgora >= 8 && horaAgora < 11) ? 'almoco'
+                          : (horaAgora >= 13 && horaAgora < 18) ? 'noite'
+                          : null;
+        if (periodoAlvo) {
+          const pendenciasAtuais = await memory.getPendenciasAbertas(user.id).catch(() => []);
+          // Só considera pendência bem recente — representa um assunto que
+          // ficou em aberto NESTA conversa, não um assunto antigo qualquer.
+          const pendenciaRecente = pendenciasAtuais.find(p => (Date.now() - new Date(p.criadoEm).getTime()) < 3 * 60 * 60 * 1000);
+          if (pendenciaRecente) {
+            const lockKeySugestao = `${dateBRT()}_${periodoAlvo}_${pendenciaRecente.id}`;
+            const jaSugeriuHoje = await prisma.memory.findFirst({
+              where: { userId: user.id, type: 'sugestao_chamada_lock', content: lockKeySugestao }
+            }).catch(() => null);
+            if (!jaSugeriuHoje) {
+              const padraoExiste = await memory.getJanelaConversaConsecutiva(user.id, periodoAlvo, 3);
+              if (padraoExiste) {
+                const horaSugerida = periodoAlvo === 'almoco' ? '12:30' : '20:30';
+                contexto += `\n\n[SUGESTÃO DE CHAMADA — OPCIONAL, só se soar natural] Vocês costumam conversar n${periodoAlvo === 'almoco' ? 'o horário de almoço' : 'o período da noite'} há pelo menos 3 dias seguidos. Ficou um assunto em aberto agora: "${pendenciaRecente.assunto}". Se o papo estiver mesmo encerrando, pergunte de forma leve se pode te chamar ${periodoAlvo === 'almoco' ? 'no almoço' : 'à noite'} pra continuar isso — nunca force, e se ele disser não, aceite tranquila sem insistir. NUNCA chame sem essa autorização.`;
+                await prisma.memory.create({ data: { userId: user.id, type: 'sugestao_chamada_lock', content: lockKeySugestao } }).catch(() => {});
+                await prisma.memory.create({
+                  data: { userId: user.id, type: 'confirmacao_pendente', content: JSON.stringify({
+                    tipo: 'sugestao_chamada', periodo: periodoAlvo, hora: horaSugerida, assunto: pendenciaRecente.assunto,
+                    expira: Date.now() + 3 * 60 * 60 * 1000
+                  }) }
+                }).catch(() => {});
+              }
+            }
+          }
+        }
+      } catch (eSugestao) { console.error(`[${phone}] Erro sugestão chamada:`, eSugestao.message); }
+
       if (contextoExtra) contexto += contextoExtra;
       preferences._contexto = contexto;
     } catch (e) {
@@ -2598,6 +2638,35 @@ async function checkConfirmacaoPendente(user, phone, text) {
       if (['nao','n','não','cancelar','cancela'].includes(textNorm)) { await prisma.memory.delete({ where: { id: pendente.id } }); await sendMessage(phone, 'Ok, cancelei 😊'); return true; }
       return false;
     }
+    // ── Resposta à sugestão de chamada inteligente ──────────────────────
+    // Precisa vir ANTES do bloco genérico sim/não abaixo (que é específico
+    // do fluxo de enviar_mensagem), senão a resposta seria interceptada
+    // pelo lugar errado.
+    if (dados.tipo === 'sugestao_chamada') {
+      await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
+      const afirmativo = /^(sim|pode|claro|manda|isso|s|ok|beleza|adoraria|quero|vai|combinado|com certeza|bora)\b/i.test(textNorm);
+      const negativo = /^(n[aã]o|nao|n\b|deixa|melhor n[aã]o|hoje n[aã]o|prefiro que n[aã]o|agora n[aã]o)/i.test(textNorm);
+      if (afirmativo) {
+        // Converte em chamada_combinada — reusa o mesmo mecanismo de
+        // disparo já existente pro pedido explícito (janela -3 a 0min).
+        await prisma.memory.deleteMany({ where: { userId: user.id, type: 'chamada_combinada' } }).catch(() => {});
+        await prisma.memory.create({
+          data: { userId: user.id, type: 'chamada_combinada', content: dados.hora,
+            metadata: JSON.stringify({ hora: dados.hora, ctxCombinado: `Combinado pra continuar: ${dados.assunto}`, expira: Date.now() + 24 * 60 * 60 * 1000 }) }
+        }).catch(() => {});
+        const contextoExtra = `\n\n[SUGESTÃO ACEITA] Ele topou! Você vai chamar ${dados.periodo === 'almoco' ? 'no almoço' : 'à noite'}. Confirme com carinho e naturalidade, sem soar robótica.`;
+        await responderLivre(user, phone, text, contextoExtra);
+        return true;
+      }
+      if (negativo) {
+        // Respeita o não — sem insistir, sem criar nada.
+        await responderLivre(user, phone, text, `\n\n[SUGESTÃO RECUSADA] Ele preferiu que você não chame agora. Aceite com naturalidade e leveza, sem insistir nem ficar sem graça.`);
+        return true;
+      }
+      // Resposta ambígua — não força decisão binária, deixa cair no fluxo normal
+      return false;
+    }
+
     if (['sim','s','ok','confirma','envia','manda','pode','yes'].includes(textNorm)) {
       const remetente = await memory.getUserPreference(user.id);
       const nomeRemetente = remetente.name || 'seu contato';
@@ -2642,7 +2711,15 @@ async function checkConfirmacaoPendente(user, phone, text) {
 }
 
 async function extractAndSavePersonalInfo(userId, text) {
-  const infos = await extractPersonalInfo(text);
+  // Busca a última mensagem da Clara pra dar contexto à extração — sem
+  // isso, uma resposta curta de confirmação ("sim", "isso mesmo", "é
+  // verdade") a uma pergunta de curiosidade orgânica (incluindo as
+  // suspeitas de perfil da atualização noturna) não era reconhecida como
+  // informação nova, porque o gate de palavras-chave exige mensagem mais
+  // longa/específica quando não há contexto da pergunta.
+  const historicoRecente = await memory.getConversationHistory(userId, 3).catch(() => []);
+  const ultimaDaClara = [...historicoRecente].reverse().find(m => m.role === 'assistant');
+  const infos = await extractPersonalInfo(text, ultimaDaClara?.content || null);
   if (infos && infos.length > 0) {
     for (const { chave, valor, categoria } of infos) {
       if (!chave || !valor) continue;
