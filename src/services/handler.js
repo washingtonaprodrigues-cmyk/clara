@@ -2,7 +2,30 @@
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
 const { classify, detectarGeneroPorNome, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarComandoIronia, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, apararRespostaCortada, detectarPadraoReacao, filtrarResposta } = require('./groq');
-const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados, geminiGerarImagem } = require('./gemini');
+const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados, geminiGerarImagem, geminiGerarSelfie } = require('./gemini');
+const fs = require('fs');
+const path = require('path');
+
+// ── Foto de referência da Clara (pessoa sintética, gerada por IA — não
+// existe de verdade) ── usada como âncora visual pra manter o mesmo
+// rosto/estilo em toda selfie que ela gerar de si mesma. Carregada uma
+// vez e cacheada em memória (não muda em runtime).
+let _claraReferenciaBase64 = null;
+let _claraReferenciaTentouCarregar = false;
+function getClaraReferenciaBase64() {
+  if (_claraReferenciaBase64) return _claraReferenciaBase64;
+  if (_claraReferenciaTentouCarregar) return null; // já tentou e não achou, não fica tentando de novo toda vez
+  _claraReferenciaTentouCarregar = true;
+  try {
+    const caminho = path.join(__dirname, '..', '..', 'public', 'clara-referencia.jpg');
+    _claraReferenciaBase64 = fs.readFileSync(caminho).toString('base64');
+    console.log('[ClaraReferencia] Foto de referência carregada com sucesso');
+    return _claraReferenciaBase64;
+  } catch (e) {
+    console.error('[ClaraReferencia] Não encontrou public/clara-referencia.jpg — selfies vão cair no gerador genérico:', e.message);
+    return null;
+  }
+}
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
 // O classify() já recebe uma tabela com a data exata de cada dia da semana
@@ -918,6 +941,36 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       return;
     }
 
+    // ── Selfie da Clara: ela vai mandar uma foto DE SI MESMA fazendo algo ──
+    // Usa a foto de referência (pessoa sintética) como âncora, pra manter
+    // o mesmo rosto/estilo em toda selfie — diferente do GERAR_IMAGEM
+    // genérico, que não tem compromisso de consistência visual nenhum.
+    const selfieMatch = respStr.match(/[*_]{0,2}GERAR_SELFIE:(.+?)(?:[*_]{0,2}|\n|$)/i);
+    if (selfieMatch) {
+      const cenaSelfie = selfieMatch[1].trim();
+      const tomSelfie = preferences?.tom || 'leve';
+      const memAfetivaSelfie = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+      const apelidoSelfie = memAfetivaSelfie?.apelido_usuario || preferences?.name || '';
+      const avisoSelfie = apelidoSelfie
+        ? `Pera, deixa eu tirar uma foto pra te mandar, ${apelidoSelfie}! 📸`
+        : `Pera, deixa eu tirar uma foto pra te mandar! 📸`;
+      await sendMessage(phone, avisoSelfie);
+
+      try {
+        const referencia = getClaraReferenciaBase64();
+        const selfie = referencia
+          ? await geminiGerarSelfie(cenaSelfie, referencia, 'image/jpeg')
+          : await geminiGerarImagem(`photorealistic photo, ${cenaSelfie}`); // fallback sem referência
+        await sendImageMsg(phone, selfie.base64, '', selfie.mimeType);
+        await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
+        await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma selfie minha: ${cenaSelfie}`).catch(() => {});
+      } catch (eSelfie) {
+        console.error(`[GerarSelfie] Erro:`, eSelfie.message);
+        await sendMessage(phone, `Ih, não consegui tirar a foto agora 😕 ${tomSelfie === 'sarcastico' ? 'Nem toda hora tô fotogênica.' : 'Tenta de novo daqui a pouco?'}`);
+      }
+      return;
+    }
+
     await memory.saveConversationMessage(user.id, 'user', text);
     await memory.saveConversationMessage(user.id, 'assistant', respStr);
     await sendMessage(phone, respStr);
@@ -957,6 +1010,23 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma imagem que criei: ${text.trim()}`).catch(() => {});
           console.log(`[ImagemPrometida] Resultado enviado para ${phone}`);
         } catch (e) { console.error('[ImagemPrometida] Erro:', e.message); }
+      })();
+    }
+
+    // ── Detecção de promessa de selfie não gerada ──────────────────────
+    const prometeuSelfie = /deixa eu tirar (uma foto|essa foto)|j[áa] tiro (uma foto|essa foto)|vou tirar (uma foto|essa foto)|deixa eu te mandar uma foto/i.test(respStr);
+    if (prometeuSelfie && !selfieMatch) {
+      ;(async () => {
+        try {
+          await new Promise(r => setTimeout(r, 1500));
+          const referenciaProm = getClaraReferenciaBase64();
+          const selfieProm = referenciaProm
+            ? await geminiGerarSelfie(text.trim(), referenciaProm, 'image/jpeg')
+            : await geminiGerarImagem(`photorealistic photo, ${text.trim()}`);
+          await sendImageMsg(phone, selfieProm.base64, '', selfieProm.mimeType);
+          await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma selfie minha: ${text.trim()}`).catch(() => {});
+          console.log(`[SelfiePrometida] Resultado enviado para ${phone}`);
+        } catch (e) { console.error('[SelfiePrometida] Erro:', e.message); }
       })();
     }
     // Quando o pedido criou um lembrete, a Clara responde de forma humana
