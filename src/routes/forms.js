@@ -550,7 +550,8 @@ router.post('/preferencia/:phone', async (req, res) => {
     if (tomMudou) {
       const NOMES_TOM = {
         clara_sendo_clara: 'Clara Sendo Clara 🙎🏻‍♀️',
-        carinhoso: 'Simpática 🥰',
+        leve: 'Leve 🌤️',
+        carinhoso: 'Leve 🌤️', // alias de compatibilidade — valor antigo, mesmo rótulo
         direto: 'Direta 🎯',
         divertido: 'Divertida 🎉',
         sarcastico: 'Sem Filtro 🔥',
