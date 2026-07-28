@@ -1372,6 +1372,7 @@ async function tentarFallbackCascata(contexto, name, message, logPrefix = 'ModoD
 // Filtro de saída — remove padrões banidos de qualquer resposta
 function filtrarResposta(t) {
   if (!t || typeof t !== 'string') return t;
+  const _original = t;
   // Preserva a tag de geração de imagem intacta (com ou sem comentário
   // antes dela) — sem isso, a limpeza de tags abaixo (feita pra evitar
   // vazamento de outras marcações internas) ia apagar a tag antes do
@@ -1444,6 +1445,10 @@ function filtrarResposta(t) {
   // Remove "Responda com sim ou não" e variações no fim
   t = t.replace(/\s*responda?\s+(com\s+)?sim\s+ou\s+n[\xE3a]o\.?\s*$/gi, '');
   t = t.trim();
+  if ((!t || t.length < 3) && _original && _original.trim().length > 5) {
+    console.warn('[filtrarResposta] Limpeza de tags zerou a resposta inteira — devolvendo original pra não ficar muda.');
+    return _original.trim();
+  }
   // Remove aspas do início E do final (mesmo que não fechem perfeitamente)
   if (t.startsWith('"')) t = t.replace(/^"+/, '').trim();
   if (t.endsWith('"')) t = t.replace(/"+$/, '').trim();
@@ -1976,6 +1981,7 @@ ou: {"encontrou": false}`;
 
 module.exports = {
   classify,
+  detectarGeneroPorNome,
   extractPersonalInfo,
   extractPendenciaEmocional,
   extractEpisodio,
