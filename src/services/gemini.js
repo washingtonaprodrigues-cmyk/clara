@@ -381,7 +381,7 @@ async function geminiGerarSelfie(cena, referenciaBase64, referenciaMimeType = 'i
       role: 'user',
       parts: [
         { inlineData: { mimeType: referenciaMimeType, data: referenciaBase64 } },
-        { text: `Using the exact same woman shown in this reference photo — same face, same identity, same general look — generate a new photorealistic photo of her in this scene: ${cena}. Keep her facial features, hair color/style and overall appearance consistent with the reference photo. Natural, casual photo style, not studio/posed.` }
+        { text: `This is a reference photo of a specific woman — keep her exact face, identity, hair color/style and overall features unchanged in the new image. Now generate a COMPLETELY NEW photo of her in this different scene: "${cena}". IMPORTANT: the background, setting, clothing and pose must match this new scene description exactly — do NOT reuse the background, room, lighting or setting from the reference photo, only her face/identity carries over. Photorealistic, natural, casual photo style, not studio/posed.` }
       ]
     }],
     generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
