@@ -139,12 +139,12 @@ function dateBRT(d = nowBRT()) { return `${d.getFullYear()}-${pad(d.getMonth()+1
 function random(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function tomDesc(tom) {
   return {
-    carinhoso: 'calorosa e próxima, como uma amiga que genuinamente se importa. Use emojis com moderação. Varie sempre o jeito de falar.',
+    leve: 'calorosa e próxima, como uma amiga que genuinamente se importa. Use emojis com moderação. Varie sempre o jeito de falar.',
     direto: 'direta e objetiva, sem rodeios ou fofice. Vá ao ponto. Sem emojis desnecessários.',
     divertido: 'animada, com humor e energia, usando gírias naturais. Leve e bem-humorada.',
     sarcastico: 'sarcástica e sem filtro — usa ironia fina, deboche carinhoso, nunca elogia à toa. Fala a verdade com um sorrisinho. NUNCA seja sentimental ou emotiva. Tom ácido mas com carinho real por baixo.',
     clara_sendo_clara: 'adaptável ao clima de cada mensagem — anime-se com quem brinca, seja direta com quem é prático, acolha quem está mal, devolva provocação com sarcasmo leve. Sempre genuína, nunca fria ou forçada.',
-  }[tom || 'carinhoso'] || 'calorosa e próxima, como uma amiga que genuinamente se importa.';
+  }[tom || 'leve'] || 'calorosa e próxima, como uma amiga que genuinamente se importa.';
 }
 
 // Final fixo — sem variação garante que o dedup do whatsapp.js
@@ -442,7 +442,7 @@ REGRAS:
 - NUNCA poética, NUNCA entre aspas, máximo 1 emoji, nunca repita a mesma frase de outro dia.
 - NUNCA use português de Portugal (podes, tens) — só português do Brasil.`;
 
-        const msg = await freeResponse('Bom dia.', [], { _contexto: memoriaContexto || '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBomDia, _maxTokens: 100 });
+        const msg = await freeResponse('Bom dia.', [], { _contexto: memoriaContexto || '', name: user.name, tom: prefs.tom || 'leve', _systemOverride: systemBomDia, _maxTokens: 100 });
         if (!msg || isRespostaFallback(msg)) { console.log(`[Bom dia] Rate limit ou fallback genérico, pulado para ${user.phone}`); continue; }
 
         if (!(await tentarLockDiario(user.id, 'bom_dia_lock'))) continue; // alguém já mandou enquanto gerávamos
@@ -522,8 +522,8 @@ REGRAS ABSOLUTAS:
 - Se a pessoa estava viajando hoje, pergunte se chegou bem
 - Se tiver compromisso importante amanhã, mencione levemente e só isso
 - Varie sempre — nunca repita a mesma frase de boa noite
-- Tom: ${prefs.tom || 'carinhoso'}`;
-        const msg = await freeResponse('Boa noite.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso', _systemOverride: systemBoaNoite, _maxTokens: 80 });
+- Tom: ${prefs.tom || 'leve'}`;
+        const msg = await freeResponse('Boa noite.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'leve', _systemOverride: systemBoaNoite, _maxTokens: 80 });
         if (!msg || isRespostaFallback(msg)) {
           console.log(`[Boa noite] Rate limit ou fallback, pulado para ${user.phone} — liberando pra tentar de novo`);
           // Libera o lock pra próxima tentativa do dia poder tentar de novo
@@ -620,8 +620,8 @@ cron.schedule('0 8 * * *', async () => {
                 const prefs = await memory.getUserPreference(user.id).catch(() => null);
                 const quando = diffDias === 0 ? 'hoje' : 'amanhã';
                 msg = await freeResponse(`Aviso de aniversário de ${ev.personName}.`, [], {
-                  _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso',
-                  _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''} Tom: ${prefs?.tom || 'carinhoso'}. É ${quando} o aniversário de ${ev.personName}. O que você sabe: ${linhasRelacionadas.join('; ')}. Envie uma mensagem curta (1-2 linhas) avisando e mencionando naturalmente esse detalhe pessoal. NÃO liste como tópicos.`
+                  _contexto: '', name: user.name, tom: prefs?.tom || 'leve',
+                  _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''} Tom: ${prefs?.tom || 'leve'}. É ${quando} o aniversário de ${ev.personName}. O que você sabe: ${linhasRelacionadas.join('; ')}. Envie uma mensagem curta (1-2 linhas) avisando e mencionando naturalmente esse detalhe pessoal. NÃO liste como tópicos.`
                 }).catch(() => null);
                 if (msg && isRespostaFallback(msg)) msg = null;
               }
@@ -927,7 +927,7 @@ ${infoPessoalFiltrado || ''}
 ${horaAcorda ? `(Acordou por volta das ${horaAcorda})` : ''}`;
 
           const msg = await freeResponse('Mensagem proativa.', [], {
-            _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
+            _contexto: '', name: user.name, tom: prefs.tom || 'leve',
             _systemOverride: systemProativa,
             _maxTokens: 80  // proativa deve ser curta — 1-2 linhas
           });
@@ -1005,8 +1005,8 @@ cron.schedule('30 9 * * 0', async () => {
           : `- Gasto${i.exemplo ? ` com "${i.exemplo}"` : ` na categoria "${i.categoria}"`} este mês: R$ ${i.valorAtual.toFixed(2)}, ${i.percentual}% acima da média (R$ ${i.valorMedio.toFixed(2)}).`
         ).join('\n');
         const msg = await freeResponse('Mensagem de radar/padrões.', [], {
-          _contexto: '', name: user.name, tom: prefs?.tom || 'carinhoso',
-          _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''} Tom: ${prefs?.tom || 'carinhoso'}. Padrões notados:\n${insightsTexto}\nEnvie UMA mensagem natural (2-3 linhas) comentando como observação genuína sobre o GASTO EM SI (o que a pessoa comprou/pagou), nunca sobre o nome da categoria — "categoria" é só um rótulo interno do sistema, não fale dela como se fosse uma coisa real ou tivesse "assinatura com uma data". NÃO use tópicos. NÃO termine com saudação de período.`
+          _contexto: '', name: user.name, tom: prefs?.tom || 'leve',
+          _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''} Tom: ${prefs?.tom || 'leve'}. Padrões notados:\n${insightsTexto}\nEnvie UMA mensagem natural (2-3 linhas) comentando como observação genuína sobre o GASTO EM SI (o que a pessoa comprou/pagou), nunca sobre o nome da categoria — "categoria" é só um rótulo interno do sistema, não fale dela como se fosse uma coisa real ou tivesse "assinatura com uma data". NÃO use tópicos. NÃO termine com saudação de período.`
         });
         if (!msg || isRespostaFallback(msg)) continue;
         await sendMessage(user.phone, msg);
@@ -1045,8 +1045,8 @@ cron.schedule('30 9 * * 0', async () => {
 //         ]);
 //         const ctx = `É domingo à noite, véspera de uma nova semana.\n${lembretesSemana.length > 0 ? `Próximos compromissos:\n${lembretesSemana.map(r => `• ${r.message}`).join('\n')}` : 'Sem compromissos agendados para a semana.'}\n${infoPessoal}`;
 //         const msg = await freeResponse('Envie mensagem de domingo.', [], {
-//           _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
-//           _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} Envie uma mensagem de domingo à noite — tranquila, motivadora e breve (2-3 linhas). NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'carinhoso'}.\n${ctx}`
+//           _contexto: '', name: user.name, tom: prefs.tom || 'leve',
+//           _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} Envie uma mensagem de domingo à noite — tranquila, motivadora e breve (2-3 linhas). NÃO liste tarefas. NÃO agende nada. Tom: ${prefs.tom || 'leve'}.\n${ctx}`
 //         });
 //         if (!msg || isRespostaFallback(msg)) continue;
 //         await sendMessage(user.phone, msg);
@@ -1073,8 +1073,8 @@ cron.schedule('30 9 * * 0', async () => {
 //         const { prefs } = await getUserContext(user);
 //         const infoPessoal = await memory.buildPersonalContext(user.id);
 //         const msg = await freeResponse('Mensagem para usuário que sumiu.', [], {
-//           _contexto: '', name: user.name, tom: prefs.tom || 'carinhoso',
-//           _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} O usuário não conversa com você há ${diasSemConversa} dias. Envie uma mensagem curta e genuína perguntando como ele está — sem ser dramática, sem cobrar. Máx 2 linhas. Tom: ${prefs.tom || 'carinhoso'}.\n${infoPessoal}`
+//           _contexto: '', name: user.name, tom: prefs.tom || 'leve',
+//           _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome é ${user.name}.` : ''} O usuário não conversa com você há ${diasSemConversa} dias. Envie uma mensagem curta e genuína perguntando como ele está — sem ser dramática, sem cobrar. Máx 2 linhas. Tom: ${prefs.tom || 'leve'}.\n${infoPessoal}`
 //         });
 //         if (!msg || isRespostaFallback(msg)) continue;
 //         await sendMessage(user.phone, msg);
@@ -1219,7 +1219,7 @@ cron.schedule('* * * * *', async () => {
               const nomeNat = afetivaNat?.apelido_usuario || prefsNat?.name || '';
               const titulosNat = grupo.reminders.map(r => r.message).join(', ');
               const systemLembreteNatural = `Vocês estão no meio de uma conversa agora. Chegou a hora de um lembrete que ${nomeNat || 'a pessoa'} pediu: "${titulosNat}". Avise de forma NATURAL, misturado no papo — nada de formato de notificação, nada de emoji de sino, nada de "⏰ hora". Só um comentário curto no seu tom lembrando. Ex: "Ei, lembrando que é hora de X!" ou "Opa, bateu a hora de Y aqui 👀".`;
-              const respNatural = await freeResponse('(lembrete durante conversa)', [], { _contexto: '', name: prefsNat?.name || '', tom: prefsNat?.tom || 'carinhoso', _systemOverride: systemLembreteNatural, _maxTokens: 100 });
+              const respNatural = await freeResponse('(lembrete durante conversa)', [], { _contexto: '', name: prefsNat?.name || '', tom: prefsNat?.tom || 'leve', _systemOverride: systemLembreteNatural, _maxTokens: 100 });
               if (respNatural && !isRespostaFallback(respNatural)) msgNatural = respNatural;
             } catch (eNat) { console.error('[Reminder] Erro ao gerar lembrete natural:', eNat.message); }
           }
@@ -1708,7 +1708,7 @@ Envie UMA mensagem curta (1-2 linhas) como parceira presente:
 - Ofereça ajuda específica para aquele contexto
 - NÃO use "lembrete" ou "aviso" — seja natural
 - NUNCA termine com "boa sorte" ou saudação de período`;
-        const msg = await freeResponse('Mensagem de parceira.', [], { _contexto: '', name: nome, tom: prefs?.tom || 'carinhoso', _systemOverride: systemParceira });
+        const msg = await freeResponse('Mensagem de parceira.', [], { _contexto: '', name: nome, tom: prefs?.tom || 'leve', _systemOverride: systemParceira });
         if (!msg || msg.length < 5 || isRespostaFallback(msg)) continue;
         await sendMessage(user.phone, msg);
         console.log(`[Parceira] ${user.phone} → "${r.message}" em 30min`);
@@ -1771,7 +1771,7 @@ Escreva em primeira pessoa (você é a Clara).
 NUNCA coloque entre aspas. NUNCA use tópicos — escreva em prosa natural.`;
 
         const novoResumo = await freeResponse('Atualize o resumo do relacionamento.', [], {
-          _contexto: '', name: user.name, tom: 'carinhoso',
+          _contexto: '', name: user.name, tom: 'leve',
           _systemOverride: systemResumo,
           _maxTokens: 200
         });
