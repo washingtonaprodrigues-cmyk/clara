@@ -366,6 +366,51 @@ async function geminiGerarImagem(prompt) {
   return { base64: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png' };
 }
 
+// ── Geração de "selfie" da Clara, com identidade consistente ──────────
+// Usa uma foto de referência (pessoa sintética, gerada por IA — não é
+// foto de alguém real) como âncora visual, pra manter o mesmo rosto/
+// estilo em toda imagem que a Clara gerar de si mesma. Sem a referência,
+// cada geração cria um rosto diferente do zero.
+async function geminiGerarSelfie(cena, referenciaBase64, referenciaMimeType = 'image/jpeg') {
+  if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
+  if (!cena || !cena.trim()) throw new Error('Cena vazia');
+  if (!referenciaBase64) throw new Error('Foto de referência não disponível');
+
+  const body = {
+    contents: [{
+      role: 'user',
+      parts: [
+        { inlineData: { mimeType: referenciaMimeType, data: referenciaBase64 } },
+        { text: `Using the exact same woman shown in this reference photo — same face, same identity, same general look — generate a new photorealistic photo of her in this scene: ${cena}. Keep her facial features, hair color/style and overall appearance consistent with the reference photo. Natural, casual photo style, not studio/posed.` }
+      ]
+    }],
+    generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+  };
+
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('timeout')), 30000)
+  );
+  const fetchPromise = fetch(geminiUrl(GEMINI_IMAGE_MODEL), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const response = await Promise.race([fetchPromise, timeoutPromise]);
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(`Gemini Selfie erro ${response.status}: ${errText.slice(0, 300)}`);
+  }
+  const data = await response.json();
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const imgPart = parts.find(p => p.inlineData?.data);
+  if (!imgPart) {
+    const bloqueio = data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason;
+    throw new Error(`Gemini não retornou selfie${bloqueio ? ` (${bloqueio})` : ''}`);
+  }
+  return { base64: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png' };
+}
+
 module.exports = {
   geminiDisponivel,
   geminiFreeResponse,
@@ -373,6 +418,7 @@ module.exports = {
   geminiFreeResponseLite,
   geminiVision,
   geminiGerarImagem,
+  geminiGerarSelfie,
   isGeminiRateLimit,
   todosModelosEsgotados,
   GEMINI_MODELS,
