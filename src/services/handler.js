@@ -358,10 +358,10 @@ function formatarListaWhatsApp(listaResult) {
 // genérica. Usa o apelido real guardado na memória afetiva (ex: "fedo"),
 // nunca um fallback hardcoded. Se a geração por IA falhar, cai em frases
 // fixas COM personalidade, ainda assim usando o apelido quando disponível.
-async function gerarAvisoBusca(text, tom = 'carinhoso', apelido = '') {
+async function gerarAvisoBusca(text, tom = 'leve', apelido = '') {
   const n = apelido || '';
   const por_tom = {
-    carinhoso: n ? [
+    leve: n ? [
       `Pera aí que vou dar uma olhada pra gente, ${n}! 💜`,
       `Já vejo isso pra você, ${n}! 😊`,
       `Um segundo que já checo aqui!`,
@@ -390,7 +390,7 @@ async function gerarAvisoBusca(text, tom = 'carinhoso', apelido = '') {
       `Um segundo.`,
     ],
   };
-  const opcoes = por_tom[tom] || por_tom.carinhoso;
+  const opcoes = por_tom[tom] || por_tom.leve;
   return opcoes[Math.floor(Math.random() * opcoes.length)];
 }
 
@@ -425,7 +425,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       if (resp === null) return;
       if (resp && resp.includes('__BUSCAR:')) {
         const memAfSC = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
-        const avSC = await gerarAvisoBusca(text, preferences?.tom || 'carinhoso', memAfSC?.apelido_usuario || preferences?.name || '');
+        const avSC = await gerarAvisoBusca(text, preferences?.tom || 'leve', memAfSC?.apelido_usuario || preferences?.name || '');
         await sendMessage(phone, avSC);
         return;
       }
@@ -843,7 +843,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     if (buscaMatch) {
       const query = buscaMatch[1].trim();
       // Avisa que vai pesquisar, no estilo da Clara — com o apelido real
-      const tom = preferences?.tom || 'carinhoso';
+      const tom = preferences?.tom || 'leve';
       const memAfetivaBusca = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
       const apelidoBusca = memAfetivaBusca?.apelido_usuario || preferences?.name || '';
       const aviso = await gerarAvisoBusca(text, tom, apelidoBusca);
@@ -871,7 +871,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     const imagemMatch = respStr.match(/[*_]{0,2}GERAR_IMAGEM:(.+?)(?:[*_]{0,2}|\n|$)/i);
     if (imagemMatch) {
       const promptImagem = imagemMatch[1].trim();
-      const tomImg = preferences?.tom || 'carinhoso';
+      const tomImg = preferences?.tom || 'leve';
       const memAfetivaImg = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
       const apelidoImg = memAfetivaImg?.apelido_usuario || preferences?.name || '';
       const avisoImg = apelidoImg
@@ -906,7 +906,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           const memAfetivaProm = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
           const apelidoProm = memAfetivaProm?.apelido_usuario || preferences?.name || '';
           const cidadeProm = await memory.getCidadeAtual(user.id).catch(() => '');
-          const resultado = await searchWeb(queryBusca, cidadeProm, apelidoProm, preferences?.tom || 'carinhoso');
+          const resultado = await searchWeb(queryBusca, cidadeProm, apelidoProm, preferences?.tom || 'leve');
           if (resultado && !isRespostaFallback(resultado)) {
             await memory.saveConversationMessage(user.id, 'assistant', resultado).catch(() => {});
             await sendMessage(phone, resultado);
@@ -1296,7 +1296,7 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
         : Promise.resolve('')
       ).catch(() => '');
       const preferencesBusca = await memory.getUserPreference(user.id).catch(() => ({}));
-      const tomBusca = preferencesBusca?.tom || 'carinhoso';
+      const tomBusca = preferencesBusca?.tom || 'leve';
       const apelidoBusca = (await memory.getMemoriaAfetiva(user.id).catch(() => {}))?.apelido_usuario || preferencesBusca?.name || '';
       const resultadoBusca = await searchWeb(classified.query, cidade, apelidoBusca, tomBusca);
       if (resultadoBusca) {
@@ -1889,7 +1889,7 @@ async function executeAction(user, phone, classified, originalText, quotedText =
       const dicaChamada = foiSaudade
         ? `Usuário disse pra chamar quando sentir saudade — você decidiu que vai chamar às ${horaFinal}. Responda de forma natural e carinhosa/zoeira conforme o tom, sem revelar que calculou o horário. Confirme que vai aparecer, sem mencionar a hora exata. NUNCA use __BUSCAR__ nem tags de sistema.`
         : `Usuário pediu pra ser chamado${horaJaInformada ? ` às ${horaFinal}` : ` — você escolheu às ${horaFinal}`}. Confirme de forma natural e animada no seu tom. ${!horaJaInformada ? `Como você calculou o horário, pode dizer algo como "combinado, apareço mais tarde 😉"` : `Ex: "Combinado! Te chamo às ${horaFinal} 😏"`}. NUNCA use __BUSCAR__ nem tags de sistema.`;
-      const systemChamada = buildPersonality(prefsChamada?.tom || 'carinhoso', apelidoChamada, false) + `\n\n${dicaChamada}`;
+      const systemChamada = buildPersonality(prefsChamada?.tom || 'leve', apelidoChamada, false) + `\n\n${dicaChamada}`;
       const confMsg = await geminiFreeResponse([
         { role: 'system', content: systemChamada },
         { role: 'user', content: originalText || 'ok' }
