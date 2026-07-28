@@ -1,7 +1,7 @@
 // v2 - consulta direta sem LLM
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
-const { classify, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarComandoIronia, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, apararRespostaCortada, detectarPadraoReacao, filtrarResposta } = require('./groq');
+const { classify, detectarGeneroPorNome, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarComandoIronia, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, apararRespostaCortada, detectarPadraoReacao, filtrarResposta } = require('./groq');
 const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados, geminiGerarImagem } = require('./gemini');
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
@@ -399,6 +399,15 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     const history = await memory.getConversationHistory(user.id, 10);
     const preferences = await memory.getUserPreference(user.id);
     preferences._phone = phone;
+
+    // Detecta o gênero pelo NOME REAL antes dele ser substituído pelo
+    // apelido logo abaixo — crítico: buildPersonality tenta detectar
+    // gênero pelo texto que recebe como "name", mas se isso já virou
+    // "fedo" (apelido), a detecção falha silenciosamente (não bate com
+    // nenhum nome conhecido) e ela pode errar a concordância (ex: chamar
+    // o usuário de "senhora"). Guarda o gênero certo à parte, pra usar
+    // como reforço explícito no contexto independente do que "name" virar.
+    const generoUsuario = detectarGeneroPorNome(preferences.name);
 
     // Usa o apelido carinhoso (ex: "fedo") em vez do nome real sempre que
     // existir — sem isso, freeResponse/buildPersonality recebem só o nome
@@ -815,6 +824,17 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         }
       } catch (eSugestao) { console.error(`[${phone}] Erro sugestão chamada:`, eSugestao.message); }
 
+      // ── Reforço explícito de gênero ──────────────────────────────────
+      // Sempre presente, independente do que "name" virar (apelido, nome
+      // real) — a detecção interna do buildPersonality só funciona com
+      // nome real, então isso é o que garante a concordância certa mesmo
+      // quando ela está usando o apelido pra se dirigir a ele.
+      if (generoUsuario === 'M') {
+        contexto += `\n\n[GÊNERO — IMPORTANTE] O usuário é HOMEM. Concorde sempre no masculino ao falar dele (ex: "querido", "lindo", "seguro"), nunca no feminino (nunca "senhora", "querida", "linda"). Você (Clara) é MULHER — concorde sempre no feminino ao falar de si mesma (ex: "segura", "apaixonada", "safada"), nunca no masculino (nunca "seguro", "apaixonado", "safado"). Preste atenção especial nisso em brincadeiras, hipóteses e apelidos.`;
+      } else if (generoUsuario === 'F') {
+        contexto += `\n\n[GÊNERO — IMPORTANTE] O usuário é MULHER. Concorde sempre no feminino ao falar dela, nunca no masculino. Você (Clara) é MULHER — concorde sempre no feminino ao falar de si mesma.`;
+      }
+
       // ── Nível de ironia (teste temporário) ──────────────────────────
       try {
         const nivelIronia = await prisma.memory.findFirst({ where: { userId: user.id, type: 'ironia_nivel' } }).catch(() => null);
@@ -836,7 +856,14 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
     // Garante que resp é string — o Gemini pode retornar objeto em casos de erro
     const respStr = typeof resp === 'string' ? resp : String(resp || '');
-    if (!respStr) return;
+    if (!respStr) {
+      // Segunda camada de proteção — não deveria mais acontecer com o fix
+      // do filtrarResposta (que evita zerar a resposta inteira), mas se
+      // acontecer por qualquer outro motivo, nunca fica muda em silêncio.
+      console.warn(`[${phone}] respStr vazio depois de freeResponse — mandando fallback em vez de ficar muda`);
+      await sendMessage(phone, 'Opa, me perdi aqui por um segundo 😅 pode repetir?');
+      return;
+    }
 
     // ── Busca proativa: Clara sinalizou que quer pesquisar ──
     const buscaMatch = respStr.match(/[*_]{0,2}BUSCAR:(.+?)(?:[*_]{0,2}|\n|$)/i);
@@ -961,7 +988,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           `${m.role === 'user' ? 'Ele' : 'Clara'}: ${(m.content || '').slice(0, 120)}`
         ).join('\n');
         const extracted = await geminiFreeResponse([
-          { role: 'user', content: `Conversa:\n${resumoMR}\n\nO que dessa conversa merece ser lembrado?\n\nPERMANENTE (nunca apaga): novo apelido criado, brincadeira interna nova, algo que define quem são juntos, papel de pessoa importante na vida dele (filha Isis, esposa/patroa).\nACONTECIMENTO (1 ano): saúde marcante, trabalho com carga emocional, momento familiar importante, algo emotivamente significativo que aconteceu.\nDESCARTAR: lembrete, lista, gasto, agenda, pão de queijo, qualquer coisa operacional sem peso emocional.\n\nPara cada memória relevante: {"categoria":"permanente|acontecimento","conteudo":"1 frase natural","tags":["tag1","tag2"]}\nResposta APENAS como JSON array. Se nada relevante: []` }
+          { role: 'user', content: `Conversa (prefixo "Ele:" = o usuário Washington, homem. Prefixo "Clara:" = você mesma, mulher):\n${resumoMR}\n\nO que dessa conversa merece ser lembrado?\n\nATENÇÃO CRÍTICA NA ATRIBUIÇÃO: preste muita atenção em QUEM disse o quê antes de escrever a memória — nunca troque a autoria. Se a Clara falou uma regra ou característica sobre SI MESMA (ex: "eu não posso dizer labuta", "eu não uso essa palavra"), isso é sobre a Clara — NUNCA escreva como se fosse algo que ela proibiu ELE de fazer ou dizer. Se o Ele disse algo sobre si mesmo, é sobre ele, não sobre ela. Também respeite o gênero de cada um: Clara é mulher (adjetivos no feminino ao falar dela), Ele é homem (adjetivos no masculino ao falar dele) — nunca inverta.\n\nPERMANENTE (nunca apaga): novo apelido criado, brincadeira interna nova, algo que define quem são juntos, papel de pessoa importante na vida dele (filha Isis, esposa/patroa).\nACONTECIMENTO (1 ano): saúde marcante, trabalho com carga emocional, momento familiar importante, algo emotivamente significativo que aconteceu.\nDESCARTAR: lembrete, lista, gasto, agenda, pão de queijo, qualquer coisa operacional sem peso emocional.\n\nPara cada memória relevante: {"categoria":"permanente|acontecimento","conteudo":"1 frase natural","tags":["tag1","tag2"]}\nResposta APENAS como JSON array. Se nada relevante: []` }
         ], { temperature: 0.1, maxTokens: 200 }).catch(() => null);
         if (!extracted) return;
         const clean = extracted.replace(/```json|```/g, '').trim();
@@ -1323,8 +1350,12 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
                 : ehLocal
                 ? `\n\n[OPÇÕES LOCAIS ENVIADAS] Ofereça buscar mais em 1 frase curta. NUNCA diga que faltou info.`
                 : `\n\n[INFO ENVIADA] Toque pessoal curtíssimo ou SKIP.`;
+              const generoBusca = detectarGeneroPorNome(preferencesBusca?.name);
+              const reforcoGeneroBusca = generoBusca === 'M'
+                ? '\n\n[GÊNERO] O usuário é homem — concorde no masculino ao falar dele. Você é mulher — concorde no feminino ao falar de si.'
+                : generoBusca === 'F' ? '\n\n[GÊNERO] O usuário é mulher — concorde no feminino ao falar dela. Você é mulher — concorde no feminino ao falar de si.' : '';
               const coment = await geminiFreeResponse([
-                { role: 'system', content: buildPersonality(tomBusca, apelidoBusca, false) + promptComent },
+                { role: 'system', content: buildPersonality(tomBusca, apelidoBusca, false) + promptComent + reforcoGeneroBusca },
                 { role: 'user', content: text }
               ], { temperature: 0.85, maxTokens: 60 }).catch(() => null);
               const comentLimpo = filtrarResposta((coment || '').replace(/[*_]{0,2}BUSCAR[*_]{0,2}:[^\n]*/gi, '').trim());
@@ -1889,7 +1920,11 @@ async function executeAction(user, phone, classified, originalText, quotedText =
       const dicaChamada = foiSaudade
         ? `Usuário disse pra chamar quando sentir saudade — você decidiu que vai chamar às ${horaFinal}. Responda de forma natural e carinhosa/zoeira conforme o tom, sem revelar que calculou o horário. Confirme que vai aparecer, sem mencionar a hora exata. NUNCA use __BUSCAR__ nem tags de sistema.`
         : `Usuário pediu pra ser chamado${horaJaInformada ? ` às ${horaFinal}` : ` — você escolheu às ${horaFinal}`}. Confirme de forma natural e animada no seu tom. ${!horaJaInformada ? `Como você calculou o horário, pode dizer algo como "combinado, apareço mais tarde 😉"` : `Ex: "Combinado! Te chamo às ${horaFinal} 😏"`}. NUNCA use __BUSCAR__ nem tags de sistema.`;
-      const systemChamada = buildPersonality(prefsChamada?.tom || 'leve', apelidoChamada, false) + `\n\n${dicaChamada}`;
+      const generoChamada = detectarGeneroPorNome(prefsChamada?.name);
+      const reforcoGeneroChamada = generoChamada === 'M'
+        ? ' Ele é homem — concorde no masculino ao falar dele. Você é mulher — concorde no feminino ao falar de si.'
+        : generoChamada === 'F' ? ' Ela é mulher — concorde no feminino ao falar dela. Você é mulher — concorde no feminino ao falar de si.' : '';
+      const systemChamada = buildPersonality(prefsChamada?.tom || 'leve', apelidoChamada, false) + `\n\n${dicaChamada}${reforcoGeneroChamada}`;
       const confMsg = await geminiFreeResponse([
         { role: 'system', content: systemChamada },
         { role: 'user', content: originalText || 'ok' }
