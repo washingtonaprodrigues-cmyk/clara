@@ -152,7 +152,7 @@ async function chamarGemini(model, msgs, { temperature = 0.7, maxTokens = 800 } 
   if (!text) {
     throw new Error(`Gemini retornou vazio (${model}, finishReason: ${finishReason || 'desconhecido'})`);
   }
-  return text.trim();
+  return { text: text.trim(), finishReason };
 }
 
 // Gera uma resposta via Gemini, no mesmo formato esperado pelo freeResponse.
@@ -174,15 +174,70 @@ async function geminiFreeResponse(msgs, opts = {}) {
     }
     tentouAlgum = true;
     try {
-      const resposta = await chamarGemini(model, msgs, opts);
+      const resultado = await chamarGemini(model, msgs, opts);
       console.log(`[Gemini] modelo usado com sucesso: ${model}`);
-      return resposta;
+      return resultado.text;
     } catch (err) {
       ultimoErro = err;
       console.error(`[Gemini] modelo ${model} falhou: ${err.message}`);
       if (isQuotaError(err)) {
         marcarEsgotado(model);
       }
+      continue;
+    }
+  }
+
+  if (!tentouAlgum) {
+    throw new Error('Todos os modelos Gemini estão esgotados por hoje (quota diária zerada)');
+  }
+  throw ultimoErro || new Error('Todos os modelos Gemini falharam');
+}
+
+// ── Continuação automática quando a resposta é cortada ────────────────
+// Usada especificamente na geração da resposta principal (onde cortar no
+// meio de uma lista, por exemplo, é visível e parece bug pro usuário).
+// Se o finishReason vier MAX_TOKENS (o modelo tinha mais coisa pra dizer
+// mas bateu no limite), faz UMA chamada extra pedindo pra continuar
+// exatamente de onde parou — sem repetir, sem "recomeçar" a resposta, sem
+// comentar que foi cortada — e emenda tudo numa string só antes de
+// devolver. O usuário nunca vê a resposta cortada nem uma segunda
+// mensagem que pareça reiniciar do zero.
+async function geminiFreeResponseComContinuacao(msgs, opts = {}) {
+  if (!geminiDisponivel()) {
+    throw new Error('GEMINI_API_KEY não configurada');
+  }
+
+  let ultimoErro;
+  let tentouAlgum = false;
+
+  for (const model of GEMINI_MODELS) {
+    if (estaEsgotado(model)) continue;
+    tentouAlgum = true;
+    try {
+      const resultado = await chamarGemini(model, msgs, opts);
+      console.log(`[Gemini] modelo usado com sucesso: ${model}`);
+
+      if (resultado.finishReason === 'MAX_TOKENS' && resultado.text.length > 20) {
+        try {
+          const msgsContinuacao = [
+            ...msgs,
+            { role: 'assistant', content: resultado.text },
+            { role: 'user', content: '(sua resposta foi cortada por limite de tamanho — continue EXATAMENTE de onde parou, sem repetir nada do que já disse, sem reintroduzir o assunto, sem comentar que foi cortada. Só emende a continuação direta.)' }
+          ];
+          const continuacao = await chamarGemini(model, msgsContinuacao, { ...opts, maxTokens: opts.maxTokens || 800 });
+          console.log(`[Gemini] continuação automática gerada (resposta original estava cortada)`);
+          return `${resultado.text} ${continuacao.text}`.trim();
+        } catch (eCont) {
+          console.error(`[Gemini] continuação falhou, devolvendo resposta cortada mesmo: ${eCont.message}`);
+          return resultado.text; // melhor cortada do que nada
+        }
+      }
+
+      return resultado.text;
+    } catch (err) {
+      ultimoErro = err;
+      console.error(`[Gemini] modelo ${model} falhou: ${err.message}`);
+      if (isQuotaError(err)) marcarEsgotado(model);
       continue;
     }
   }
@@ -213,9 +268,9 @@ async function geminiFreeResponseLite(msgs, opts = {}) {
   for (const model of GEMINI_MODELS_LITE) {
     if (estaEsgotado(model)) continue;
     try {
-      const resposta = await chamarGemini(model, msgs, opts);
+      const resultado = await chamarGemini(model, msgs, opts);
       console.log(`[Gemini-Lite] ${model}`);
-      return resposta;
+      return resultado.text;
     } catch (err) {
       ultimoErro = err;
       if (isQuotaError(err)) marcarEsgotado(model);
@@ -267,11 +322,57 @@ async function geminiVision(base64Image, mimeType, systemPrompt, userPrompt = 'O
   return text.trim();
 }
 
+// ── Geração de imagem ────────────────────────────────────────────────
+// Usa o modelo Gemini com geração de imagem nativa (multimodal: texto
+// entra, imagem sai). Retorna a imagem em base64 + mimeType, pronta pra
+// enviar no WhatsApp.
+// ATENÇÃO: o nome exato do modelo de geração de imagem pode mudar com o
+// tempo (o Google itera bastante nessa linha) — se começar a dar erro
+// 404, provavelmente é isso: verificar o nome atual do modelo na
+// documentação do Gemini API antes de assumir que é outro bug.
+const GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image';
+
+async function geminiGerarImagem(prompt) {
+  if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
+  if (!prompt || !prompt.trim()) throw new Error('Prompt vazio');
+
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+  };
+
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('timeout')), 30000)
+  );
+  const fetchPromise = fetch(geminiUrl(GEMINI_IMAGE_MODEL), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const response = await Promise.race([fetchPromise, timeoutPromise]);
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(`Gemini Imagem erro ${response.status}: ${errText.slice(0, 300)}`);
+  }
+  const data = await response.json();
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const imgPart = parts.find(p => p.inlineData?.data);
+  if (!imgPart) {
+    // Pode ter sido bloqueada por segurança do próprio Gemini — verifica
+    const bloqueio = data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason;
+    throw new Error(`Gemini não retornou imagem${bloqueio ? ` (${bloqueio})` : ''}`);
+  }
+  return { base64: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png' };
+}
+
 module.exports = {
   geminiDisponivel,
   geminiFreeResponse,
+  geminiFreeResponseComContinuacao,
   geminiFreeResponseLite,
   geminiVision,
+  geminiGerarImagem,
   isGeminiRateLimit,
   todosModelosEsgotados,
   GEMINI_MODELS,
