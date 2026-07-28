@@ -1380,12 +1380,12 @@ function filtrarResposta(t) {
   // handler conseguir extrair o prompt e gerar a imagem de verdade.
   if (/[*_]{0,2}GERAR_IMAGEM:/i.test(t)) return t.trim();
   if (/[*_]{0,2}GERAR_SELFIE:/i.test(t)) return t.trim();
-  // Detecta alucinação do formato de debug antigo — a IA "inventa" que
-  // gerou uma imagem, imitando uma marcação interna que viu no próprio
+  // Detecta alucinação do formato de debug/histórico — a IA "inventa" que
+  // já mandou uma imagem, citando de volta um trecho que viu no próprio
   // histórico (contaminação de testes anteriores), sem ter realmente
   // chamado a geração de verdade. Isso NUNCA deveria aparecer como texto
   // visível — troca por algo natural em vez de deixar vazar.
-  if (/^\[?\s*gerou uma (imagem|selfie)\s*:/i.test(t.trim())) {
+  if (/^\[?\s*gerou uma (imagem|selfie)\s*:/i.test(t.trim()) || /^Te mandei uma (imagem que criei|selfie minha):\s*[a-z]/i.test(t.trim())) {
     return 'Opa, acho que me perdi aqui — pode repetir o que você queria? 😅';
   }
   // Se a resposta É um marcador de busca (só isso), preserva — o handler precisa processar
