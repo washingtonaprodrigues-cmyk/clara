@@ -74,15 +74,19 @@ async function saveUserPreference(userId, name, tom, saldo = null) {
 
 async function getUserPreference(userId) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) return { name: null, tom: 'carinhoso', saldo: null };
-  let tom = 'carinhoso', saldo = null;
+  if (!user) return { name: null, tom: 'leve', saldo: null };
+  let tom = 'leve', saldo = null;
   if (user.metadata) {
     try {
       const m = JSON.parse(user.metadata);
-      tom = m.tom || 'carinhoso';
+      tom = m.tom || 'leve';
       saldo = m.saldo !== undefined ? m.saldo : null;
     } catch {}
   }
+  // Compatibilidade: 'carinhoso' foi renomeado pra 'leve' — usuário com
+  // valor antigo salvo no banco continua funcionando sem precisar
+  // reconfigurar nada.
+  if (tom === 'carinhoso') tom = 'leve';
   return { name: user.name, tom, saldo };
 }
 
