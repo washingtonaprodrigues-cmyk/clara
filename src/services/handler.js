@@ -1251,6 +1251,17 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
           m.name.toLowerCase().includes(medNomeCitado) || medNomeCitado.includes(m.name.toLowerCase().split(' ')[0])
         );
       }
+      // Fallback: os asteriscos podem não sobreviver na extração da
+      // citação do WhatsApp (formatação visual, nem sempre vem no texto
+      // bruto) — tenta achar o nome de algum remédio ativo direto no
+      // texto citado, sem depender de nenhuma pontuação específica.
+      if (!medEncontrado) {
+        const quotedLower = quotedText.toLowerCase();
+        medEncontrado = medicamentosAtivos.find(m => {
+          const primeiraPalavra = m.name.toLowerCase().split(' ')[0];
+          return primeiraPalavra.length > 3 && quotedLower.includes(primeiraPalavra);
+        });
+      }
       if (!medEncontrado && medicamentosAtivos.length === 1) medEncontrado = medicamentosAtivos[0];
       if (medEncontrado) {
         const novoRemaining = Math.max(0, medEncontrado.remaining - 1);
