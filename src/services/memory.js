@@ -514,13 +514,16 @@ async function getConversationHistory(userId, limit = 10) {
     try {
       const parsed = JSON.parse(m.content);
       let content = parsed.content;
-      // Sanitiza entradas antigas salvas em formato de tag/debug — isso
-      // contaminava o contexto e fazia a IA imitar o mesmo formato
-      // estranho em respostas novas, sem ter gerado nada de verdade.
-      if (typeof content === 'string' && /^\[gerou uma (imagem|selfie)[^\]]*\]$/i.test(content.trim())) {
-        content = content.replace(/^\[gerou uma imagem:\s*/i, 'Te mandei uma imagem que criei: ')
-                          .replace(/^\[gerou uma selfie:\s*/i, 'Te mandei uma selfie minha: ')
-                          .replace(/\]$/, '');
+      // Sanitiza entradas antigas contaminadas com formato de debug ou
+      // com a descrição técnica em inglês grudada — isso fazia a IA
+      // imitar/citar de volta esse trecho estranho em respostas novas,
+      // sem ter gerado nada de verdade. Corta pra frase curta em português.
+      if (typeof content === 'string') {
+        if (/^\[gerou uma (imagem|selfie)/i.test(content.trim())) {
+          content = /selfie/i.test(content) ? 'Te mandei uma selfie minha 📸' : 'Te mandei uma imagem que criei 🎨';
+        } else if (/^Te mandei uma (imagem que criei|selfie minha):\s*\S/i.test(content.trim())) {
+          content = /selfie/i.test(content) ? 'Te mandei uma selfie minha 📸' : 'Te mandei uma imagem que criei 🎨';
+        }
       }
       return { role: parsed.role, content };
     } catch { return null; }
