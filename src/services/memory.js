@@ -513,7 +513,16 @@ async function getConversationHistory(userId, limit = 10) {
   return msgs.reverse().map((m) => {
     try {
       const parsed = JSON.parse(m.content);
-      return { role: parsed.role, content: parsed.content };
+      let content = parsed.content;
+      // Sanitiza entradas antigas salvas em formato de tag/debug — isso
+      // contaminava o contexto e fazia a IA imitar o mesmo formato
+      // estranho em respostas novas, sem ter gerado nada de verdade.
+      if (typeof content === 'string' && /^\[gerou uma (imagem|selfie)[^\]]*\]$/i.test(content.trim())) {
+        content = content.replace(/^\[gerou uma imagem:\s*/i, 'Te mandei uma imagem que criei: ')
+                          .replace(/^\[gerou uma selfie:\s*/i, 'Te mandei uma selfie minha: ')
+                          .replace(/\]$/, '');
+      }
+      return { role: parsed.role, content };
     } catch { return null; }
   }).filter(Boolean);
 }
