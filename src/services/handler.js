@@ -910,7 +910,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         const imagem = await geminiGerarImagem(promptImagem);
         await sendImageMsg(phone, imagem.base64, '', imagem.mimeType);
         await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
-        await memory.saveConversationMessage(user.id, 'assistant', `[gerou uma imagem: ${promptImagem}]`).catch(() => {});
+        await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma imagem que criei: ${promptImagem}`).catch(() => {});
       } catch (eImg) {
         console.error(`[GerarImagem] Erro:`, eImg.message);
         await sendMessage(phone, `Ih, não consegui gerar essa imagem agora 😕 ${tomImg === 'sarcastico' ? 'Nem eu sou perfeita.' : 'Tenta de novo daqui a pouco?'}`);
@@ -954,7 +954,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           await new Promise(r => setTimeout(r, 1500));
           const imagemProm = await geminiGerarImagem(text.trim());
           await sendImageMsg(phone, imagemProm.base64, '', imagemProm.mimeType);
-          await memory.saveConversationMessage(user.id, 'assistant', `[gerou uma imagem: ${text.trim()}]`).catch(() => {});
+          await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma imagem que criei: ${text.trim()}`).catch(() => {});
           console.log(`[ImagemPrometida] Resultado enviado para ${phone}`);
         } catch (e) { console.error('[ImagemPrometida] Erro:', e.message); }
       })();
