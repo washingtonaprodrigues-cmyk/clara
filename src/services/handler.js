@@ -17,12 +17,12 @@ function getClaraReferenciaBase64() {
   if (_claraReferenciaTentouCarregar) return null; // já tentou e não achou, não fica tentando de novo toda vez
   _claraReferenciaTentouCarregar = true;
   try {
-    const caminho = path.join(__dirname, '..', '..', 'public', 'clara-referencia.jpg');
+    const caminho = path.join(__dirname, '..', '..', 'public', 'clara-referencia.jpeg');
     _claraReferenciaBase64 = fs.readFileSync(caminho).toString('base64');
     console.log('[ClaraReferencia] Foto de referência carregada com sucesso');
     return _claraReferenciaBase64;
   } catch (e) {
-    console.error('[ClaraReferencia] Não encontrou public/clara-referencia.jpg — selfies vão cair no gerador genérico:', e.message);
+    console.error('[ClaraReferencia] Não encontrou public/clara-referencia.jpeg — selfies vão cair no gerador genérico:', e.message);
     return null;
   }
 }
@@ -933,7 +933,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         const imagem = await geminiGerarImagem(promptImagem);
         await sendImageMsg(phone, imagem.base64, '', imagem.mimeType);
         await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
-        await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma imagem que criei: ${promptImagem}`).catch(() => {});
+        await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma imagem que criei 🎨`).catch(() => {});
       } catch (eImg) {
         console.error(`[GerarImagem] Erro:`, eImg.message);
         await sendMessage(phone, `Ih, não consegui gerar essa imagem agora 😕 ${tomImg === 'sarcastico' ? 'Nem eu sou perfeita.' : 'Tenta de novo daqui a pouco?'}`);
@@ -963,7 +963,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           : await geminiGerarImagem(`photorealistic photo, ${cenaSelfie}`); // fallback sem referência
         await sendImageMsg(phone, selfie.base64, '', selfie.mimeType);
         await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
-        await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma selfie minha: ${cenaSelfie}`).catch(() => {});
+        await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma selfie minha 📸`).catch(() => {});
       } catch (eSelfie) {
         console.error(`[GerarSelfie] Erro:`, eSelfie.message);
         await sendMessage(phone, `Ih, não consegui tirar a foto agora 😕 ${tomSelfie === 'sarcastico' ? 'Nem toda hora tô fotogênica.' : 'Tenta de novo daqui a pouco?'}`);
@@ -1007,7 +1007,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
           await new Promise(r => setTimeout(r, 1500));
           const imagemProm = await geminiGerarImagem(text.trim());
           await sendImageMsg(phone, imagemProm.base64, '', imagemProm.mimeType);
-          await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma imagem que criei: ${text.trim()}`).catch(() => {});
+          await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma imagem que criei 🎨`).catch(() => {});
           console.log(`[ImagemPrometida] Resultado enviado para ${phone}`);
         } catch (e) { console.error('[ImagemPrometida] Erro:', e.message); }
       })();
@@ -1024,7 +1024,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
             ? await geminiGerarSelfie(text.trim(), referenciaProm, 'image/jpeg')
             : await geminiGerarImagem(`photorealistic photo, ${text.trim()}`);
           await sendImageMsg(phone, selfieProm.base64, '', selfieProm.mimeType);
-          await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma selfie minha: ${text.trim()}`).catch(() => {});
+          await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma selfie minha 📸`).catch(() => {});
           console.log(`[SelfiePrometida] Resultado enviado para ${phone}`);
         } catch (e) { console.error('[SelfiePrometida] Erro:', e.message); }
       })();
