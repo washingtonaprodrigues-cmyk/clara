@@ -1220,7 +1220,7 @@ cron.schedule('* * * * *', async () => {
           // Se está rolando conversa ativa (últimos 5 min), avisa de forma
           // natural misturada no papo, em vez do template de sistema —
           // isso existia antes e se perdeu numa sessão anterior.
-          const conversaAtiva = await houveConversaRecente(grupo.reminders[0].userId, 5).catch(() => false);
+          const conversaAtiva = await houveConversaRecente(grupo.reminders[0].userId, 8).catch(() => false);
           let msgNatural = null;
           if (conversaAtiva) {
             try {
@@ -1229,7 +1229,7 @@ cron.schedule('* * * * *', async () => {
               const nomeNat = afetivaNat?.apelido_usuario || prefsNat?.name || '';
               const titulosNat = grupo.reminders.map(r => r.message).join(', ');
               const systemLembreteNatural = `Vocês estão no meio de uma conversa agora. Chegou a hora de um lembrete que ${nomeNat || 'a pessoa'} pediu: "${titulosNat}". Avise de forma NATURAL, misturado no papo — nada de formato de notificação, nada de emoji de sino, nada de "⏰ hora". Só um comentário curto no seu tom lembrando. Ex: "Ei, lembrando que é hora de X!" ou "Opa, bateu a hora de Y aqui 👀".`;
-              const respNatural = await freeResponse('(lembrete durante conversa)', [], { _contexto: '', name: prefsNat?.name || '', tom: prefsNat?.tom || 'leve', _systemOverride: systemLembreteNatural, _maxTokens: 100 });
+              const respNatural = await freeResponse('(lembrete durante conversa)', [], { _contexto: '', name: nomeNat, tom: prefsNat?.tom || 'leve', _systemOverride: systemLembreteNatural, _maxTokens: 100 });
               if (respNatural && !isRespostaFallback(respNatural)) msgNatural = respNatural;
             } catch (eNat) { console.error('[Reminder] Erro ao gerar lembrete natural:', eNat.message); }
           }
