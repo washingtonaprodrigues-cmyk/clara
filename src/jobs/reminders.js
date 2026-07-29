@@ -278,7 +278,13 @@ async function houveConversaRecente(userId, minutos = 5) {
 async function getUserContext(user) {
   const prefs = await memory.getUserPreference(user.id);
   const perfilTexto = await memory.buildPersonalContext(user.id);
-  return { prefs, perfilTexto };
+  // Apelido carinhoso ("fedo", "jaguara") em vez do nome real cadastrado —
+  // mesma correção aplicada em handler.js pra conversa normal. Sem isso,
+  // as mensagens proativas (bom dia, boa noite, aniversário etc) chamavam
+  // o usuário pelo nome formal em vez do apelido que ela sempre usa.
+  const memAfetiva = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+  const nomeParaUsar = memAfetiva?.apelido_usuario || user.name;
+  return { prefs, perfilTexto, nomeParaUsar };
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -412,7 +418,7 @@ cron.schedule('*/3 5,6,7,8,9,10 * * *', async () => {
           prisma.reminder.findMany({ where: { userId: user.id, confirmed: false, sent: false, scheduledAt: { gte: now, lte: fimHoje } }, orderBy: { scheduledAt: 'asc' }, take: 3 }),
           prisma.event.findMany({ where: { userId: user.id, date: { gte: inicioHoje, lte: fimHoje } } }).catch(() => []),
         ]);
-        const { prefs } = await getUserContext(user);
+        const { prefs, nomeParaUsar } = await getUserContext(user);
 
         // Puxa a memória pessoal (resumo de relacionamento, pendências,
         // acontecimentos recentes) pra ela poder dizer coisas humanas tipo
@@ -442,7 +448,7 @@ REGRAS:
 - NUNCA poética, NUNCA entre aspas, máximo 1 emoji, nunca repita a mesma frase de outro dia.
 - NUNCA use português de Portugal (podes, tens) — só português do Brasil.`;
 
-        const msg = await freeResponse('Bom dia.', [], { _contexto: memoriaContexto || '', name: user.name, tom: prefs.tom || 'leve', _systemOverride: systemBomDia, _maxTokens: 100 });
+        const msg = await freeResponse('Bom dia.', [], { _contexto: memoriaContexto || '', name: nomeParaUsar, tom: prefs.tom || 'leve', _systemOverride: systemBomDia, _maxTokens: 100 });
         if (!msg || isRespostaFallback(msg)) { console.log(`[Bom dia] Rate limit ou fallback genérico, pulado para ${user.phone}`); continue; }
 
         if (!(await tentarLockDiario(user.id, 'bom_dia_lock'))) continue; // alguém já mandou enquanto gerávamos
@@ -491,7 +497,7 @@ async function boaNoiteInteligente() {
           prisma.reminder.findMany({ where: { userId: user.id, sent: false, confirmed: false, scheduledAt: { gte: inicioAmanha, lte: fimAmanha } }, orderBy: { scheduledAt: 'asc' }, take: 3 }),
           memory.buildPersonalContext(user.id)
         ]);
-        const { prefs } = await getUserContext(user);
+        const { prefs, nomeParaUsar } = await getUserContext(user);
         const concluidosHoje = todosHoje.filter(t => t.confirmed).length;
         const pendentesHoje = todosHoje.filter(t => t.sent && !t.confirmed);
         let ctx = `Hoje foi ${['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'][now.getDay()]}.\n`;
@@ -507,7 +513,7 @@ async function boaNoiteInteligente() {
         if (infoPessoal) ctx += infoPessoal;
         // Boa noite — só uma amiga desejando boa noite, nada mais.
         // O fechamento do dia já foi às 18h. Aqui é descanso puro.
-        const systemBoaNoite = `Você é a Clara, parceira pessoal d${user.name ? 'o ' + user.name.split(' ')[0] : 'o usuário'} no WhatsApp.
+        const systemBoaNoite = `Você é a Clara, parceira pessoal d${nomeParaUsar ? 'o ' + nomeParaUsar.split(' ')[0] : 'o usuário'} no WhatsApp.
 SEU TOM: ${tomDesc(prefs.tom)}
 
 Mande UMA boa noite de verdade — curta, calorosa, do jeito que uma amiga manda mensagem antes de dormir.
@@ -523,7 +529,7 @@ REGRAS ABSOLUTAS:
 - Se tiver compromisso importante amanhã, mencione levemente e só isso
 - Varie sempre — nunca repita a mesma frase de boa noite
 - Tom: ${prefs.tom || 'leve'}`;
-        const msg = await freeResponse('Boa noite.', [], { _contexto: '', name: user.name, tom: prefs.tom || 'leve', _systemOverride: systemBoaNoite, _maxTokens: 80 });
+        const msg = await freeResponse('Boa noite.', [], { _contexto: '', name: nomeParaUsar, tom: prefs.tom || 'leve', _systemOverride: systemBoaNoite, _maxTokens: 80 });
         if (!msg || isRespostaFallback(msg)) {
           console.log(`[Boa noite] Rate limit ou fallback, pulado para ${user.phone} — liberando pra tentar de novo`);
           // Libera o lock pra próxima tentativa do dia poder tentar de novo
@@ -618,10 +624,12 @@ cron.schedule('0 8 * * *', async () => {
               const linhasRelacionadas = (infoPessoalCompleta || '').split('\n').filter(l => l.toLowerCase().includes(ev.personName.toLowerCase()));
               if (linhasRelacionadas.length > 0) {
                 const prefs = await memory.getUserPreference(user.id).catch(() => null);
+                const memAfetivaEv = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+                const nomeEv = memAfetivaEv?.apelido_usuario || user.name;
                 const quando = diffDias === 0 ? 'hoje' : 'amanhã';
                 msg = await freeResponse(`Aviso de aniversário de ${ev.personName}.`, [], {
-                  _contexto: '', name: user.name, tom: prefs?.tom || 'leve',
-                  _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''} Tom: ${prefs?.tom || 'leve'}. É ${quando} o aniversário de ${ev.personName}. O que você sabe: ${linhasRelacionadas.join('; ')}. Envie uma mensagem curta (1-2 linhas) avisando e mencionando naturalmente esse detalhe pessoal. NÃO liste como tópicos.`
+                  _contexto: '', name: nomeEv, tom: prefs?.tom || 'leve',
+                  _systemOverride: `Você é a Clara, assistente pessoal. ${nomeEv ? `O nome do usuário é ${nomeEv}.` : ''} Tom: ${prefs?.tom || 'leve'}. É ${quando} o aniversário de ${ev.personName}. O que você sabe: ${linhasRelacionadas.join('; ')}. Envie uma mensagem curta (1-2 linhas) avisando e mencionando naturalmente esse detalhe pessoal. NÃO liste como tópicos.`
                 }).catch(() => null);
                 if (msg && isRespostaFallback(msg)) msg = null;
               }
@@ -734,7 +742,7 @@ async function proativaInteligente(periodo) {
           const diasSemConversa = (now - new Date(ultimaConversa.createdAt)) / (1000 * 60 * 60 * 24);
           if (diasSemConversa > 3) continue;
 
-          const [infoPessoal, memsRecentes, { prefs }] = await Promise.all([
+          const [infoPessoal, memsRecentes, { prefs, nomeParaUsar }] = await Promise.all([
             memory.buildPersonalContext(user.id),
             memory.getRecentMemories(user.id, 20),
             getUserContext(user)
@@ -902,7 +910,7 @@ TOM: leve, à vontade, como conversa de fim de dia entre amigos — pode ser mai
             .filter(l => !/dose|rem[eé]dio|medica[cç]|tiroide|toroide|colesterol|pressao|pressão|estoque/i.test(l))
             .join('\n');
 
-          const systemProativa = `Você é a Clara, parceira pessoal d${prefs.name ? 'o ' + prefs.name.split(' ')[0] : 'o usuário'} no WhatsApp.
+          const systemProativa = `Você é a Clara, parceira pessoal d${nomeParaUsar ? 'o ' + nomeParaUsar.split(' ')[0] : 'o usuário'} no WhatsApp.
 SEU TOM: ${tomDesc(prefs.tom)}
 
 ${instrucao}
@@ -927,7 +935,7 @@ ${infoPessoalFiltrado || ''}
 ${horaAcorda ? `(Acordou por volta das ${horaAcorda})` : ''}`;
 
           const msg = await freeResponse('Mensagem proativa.', [], {
-            _contexto: '', name: user.name, tom: prefs.tom || 'leve',
+            _contexto: '', name: nomeParaUsar, tom: prefs.tom || 'leve',
             _systemOverride: systemProativa,
             _maxTokens: 80  // proativa deve ser curta — 1-2 linhas
           });
@@ -1000,13 +1008,15 @@ cron.schedule('30 9 * * 0', async () => {
         }
         if (!insights.length) continue;
         const prefs = await memory.getUserPreference(user.id).catch(() => null);
+        const memAfetivaRadar = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+        const nomeRadar = memAfetivaRadar?.apelido_usuario || user.name;
         const insightsTexto = insights.map(i => i.tipo === 'padrao_dia'
           ? `- Gastos${i.exemplo ? ` como "${i.exemplo}"` : ` na categoria "${i.categoria}"`} costumam acontecer por volta do dia ${i.diaAproximado}.`
           : `- Gasto${i.exemplo ? ` com "${i.exemplo}"` : ` na categoria "${i.categoria}"`} este mês: R$ ${i.valorAtual.toFixed(2)}, ${i.percentual}% acima da média (R$ ${i.valorMedio.toFixed(2)}).`
         ).join('\n');
         const msg = await freeResponse('Mensagem de radar/padrões.', [], {
-          _contexto: '', name: user.name, tom: prefs?.tom || 'leve',
-          _systemOverride: `Você é a Clara, assistente pessoal. ${user.name ? `O nome do usuário é ${user.name}.` : ''} Tom: ${prefs?.tom || 'leve'}. Padrões notados:\n${insightsTexto}\nEnvie UMA mensagem natural (2-3 linhas) comentando como observação genuína sobre o GASTO EM SI (o que a pessoa comprou/pagou), nunca sobre o nome da categoria — "categoria" é só um rótulo interno do sistema, não fale dela como se fosse uma coisa real ou tivesse "assinatura com uma data". NÃO use tópicos. NÃO termine com saudação de período.`
+          _contexto: '', name: nomeRadar, tom: prefs?.tom || 'leve',
+          _systemOverride: `Você é a Clara, assistente pessoal. ${nomeRadar ? `O nome do usuário é ${nomeRadar}.` : ''} Tom: ${prefs?.tom || 'leve'}. Padrões notados:\n${insightsTexto}\nEnvie UMA mensagem natural (2-3 linhas) comentando como observação genuína sobre o GASTO EM SI (o que a pessoa comprou/pagou), nunca sobre o nome da categoria — "categoria" é só um rótulo interno do sistema, não fale dela como se fosse uma coisa real ou tivesse "assinatura com uma data". NÃO use tópicos. NÃO termine com saudação de período.`
         });
         if (!msg || isRespostaFallback(msg)) continue;
         await sendMessage(user.phone, msg);
@@ -1771,7 +1781,7 @@ Escreva em primeira pessoa (você é a Clara).
 NUNCA coloque entre aspas. NUNCA use tópicos — escreva em prosa natural.`;
 
         const novoResumo = await freeResponse('Atualize o resumo do relacionamento.', [], {
-          _contexto: '', name: user.name, tom: 'leve',
+          _contexto: '', name: afetiva?.apelido_usuario || user.name, tom: 'leve',
           _systemOverride: systemResumo,
           _maxTokens: 200
         });
