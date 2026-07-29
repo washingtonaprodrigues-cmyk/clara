@@ -1456,6 +1456,15 @@ function filtrarResposta(t) {
   t = t.replace(/\s*responda?\s+(com\s+)?sim\s+ou\s+n[\xE3a]o\.?\s*$/gi, '');
   t = t.trim();
   if ((!t || t.length < 3) && _original && _original.trim().length > 5) {
+    // Antes de devolver o texto bruto (com tag e tudo), tenta uma limpeza
+    // mais cirúrgica: remove só a tag do INÍCIO e reaproveita o resto —
+    // na maioria dos casos (ex: "[AÇÃO] 💬 Lembrete de 'X' concluído.") o
+    // que sobra depois da tag já é uma frase legível e apresentável.
+    const semTagInicial = _original.trim().replace(/^\[[^\]]+\]\s*/, '').trim();
+    if (semTagInicial.length > 5 && semTagInicial !== _original.trim()) {
+      console.warn('[filtrarResposta] Limpeza total zerou a resposta — removendo só a tag do início e reaproveitando o resto.');
+      return semTagInicial;
+    }
     console.warn('[filtrarResposta] Limpeza de tags zerou a resposta inteira — devolvendo original pra não ficar muda.');
     return _original.trim();
   }
