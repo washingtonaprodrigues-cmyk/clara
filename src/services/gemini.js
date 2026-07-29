@@ -404,6 +404,15 @@ async function geminiGerarSelfie(cena, referenciaBase64, referenciaMimeType = 'i
   const data = await response.json();
   const parts = data?.candidates?.[0]?.content?.parts || [];
   const imgPart = parts.find(p => p.inlineData?.data);
+  const textPart = parts.find(p => p.text)?.text;
+  const safetyRatings = data?.candidates?.[0]?.safetyRatings;
+  const promptFeedback = data?.promptFeedback;
+  // Diagnóstico mesmo em "sucesso" — se o Gemini está silenciosamente
+  // desviando da cena pedida (ex: gerando paisagem em vez da pessoa),
+  // a API pode não retornar erro nenhum (afinal, "tecnicamente" gerou uma
+  // imagem) — mas pode incluir texto explicativo ou safetyRatings que
+  // revelam o motivo. Loga sempre pra ter evidência concreta na próxima vez.
+  console.log(`[Gemini-Selfie-DIAG] temImagem=${!!imgPart} textoJunto="${(textPart || '').slice(0, 200)}" promptFeedback=${JSON.stringify(promptFeedback || {})} safetyRatings=${JSON.stringify(safetyRatings || [])}`);
   if (!imgPart) {
     const bloqueio = data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason;
     throw new Error(`Gemini não retornou selfie${bloqueio ? ` (${bloqueio})` : ''}`);
