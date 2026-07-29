@@ -366,6 +366,60 @@ async function geminiGerarImagem(prompt) {
   return { base64: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png' };
 }
 
+// ── Descrição textual detalhada da Clara ───────────────────────────────
+// Baseada na foto de referência real (pessoa sintética, gerada por IA —
+// não existe de verdade). Usada como âncora de identidade em TEXTO, em
+// vez da imagem — teste pra ver se resolve o problema de fidelidade de
+// cena que a versão com foto de referência vinha tendo (o modelo parecia
+// "herdar" o ambiente/composição inteira da referência, não só o rosto,
+// mesmo com instrução explícita pra mudar só isso).
+const CLARA_APARENCIA = `a young Brazilian/Latina woman in her mid-to-late 20s, with warm olive skin tone, long dark brown/black wavy hair usually worn in a loose messy bun with a few face-framing strands falling naturally, brown eyes, defined natural eyebrows, an oval/heart-shaped face, and a warm, genuine smile with visible teeth. Natural, minimal makeup look. Friendly, approachable expression.`;
+
+// ── Geração de "selfie" da Clara — versão SÓ TEXTO (sem imagem de referência) ──
+// Usa a descrição textual detalhada acima em vez da foto de referência.
+// Teste: geração só-texto costuma seguir a cena pedida com muito mais
+// fidelidade do que geração com imagem de entrada — o trade-off é que o
+// rosto não fica idêntico pixel a pixel entre gerações, só "consistente
+// no tipo" (mesma descrição sempre, mas o modelo redesenha do zero toda vez).
+async function geminiGerarSelfieTexto(cena) {
+  if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
+  if (!cena || !cena.trim()) throw new Error('Cena vazia');
+
+  const prompt = `Generate a photorealistic selfie-style photo of ${CLARA_APARENCIA}\n\nShe is: ${cena}\n\nShe must be the clear main subject of the photo, in close-up or medium shot, actively doing what's described, with the setting/objects/equipment mentioned clearly visible around her. Natural, casual phone-selfie photo style, not studio/posed, not a landscape or empty scene.`;
+
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+  };
+
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('timeout')), 30000)
+  );
+  const fetchPromise = fetch(geminiUrl(GEMINI_IMAGE_MODEL), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const response = await Promise.race([fetchPromise, timeoutPromise]);
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(`Gemini Selfie(texto) erro ${response.status}: ${errText.slice(0, 300)}`);
+  }
+  const data = await response.json();
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const imgPart = parts.find(p => p.inlineData?.data);
+  const textPart = parts.find(p => p.text)?.text;
+  const safetyRatings = data?.candidates?.[0]?.safetyRatings;
+  const promptFeedback = data?.promptFeedback;
+  console.log(`[Gemini-SelfieTexto-DIAG] temImagem=${!!imgPart} textoJunto="${(textPart || '').slice(0, 200)}" promptFeedback=${JSON.stringify(promptFeedback || {})} safetyRatings=${JSON.stringify(safetyRatings || [])}`);
+  if (!imgPart) {
+    const bloqueio = data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason;
+    throw new Error(`Gemini não retornou selfie(texto)${bloqueio ? ` (${bloqueio})` : ''}`);
+  }
+  return { base64: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png' };
+}
+
 // ── Geração de "selfie" da Clara, com identidade consistente ──────────
 // Usa uma foto de referência (pessoa sintética, gerada por IA — não é
 // foto de alguém real) como âncora visual, pra manter o mesmo rosto/
@@ -428,6 +482,7 @@ module.exports = {
   geminiVision,
   geminiGerarImagem,
   geminiGerarSelfie,
+  geminiGerarSelfieTexto,
   isGeminiRateLimit,
   todosModelosEsgotados,
   GEMINI_MODELS,
