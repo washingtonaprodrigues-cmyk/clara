@@ -957,7 +957,10 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       await sendMessage(phone, avisoSelfie);
 
       try {
-        const selfie = await geminiGerarSelfieTexto(cenaSelfie);
+        const referencia = getClaraReferenciaBase64();
+        const selfie = referencia
+          ? await geminiGerarSelfie(cenaSelfie, referencia, 'image/jpeg')
+          : await geminiGerarImagem(`photorealistic photo, ${cenaSelfie}`); // fallback sem referência
         await sendImageMsg(phone, selfie.base64, '', selfie.mimeType);
         await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
         await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma selfie minha 📸`).catch(() => {});
@@ -1016,7 +1019,10 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       ;(async () => {
         try {
           await new Promise(r => setTimeout(r, 1500));
-          const selfieProm = await geminiGerarSelfieTexto(text.trim());
+          const referenciaProm = getClaraReferenciaBase64();
+          const selfieProm = referenciaProm
+            ? await geminiGerarSelfie(text.trim(), referenciaProm, 'image/jpeg')
+            : await geminiGerarImagem(`photorealistic photo, ${text.trim()}`);
           await sendImageMsg(phone, selfieProm.base64, '', selfieProm.mimeType);
           await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma selfie minha 📸`).catch(() => {});
           console.log(`[SelfiePrometida] Resultado enviado para ${phone}`);
