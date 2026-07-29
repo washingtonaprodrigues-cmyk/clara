@@ -1241,11 +1241,13 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
     // acabava confirmando por engano outro lembrete pendente qualquer
     // (bug observado: remédio da Toroide virou "Ver sobre a matéria do
     // Jornal" — coisas completamente sem relação).
-    if (quotedText) {
-      console.log(`[MedIntercept-check] quotedText presente: "${quotedText.slice(0, 100)}" | text: "${text.trim().slice(0, 50)}" | bateu regex medicamento: ${/hora do medicamento|💊/i.test(quotedText)} | bateu regex confirmação: ${/^(feito|tomei|pronto|ok|tomado|já tomei|jah tomei)\b/i.test(text.trim())}`);
-    }
-    if (quotedText && /hora do medicamento|💊/i.test(quotedText) && /^(feito|tomei|pronto|ok|tomado|já tomei|jah tomei)\b/i.test(text.trim())) {
-      console.log(`[MedIntercept] Ativado — quotedText: "${quotedText.slice(0, 80)}" | text: "${text.trim()}"`);
+    // O webhook.js monta `text` como `[Mensagem citada: "..."]\n${texto real
+    // do usuário}` quando há citação — sem remover esse prefixo antes de
+    // checar se o texto começa com "feito"/"tomei", a checagem nunca batia
+    // (o texto real do usuário nunca estava de fato no início da string).
+    // Esse foi o bug real por trás do interceptor nunca disparar.
+    const textoSemCitacaoMed = text.replace(/^\[Mensagem citada:\s*"[^"]*"\]\s*\n?/i, '').trim();
+    if (quotedText && /hora do medicamento|💊/i.test(quotedText) && /^(feito|tomei|pronto|ok|tomado|já tomei|jah tomei)\b/i.test(textoSemCitacaoMed)) {
       const medNomeMatch = quotedText.match(/\*(.+?)\*/);
       const medNomeCitado = medNomeMatch ? medNomeMatch[1].toLowerCase() : null;
       const medicamentosAtivos = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
