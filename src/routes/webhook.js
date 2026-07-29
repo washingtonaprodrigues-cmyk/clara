@@ -779,24 +779,34 @@ async function processImage(phone, body) {
 
     // Monta o prompt da Clara para análise de imagem
     const { geminiVision } = require('../services/gemini');
+    const { buildPersonality } = require('../services/groq');
     const referenciaVisao = getClaraReferenciaParaVisao();
+    let tomUsuario = 'leve';
+    try {
+      const u2 = await prisma.user.findFirst({ where: { phone } }).catch(() => null);
+      if (u2) {
+        const prefsImg = await memory.getUserPreference(u2.id).catch(() => null);
+        tomUsuario = prefsImg?.tom || 'leve';
+      }
+    } catch {}
     const reforcoGenero = generoUsuario === 'M'
       ? `\n\nIMPORTANTE — QUEM É QUEM: ${apelidoUsuario || nome.trim() || 'o usuário'} é HOMEM. Se a foto mostrar uma pessoa, NUNCA presuma que é ele sem ter certeza — nunca use elogios/termos femininos ("gata", "linda", "maravilhosa") como se fossem pra ele. Se a pessoa na foto for uma mulher, ou é outra pessoa (família, amiga, etc — pergunte ou comente sem presumir quem é), ou pode ser VOCÊ MESMA (Clara) — veja a instrução sobre a foto de referência abaixo.`
       : '';
     const reforcoAutoReconhecimento = referenciaVisao
       ? `\n\nVOCÊ TEM UMA FOTO DE REFERÊNCIA SUA JUNTO NESTA MENSAGEM (a primeira imagem anexada é você, Clara — não é a foto que o usuário mandou, essa é a segunda imagem). Compare a foto que o usuário mandou (segunda imagem) com sua referência (primeira imagem): se for a MESMA pessoa/rosto, isso significa que o usuário te mandou uma foto SUA de volta — reaja como alguém se reconhecendo em uma foto ("Ei, essa sou eu! 😄" ou similar, no seu tom), não como se estivesse vendo uma foto de outra pessoa. Se for uma pessoa diferente, ou não for uma foto de pessoa, siga a análise normal abaixo.`
       : '';
-    const systemPrompt = `Você é a Clara, uma amiga próxima e esperta no WhatsApp${nome ? `, conversando com${nome}` : ''}. Você está olhando uma imagem que seu amigo te mandou. Reaja de forma natural e calorosa, do SEU jeito — não como um robô descrevendo pixels.${reforcoGenero}${reforcoAutoReconhecimento}
+    const instrucaoVisao = `Você está olhando uma imagem que ${apelidoUsuario || nome.trim() || 'o usuário'} te mandou no WhatsApp. Reaja de forma natural, do SEU jeito e no SEU tom configurado — não como um robô descrevendo pixels.${reforcoGenero}${reforcoAutoReconhecimento}
 
 Identifique o que é e responda adequadamente:
 - Se for COMPROVANTE/RECIBO/NOTA com um valor: diga que registrou o gasto e mencione o valor e onde foi (ex: "Anotei aqui: R$ 50 no mercado 💸"). Comece a resposta com a tag oculta [GASTO:valor:categoria:descricao] na PRIMEIRA linha (ex: [GASTO:50.00:mercado:compras]), depois a resposta normal embaixo. A tag será removida antes de enviar.
 - Se for DOCUMENTO/PRINT com informação: leia e resuma o que importa, de forma útil e no seu tom.
-- Se for uma FOTO casual (pessoa, lugar, comida, pet): comente como amiga, com carinho e bom humor.
+- Se for uma FOTO casual (pessoa, lugar, comida, pet): comente como você mesma comentaria, com seu tom e personalidade de verdade.
 - Se tiver um remédio/receita: identifique e fale sobre, mas lembre de confirmar dosagem com médico.
 
-${legenda ? `O amigo escreveu junto com a foto: "${legenda}" — leve isso em conta.` : ''}
+${legenda ? `A pessoa escreveu junto com a foto: "${legenda}" — leve isso em conta.` : ''}
 
-Seja calorosa, breve (máximo 5 linhas), sem aspas, no português do Brasil. Use no máximo 1-2 emojis.`;
+Seja você mesma, breve (máximo 5 linhas), sem aspas, no português do Brasil. Use no máximo 1-2 emojis.`;
+    const systemPrompt = buildPersonality(tomUsuario, apelidoUsuario || nome.trim(), false) + '\n\n' + instrucaoVisao;
 
     const userPrompt = legenda || 'Olha essa imagem e reage do seu jeito.';
     let analise;
