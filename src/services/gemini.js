@@ -381,7 +381,7 @@ async function geminiGerarSelfie(cena, referenciaBase64, referenciaMimeType = 'i
       role: 'user',
       parts: [
         { inlineData: { mimeType: referenciaMimeType, data: referenciaBase64 } },
-        { text: `Using the exact same woman shown in this reference photo — same face, same identity, same general look — generate a new photorealistic photo of her in this scene: ${cena}. Keep her facial features, hair color/style and overall appearance consistent with the reference photo. Natural, casual photo style, not studio/posed.` }
+        { text: `Using the exact same woman shown in this reference photo — same face, same identity, same general look — generate a new photorealistic photo of her in this scene: ${cena}. The scene description is the most important part of this request: show her actively doing exactly what is described, in that exact setting, with the objects/equipment mentioned in the description clearly visible around her. Keep her facial features, hair color/style and overall appearance consistent with the reference photo, but everything else (location, background, clothing, activity, objects) must match the scene description above, not the reference photo's setting. Natural, casual photo style, not studio/posed.` }
       ]
     }],
     generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
