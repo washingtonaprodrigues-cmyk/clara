@@ -5,6 +5,29 @@ const memory = require('../services/memory');
 const rateLimit = require('../services/rateLimit');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const fs = require('fs');
+const path = require('path');
+
+// ── Foto de referência da Clara (pessoa sintética, gerada por IA — não
+// existe de verdade) ── usada SÓ pra reconhecimento visual: se o usuário
+// mandar essa mesma foto de volta (ou uma parecida), a Clara consegue
+// comparar e perceber que é uma foto DELA, não do usuário. Não tem
+// relação com geração de imagem (removida) — é só pra ela "se reconhecer".
+let _claraReferenciaVisaoBase64 = null;
+let _claraReferenciaVisaoTentou = false;
+function getClaraReferenciaParaVisao() {
+  if (_claraReferenciaVisaoBase64) return _claraReferenciaVisaoBase64;
+  if (_claraReferenciaVisaoTentou) return null;
+  _claraReferenciaVisaoTentou = true;
+  try {
+    const caminho = path.join(__dirname, '..', '..', 'public', 'clara-referencia.jpeg');
+    _claraReferenciaVisaoBase64 = fs.readFileSync(caminho).toString('base64');
+    return _claraReferenciaVisaoBase64;
+  } catch (e) {
+    console.error('[ClaraReferenciaVisao] Não encontrou public/clara-referencia.jpeg:', e.message);
+    return null;
+  }
+}
 
 // ── Retry automático em falha de conexão (mesma lógica de memory.js) ──
 prisma.$use(async (params, next) => {
@@ -708,9 +731,18 @@ async function processImage(phone, body) {
 
     // Aviso rápido no tom da Clara enquanto analisa
     let nome = '';
+    let generoUsuario = null;
+    let apelidoUsuario = '';
     try {
       const u = await prisma.user.findFirst({ where: { phone } }).catch(() => null);
       nome = u?.name ? ` ${u.name.split(' ')[0]}` : '';
+      if (u) {
+        const { detectarGeneroPorNome } = require('../services/groq');
+        generoUsuario = await memory.getGeneroExplicito(u.id).catch(() => null);
+        if (!generoUsuario) generoUsuario = detectarGeneroPorNome(u.name);
+        const afetiva = await memory.getMemoriaAfetiva(u.id).catch(() => ({}));
+        apelidoUsuario = afetiva?.apelido_usuario || '';
+      }
     } catch {}
     await sendMessage(phone, 'Deixa eu dar uma olhada 👀');
 
@@ -738,7 +770,14 @@ async function processImage(phone, body) {
 
     // Monta o prompt da Clara para análise de imagem
     const { geminiVision } = require('../services/gemini');
-    const systemPrompt = `Você é a Clara, uma amiga próxima e esperta no WhatsApp${nome ? `, conversando com${nome}` : ''}. Você está olhando uma imagem que seu amigo te mandou. Reaja de forma natural e calorosa, do SEU jeito — não como um robô descrevendo pixels.
+    const referenciaVisao = getClaraReferenciaParaVisao();
+    const reforcoGenero = generoUsuario === 'M'
+      ? `\n\nIMPORTANTE — QUEM É QUEM: ${apelidoUsuario || nome.trim() || 'o usuário'} é HOMEM. Se a foto mostrar uma pessoa, NUNCA presuma que é ele sem ter certeza — nunca use elogios/termos femininos ("gata", "linda", "maravilhosa") como se fossem pra ele. Se a pessoa na foto for uma mulher, ou é outra pessoa (família, amiga, etc — pergunte ou comente sem presumir quem é), ou pode ser VOCÊ MESMA (Clara) — veja a instrução sobre a foto de referência abaixo.`
+      : '';
+    const reforcoAutoReconhecimento = referenciaVisao
+      ? `\n\nVOCÊ TEM UMA FOTO DE REFERÊNCIA SUA JUNTO NESTA MENSAGEM (a primeira imagem anexada é você, Clara — não é a foto que o usuário mandou, essa é a segunda imagem). Compare a foto que o usuário mandou (segunda imagem) com sua referência (primeira imagem): se for a MESMA pessoa/rosto, isso significa que o usuário te mandou uma foto SUA de volta — reaja como alguém se reconhecendo em uma foto ("Ei, essa sou eu! 😄" ou similar, no seu tom), não como se estivesse vendo uma foto de outra pessoa. Se for uma pessoa diferente, ou não for uma foto de pessoa, siga a análise normal abaixo.`
+      : '';
+    const systemPrompt = `Você é a Clara, uma amiga próxima e esperta no WhatsApp${nome ? `, conversando com${nome}` : ''}. Você está olhando uma imagem que seu amigo te mandou. Reaja de forma natural e calorosa, do SEU jeito — não como um robô descrevendo pixels.${reforcoGenero}${reforcoAutoReconhecimento}
 
 Identifique o que é e responda adequadamente:
 - Se for COMPROVANTE/RECIBO/NOTA com um valor: diga que registrou o gasto e mencione o valor e onde foi (ex: "Anotei aqui: R$ 50 no mercado 💸"). Comece a resposta com a tag oculta [GASTO:valor:categoria:descricao] na PRIMEIRA linha (ex: [GASTO:50.00:mercado:compras]), depois a resposta normal embaixo. A tag será removida antes de enviar.
@@ -753,7 +792,7 @@ Seja calorosa, breve (máximo 5 linhas), sem aspas, no português do Brasil. Use
     const userPrompt = legenda || 'Olha essa imagem e reage do seu jeito.';
     let analise;
     try {
-      analise = await geminiVision(dlData.base64Data, mimeType, systemPrompt, userPrompt);
+      analise = await geminiVision(dlData.base64Data, mimeType, systemPrompt, userPrompt, referenciaVisao, 'image/jpeg');
     } catch (eVision) {
       console.error('[Imagem] Erro na visão:', eVision.message);
       await sendMessage(phone, 'Vi que você mandou uma foto, mas não consegui processar agora 😕 Me conta o que é?');
