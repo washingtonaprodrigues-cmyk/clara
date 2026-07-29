@@ -1066,6 +1066,21 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
   try {
     const user = await memory.getOrCreateUser(phone);
 
+    // Se uma imagem mandada há pouco ainda está sendo analisada, espera
+    // terminar antes de continuar — sem isso, uma pergunta de texto logo
+    // depois de mandar uma foto ("sabe quem é essa?") podia ser respondida
+    // "às cegas", sem saber o que realmente tinha na imagem, porque os dois
+    // processamentos rodam em paralelo (webhooks separados).
+    try {
+      for (let tentativa = 0; tentativa < 16; tentativa++) {
+        const lockImagem = await prisma.memory.findFirst({ where: { userId: user.id, type: 'imagem_em_analise' } }).catch(() => null);
+        if (!lockImagem) break;
+        const idadeMs = Date.now() - parseInt(lockImagem.content, 10);
+        if (idadeMs > 25000) break; // trava velha demais (algo travou) — não espera mais
+        await new Promise(r => setTimeout(r, 600));
+      }
+    } catch {}
+
     if (location && location.latitude) {
       await memory.saveMemory(user.id, 'localizacao', JSON.stringify({ latitude: location.latitude, longitude: location.longitude, updatedAt: new Date().toISOString() }));
       return await sendMessage(phone, '✅ Localização recebida! Agora posso te ajudar melhor com clima, farmácias e lojas próximas.');
