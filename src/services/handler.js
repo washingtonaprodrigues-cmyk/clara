@@ -156,6 +156,28 @@ function dateBRT() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Marca o bom_dia_lock se estiver na janela da manhã (5h-11h) — usada em
+// QUALQUER ponto de interação real com o usuário (não só conversa livre):
+// confirmar remédio, responder saudação, etc. Qualquer interação de manhã
+// já é sinal de que ela sabe que o usuário acordou — sem isso em todos os
+// pontos de entrada, o cron automático de bom dia (reminders.js) não sabia
+// que vocês já tinham "se falado" e mandava um bom dia duplicado depois.
+async function marcarBomDiaSeManha(userId) {
+  try {
+    const horaBRTagora = nowBRT().getHours();
+    if (horaBRTagora < 5 || horaBRTagora >= 11) return;
+    const hojeStr = dateBRT();
+    const lockJaExiste = await prisma.memory.findFirst({
+      where: { userId, type: 'bom_dia_lock', content: hojeStr }
+    }).catch(() => null);
+    if (!lockJaExiste) {
+      await prisma.memory.create({
+        data: { userId, type: 'bom_dia_lock', content: hojeStr }
+      }).catch(() => {});
+    }
+  } catch {}
+}
+
 function minutesToHours(minutes) {
   const h = Math.floor(minutes / 60), m = minutes % 60;
   return `${h}h${m > 0 ? m + 'min' : ''}`;
@@ -414,6 +436,10 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
     if (skipContext) {
       preferences._contexto = '';
+      // Marca o bom_dia_lock — esse caminho só roda quando o classify já
+      // identificou a mensagem como saudação (qualquer tipo). Qualquer
+      // saudação de manhã já é sinal de que vocês estão conversando.
+      await marcarBomDiaSeManha(user.id);
       const resp = await freeResponse(text, history, preferences);
       if (resp === null) return;
       if (resp && resp.includes('__BUSCAR:')) {
@@ -1154,6 +1180,7 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
         await prisma.medication.update({ where: { id: medEncontrado.id }, data: { remaining: novoRemaining } });
         await sendMessage(phone, `✅ Tomado! *${medEncontrado.name}* registrado. Restam ${novoRemaining} dose${novoRemaining === 1 ? '' : 's'}. 🩹`);
         emitirAtualizacao(phone, 'remedios');
+        await marcarBomDiaSeManha(user.id);
         return;
       }
       // Não achou o remédio específico — segue fluxo normal em vez de travar
@@ -1174,6 +1201,7 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
             await prisma.reminder.update({ where: { id: escolhido.id }, data: { confirmed: true } });
             fecharPendenciaLembrete(user.id, escolhido.message).catch(() => {});
             await sendMessage(phone, `✅ Feito! "${escolhido.message}" concluído.`);
+            await marcarBomDiaSeManha(user.id);
             return;
           } else {
             await sendMessage(phone, `Não achei o lembrete #${codigoRapido} 😕 Você tem ${pendentes.length} pendente${pendentes.length > 1 ? 's' : ''} (#1 a #${pendentes.length}).`);
