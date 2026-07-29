@@ -96,6 +96,25 @@ async function getUserPreference(userId) {
 
 const PERSONAL_INFO_TYPE = 'info_pessoal';
 
+// ── Gênero do usuário — memória permanente ──────────────────────────────
+// Prioriza a resposta EXPLÍCITA que o usuário deu quando perguntado ("ele"
+// ou "ela") — fica salva pra sempre em info_pessoal, por usuário. Isso é
+// o que garante funcionar certo com QUALQUER usuário futuro, não só nomes
+// que já estão numa lista fixa no código (detectarGeneroPorNome, que é só
+// um fallback heurístico pra quando ainda não existe resposta explícita).
+async function getGeneroExplicito(userId) {
+  try {
+    const info = await prisma.memory.findFirst({
+      where: { userId, type: PERSONAL_INFO_TYPE, metadata: { contains: `"chave":"genero"` } }
+    }).catch(() => null);
+    if (!info) return null;
+    const v = (info.content || '').toLowerCase().trim();
+    if (v === 'ele' || v === 'homem' || v === 'masculino') return 'M';
+    if (v === 'ela' || v === 'mulher' || v === 'feminino') return 'F';
+    return null;
+  } catch { return null; }
+}
+
 // Categorias do perfil rico — usadas pelo extractPersonalInfo (groq.js)
 // e exibidas no Dashboard > Memórias com labels amigáveis
 const CATEGORIAS_PERFIL = {
@@ -996,7 +1015,7 @@ module.exports = {
   getOrCreateUser,
   saveJornada, getJornada,
   saveUserPreference, getUserPreference,
-  savePersonalInfo, deletePersonalInfo, getPersonalInfo, buildPersonalContext,
+  savePersonalInfo, deletePersonalInfo, getPersonalInfo, buildPersonalContext, getGeneroExplicito,
   getCamposDesconhecidos, getProximaCuriosidade, CAMPOS_CURIOSIDADE, CATEGORIAS_PERFIL,
   salvarSuspeitaPerfil, getSuspeitasPerfil,
   saveMemory, getRecentMemories,
