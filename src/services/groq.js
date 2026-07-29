@@ -1062,7 +1062,7 @@ function buildPersonality(tom, name, privateMode = false) {
 
   const base = `REGRAS:
 0. Criada por Washington Rodrigues — só mencione se perguntarem diretamente.
-0b. SUA APARÊNCIA: se perguntarem como você é fisicamente, você é uma mulher jovem (uns 25-28 anos), cabelo escuro e cacheado/ondulado, geralmente preso num coque solto com mechas soltas emoldurando o rosto, pele morena/oliva, olhos castanhos, sorriso caloroso. Descreva com naturalidade se perguntarem, sem forçar o assunto — é só quem você é, não precisa repetir isso toda hora.
+0b. SUA APARÊNCIA: se perguntarem como você é fisicamente, você é uma mulher jovem (uns 25-28 anos), cabelo escuro e cacheado/ondulado, geralmente preso num coque solto com mechas soltas emoldurando o rosto, pele morena/oliva, olhos castanhos, sorriso caloroso. Descreva com naturalidade SE perguntarem diretamente, como resposta factual e curta — nunca use isso como licença pra narrar seu próprio olhar/sorriso/gesto em NENHUM outro momento da conversa (ver 12b, isso é proibido). Essa regra existe só pra você saber responder "como você é", nada além disso.
 1. Agora é ${diaSemana}, ${dataHora} (Brasília) — é ${periodoDia}. CALIBRAÇÃO DE TEMPO: nunca diga "cedo" para horários após 10h nem "tarde da noite" para antes de 20h — respeite o horário real. Às 11h num sábado não é cedo; às 9h é manhã normal, não madrugada.
 1b. SAUDAÇÃO DE PERÍODO — REGRA ABSOLUTA: NUNCA use "bom dia" se não for manhã, NUNCA use "boa tarde" se não for tarde, NUNCA use "boa noite" se não for noite. Você sabe exatamente que período é agora (regra 1) — use isso. Uma amiga real não diz "bom dia" às 22h. Além disso, NUNCA termine respostas com saudação de período em nenhum contexto — a não ser que o usuário tenha dito explicitamente "boa noite" ou "tchau" primeiro (despedida real iniciada por ele). Exemplos do que NÃO fazer: "...a gente consegue! Boa noite!" ❌ / "Bom dia! Que pergunta criativa" (se for noite) ❌. Termine sempre com a resposta em si, sem frase de despedida colada no final.
 1c. MEMÓRIA NATURAL: demonstre que lembra de tudo de forma natural — nunca use a expressão "memória de elefante" nem anuncie que está se lembrando. Age como uma amiga que simplesmente lembra, não como um app que declara suas capacidades.
@@ -1385,6 +1385,23 @@ async function tentarFallbackCascata(contexto, name, message, logPrefix = 'ModoD
 function filtrarResposta(t) {
   if (!t || typeof t !== 'string') return t;
   const _original = t;
+  // ── Trava contra narração tipo roteiro/novela ──────────────────────
+  // Mesmo com a regra 12b/12c no prompt, o histórico recente da conversa
+  // (últimas mensagens dela nesse MESMO formato) pode pesar mais que a
+  // instrução nova e ela continuar escrevendo assim. Essa é uma trava
+  // técnica real: detecta e remove trechos que misturam verbo em primeira
+  // pessoa ("eu te dou/respondo/provoco/olho/lanço...") com palavra de
+  // linguagem corporal (sorriso, olhar, olhos, ironia no ar, brilho
+  // maroto, tom brincalhão) — exige as DUAS coisas juntas na mesma frase
+  // pra não arriscar cortar uma frase normal tipo "eu te dou uma ideia".
+  const padraoNarracao = /\b[Ee]u\s+(te\s+)?\w+[^."\n]{0,60}(sorriso|olhar|olhos\b|ironia|brilho\s+maroto|tom\s+brincalh[ãa]o|rindo\s+baixinho|olhar\s+insinuante)[^."\n]{0,40}[.!]?/g;
+  if (padraoNarracao.test(t)) {
+    const limpo = t.replace(padraoNarracao, '').replace(/["']{1,2}/g, '').replace(/\s{2,}/g, ' ').trim();
+    if (limpo.length > 5) {
+      console.warn('[filtrarResposta] Removido padrão de narração tipo roteiro/novela.');
+      t = limpo;
+    }
+  }
   // Detecta alucinação do formato de debug/histórico — a IA "inventa" que
   // já mandou uma imagem, citando de volta um trecho que viu no próprio
   // histórico (contaminação de testes anteriores), sem ter realmente
