@@ -1241,7 +1241,11 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
     // acabava confirmando por engano outro lembrete pendente qualquer
     // (bug observado: remédio da Toroide virou "Ver sobre a matéria do
     // Jornal" — coisas completamente sem relação).
+    if (quotedText) {
+      console.log(`[MedIntercept-check] quotedText presente: "${quotedText.slice(0, 100)}" | text: "${text.trim().slice(0, 50)}" | bateu regex medicamento: ${/hora do medicamento|💊/i.test(quotedText)} | bateu regex confirmação: ${/^(feito|tomei|pronto|ok|tomado|já tomei|jah tomei)\b/i.test(text.trim())}`);
+    }
     if (quotedText && /hora do medicamento|💊/i.test(quotedText) && /^(feito|tomei|pronto|ok|tomado|já tomei|jah tomei)\b/i.test(text.trim())) {
+      console.log(`[MedIntercept] Ativado — quotedText: "${quotedText.slice(0, 80)}" | text: "${text.trim()}"`);
       const medNomeMatch = quotedText.match(/\*(.+?)\*/);
       const medNomeCitado = medNomeMatch ? medNomeMatch[1].toLowerCase() : null;
       const medicamentosAtivos = await prisma.medication.findMany({ where: { userId: user.id, active: true } }).catch(() => []);
@@ -1254,15 +1258,19 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
       // Fallback: os asteriscos podem não sobreviver na extração da
       // citação do WhatsApp (formatação visual, nem sempre vem no texto
       // bruto) — tenta achar o nome de algum remédio ativo direto no
-      // texto citado, sem depender de nenhuma pontuação específica.
+      // texto citado. Ignora palavras genéricas que vários remédios
+      // podem compartilhar (ex: "Remédio de X" e "Remédio da Y" — "remédio",
+      // "de", "da" não distinguem nada) e usa a parte distintiva do nome.
       if (!medEncontrado) {
         const quotedLower = quotedText.toLowerCase();
+        const PALAVRAS_GENERICAS = new Set(['remédio', 'remedio', 'medicamento', 'de', 'da', 'do', 'das', 'dos', 'e']);
         medEncontrado = medicamentosAtivos.find(m => {
-          const primeiraPalavra = m.name.toLowerCase().split(' ')[0];
-          return primeiraPalavra.length > 3 && quotedLower.includes(primeiraPalavra);
+          const palavrasDistintas = m.name.toLowerCase().split(' ').filter(p => p.length > 3 && !PALAVRAS_GENERICAS.has(p));
+          return palavrasDistintas.some(p => quotedLower.includes(p));
         });
       }
       if (!medEncontrado && medicamentosAtivos.length === 1) medEncontrado = medicamentosAtivos[0];
+      console.log(`[MedIntercept] medicamentosAtivos: [${medicamentosAtivos.map(m => m.name).join(', ')}] | medEncontrado: ${medEncontrado ? medEncontrado.name : 'NENHUM'}`);
       if (medEncontrado) {
         const novoRemaining = Math.max(0, medEncontrado.remaining - 1);
         await prisma.medication.update({ where: { id: medEncontrado.id }, data: { remaining: novoRemaining } });
