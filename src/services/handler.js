@@ -2,7 +2,7 @@
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
 const { classify, detectarGeneroPorNome, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarComandoIronia, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, apararRespostaCortada, detectarPadraoReacao, filtrarResposta } = require('./groq');
-const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados, geminiGerarImagem, geminiGerarSelfie } = require('./gemini');
+const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados, geminiGerarImagem, geminiGerarSelfie, geminiGerarSelfieTexto } = require('./gemini');
 const fs = require('fs');
 const path = require('path');
 
@@ -957,10 +957,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       await sendMessage(phone, avisoSelfie);
 
       try {
-        const referencia = getClaraReferenciaBase64();
-        const selfie = referencia
-          ? await geminiGerarSelfie(cenaSelfie, referencia, 'image/jpeg')
-          : await geminiGerarImagem(`photorealistic photo, ${cenaSelfie}`); // fallback sem referência
+        const selfie = await geminiGerarSelfieTexto(cenaSelfie);
         await sendImageMsg(phone, selfie.base64, '', selfie.mimeType);
         await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
         await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma selfie minha 📸`).catch(() => {});
@@ -1019,10 +1016,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       ;(async () => {
         try {
           await new Promise(r => setTimeout(r, 1500));
-          const referenciaProm = getClaraReferenciaBase64();
-          const selfieProm = referenciaProm
-            ? await geminiGerarSelfie(text.trim(), referenciaProm, 'image/jpeg')
-            : await geminiGerarImagem(`photorealistic photo, ${text.trim()}`);
+          const selfieProm = await geminiGerarSelfieTexto(text.trim());
           await sendImageMsg(phone, selfieProm.base64, '', selfieProm.mimeType);
           await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma selfie minha 📸`).catch(() => {});
           console.log(`[SelfiePrometida] Resultado enviado para ${phone}`);
