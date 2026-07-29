@@ -722,6 +722,7 @@ module.exports = router;
 // - Documento → lê e resume o que importa
 // - Foto casual → comenta como amiga
 async function processImage(phone, body) {
+  let userIdParaLock = null;
   try {
     const messageId = body.message?.id || body.message?.messageid || body.message?.messageId || body.message?.key?.id;
     if (!messageId) {
@@ -737,6 +738,14 @@ async function processImage(phone, body) {
       const u = await prisma.user.findFirst({ where: { phone } }).catch(() => null);
       nome = u?.name ? ` ${u.name.split(' ')[0]}` : '';
       if (u) {
+        userIdParaLock = u.id;
+        // Marca que uma análise de imagem está em andamento — se o usuário
+        // mandar uma mensagem de texto logo em seguida (ex: "sabe quem é
+        // essa?"), o handler.js espera essa trava sumir antes de responder,
+        // pra não responder "às cegas" sem saber o que tinha na foto.
+        await prisma.memory.create({
+          data: { userId: u.id, type: 'imagem_em_analise', content: Date.now().toString() }
+        }).catch(() => {});
         const { detectarGeneroPorNome } = require('../services/groq');
         generoUsuario = await memory.getGeneroExplicito(u.id).catch(() => null);
         if (!generoUsuario) generoUsuario = detectarGeneroPorNome(u.name);
@@ -838,5 +847,9 @@ Seja calorosa, breve (máximo 5 linhas), sem aspas, no português do Brasil. Use
   } catch (e) {
     console.error('[Imagem] Erro:', e.message);
     await sendMessage(phone, 'Tive um problema com a imagem 😕 Pode tentar de novo?');
+  } finally {
+    if (userIdParaLock) {
+      await prisma.memory.deleteMany({ where: { userId: userIdParaLock, type: 'imagem_em_analise' } }).catch(() => {});
+    }
   }
 }
