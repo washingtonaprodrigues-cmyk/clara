@@ -104,29 +104,6 @@ async function sendButtons(phone, message, buttons) {
   return sendMessage(phone, message);
 }
 
-// ── Envio de imagem ──────────────────────────────────────────────────
-// ATENÇÃO: o payload exato do endpoint /send/media pode variar conforme
-// a versão da UazAPI — o formato abaixo segue o padrão mais comum
-// (number + type + file em base64 data URI + legenda em text). Se der
-// erro na primeira vez, vale conferir a documentação da UazAPI pra
-// confirmar o formato aceito antes de assumir que é bug de outra coisa.
-async function sendImage(phone, base64Image, caption = '', mimeType = 'image/png') {
-  try {
-    console.log(`📤 Enviando imagem para ${phone}`);
-    const dataUri = `data:${mimeType};base64,${base64Image}`;
-    const response = await axios.post(
-      `${BASE_URL}/send/media`,
-      { number: phone, type: 'image', file: dataUri, text: caption },
-      { timeout: 30000, headers }
-    );
-    console.log(`✅ Imagem enviada OK para ${phone}:`, response.data?.status || 'sem status');
-    return response.data;
-  } catch (error) {
-    console.error(`❌ Erro sendImage para ${phone}:`, error.response?.data || error.message);
-    throw error;
-  }
-}
-
 async function sendMainMenu(phone) {
   const texto = `✨ *Clara online* 💜\n\nOi! Como posso ajudar no seu dia hoje? 😊\n\n⏰ Lembrete · 📝 Anotação · 💰 Gasto\n💊 Saúde · 📍 Ponto · 🔍 Pesquisa · 💬 Conversar`;
   return sendMessage(phone, texto);
@@ -215,7 +192,6 @@ module.exports = {
   sendMessage,
   sendButtons,
   sendMainMenu,
-  sendImage,
   sendReminderWithButtons,
   sendReminderHumano,
   sendReminderInsistencia,
