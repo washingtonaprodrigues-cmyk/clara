@@ -178,6 +178,19 @@ async function marcarBomDiaSeManha(userId) {
   } catch {}
 }
 
+// Gênero confiável do usuário: prioriza a resposta EXPLÍCITA que ele deu
+// quando perguntado (salva permanentemente em info_pessoal) — só cai pro
+// palpite por nome (detectarGeneroPorNome, lista fixa no código) quando
+// ainda não existe resposta explícita. Sem essa priorização, o sistema
+// nunca funcionaria bem pra usuários futuros com nomes fora da lista fixa
+// — cada ponto do código que precisa saber o gênero deve usar ESTA função,
+// nunca detectarGeneroPorNome diretamente.
+async function getGeneroConfiavel(userId, nomeFallback) {
+  const explicito = await memory.getGeneroExplicito(userId).catch(() => null);
+  if (explicito) return explicito;
+  return detectarGeneroPorNome(nomeFallback);
+}
+
 function minutesToHours(minutes) {
   const h = Math.floor(minutes / 60), m = minutes % 60;
   return `${h}h${m > 0 ? m + 'min' : ''}`;
@@ -406,14 +419,14 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     const preferences = await memory.getUserPreference(user.id);
     preferences._phone = phone;
 
-    // Detecta o gênero pelo NOME REAL antes dele ser substituído pelo
-    // apelido logo abaixo — crítico: buildPersonality tenta detectar
-    // gênero pelo texto que recebe como "name", mas se isso já virou
-    // "fedo" (apelido), a detecção falha silenciosamente (não bate com
-    // nenhum nome conhecido) e ela pode errar a concordância (ex: chamar
-    // o usuário de "senhora"). Guarda o gênero certo à parte, pra usar
-    // como reforço explícito no contexto independente do que "name" virar.
-    const generoUsuario = detectarGeneroPorNome(preferences.name);
+    // Detecta o gênero ANTES do nome ser substituído pelo apelido logo
+    // abaixo — crítico: buildPersonality tenta detectar gênero pelo texto
+    // que recebe como "name", mas se isso já virou "fedo" (apelido), a
+    // detecção por nome falha silenciosamente e ela pode errar a
+    // concordância (ex: chamar o usuário de "senhora"). Prioriza a
+    // resposta explícita salva na memória (funciona pra qualquer usuário,
+    // não só nomes numa lista fixa) — só cai pro nome como último recurso.
+    const generoUsuario = await getGeneroConfiavel(user.id, preferences.name);
 
     // Usa o apelido carinhoso (ex: "fedo") em vez do nome real sempre que
     // existir — sem isso, freeResponse/buildPersonality recebem só o nome
@@ -1345,7 +1358,7 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
                 : ehLocal
                 ? `\n\n[OPÇÕES LOCAIS ENVIADAS] Ofereça buscar mais em 1 frase curta. NUNCA diga que faltou info.`
                 : `\n\n[INFO ENVIADA] Toque pessoal curtíssimo ou SKIP.`;
-              const generoBusca = detectarGeneroPorNome(preferencesBusca?.name);
+              const generoBusca = await getGeneroConfiavel(user.id, preferencesBusca?.name);
               const reforcoGeneroBusca = generoBusca === 'M'
                 ? '\n\n[GÊNERO] O usuário é homem — concorde no masculino ao falar dele. Você é mulher — concorde no feminino ao falar de si.'
                 : generoBusca === 'F' ? '\n\n[GÊNERO] O usuário é mulher — concorde no feminino ao falar dela. Você é mulher — concorde no feminino ao falar de si.' : '';
@@ -1915,7 +1928,7 @@ async function executeAction(user, phone, classified, originalText, quotedText =
       const dicaChamada = foiSaudade
         ? `Usuário disse pra chamar quando sentir saudade — você decidiu que vai chamar às ${horaFinal}. Responda de forma natural e carinhosa/zoeira conforme o tom, sem revelar que calculou o horário. Confirme que vai aparecer, sem mencionar a hora exata. NUNCA use __BUSCAR__ nem tags de sistema.`
         : `Usuário pediu pra ser chamado${horaJaInformada ? ` às ${horaFinal}` : ` — você escolheu às ${horaFinal}`}. Confirme de forma natural e animada no seu tom. ${!horaJaInformada ? `Como você calculou o horário, pode dizer algo como "combinado, apareço mais tarde 😉"` : `Ex: "Combinado! Te chamo às ${horaFinal} 😏"`}. NUNCA use __BUSCAR__ nem tags de sistema.`;
-      const generoChamada = detectarGeneroPorNome(prefsChamada?.name);
+      const generoChamada = await getGeneroConfiavel(user.id, prefsChamada?.name);
       const reforcoGeneroChamada = generoChamada === 'M'
         ? ' Ele é homem — concorde no masculino ao falar dele. Você é mulher — concorde no feminino ao falar de si.'
         : generoChamada === 'F' ? ' Ela é mulher — concorde no feminino ao falar dela. Você é mulher — concorde no feminino ao falar de si.' : '';
