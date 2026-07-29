@@ -430,6 +430,12 @@ async function geminiGerarSelfie(cena, referenciaBase64, referenciaMimeType = 'i
   if (!cena || !cena.trim()) throw new Error('Cena vazia');
   if (!referenciaBase64) throw new Error('Foto de referência não disponível');
 
+  // NOTA (confirmado em teste real): o framing "Edit this photo" (editar a
+  // foto existente) deu os melhores resultados até agora — funcionou bem
+  // na cena de academia. Ainda existe variação normal entre gerações (a
+  // mesma cena pode sair certa numa tentativa e diferente na seguinte —
+  // geração de imagem não é determinística), mas esse é o framing que
+  // mantemos como padrão por ter a taxa de acerto mais alta observada.
   const body = {
     contents: [{
       role: 'user',
