@@ -1220,7 +1220,7 @@ cron.schedule('* * * * *', async () => {
           // Se está rolando conversa ativa (últimos 5 min), avisa de forma
           // natural misturada no papo, em vez do template de sistema —
           // isso existia antes e se perdeu numa sessão anterior.
-          const conversaAtiva = await houveConversaRecente(grupo.reminders[0].userId, 8).catch(() => false);
+          const conversaAtiva = await houveConversaRecente(grupo.reminders[0].userId, 3).catch(() => false);
           let msgNatural = null;
           if (conversaAtiva) {
             try {
