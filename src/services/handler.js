@@ -2,30 +2,8 @@
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
 const { classify, detectarGeneroPorNome, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarComandoIronia, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, apararRespostaCortada, detectarPadraoReacao, filtrarResposta } = require('./groq');
-const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados, geminiGerarImagem, geminiGerarSelfie, geminiGerarSelfieTexto } = require('./gemini');
-const fs = require('fs');
-const path = require('path');
+const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados } = require('./gemini');
 
-// ── Foto de referência da Clara (pessoa sintética, gerada por IA — não
-// existe de verdade) ── usada como âncora visual pra manter o mesmo
-// rosto/estilo em toda selfie que ela gerar de si mesma. Carregada uma
-// vez e cacheada em memória (não muda em runtime).
-let _claraReferenciaBase64 = null;
-let _claraReferenciaTentouCarregar = false;
-function getClaraReferenciaBase64() {
-  if (_claraReferenciaBase64) return _claraReferenciaBase64;
-  if (_claraReferenciaTentouCarregar) return null; // já tentou e não achou, não fica tentando de novo toda vez
-  _claraReferenciaTentouCarregar = true;
-  try {
-    const caminho = path.join(__dirname, '..', '..', 'public', 'clara-referencia.jpeg');
-    _claraReferenciaBase64 = fs.readFileSync(caminho).toString('base64');
-    console.log('[ClaraReferencia] Foto de referência carregada com sucesso');
-    return _claraReferenciaBase64;
-  } catch (e) {
-    console.error('[ClaraReferencia] Não encontrou public/clara-referencia.jpeg — selfies vão cair no gerador genérico:', e.message);
-    return null;
-  }
-}
 
 // CORREÇÃO DETERMINÍSTICA DE DIA DA SEMANA:
 // O classify() já recebe uma tabela com a data exata de cada dia da semana
@@ -89,23 +67,6 @@ async function sendButtons(phone, msg, buttons) {
   const w = getWhatsapp();
   if (w && typeof w.sendButtons === 'function') return w.sendButtons(phone, msg, buttons);
   return sendMessage(phone, msg);
-}
-
-async function sendImageMsg(phone, base64Image, caption = '', mimeType = 'image/png') {
-  const w = getWhatsapp();
-  if (w && typeof w.sendImage === 'function') {
-    return w.sendImage(phone, base64Image, caption, mimeType);
-  }
-  // Fallback direto via axios se whatsapp.js não carregar
-  const axios = require('axios');
-  const BASE_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
-  const TOKEN = process.env.UAZAPI_TOKEN;
-  console.log(`[Handler/Fallback] Enviando imagem direto para ${phone}`);
-  const dataUri = `data:${mimeType};base64,${base64Image}`;
-  return axios.post(`${BASE_URL}/send/media`,
-    { number: phone, type: 'image', file: dataUri, text: caption },
-    { headers: { token: TOKEN, 'Content-Type': 'application/json' }, timeout: 30000 }
-  );
 }
 
 async function sendReminderWithButtons(phone, msg, id) {
@@ -917,60 +878,6 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       return;
     }
 
-    // ── Geração de imagem: Clara sinalizou que vai desenhar/gerar algo ──
-    const imagemMatch = respStr.match(/[*_]{0,2}GERAR_IMAGEM:(.+?)(?:[*_]{0,2}|\n|$)/i);
-    if (imagemMatch) {
-      const promptImagem = imagemMatch[1].trim();
-      const tomImg = preferences?.tom || 'leve';
-      const memAfetivaImg = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
-      const apelidoImg = memAfetivaImg?.apelido_usuario || preferences?.name || '';
-      const avisoImg = apelidoImg
-        ? `Pera aí que já faço isso pra você, ${apelidoImg}! 🎨`
-        : `Pera aí que já faço isso! 🎨`;
-      await sendMessage(phone, avisoImg);
-
-      try {
-        const imagem = await geminiGerarImagem(promptImagem);
-        await sendImageMsg(phone, imagem.base64, '', imagem.mimeType);
-        await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
-        await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma imagem que criei 🎨`).catch(() => {});
-      } catch (eImg) {
-        console.error(`[GerarImagem] Erro:`, eImg.message);
-        await sendMessage(phone, `Ih, não consegui gerar essa imagem agora 😕 ${tomImg === 'sarcastico' ? 'Nem eu sou perfeita.' : 'Tenta de novo daqui a pouco?'}`);
-      }
-      return;
-    }
-
-    // ── Selfie da Clara: ela vai mandar uma foto DE SI MESMA fazendo algo ──
-    // Usa a foto de referência (pessoa sintética) como âncora, pra manter
-    // o mesmo rosto/estilo em toda selfie — diferente do GERAR_IMAGEM
-    // genérico, que não tem compromisso de consistência visual nenhum.
-    const selfieMatch = respStr.match(/[*_]{0,2}GERAR_SELFIE:(.+?)(?:[*_]{0,2}|\n|$)/i);
-    if (selfieMatch) {
-      const cenaSelfie = selfieMatch[1].trim();
-      const tomSelfie = preferences?.tom || 'leve';
-      const memAfetivaSelfie = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
-      const apelidoSelfie = memAfetivaSelfie?.apelido_usuario || preferences?.name || '';
-      const avisoSelfie = apelidoSelfie
-        ? `Pera, deixa eu tirar uma foto pra te mandar, ${apelidoSelfie}! 📸`
-        : `Pera, deixa eu tirar uma foto pra te mandar! 📸`;
-      await sendMessage(phone, avisoSelfie);
-
-      try {
-        const referencia = getClaraReferenciaBase64();
-        const selfie = referencia
-          ? await geminiGerarSelfie(cenaSelfie, referencia, 'image/jpeg')
-          : await geminiGerarImagem(`photorealistic photo, ${cenaSelfie}`); // fallback sem referência
-        await sendImageMsg(phone, selfie.base64, '', selfie.mimeType);
-        await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
-        await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma selfie minha 📸`).catch(() => {});
-      } catch (eSelfie) {
-        console.error(`[GerarSelfie] Erro:`, eSelfie.message);
-        await sendMessage(phone, `Ih, não consegui tirar a foto agora 😕 ${tomSelfie === 'sarcastico' ? 'Nem toda hora tô fotogênica.' : 'Tenta de novo daqui a pouco?'}`);
-      }
-      return;
-    }
-
     await memory.saveConversationMessage(user.id, 'user', text);
     await memory.saveConversationMessage(user.id, 'assistant', respStr);
     await sendMessage(phone, respStr);
@@ -996,49 +903,6 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
             console.log(`[BuscaPrometida] Resultado enviado para ${phone}`);
           }
         } catch(e) { console.error('[BuscaPrometida] Erro:', e.message); }
-      })();
-    }
-
-    // ── Detecção de promessa de imagem não gerada ──────────────────────
-    // Mesma lógica do busca prometida — cobre o caso raro da tag
-    // __GERAR_IMAGEM:__ ser cortada pelo limite de tokens antes de
-    // completar (a Clara disse que ia fazer, mas a tag não chegou inteira).
-    // IMPORTANTE: só dispara se a frase estiver perto do FINAL da resposta
-    // (últimos ~40 caracteres) — isso é o sinal real de truncamento (a tag
-    // viria logo em seguida). Sem essa checagem, disparava sempre que ela
-    // mencionava "vou criar isso" em QUALQUER lugar da resposta, mesmo em
-    // conversa casual sem pedido de imagem real — gerando fotos extra.
-    const respStrFinal = respStr.trim();
-    const ultimosCharsImg = respStrFinal.slice(-40);
-    const prometeuImagem = /já (faço|crio|gero|desenho) (isso|essa imagem|isso pra você)|deixa eu (desenhar|criar essa imagem|gerar isso)|vou (desenhar|criar|gerar) isso/i.test(ultimosCharsImg);
-    if (prometeuImagem && !imagemMatch) {
-      ;(async () => {
-        try {
-          await new Promise(r => setTimeout(r, 1500));
-          const imagemProm = await geminiGerarImagem(text.trim());
-          await sendImageMsg(phone, imagemProm.base64, '', imagemProm.mimeType);
-          await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma imagem que criei 🎨`).catch(() => {});
-          console.log(`[ImagemPrometida] Resultado enviado para ${phone}`);
-        } catch (e) { console.error('[ImagemPrometida] Erro:', e.message); }
-      })();
-    }
-
-    // ── Detecção de promessa de selfie não gerada ──────────────────────
-    // Mesma checagem restritiva — só perto do final da resposta.
-    const ultimosCharsSelfie = respStrFinal.slice(-40);
-    const prometeuSelfie = /deixa eu tirar (uma foto|essa foto)|j[áa] tiro (uma foto|essa foto)|vou tirar (uma foto|essa foto)|deixa eu te mandar uma foto/i.test(ultimosCharsSelfie);
-    if (prometeuSelfie && !selfieMatch) {
-      ;(async () => {
-        try {
-          await new Promise(r => setTimeout(r, 1500));
-          const referenciaProm = getClaraReferenciaBase64();
-          const selfieProm = referenciaProm
-            ? await geminiGerarSelfie(text.trim(), referenciaProm, 'image/jpeg')
-            : await geminiGerarImagem(`photorealistic photo, ${text.trim()}`);
-          await sendImageMsg(phone, selfieProm.base64, '', selfieProm.mimeType);
-          await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma selfie minha 📸`).catch(() => {});
-          console.log(`[SelfiePrometida] Resultado enviado para ${phone}`);
-        } catch (e) { console.error('[SelfiePrometida] Erro:', e.message); }
       })();
     }
     // Quando o pedido criou um lembrete, a Clara responde de forma humana
