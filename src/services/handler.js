@@ -976,7 +976,10 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     await sendMessage(phone, respStr);
 
     // ── Detecção de promessa de busca não executada ───────────────────
-    const prometeuBuscar = /peraí que vou ver|deixa eu (dar uma olhada|pesquisar|verificar|checar|buscar)|vou (pesquisar|buscar|dar uma olhada|verificar)|deixa eu ver|um segundo que|rapidinho aqui/i.test(respStr);
+    // Restrito ao final da resposta (~40 chars) — mesmo motivo do fix em
+    // imagem/selfie: evita disparar busca de verdade toda vez que ela usa
+    // uma frase parecida em conversa casual, sem pedido real de busca.
+    const prometeuBuscar = /peraí que vou ver|deixa eu (dar uma olhada|pesquisar|verificar|checar|buscar)|vou (pesquisar|buscar|dar uma olhada|verificar)|deixa eu ver|um segundo que|rapidinho aqui/i.test(respStr.trim().slice(-40));
     if (prometeuBuscar && !buscaMatch) {
       // Tenta extrair query do texto do usuário (mais relevante que da resposta da IA)
       const queryBusca = text.trim();
@@ -1000,7 +1003,14 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // Mesma lógica do busca prometida — cobre o caso raro da tag
     // __GERAR_IMAGEM:__ ser cortada pelo limite de tokens antes de
     // completar (a Clara disse que ia fazer, mas a tag não chegou inteira).
-    const prometeuImagem = /já (faço|crio|gero|desenho) (isso|essa imagem|isso pra você)|deixa eu (desenhar|criar essa imagem|gerar isso)|vou (desenhar|criar|gerar) isso/i.test(respStr);
+    // IMPORTANTE: só dispara se a frase estiver perto do FINAL da resposta
+    // (últimos ~40 caracteres) — isso é o sinal real de truncamento (a tag
+    // viria logo em seguida). Sem essa checagem, disparava sempre que ela
+    // mencionava "vou criar isso" em QUALQUER lugar da resposta, mesmo em
+    // conversa casual sem pedido de imagem real — gerando fotos extra.
+    const respStrFinal = respStr.trim();
+    const ultimosCharsImg = respStrFinal.slice(-40);
+    const prometeuImagem = /já (faço|crio|gero|desenho) (isso|essa imagem|isso pra você)|deixa eu (desenhar|criar essa imagem|gerar isso)|vou (desenhar|criar|gerar) isso/i.test(ultimosCharsImg);
     if (prometeuImagem && !imagemMatch) {
       ;(async () => {
         try {
@@ -1014,7 +1024,9 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     }
 
     // ── Detecção de promessa de selfie não gerada ──────────────────────
-    const prometeuSelfie = /deixa eu tirar (uma foto|essa foto)|j[áa] tiro (uma foto|essa foto)|vou tirar (uma foto|essa foto)|deixa eu te mandar uma foto/i.test(respStr);
+    // Mesma checagem restritiva — só perto do final da resposta.
+    const ultimosCharsSelfie = respStrFinal.slice(-40);
+    const prometeuSelfie = /deixa eu tirar (uma foto|essa foto)|j[áa] tiro (uma foto|essa foto)|vou tirar (uma foto|essa foto)|deixa eu te mandar uma foto/i.test(ultimosCharsSelfie);
     if (prometeuSelfie && !selfieMatch) {
       ;(async () => {
         try {
