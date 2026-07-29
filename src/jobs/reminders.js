@@ -150,7 +150,7 @@ function tomDesc(tom) {
 // Final fixo — sem variação garante que o dedup do whatsapp.js
 // bloqueie qualquer duplicata, independente da versão do código.
 function finalParaLembrete(r) {
-  return 'Me avisa quando fizer! 👋';
+  return 'Me avisa quando fizer!';
 }
 
 // ═══════════════════════════════════════════════════════════════════════
