@@ -1008,6 +1008,12 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       await memory.saveConversationMessage(user.id, 'assistant', falaNatural).catch(() => {});
 
       try {
+        // Mostra "digitando..." enquanto gera a foto — evita a sensação de
+        // silêncio/travamento durante a parte demorada do processo.
+        const wTyping = getWhatsapp();
+        if (wTyping && typeof wTyping.sendTyping === 'function') {
+          wTyping.sendTyping(phone, 8000).catch(() => {});
+        }
         // Contexto pra montar o prompt técnico: a fala dela + a mensagem do usuário
         const contextoParaPrompt = `Usuário disse: "${text}"\nClara respondeu: "${falaNatural}"`;
         const cenaTecnica = await gerarPromptSelfieDetalhado(contextoParaPrompt);
