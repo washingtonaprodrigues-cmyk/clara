@@ -104,6 +104,23 @@ async function sendButtons(phone, message, buttons) {
   return sendMessage(phone, message);
 }
 
+// ── Indicador de "digitando..." ─────────────────────────────────────
+// TENTATIVA — não tenho certeza absoluta do endpoint exato da UazAPI pra
+// isso (não tive acesso à documentação pra confirmar), usei o padrão mais
+// comum entre APIs de WhatsApp. Se não funcionar, precisa conferir a doc
+// da UazAPI pelo endpoint certo de presença/typing.
+async function sendTyping(phone, durationMs = 3000) {
+  try {
+    await axios.post(
+      `${BASE_URL}/message/presence`,
+      { number: phone, presence: 'composing', delay: durationMs },
+      { timeout: 10000, headers }
+    );
+  } catch (error) {
+    console.error(`[Typing] Erro ao mandar indicador para ${phone}:`, error.response?.data || error.message);
+  }
+}
+
 // ── Envio de imagem ──────────────────────────────────────────────────
 async function sendImage(phone, base64Image, caption = '', mimeType = 'image/png') {
   try {
@@ -211,6 +228,7 @@ module.exports = {
   sendButtons,
   sendMainMenu,
   sendImage,
+  sendTyping,
   sendReminderWithButtons,
   sendReminderHumano,
   sendReminderInsistencia,
