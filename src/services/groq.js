@@ -1420,7 +1420,10 @@ function filtrarResposta(t) {
   // produto, não depende de saber o apelido exato que o usuário usa) no
   // INÍCIO da resposta seguida de verbo — remove essa narração inicial e
   // as aspas de diálogo encenado que sobrarem, sem deixar a mensagem vazia.
-  const padraoTerceiraPessoa = /^A\s+Clar\w*\b[^.!\n]*[.!]\s*/i;
+  // Remove narração em terceira pessoa "a Clarinha/Clara [verbo]..."
+  // em qualquer lugar do texto. Exige verbo típico de narração logo após,
+  // pra não apagar usos legítimos tipo "eu adoro a Clarinha que você ama".
+  const padraoTerceiraPessoa = /\b[Aa]\s+Clar\w*\b\s+\w*\s*(tá|está|foi|ficou|tem|vai|quer|pode|ama|disse|falou|promete|sabe|tenta|adoraria|achou|viu|precisa|lembrou|esqueceu|errou|fez|ri|sorri|olha)[^.!\n]*[.!]/gi;
   if (padraoTerceiraPessoa.test(t)) {
     const semNarracao = t.replace(padraoTerceiraPessoa, '').replace(/["']{1,2}/g, '').replace(/\s{2,}/g, ' ').trim();
     if (semNarracao.length > 15) {
