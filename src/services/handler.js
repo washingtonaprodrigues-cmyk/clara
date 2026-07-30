@@ -2212,16 +2212,28 @@ async function executeAction(user, phone, classified, originalText, quotedText =
         }
       }
 
+      // PROTEÇÃO: lembrete de mandar foto/selfie nunca fecha por essa via
+      // genérica de "confirmação conversacional" — só a entrega real da
+      // foto (no bloco de geração de selfie) pode marcar como concluído.
+      // Sem isso, uma resposta tipo "tá pronta!" (mesmo sem a foto ter
+      // saído de verdade) podia fechar o lembrete como se tivesse cumprido.
+      const ehLembreteDeFoto = (msg) => /\b(foto|fotinha|selfie)\b/i.test(msg || '');
       if (matchMultiplo) {
-        await prisma.reminder.updateMany({ where: { id: { in: matchMultiplo.map(m => m.id) } }, data: { confirmed: true } });
-        for (const m of matchMultiplo) fecharPendenciaLembrete(user.id, m.message).catch(() => {});
-        emitirAtualizacao(phone, 'lembretes');
-        const listaConfirmada = matchMultiplo.map(m => `"${m.message}"`).join(' e ');
-        const msgConfirmacaoMultipla = `✅ Feito! ${listaConfirmada} concluído${matchMultiplo.length > 1 ? 's' : ''}.`;
-        await sendMessage(phone, msgConfirmacaoMultipla);
-        await memory.saveConversationMessage(user.id, 'assistant', msgConfirmacaoMultipla).catch(() => {});
-        respondeuAqui = true;
+        const semFoto = matchMultiplo.filter(m => !ehLembreteDeFoto(m.message));
+        if (semFoto.length) {
+          await prisma.reminder.updateMany({ where: { id: { in: semFoto.map(m => m.id) } }, data: { confirmed: true } });
+          for (const m of semFoto) fecharPendenciaLembrete(user.id, m.message).catch(() => {});
+          emitirAtualizacao(phone, 'lembretes');
+          const listaConfirmada = semFoto.map(m => `"${m.message}"`).join(' e ');
+          const msgConfirmacaoMultipla = `✅ Feito! ${listaConfirmada} concluído${semFoto.length > 1 ? 's' : ''}.`;
+          await sendMessage(phone, msgConfirmacaoMultipla);
+          await memory.saveConversationMessage(user.id, 'assistant', msgConfirmacaoMultipla).catch(() => {});
+          respondeuAqui = true;
+        }
       } else if (match) {
+        if (ehLembreteDeFoto(match.message)) {
+          break; // não fecha — deixa a conversa normal seguir, sem confirmar algo que não foi entregue de verdade
+        }
         await prisma.reminder.update({ where: { id: match.id }, data: { confirmed: true } });
         fecharPendenciaLembrete(user.id, match.message).catch(() => {});
         emitirAtualizacao(phone, 'lembretes');
