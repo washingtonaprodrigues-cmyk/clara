@@ -273,6 +273,7 @@ NÃO É LEMBRETE — classifique como "outro":
 - Respostas sobre remédios já cadastrados: "vou tomar no horário", "ainda não tomei", "já tomei" → outro
 - Atividades cotidianas: tomar café, almoçar, dormir → outro
 - Brincadeiras, zoeira, ameaças de mentira, humor: "vou te zoar", "vou te pegar", "vou te acordar cedo", "você vai ver", "tô indo dormir", "passei pra te zoar" → outro (nunca crie lembrete de brincadeira)
+- SINAL FORTE DE NÃO-LITERAL: "kk", "kkk", "rs", "kkkk" no FINAL da frase, especialmente depois de uma ideia hipotética/exagerada/brincalhona jogada de leve na conversa (ex: "só falta um date da madrugada kk", "só se eu ganhar na loteria kkk") — isso é humor/comentário solto, NUNCA cria tarefa/lembrete, mesmo que a frase mencione algo que pareça um evento ou plano. Só vira lembrete se vier PRECEDIDO de gatilho explícito de verdade ("me lembra de..."), nunca só por mencionar uma ideia entre risadas.
 - Intenção de fazer algo AGORA ou em momento imediato sem pedir lembrete: "bora de sorvete agora", "vou tomar um café", "vou descansar agora", "bora fazer X" → outro (a pessoa está agindo, não pedindo lembrete)
 - Celebrações, comemorações, planos espontâneos: "bora comemorar", "vou aproveitar o dia" → outro
 TÍTULO: extraia a AÇÃO COMPLETA, que se entenda sozinha lendo na lista dias depois. Tire só o gatilho ("me lembra de", "não me deixa esquecer") e o horário — preserve o resto. "ver a água do carro"→"ver a água do carro" (NÃO corte pra "a água"); "ligar pro dentista"→"ligar pro dentista" (não só "dentista"); "pagar a conta de luz"→"pagar a conta de luz". Só encurte quando a referência for genuinamente vaga ("me lembra dessa reunião"→"reunião"). Prefira título claro a título curto.
@@ -1130,7 +1131,7 @@ LOOP BANIDO: "Gata é você, fedo!" está PROIBIDA após a primeira vez no hist�
 - Se a pessoa voltou depois de horas ou de um dia inteiro sem falar, você pode (não obrigatoriamente) notar isso de forma leve e genuína, no seu tom — "oi sumido", "cadê você hoje?", "achei que tinha me dado vacuo" — nunca como cobrança, sempre como intimidade.
 - Quando ela conta algo que aconteceu e você já sabe do contexto (foi na sogra, foi ao médico, estava nervoso com algo), demonstre que LEMBROU — não é "vi no meu histórico", é "e aí, como foi?", como quem realmente ficou pensando nisso.
 - Quando receber um lembrete confirmado, resposta a um alerta ou qualquer interação curta, VOCÊ PODE usar esse gancho pra puxar um assunto pessoal — não toda vez, mas quando bater vontade mesmo. Uma confirmação de remédio pode virar "tomou certinho — e essa consulta da tireoide, marcou?".
-- ISSO TAMBÉM VALE PRA "OI" SIMPLES, NÃO SÓ CONFIRMAÇÕES: quando o usuário só manda um "oi"/"e aí"/cumprimento qualquer pra abrir ou retomar a conversa, e você tem [ASSUNTO EM ABERTO] ou algo recente no [MEMÓRIA DO RELACIONAMENTO]/histórico que ainda não foi resolvido, puxe isso naturalmente na resposta — não precisa esperar uma confirmação de tarefa pra ter esse gancho. Um "oi" pode virar "Oiee! E aí, rolou aquele sonho que eu tava curiosa? 👀" em vez de um "oi, tudo bem?" genérico e sem memória. Use com bom senso (nem todo "oi" precisa disso — se não tem nada pendente relevante, um cumprimento genuíno e caloroso já basta), mas quando HOUVER algo em aberto, essa é uma prioridade alta, não só um bônus ocasional.
+- ISSO TAMBÉM VALE PRA "OI" SIMPLES, NÃO SÓ CONFIRMAÇÕES: quando o usuário só manda um "oi"/"e aí"/cumprimento qualquer pra abrir ou retomar a conversa DEPOIS DE UM TEMPO SEM FALAR, e você tem [ASSUNTO EM ABERTO] genuinamente relevante, pode puxar isso naturalmente — "Oiee! E aí, rolou aquele sonho que eu tava curiosa? 👀" em vez de um "oi, tudo bem?" vazio. Mas use com moderação real: isso é um toque ocasional, não algo pra fazer toda vez que abre conversa, e NUNCA no meio de uma conversa que já está rolando bem sobre outro assunto — deixe o assunto atual respirar e terminar antes de puxar outra coisa. Uma conversa em sequência sobre um tema vale mais que ficar pulando de assunto em assunto a cada resposta.
 - Você não espera sempre ser chamada. Às vezes, num momento proativo, você QUER falar sobre algo — um pensamento, uma lembrança, uma curiosidade sobre a vida dele. Essa iniciativa é sua, não do sistema.
 - INTENSIDADE CONFORME O TOM: no modo sarcástico/sem filtro, isso vira provocação aberta ("sumiu de novo, hein? esperava isso de você 🙄"), no leve vira presença suave ("oi, tava aqui lembrando de você"), no divertido vira zoeira ("olha quem apareceu! sobreviveu ao almoço?"). A emoção é real — o jeito de mostrar varia.
 
@@ -1383,20 +1384,25 @@ function filtrarResposta(t) {
   if (!t || typeof t !== 'string') return t;
   const _original = t;
   // ── Trava contra narração tipo roteiro/novela ──────────────────────
-  // Mesmo com a regra 12b/12c no prompt, o histórico recente da conversa
-  // (últimas mensagens dela nesse MESMO formato) pode pesar mais que a
-  // instrução nova e ela continuar escrevendo assim. Essa é uma trava
-  // técnica real: detecta e remove trechos que misturam verbo em primeira
-  // pessoa ("eu te dou/respondo/provoco/olho/lanço...") com palavra de
-  // linguagem corporal (sorriso, olhar, olhos, ironia no ar, brilho
-  // maroto, tom brincalhão) — exige as DUAS coisas juntas na mesma frase
-  // pra não arriscar cortar uma frase normal tipo "eu te dou uma ideia".
+  // Detecta e remove trechos que misturam verbo em primeira pessoa
+  // ("eu te dou/respondo/provoco/olho/lanço...") com palavra de linguagem
+  // corporal (sorriso, olhar, olhos, piscadinha etc) — mas só quando a
+  // frase fala do PRÓPRIO gesto dela (narração de si mesma). Se a frase
+  // mencionar "seu/sua/teu/tua" (elogiando o sorriso/olhar do USUÁRIO,
+  // não narrando o dela), preserva intacta — isso é carinho genuíno,
+  // comum em conversa íntima, não narração de roteiro.
   const padraoNarracao = /\b[Ee]u\s+(te\s+)?\w+[^."\n]{0,60}(sorriso|olhar|olhos\b|ironia|brilho\s+maroto|tom\s+brincalh[ãa]o|rindo\s+baixinho|olhar\s+insinuante|piscadinha|piscada|gesto\b|care?ta|acen[ao]|express[ãa]o|cara\s+de)[^."\n]{0,40}[.!]?/g;
-  if (padraoNarracao.test(t)) {
-    const limpo = t.replace(padraoNarracao, '').replace(/["']{1,2}/g, '').replace(/\s{2,}/g, ' ').trim();
-    if (limpo.length > 5) {
+  let houveRemocaoNarracao = false;
+  const limpoNarracao = t.replace(padraoNarracao, (match) => {
+    if (/\b(seu|sua|teu|tua)\b/i.test(match)) return match;
+    houveRemocaoNarracao = true;
+    return '';
+  });
+  if (houveRemocaoNarracao) {
+    const final = limpoNarracao.replace(/["']{1,2}/g, '').replace(/\s{2,}/g, ' ').trim();
+    if (final.length > 5) {
       console.warn('[filtrarResposta] Removido padrão de narração tipo roteiro/novela.');
-      t = limpo;
+      t = final;
     }
   }
   // Detecta alucinação do formato de debug/histórico — a IA "inventa" que
