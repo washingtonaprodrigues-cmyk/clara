@@ -283,19 +283,22 @@ async function geminiFreeResponseLite(msgs, opts = {}) {
 // Analisa uma imagem com o Gemini Vision. Recebe o base64 da imagem, o
 // mimeType, e um prompt de sistema (a personalidade da Clara + instrução).
 // Retorna o texto da análise no tom pedido.
-async function geminiVision(base64Image, mimeType, systemPrompt, userPrompt = 'O que você vê nesta imagem?') {
+async function geminiVision(base64Image, mimeType, systemPrompt, userPrompt = 'O que você vê nesta imagem?', referenciaBase64 = null, referenciaMimeType = 'image/jpeg') {
   if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
 
   // Modelo com visão — gemini-2.5-flash enxerga imagem nativamente
   const model = 'gemini-2.5-flash';
+  const parts = [{ text: userPrompt }];
+  // Se houver foto de referência da própria Clara, manda ela JUNTO na
+  // mesma chamada — isso permite ao modelo comparar as duas fotos e
+  // identificar se a pessoa na imagem enviada é a mesma da referência
+  // (ou seja, se o usuário mandou uma foto DELA de volta).
+  if (referenciaBase64) {
+    parts.push({ inlineData: { mimeType: referenciaMimeType, data: referenciaBase64 } });
+  }
+  parts.push({ inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Image } });
   const body = {
-    contents: [{
-      role: 'user',
-      parts: [
-        { text: userPrompt },
-        { inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Image } }
-      ]
-    }],
+    contents: [{ role: 'user', parts }],
     generationConfig: { temperature: 0.7, maxOutputTokens: 800, thinkingConfig: { thinkingBudget: 0 } },
   };
   if (systemPrompt) {
@@ -322,12 +325,151 @@ async function geminiVision(base64Image, mimeType, systemPrompt, userPrompt = 'O
   return text.trim();
 }
 
+// ── Geração de imagem ────────────────────────────────────────────────
+// Usa o modelo Gemini com geração de imagem nativa (multimodal: texto
+// entra, imagem sai). Retorna a imagem em base64 + mimeType, pronta pra
+// enviar no WhatsApp.
+// ATENÇÃO: o nome exato do modelo de geração de imagem pode mudar com o
+// tempo (o Google itera bastante nessa linha) — se começar a dar erro
+// 404, provavelmente é isso: verificar o nome atual do modelo na
+// documentação do Gemini API antes de assumir que é outro bug.
+const GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image';
+
+async function geminiGerarImagem(prompt) {
+  if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
+  if (!prompt || !prompt.trim()) throw new Error('Prompt vazio');
+
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+  };
+
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('timeout')), 30000)
+  );
+  const fetchPromise = fetch(geminiUrl(GEMINI_IMAGE_MODEL), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const response = await Promise.race([fetchPromise, timeoutPromise]);
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(`Gemini Imagem erro ${response.status}: ${errText.slice(0, 300)}`);
+  }
+  const data = await response.json();
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const imgPart = parts.find(p => p.inlineData?.data);
+  if (!imgPart) {
+    const bloqueio = data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason;
+    throw new Error(`Gemini não retornou imagem${bloqueio ? ` (${bloqueio})` : ''}`);
+  }
+  return { base64: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png' };
+}
+
+// ── Descrição textual fixa da Clara ─────────────────────────────────
+// Usada só como INSUMO pra montar o prompt técnico da selfie (função
+// abaixo), nunca aparece pra ela em conversa normal nem vira licença
+// pra se autodescrever fora de contexto.
+const CLARA_APARENCIA = `a young Brazilian/Latina woman in her mid-to-late 20s, with warm olive skin tone, long dark brown/black wavy hair usually worn in a loose messy bun with a few face-framing strands falling naturally, brown eyes, defined natural eyebrows, an oval/heart-shaped face, and a warm, genuine smile with visible teeth. Natural, minimal makeup look.`;
+
+// ── Monta o prompt técnico da selfie SEPARADAMENTE da resposta natural ──
+// Arquitetura de duas etapas: a Clara responde naturalmente na conversa
+// ("Fiz uma caminhada sim!"), sem escrever nenhuma descrição técnica —
+// ela só sinaliza com a tag simples __GERAR_SELFIE__. Essa função pega
+// o contexto real da conversa (o que ela acabou de dizer que tá fazendo)
+// e usa uma chamada mecânica separada (sem personalidade, sem criatividade)
+// pra traduzir isso numa cena específica em inglês, pronta pra gerar a
+// imagem. Assim ela nunca precisa "narrar a geração" — é behind-the-scenes,
+// igual uma pessoa real que tira uma foto sem descrever tecnicamente o
+// que está fazendo.
+async function gerarPromptSelfieDetalhado(contextoConversa) {
+  const msgs = [
+    { role: 'system', content: `Você extrai, a partir de uma conversa em português, qual atividade/cena a pessoa está fazendo ou mencionou, e escreve uma descrição de selfie fotorealista EM INGLÊS pronta pra gerar imagem. Retorne APENAS a descrição em inglês, sem explicação.
+
+FORMATO OBRIGATÓRIO: "selfie of ${CLARA_APARENCIA}, [atividade específica], [objetos/equipamento visíveis do cenário], [roupa apropriada pra atividade], natural casual phone-selfie style, photorealistic"
+
+Ela deve ser o assunto central da foto, em close ou meio-corpo, ativamente fazendo a atividade mencionada — nunca uma paisagem vazia.
+
+Se não conseguir identificar uma atividade clara na conversa, use uma cena genérica coerente com o momento (ex: em casa, no sofá, tomando café).` },
+    { role: 'user', content: contextoConversa }
+  ];
+  try {
+    const resp = await geminiFreeResponseLite(msgs, { temperature: 0.4, maxTokens: 150 });
+    if (resp && resp.trim().length > 10) return resp.trim();
+  } catch (e) {
+    console.error('[gerarPromptSelfieDetalhado] Erro:', e.message);
+  }
+  // Fallback genérico se a extração falhar
+  return `selfie of ${CLARA_APARENCIA}, sitting comfortably at home, casual clothing, natural lighting, photorealistic phone-selfie style`;
+}
+
+// ── Geração de "selfie" da Clara, com identidade consistente ──────────
+// Usa uma foto de referência (pessoa sintética, gerada por IA — não é
+// foto de alguém real) como âncora visual, pra manter o mesmo rosto/
+// estilo em toda imagem que a Clara gerar de si mesma.
+// Framing de EDIÇÃO (não "gerar nova foto inspirada nessa") — foi o que
+// deu o melhor resultado em teste real (cena de academia correta,
+// mantendo o rosto). Ainda existe variação normal entre gerações (a
+// mesma cena pode sair certa numa tentativa e diferente na seguinte —
+// geração de imagem não é determinística).
+async function geminiGerarSelfie(cena, referenciaBase64, referenciaMimeType = 'image/jpeg') {
+  if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
+  if (!cena || !cena.trim()) throw new Error('Cena vazia');
+  if (!referenciaBase64) throw new Error('Foto de referência não disponível');
+
+  const body = {
+    contents: [{
+      role: 'user',
+      parts: [
+        { inlineData: { mimeType: referenciaMimeType, data: referenciaBase64 } },
+        { text: `Edit this photo. Replace the background/setting with: ${cena}. Change her clothing, pose and activity to naturally fit this new scene, with the objects/equipment mentioned clearly visible around her. Keep her face, hair and identity exactly as they are in the original photo — do not change her face. Output a photorealistic, natural selfie-style photo, not studio/posed.` }
+      ]
+    }],
+    generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+  };
+
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('timeout')), 30000)
+  );
+  const fetchPromise = fetch(geminiUrl(GEMINI_IMAGE_MODEL), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const response = await Promise.race([fetchPromise, timeoutPromise]);
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(`Gemini Selfie erro ${response.status}: ${errText.slice(0, 300)}`);
+  }
+  const data = await response.json();
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const imgPart = parts.find(p => p.inlineData?.data);
+  const textPart = parts.find(p => p.text)?.text;
+  const safetyRatings = data?.candidates?.[0]?.safetyRatings;
+  const promptFeedback = data?.promptFeedback;
+  // Diagnóstico mesmo em "sucesso" — se o Gemini está silenciosamente
+  // desviando da cena pedida, a API pode não retornar erro nenhum — mas
+  // pode incluir texto explicativo ou safetyRatings que revelam o motivo.
+  console.log(`[Gemini-Selfie-DIAG] temImagem=${!!imgPart} textoJunto="${(textPart || '').slice(0, 200)}" promptFeedback=${JSON.stringify(promptFeedback || {})} safetyRatings=${JSON.stringify(safetyRatings || [])}`);
+  if (!imgPart) {
+    const bloqueio = data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason;
+    throw new Error(`Gemini não retornou selfie${bloqueio ? ` (${bloqueio})` : ''}`);
+  }
+  return { base64: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png' };
+}
+
 module.exports = {
   geminiDisponivel,
   geminiFreeResponse,
   geminiFreeResponseComContinuacao,
   geminiFreeResponseLite,
   geminiVision,
+  geminiGerarImagem,
+  geminiGerarSelfie,
+  gerarPromptSelfieDetalhado,
   isGeminiRateLimit,
   todosModelosEsgotados,
   GEMINI_MODELS,
