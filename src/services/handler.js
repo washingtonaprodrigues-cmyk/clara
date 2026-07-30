@@ -1206,7 +1206,7 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
       if (medEncontrado) {
         const novoRemaining = Math.max(0, medEncontrado.remaining - 1);
         await prisma.medication.update({ where: { id: medEncontrado.id }, data: { remaining: novoRemaining } });
-        await sendMessage(phone, `✅ Tomado! *${medEncontrado.name}* registrado. Restam ${novoRemaining} dose${novoRemaining === 1 ? '' : 's'}. 🩹`);
+        await sendMessage(phone, `✅ Tomado! *${medEncontrado.name}* registrado. Restam ${novoRemaining} dose${novoRemaining === 1 ? '' : 's'}. 💊`);
         emitirAtualizacao(phone, 'remedios');
         await marcarBomDiaSeManha(user.id);
         return;
