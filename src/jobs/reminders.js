@@ -110,12 +110,47 @@ async function sendMessage(phone, msg, delay) {
   );
 }
 
+// sendImage via whatsapp.js (com fallback direto pra evitar circular dependency,
+// mesmo padrão do sendMessage acima)
+async function sendImageRem(phone, base64Image, caption = '', mimeType = 'image/png') {
+  try {
+    const w = require('../services/whatsapp');
+    if (w && typeof w.sendImage === 'function') return w.sendImage(phone, base64Image, caption, mimeType);
+  } catch (e) { console.error('[Reminders] Erro ao carregar whatsapp.js (imagem):', e.message); }
+  const axios = require('axios');
+  const BASE_URL = process.env.UAZAPI_URL || 'https://claravirtual.uazapi.com';
+  const TOKEN = process.env.UAZAPI_TOKEN;
+  const dataUri = `data:${mimeType};base64,${base64Image}`;
+  return axios.post(`${BASE_URL}/send/media`,
+    { number: phone, type: 'image', file: dataUri, text: caption },
+    { headers: { token: TOKEN, 'Content-Type': 'application/json' }, timeout: 30000 }
+  );
+}
+
 const { freeResponse, isRespostaFallback } = require('../services/groq');
-const { geminiFreeResponse } = require('../services/gemini');
+const { geminiFreeResponse, geminiGerarSelfie, geminiGerarImagem, gerarPromptSelfieDetalhado } = require('../services/gemini');
+const fs = require('fs');
+const path = require('path');
 const memory = require('../services/memory');
 const { getHumorDia, getLocalizacao, getCamposDesconhecidos, getProximaCuriosidade, salvarResumoRelacionamento, getResumoRelacionamento, getMemoriaAfetiva } = memory;
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+
+let _claraReferenciaBase64Rem = null;
+let _claraReferenciaTentouRem = false;
+function getClaraReferenciaBase64Rem() {
+  if (_claraReferenciaBase64Rem) return _claraReferenciaBase64Rem;
+  if (_claraReferenciaTentouRem) return null;
+  _claraReferenciaTentouRem = true;
+  try {
+    const caminho = path.join(__dirname, '..', '..', 'public', 'clara-referencia.jpeg');
+    _claraReferenciaBase64Rem = fs.readFileSync(caminho).toString('base64');
+    return _claraReferenciaBase64Rem;
+  } catch (e) {
+    console.error('[ClaraReferenciaRem] Não encontrou public/clara-referencia.jpeg:', e.message);
+    return null;
+  }
+}
 
 // ── Retry automático em falha de conexão (mesma lógica de memory.js) ──
 prisma.$use(async (params, next) => {
@@ -1209,6 +1244,48 @@ cron.schedule('* * * * *', async () => {
       }
       if (!claimados.length) continue;
       grupo.reminders = claimados;
+
+      // ── Desvio especial: promessa de mandar foto (não é "lembrete" comum) ──
+      // Quando ela promete mandar uma foto/selfie mais tarde (brincadeira,
+      // "te mando no almoço"), isso não é um pedido de tarefa do usuário —
+      // é uma PROMESSA dela, mais parecida com chamada_combinada. No
+      // horário combinado: mensagem natural (nunca o template de sino) +
+      // ENTREGA REAL da foto, gerada agora. Só marca concluído se a foto
+      // realmente sair — sem isso, o lembrete ficava "fechado" mesmo
+      // quando ela só falava sobre a foto sem entregar de verdade.
+      const ehPromessaDeFoto = grupo.reminders.length === 1 && /\b(foto|fotinha|selfie)\b/i.test(grupo.reminders[0].message || '');
+      if (ehPromessaDeFoto) {
+        const rFoto = grupo.reminders[0];
+        try {
+          const prefsFoto = await memory.getUserPreference(rFoto.userId).catch(() => ({}));
+          const afetivaFoto = await memory.getMemoriaAfetiva(rFoto.userId).catch(() => ({}));
+          const nomeFoto = afetivaFoto?.apelido_usuario || prefsFoto?.name || '';
+          const systemSurpresa = `Chegou a hora de entregar uma surpresa que você prometeu: "${rFoto.message}". Mande uma mensagem curta e natural, no SEU tom, como quem está cumprindo a promessa/entregando a surpresa — nunca como "lembrete" ou notificação de sistema. Ex: "Prometido é dado! Olha só 📸" ou algo no seu jeito. NÃO use formato de lembrete, sino ou "⏰ hora".`;
+          const respSurpresa = await freeResponse('(entrega de promessa de foto)', [], { _contexto: '', name: nomeFoto, tom: prefsFoto?.tom || 'leve', _systemOverride: systemSurpresa, _maxTokens: 100 });
+          const msgSurpresa = (respSurpresa && !isRespostaFallback(respSurpresa)) ? respSurpresa : (nomeFoto ? `Prometido é dado, ${nomeFoto}! Olha só 📸` : `Prometido é dado! Olha só 📸`);
+          await sendMessage(grupo.phone, msgSurpresa);
+          await memory.saveConversationMessage(rFoto.userId, 'assistant', msgSurpresa).catch(() => {});
+
+          const contextoFoto = `Contexto: ${rFoto.message}. Clara disse: "${msgSurpresa}"`;
+          const cenaFoto = await gerarPromptSelfieDetalhado(contextoFoto);
+          const referenciaFoto = getClaraReferenciaBase64Rem();
+          const selfieFoto = referenciaFoto
+            ? await geminiGerarSelfie(cenaFoto, referenciaFoto, 'image/jpeg')
+            : await geminiGerarImagem(cenaFoto);
+          await sendImageRem(grupo.phone, selfieFoto.base64, '', selfieFoto.mimeType);
+          await memory.saveConversationMessage(rFoto.userId, 'assistant', `Te mandei uma selfie minha 📸`).catch(() => {});
+
+          // Só marca concluído porque a entrega REALMENTE aconteceu
+          await prisma.reminder.update({ where: { id: rFoto.id }, data: { confirmed: true } });
+          console.log(`[Reminder-Foto] ${grupo.phone} → promessa de foto entregue de verdade às ${grupo.hora}`);
+        } catch (eFoto) {
+          console.error('[Reminder-Foto] Erro ao entregar promessa de foto:', eFoto.message);
+          // Não marca confirmed — não entregou de verdade, então continua pendente
+          await sendMessage(grupo.phone, `Ih, não consegui preparar sua surpresa agora 😕 Te aviso assim que conseguir!`).catch(() => {});
+        }
+        await prisma.memory.deleteMany({ where: { type: 'reminder_lock', content: lockLembreteKey } }).catch(() => {});
+        continue;
+      }
 
       // ── Monta a mensagem ──
       let msg;
