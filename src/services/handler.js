@@ -1597,9 +1597,10 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
       const msgHora = await geminiFreeResponse([
         { role: 'system', content: systemHora },
         { role: 'user', content: text }
-      ], { temperature: 0.85, maxTokens: 80 }).catch(() => null);
-      const msgHoraFinal = (msgHora && msgHora.trim().length > 3 && !isRespostaFallback(msgHora))
-        ? msgHora.trim()
+      ], { temperature: 0.85, maxTokens: 120 }).catch(() => null);
+      const msgHoraFiltrada = msgHora ? filtrarResposta(msgHora.trim()) : null;
+      const msgHoraFinal = (msgHoraFiltrada && msgHoraFiltrada.trim().length > 3 && !isRespostaFallback(msgHoraFiltrada))
+        ? msgHoraFiltrada.trim()
         : `Anotei "${classified.titulo}" pro ${dataFmt} 📌 — que horas coloco? Se não souber, fala que deixo às 09:00.`;
       await sendMessage(phone, msgHoraFinal);
       await memory.saveConversationMessage(user.id, 'assistant', msgHoraFinal).catch(() => {});
