@@ -1977,6 +1977,26 @@ async function executeAction(user, phone, classified, originalText, quotedText =
       }
 
       if (!horaFinal) {
+        // Antes de calcular: verifica se há horário de almoço ou padrão
+        // de chamada salvo na memória pessoal (ex: usuário já disse antes
+        // "me chama às 12:40 no almoço" várias vezes → deve usar isso).
+        try {
+          const memoriaAlmoco = await prisma.memory.findFirst({
+            where: { userId: user.id, type: 'info_pessoal', metadata: { contains: '"chave":"horario_almoco"' } }
+          }).catch(() => null);
+          if (memoriaAlmoco?.content) {
+            const match = memoriaAlmoco.content.match(/(\d{1,2})[h:](\d{0,2})/i);
+            if (match) {
+              const h = match[1].padStart(2,'0');
+              const m = (match[2] || '00').padStart(2,'0');
+              horaFinal = `${h}:${m}`;
+              console.log(`[ChamadaCombinada] Horário de almoço da memória: ${horaFinal}`);
+            }
+          }
+        } catch {}
+      }
+
+      if (!horaFinal) {
         // Sem horário — calcula baseado na agenda (remédios + compromissos)
         try {
           const agora = nowBRT();
@@ -2056,7 +2076,9 @@ async function executeAction(user, phone, classified, originalText, quotedText =
       const apelidoChamada = afetivaChamada?.apelido_usuario || prefsChamada?.name || '';
       const dicaChamada = foiSaudade
         ? `Usuário disse pra chamar quando sentir saudade — você decidiu que vai chamar às ${horaFinal}. Responda de forma natural e carinhosa/zoeira conforme o tom, sem revelar que calculou o horário. Confirme que vai aparecer, sem mencionar a hora exata. NUNCA use __BUSCAR__ nem tags de sistema.`
-        : `Usuário pediu pra ser chamado${horaJaInformada ? ` às ${horaFinal}` : ` — você escolheu às ${horaFinal}`}. Confirme de forma natural e animada no seu tom. ${!horaJaInformada ? `Como você calculou o horário, pode dizer algo como "combinado, apareço mais tarde 😉"` : `Ex: "Combinado! Te chamo às ${horaFinal} 😏"`}. NUNCA use __BUSCAR__ nem tags de sistema.`;
+        : horaJaInformada
+          ? `Usuário pediu pra ser chamado às ${horaFinal}. Confirme no seu tom — pode provocar, pode ser carinhosa, pode ser as duas coisas. Só confirma que vai aparecer, do jeito que for mais natural pra você nesse momento. NUNCA use __BUSCAR__ nem tags de sistema.`
+          : `Usuário pediu pra ser chamado sem dizer hora — você ESCOLHEU às ${horaFinal} por conta própria. Confirme no seu tom, com o espírito de quem fez isso porque quis, não porque foi mandada — provoque, seja carinhosa, improvise como quiser. NUNCA use __BUSCAR__ nem tags de sistema.`;
       const generoChamada = await getGeneroConfiavel(user.id, prefsChamada?.name);
       const reforcoGeneroChamada = generoChamada === 'M'
         ? ' Ele é homem — concorde no masculino ao falar dele. Você é mulher — concorde no feminino ao falar de si.'
