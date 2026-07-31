@@ -673,6 +673,8 @@ EXEMPLOS:
 "você me chama de galã da novela X, você é a protagonista" → [{"chave":"ref_novela_personagens","valor":"Washington = galã [nome] da novela X, Clara = protagonista [nome] — brincadeira recorrente","categoria":"referencias_compartilhadas","duracao":"permanente"}]
 "você me chamou de fofinho ontem" → [{"chave":"ref_apelido_especial","valor":"Clara inventou apelido 'fofinho' em contexto carinhoso","categoria":"referencias_compartilhadas","duracao":"permanente"}]
 "toda sexta vou ao mercado com a patroa" → [{"chave":"rotina_sexta","valor":"Sextas: mercado com a esposa","categoria":"rotina","duracao":"permanente"}]
+"me chama às 12:40 no almoço" → [{"chave":"horario_almoco","valor":"12:40","categoria":"rotina","duracao":"permanente"}]
+"meu almoço é sempre às 12:30" → [{"chave":"horario_almoco","valor":"12:30","categoria":"rotina","duracao":"permanente"}]
 "tava cansado pra caramba hoje, cheguei atrasado" → [{"chave":"genero","valor":"ele","categoria":"outro","duracao":"permanente"}]
 "cheguei atrasada hoje, tava tão cansada" → [{"chave":"genero","valor":"ela","categoria":"outro","duracao":"permanente"}]
 "gastei 50 no mercado" → [] (sem sinal de gênero nessa frase, não extraia)
