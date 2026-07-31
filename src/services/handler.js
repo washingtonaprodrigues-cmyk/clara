@@ -2207,8 +2207,14 @@ async function executeAction(user, phone, classified, originalText, quotedText =
           } else if (candidatos.length === 1) {
             match = candidatos[0];
           } else {
-            // Fallback: usa o mais recente que já foi disparado (sent:true)
-            match = pendentes.find(r => r.sent) || pendentes[0];
+            // Sem candidato: só faz fallback se NÃO houver citação de conversa
+            // comum — arrastar mensagem de conversa (não é lembrete) nunca deve
+            // confirmar o lembrete mais recente da fila, que seria sempre errado.
+            const citacaoEhLembrete = quotedText && /🔔|Lembrete/i.test(quotedText);
+            if (!quotedText || citacaoEhLembrete) {
+              match = pendentes.find(r => r.sent) || pendentes[0];
+            }
+            // Se citou conversa sem relação: match fica null → não confirma nada
           }
         }
       }
@@ -2474,46 +2480,40 @@ async function editarLembrete(user, phone, classified, contextoClassify = '', or
 
     let encontrado = null;
 
-    // ── Código curto (#1, #2, "o 1"...) ──
-    // Quando múltiplos lembretes foram disparados juntos (numerados pelo
-    // scheduler como #1, #2...), o usuário pode citar o número para
-    // desambiguar — tem prioridade sobre o fallback "último disparado",
-    // que era a causa de confirmar o lembrete errado ao arrastar a conversa.
+    // ── Prioridade 1: quotedText — quando o usuário arrastou/citou o lembrete
+    // específico, é a fonte mais confiável pra identificar qual é.
+    if (!encontrado && originalText) {
+      const qtLower = originalText.toLowerCase();
+      encontrado = todosLembretes.find(r => {
+        const palavras = r.message.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+        return palavras.some(p => qtLower.includes(p));
+      });
+    }
+
+    // ── Prioridade 2: código curto (#1, #2, "o 1"...) ──
     const codigo = extrairCodigoLembrete(originalText || '');
-    if (codigo) {
+    if (!encontrado && codigo) {
       const pendentes = await getLembretesPendentesConfirmacao(user.id);
       if (pendentes[codigo - 1]) encontrado = pendentes[codigo - 1];
     }
 
     if (!encontrado && !titulo) {
-      // Sem título: pega o lembrete mais recentemente disparado — ou seja,
-      // o "sent" cujo scheduledAt está mais próximo do agora (não o mais
-      // distante no futuro, que era o bug: scheduledAt desc pegava
-      // lembretes antigos com data "maior" por engano, mesmo já passados
-      // há mais tempo no relógio real).
       const agora = Date.now();
       const enviados = todosLembretes
         .filter(r => r.sent)
         .sort((a, b) => Math.abs(new Date(a.scheduledAt) - agora) - Math.abs(new Date(b.scheduledAt) - agora));
       encontrado = enviados[0] || null;
-
-      // Se não tem nenhum sent, pega o próximo a vencer
       if (!encontrado) {
         encontrado = todosLembretes[0] || null;
       }
     } else if (!encontrado) {
-      // Com título: busca por correspondência
       encontrado = todosLembretes.find(r => r.message.toLowerCase().includes(titulo));
-
-      // Fallback: palavras-chave com mais de 3 chars
       if (!encontrado) {
         const palavras = titulo.split(' ').filter(p => p.length > 3);
         encontrado = todosLembretes.find(r =>
           palavras.some(p => r.message.toLowerCase().includes(p))
         );
       }
-
-      // Fallback: usa contexto da conversa para inferir
       if (!encontrado && contextoClassify) {
         const linhasCtx = contextoClassify.split('\n');
         for (const linha of linhasCtx) {
@@ -2523,7 +2523,6 @@ async function editarLembrete(user, phone, classified, contextoClassify = '', or
           if (match) { encontrado = match; break; }
         }
       }
-
       if (!encontrado) {
         await sendMessage(phone, `Não encontrei nenhum lembrete com "${classified.titulo}" 😕\n\nMe diz o nome certinho!`);
         return;
@@ -2546,7 +2545,11 @@ async function editarLembrete(user, phone, classified, contextoClassify = '', or
       novoScheduledAt = new Date(`${classified.nova_data}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-03:00`);
     }
 
-    await prisma.reminder.update({ where: { id: encontrado.id }, data: { scheduledAt: novoScheduledAt, sent: false } });
+    // Só reseta sent:false se o novo horário for no FUTURO — sem isso, resetar
+    // pra false num horário já passado fazia o cron disparar o lembrete de
+    // novo imediatamente no próximo ciclo, como se fosse um novo lembrete.
+    const sentNovoValor = novoScheduledAt.getTime() > Date.now();
+    await prisma.reminder.update({ where: { id: encontrado.id }, data: { scheduledAt: novoScheduledAt, sent: sentNovoValor } });
 
     const horaFormatada = novoScheduledAt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
     const dataFormatada = novoScheduledAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short' });
