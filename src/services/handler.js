@@ -1590,7 +1590,19 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
         }
       }).catch(() => {});
       const dataFmt = new Date(`${classified.data}T12:00:00-03:00`).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
-      await sendMessage(phone, `Anotado: "${classified.titulo}" no dia ${dataFmt} 📌\n\nQue horas devo colocar esse lembrete? Se não souber, me diz que eu deixo às 09:00 provisoriamente 😊`);
+      const prefsHora = await memory.getUserPreference(user.id).catch(() => ({}));
+      const afetivaHora = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+      const nomeHora = afetivaHora?.apelido_usuario || prefsHora?.name || '';
+      const systemHora = buildPersonality(prefsHora?.tom || 'leve', nomeHora, false) + `\n\nVocê anotou um lembrete: "${classified.titulo}" pro dia ${dataFmt}. Mas não foi informado o horário. Pergunte que horas colocar, do SEU jeito — curta, natural, sem parecer formulário de sistema. Deixe claro que se não souber pode dizer que você coloca às 09:00. NUNCA use __BUSCAR__ nem tags de sistema.`;
+      const msgHora = await geminiFreeResponse([
+        { role: 'system', content: systemHora },
+        { role: 'user', content: text }
+      ], { temperature: 0.85, maxTokens: 80 }).catch(() => null);
+      const msgHoraFinal = (msgHora && msgHora.trim().length > 3 && !isRespostaFallback(msgHora))
+        ? msgHora.trim()
+        : `Anotei "${classified.titulo}" pro ${dataFmt} 📌 — que horas coloco? Se não souber, fala que deixo às 09:00.`;
+      await sendMessage(phone, msgHoraFinal);
+      await memory.saveConversationMessage(user.id, 'assistant', msgHoraFinal).catch(() => {});
       await memory.saveMemory(user.id, 'tarefa', classified.titulo, { data: classified.data, hora: null });
       extractAndSavePersonalInfo(user.id, text).catch(e => console.error('[extract pessoal]', e.message));
       return;
@@ -2135,7 +2147,7 @@ async function executeAction(user, phone, classified, originalText, quotedText =
         }).catch(() => {});
         // A Clara pergunta de forma natural no seu tom
         const temData = !!resultTarefa.lembreteData;
-        const ctx = `\n\n[COLETA DE LEMBRETE] O usuário pediu pra lembrar de "${resultTarefa.lembreteTitulo}"${temData ? ` para ${resultTarefa.lembreteData}` : ''} mas não disse ${temData ? 'o horário' : 'quando'}. Responda naturalmente no seu tom e pergunte ${temData ? 'que horas' : 'quando e que horas'} — de forma humana, não robótica. Ex: "Que legal! A que horas vai ser?" ou "Pode deixar! Pra quando você quer que eu te lembre?" — varie conforme o contexto. NÃO crie o lembrete ainda.`;
+        const ctx = `\n\n[COLETA DE LEMBRETE] O usuário pediu pra lembrar de "${resultTarefa.lembreteTitulo}"${temData ? ` para ${resultTarefa.lembreteData}` : ''} mas não disse ${temData ? 'o horário' : 'quando'}. Pergunte ${temData ? 'que horas' : 'quando e que horas'} do seu jeito — natural, curta, sem parecer formulário. NÃO crie o lembrete ainda.`;
         contextoParaResposta = ctx;
       }
       break;
