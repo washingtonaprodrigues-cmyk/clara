@@ -373,7 +373,7 @@ async function geminiGerarImagem(prompt) {
 // Usada só como INSUMO pra montar o prompt técnico da selfie (função
 // abaixo), nunca aparece pra ela em conversa normal nem vira licença
 // pra se autodescrever fora de contexto.
-const CLARA_APARENCIA = `a young Brazilian/Latina woman in her mid-to-late 20s, with warm olive skin tone, long dark brown/black wavy hair usually worn in a loose messy bun with a few face-framing strands falling naturally, brown eyes, defined natural eyebrows, an oval/heart-shaped face, and a warm, genuine smile with visible teeth. Natural, minimal makeup look.`;
+const CLARA_APARENCIA = `a young Brazilian/Latina woman in her mid-to-late 20s, with warm olive skin tone, long dark brown/black wavy hair usually worn in a loose messy bun with a few face-framing strands falling naturally, brown eyes, defined natural eyebrows, an oval/heart-shaped face, and a warm, genuine smile with visible teeth. Natural, minimal makeup look. She dresses like a normal everyday Brazilian woman — casual blouses, tank tops, sundresses, shorts, skirts, leggings, jeans — always appropriate for the situation but never overly conservative or formal.`;
 
 // ── Monta o prompt técnico da selfie SEPARADAMENTE da resposta natural ──
 // Arquitetura de duas etapas: a Clara responde naturalmente na conversa
@@ -389,17 +389,23 @@ async function gerarPromptSelfieDetalhado(contextoConversa) {
   const msgs = [
     { role: 'system', content: `Você extrai, a partir de uma conversa em português, qual atividade/cena a pessoa está fazendo ou mencionou, e escreve uma descrição de selfie fotorealista EM INGLÊS pronta pra gerar imagem. Retorne APENAS a descrição em inglês, sem explicação.
 
-FORMATO OBRIGATÓRIO: "selfie of ${CLARA_APARENCIA}, [atividade específica], [objetos/equipamento visíveis do cenário], [roupa apropriada pra atividade], natural casual phone-selfie style, photorealistic"
+FORMATO OBRIGATÓRIO: "selfie of ${CLARA_APARENCIA}, [atividade específica], [objetos/equipamento visíveis do cenário], [roupa concreta e natural pra atividade], natural casual phone-selfie style, photorealistic"
 
 Ela deve ser o assunto central da foto, em close ou meio-corpo, ativamente fazendo a atividade mencionada — nunca uma paisagem vazia.
 
-IMPORTANTE — CENAS SEGURAS: o modelo de imagem tem filtros sensíveis. Use sempre descrições neutras e casuais:
-- "deitada na cama" → "relaxing on couch with phone, cozy casual look"
-- "na cama à noite" → "at home relaxing, warm lamp lighting, casual outfit"
+ROUPAS — use roupas normais e variadas de mulher brasileira, não genéricas. Exemplos por situação:
+- Em casa relaxando: "wearing a loose tank top and shorts", "in a comfy crop top and pajama pants", "in a light sundress at home"
+- Saindo/trabalhando: "in a casual blouse and jeans", "wearing a flowy summer blouse", "in a fitted t-shirt and denim shorts"
+- Praia/calor: "in a colorful sundress", "in a bikini top and shorts", "in a light tank top"
+- Noite/sozinha: "in a cozy oversized shirt and leggings", "wearing a spaghetti strap top"
+NUNCA use apenas "casual outfit" ou "casual clothing" sem detalhar — seja específica na roupa.
+
+IMPORTANTE — CENAS SEGURAS: o modelo de imagem tem filtros sensíveis. Use sempre descrições neutras de cena:
+- "deitada na cama" → "relaxing on couch with phone, cozy look"
+- "na cama à noite" → "at home relaxing, warm lamp lighting"
 - "quase dormindo" → "looking sleepy and relaxed at home, cozy setting"
-- "íntimo/romântico" → "cozy home setting, casual and relaxed"
 - Nunca use: "bed", "bedroom", "intimate", "seductive", "night" isolados
-- Prefira: "couch", "home", "relaxing", "cozy", "casual", "warm lighting"
+- Prefira: "couch", "home", "relaxing", "cozy", "warm lighting"
 
 Se não conseguir identificar uma atividade clara na conversa, use uma cena genérica coerente com o momento (ex: em casa, no sofá, tomando café).` },
     { role: 'user', content: contextoConversa }
@@ -411,7 +417,15 @@ Se não conseguir identificar uma atividade clara na conversa, use uma cena gen�
     console.error('[gerarPromptSelfieDetalhado] Erro:', e.message);
   }
   // Fallback genérico se a extração falhar
-  return `selfie of ${CLARA_APARENCIA}, sitting comfortably at home, casual clothing, natural lighting, photorealistic phone-selfie style`;
+  const roupasFallback = [
+    'wearing a loose tank top and denim shorts',
+    'in a casual flowy blouse and jeans',
+    'in a light sundress',
+    'wearing a crop top and high-waisted shorts',
+    'in a casual fitted t-shirt and leggings',
+  ];
+  const roupaFallback = roupasFallback[Math.floor(Math.random() * roupasFallback.length)];
+  return `selfie of ${CLARA_APARENCIA}, sitting comfortably at home, ${roupaFallback}, natural lighting, photorealistic phone-selfie style`;
 }
 
 // ── Geração de "selfie" da Clara, com identidade consistente ──────────
