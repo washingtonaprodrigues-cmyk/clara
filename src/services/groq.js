@@ -4,7 +4,7 @@
 // sobre ter anotado/agendado algo não.
 const Groq = require('groq-sdk');
 const { webSearch } = require('./search');
-const { geminiDisponivel, geminiFreeResponse, geminiFreeResponseComContinuacao, geminiFreeResponseLite, isGeminiRateLimit, todosModelosEsgotados } = require('./gemini');
+const { geminiDisponivel, geminiFreeResponse, geminiFreeResponseComContinuacao, geminiFreeResponseLite, isGeminiRateLimit, todosModelosEsgotados, geminiSearchGrounded } = require('./gemini');
 const { openrouterDisponivel, openrouterFreeResponse, isOpenrouterRateLimit } = require('./openrouter');
 
 // ── Cascata de chaves Groq ────────────────────────────────────────────────
@@ -901,11 +901,35 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomU
       queryBase = `${queryBase} ${mesAno}`;
     }
     const fullQuery = locationContext ? `${queryBase} em ${locationContext}` : queryBase;
-    console.log(`🔎 Buscando: ${fullQuery}`);
+    console.log(`🔎 Buscando (Google Search grounding): ${fullQuery}`);
 
-    // Perguntas de jogo/horário de partida são as que mais sofrem com fonte
-    // ruim (sites de aposta/prognóstico erram data, horário e até adversário).
-    // Nesses casos, restringe a busca a fontes brasileiras confiáveis.
+    // Define as regras de busca aqui (usadas tanto pelo grounding quanto pelo Tavily fallback)
+    const regrasBusca = modo === 'participar'
+      ? `\n\nVocê acabou de pesquisar algo pra SI MESMA ficar por dentro — o usuário JÁ SABE sobre o assunto (foi ele que te contou). Agora use o que descobriu pra ENTRAR na conversa como participante, não como quem está informando. Compartilhe sua opinião sobre o que leu, faça uma pergunta sobre a experiência dele, comente algo que te chamou atenção, como uma amiga que acabou de dar uma olhada rápida e agora quer conversar sobre o assunto. NÃO enquadre como "você queria saber" ou "aqui está a informação" — isso soa como explicar pra quem já sabe. Máximo 4 linhas. NÃO use markdown. Use APENAS os fatos da informação abaixo — não invente dados.`
+      : `\n\nVocê acabou de pesquisar e vai contar o que encontrou NO SEU TOM — direta, sem relatório, sem frases de aquecimento antes dos dados. PRIORIDADE: dados primeiro — nome, endereço, telefone, horário para buscas locais. A personalidade está em COMO você fala, não em frases extras antes da informação. CRUZAMENTO COM CONTEXTO PESSOAL: se souber nome do médico, familiar ou lugar do usuário — USE. Ex: a cardiologista dele é a Dra. Wilma, use esse nome. PARA BUSCAS LOCAIS (médico, clínica, farmácia, serviço, loja): inclua todos os dados disponíveis — telefone, endereço, horário. Pode passar de 4 linhas. REGIÃO SIGNIFICA PRÓXIMO: quando o usuário pedir algo "na região" ou "perto", isso significa cidades num raio de até 100km da cidade dele — NUNCA a capital do estado ou outra cidade distante. Se o resultado mais próximo que encontrou fica a mais de 100km, diga isso claramente em vez de apresentar como "opção regional". No final, sugira brevemente confirmar antes de ir (dados web podem estar desatualizados — "confirma antes de ir!" ou similar, curto, no seu tom). PARA OUTRAS BUSCAS: máximo 4 linhas. REGRA CRÍTICA: use APENAS o que está na informação pesquisada abaixo. NUNCA invente dados, nomes, telefones. NÃO use markdown.\n\nREGRA DE TEMPERATURA: o Brasil usa Celsius (°C), NUNCA Fahrenheit. Se a informação pesquisada trouxer temperatura em Fahrenheit (°F) — comum em fontes americanas —, CONVERTA para Celsius antes de responder (fórmula: °C = (°F − 32) ÷ 1,8) e diga só o valor em °C, sem mencionar Fahrenheit. Ex: se a fonte diz "72°F", você fala "22°C". Valores de clima do Brasil quase sempre ficam entre 0°C e 45°C — se aparecer algo tipo "16°F" pra uma cidade brasileira, é Fahrenheit mal interpretado, converta.\n\nREGRA DE FUSO HORÁRIO: PRIMEIRO verifique se a informação já diz explicitamente "horário de Brasília" (ou "horário do Brasil") — se disser, esse horário JÁ ESTÁ CORRETO pra repassar exatamente como está, NUNCA some, subtraia ou "ajuste" esse valor por causa de menções a outra cidade/país no mesmo texto (ex: sede do jogo em outro país não muda o horário que já veio em horário de Brasília — são a mesma informação, não duas). SÓ converta quando o horário estiver claramente em outro fuso e NÃO vier acompanhado de "horário de Brasília" — nesse caso, se souber a sede com segurança, converta e diga que já converteu; se não tiver certeza do fuso de origem, informe exatamente como está na fonte e avise que pode não ser horário de Brasília, sugerindo conferir.`;
+
+    // ── Google Search grounding (primário) ──────────────────────────────
+    // Uma etapa só: Gemini busca no Google E gera a resposta no tom dela,
+    // com acesso direto ao índice do Google. 5.000 queries grátis/mês.
+    // Timeout maior (20s) pois busca+geração rodam no mesmo request.
+    if (geminiDisponivel() && !todosModelosEsgotados()) {
+      try {
+        const hojeBRTsearch = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+        const systemGrounded = buildPersonality(tomUsuario || 'leve', nomeUsuario, false) + contextoRelacional + (regrasBusca || '') + (instrucaoExtra ? `\n\n${instrucaoExtra}` : '');
+        const userGrounded = `${mensagemOriginal && mensagemOriginal !== fullQuery ? `Mensagem original do usuário: "${mensagemOriginal}"\n\n` : ''}Pesquise e responda: ${fullQuery}\n\n[HOJE é ${hojeBRTsearch}]`;
+        const respostaGrounded = await geminiSearchGrounded(systemGrounded, userGrounded, { temperature: 0.7, maxTokens: 600 });
+        if (respostaGrounded && respostaGrounded.trim().length > 10) {
+          console.log(`[Search] Google grounding OK (${respostaGrounded.length} chars)`);
+          return filtrarResposta ? filtrarResposta(respostaGrounded) : respostaGrounded;
+        }
+      } catch (eGrounded) {
+        console.warn(`[Search] Google grounding falhou (${eGrounded.message}) — caindo pro Tavily`);
+      }
+    }
+
+    // ── Tavily (fallback) ────────────────────────────────────────────────
+    // Só chega aqui se o Google grounding falhou ou Gemini não está disponível.
+    console.log(`🔎 Buscando via Tavily (fallback): ${fullQuery}`);
     const ehPerguntaDeJogo = /\b(jogo|joga|partida|horário do jogo|que horas.*joga|assistir|placar|campeonato|copa|seleção|brasileirão|libertadores)\b/i.test(fullQuery);
     const dominiosEsportivos = ehPerguntaDeJogo
       ? ['ge.globo.com', 'cnnbrasil.com.br', 'lance.com.br', 'espn.com.br', 'uol.com.br', 'olympics.com', 'cbf.com.br']
@@ -913,8 +937,6 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomU
 
     let data = await webSearch(fullQuery, { includeDomains: dominiosEsportivos });
     if ((!data || !data.results || data.results.length === 0) && dominiosEsportivos) {
-      // Filtro de domínio pode ter sido restritivo demais pra essa busca
-      // específica — tenta de novo sem restrição em vez de desistir.
       data = await webSearch(fullQuery);
     }
     if (!data || !data.results || data.results.length === 0) {
@@ -975,9 +997,6 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomU
     // sagrado, igual todo o resto do app, só com regras extras de busca por cima.
     // IMPORTANTE: tenta Gemini → chave 1 → chave 2 antes de desistir.
     // Gemini primeiro porque é a chave paga e principal do app agora.
-    const regrasBusca = modo === 'participar'
-      ? `\n\nVocê acabou de pesquisar algo pra SI MESMA ficar por dentro — o usuário JÁ SABE sobre o assunto (foi ele que te contou). Agora use o que descobriu pra ENTRAR na conversa como participante, não como quem está informando. Compartilhe sua opinião sobre o que leu, faça uma pergunta sobre a experiência dele, comente algo que te chamou atenção, como uma amiga que acabou de dar uma olhada rápida e agora quer conversar sobre o assunto. NÃO enquadre como "você queria saber" ou "aqui está a informação" — isso soa como explicar pra quem já sabe. Máximo 4 linhas. NÃO use markdown. Use APENAS os fatos da informação abaixo — não invente dados.`
-      : `\n\nVocê acabou de pesquisar e vai contar o que encontrou NO SEU TOM — direta, sem relatório, sem frases de aquecimento antes dos dados. PRIORIDADE: dados primeiro — nome, endereço, telefone, horário para buscas locais. A personalidade está em COMO você fala, não em frases extras antes da informação. CRUZAMENTO COM CONTEXTO PESSOAL: se souber nome do médico, familiar ou lugar do usuário — USE. Ex: a cardiologista dele é a Dra. Wilma, use esse nome. PARA BUSCAS LOCAIS (médico, clínica, farmácia, serviço, loja): inclua todos os dados disponíveis — telefone, endereço, horário. Pode passar de 4 linhas. REGIÃO SIGNIFICA PRÓXIMO: quando o usuário pedir algo "na região" ou "perto", isso significa cidades num raio de até 100km da cidade dele — NUNCA a capital do estado ou outra cidade distante. Se o resultado mais próximo que encontrou fica a mais de 100km, diga isso claramente em vez de apresentar como "opção regional". No final, sugira brevemente confirmar antes de ir (dados web podem estar desatualizados — "confirma antes de ir!" ou similar, curto, no seu tom). PARA OUTRAS BUSCAS: máximo 4 linhas. REGRA CRÍTICA: use APENAS o que está na informação pesquisada abaixo. NUNCA invente dados, nomes, telefones. NÃO use markdown.\n\nREGRA DE TEMPERATURA: o Brasil usa Celsius (°C), NUNCA Fahrenheit. Se a informação pesquisada trouxer temperatura em Fahrenheit (°F) — comum em fontes americanas —, CONVERTA para Celsius antes de responder (fórmula: °C = (°F − 32) ÷ 1,8) e diga só o valor em °C, sem mencionar Fahrenheit. Ex: se a fonte diz "72°F", você fala "22°C". Valores de clima do Brasil quase sempre ficam entre 0°C e 45°C — se aparecer algo tipo "16°F" pra uma cidade brasileira, é Fahrenheit mal interpretado, converta.\n\nREGRA DE FUSO HORÁRIO: PRIMEIRO verifique se a informação já diz explicitamente "horário de Brasília" (ou "horário do Brasil") — se disser, esse horário JÁ ESTÁ CORRETO pra repassar exatamente como está, NUNCA some, subtraia ou "ajuste" esse valor por causa de menções a outra cidade/país no mesmo texto (ex: sede do jogo em outro país não muda o horário que já veio em horário de Brasília — são a mesma informação, não duas). SÓ converta quando o horário estiver claramente em outro fuso e NÃO vier acompanhado de "horário de Brasília" — nesse caso, se souber a sede com segurança, converta e diga que já converteu; se não tiver certeza do fuso de origem, informe exatamente como está na fonte e avise que pode não ser horário de Brasília, sugerindo conferir.`;
     const promptReprocesso = buildPersonality(tomUsuario || 'leve', nomeUsuario, false) + contextoRelacional + regrasBusca + (instrucaoExtra ? `\n\n${instrucaoExtra}` : '');
     const hojeBRTbusca = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
     // mensagemOriginal: a mensagem completa do usuário (não só a query abstraída).
