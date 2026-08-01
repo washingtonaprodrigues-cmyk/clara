@@ -885,6 +885,20 @@ async function checkResolucaoPendencia(message, resumo) {
   }
 }
 
+// Post-processo de busca: quando o modelo cola texto narrativo (comentário
+// da Clara ou nome do próximo médico) logo após um telefone brasileiro na
+// mesma linha, injeta \n\n entre eles. Solução em código porque tentativas
+// via prompt nunca foram respeitadas consistentemente pelo Gemini grounding.
+// Padrão: "(XX) XXXX-XXXX texto" ou "(XX) XXXXX-XXXX texto"
+function separarTextoApostelefone(texto) {
+  if (!texto) return texto;
+  return texto.replace(/(\(\d{2}\)\s*\d{4,5}[-\s]\d{4})\s+([^\s\n])/g, (match, fone, proximo) => {
+    // Não quebra se o próximo char é '(' — provavelmente anotação do tipo "(WhatsApp)"
+    if (proximo === '(') return match;
+    return `${fone}\n\n${proximo}`;
+  });
+}
+
 async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomUsuario = 'leve', contextoRelacional = '', modo = 'informar', instrucaoExtra = '', mensagemOriginal = '') {
   try {
     // Âncora temporal na QUERY: "amanhã"/"hoje"/"próximo jogo" não dizem nada
@@ -924,7 +938,8 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomU
         const respostaGrounded = await geminiSearchGrounded(systemGrounded, userGrounded, { temperature: 0.7, maxTokens: 600 });
         if (respostaGrounded && respostaGrounded.trim().length > 10) {
           console.log(`[Search] Google grounding OK (${respostaGrounded.length} chars)`);
-          return filtrarResposta ? filtrarResposta(respostaGrounded) : respostaGrounded;
+          const filtrada = filtrarResposta ? filtrarResposta(respostaGrounded) : respostaGrounded;
+          return separarTextoApostelefone(filtrada);
         }
       } catch (eGrounded) {
         console.warn(`[Search] Google grounding falhou (${eGrounded.message}) — caindo pro Tavily`);
@@ -1042,7 +1057,7 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomU
     if (traduzida && traduzida.length > 3) {
       const filtrada = filtrarResposta(apararRespostaCortada(traduzida));
       console.log(`[searchWeb] Reprocessado: ${filtrada?.length || 0} chars`);
-      if (filtrada && filtrada.length > 3) return filtrada;
+      if (filtrada && filtrada.length > 3) return separarTextoApostelefone(filtrada);
     }
 
     // Última rede de segurança: se as 3 tentativas de reprocessar (Gemini,
