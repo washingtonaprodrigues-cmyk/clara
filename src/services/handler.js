@@ -1520,7 +1520,7 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
               const coment = await geminiFreeResponse([
                 { role: 'system', content: buildPersonality(tomBusca, apelidoBusca, false) + promptComent + reforcoGeneroBusca },
                 { role: 'user', content: text }
-              ], { temperature: 0.85, maxTokens: 60 }).catch(() => null);
+              ], { temperature: 0.85, maxTokens: 120 }).catch(() => null);
               const comentLimpo = filtrarResposta((coment || '').replace(/[*_]{0,2}BUSCAR[*_]{0,2}:[^\n]*/gi, '').trim());
               if (comentLimpo && comentLimpo.length > 3 && !/^SKIP/i.test(comentLimpo)) {
                 await sendMessage(phone, comentLimpo);
