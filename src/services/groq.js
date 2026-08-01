@@ -1566,6 +1566,10 @@ function filtrarResposta(t) {
   t = t.replace(/\s*sim\s*\/\s*n[\xE3a]o\s*\??\s*$/gi, '');
   // Remove "Responda com sim ou não" e variações no fim
   t = t.replace(/\s*responda?\s+(com\s+)?sim\s+ou\s+n[\xE3a]o\.?\s*$/gi, '');
+  // Converte **negrito markdown** em *negrito WhatsApp* — o modelo gera
+  // **texto** mas o WhatsApp usa *texto* pra negrito. Sem isso os asteriscos
+  // duplos aparecem literalmente na tela do usuário.
+  t = t.replace(/\*\*([^*\n]+)\*\*/g, '*$1*');
   t = t.trim();
   if ((!t || t.length < 3) && _original && _original.trim().length > 5) {
     // Antes de devolver o texto bruto (com tag e tudo), tenta uma limpeza
