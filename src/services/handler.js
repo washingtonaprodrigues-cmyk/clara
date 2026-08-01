@@ -1999,6 +1999,8 @@ async function executeAction(user, phone, classified, originalText, quotedText =
       await memory.saveMemory(user.id, 'anotacao', classified.conteudo || classified.titulo || originalText, { titulo: classified.titulo });
       break;
     case 'chamada_combinada': {
+      // 01/08: horario_almoco salvo deterministicamente; pergunta em vez de
+      // chutar meio-dia quando o horário do almoço não está na memória.
       const horaJaInformada = classified.hora;
       let horaFinal = horaJaInformada;
       // Detecta se o pedido é especificamente sobre o almoço — usado abaixo
