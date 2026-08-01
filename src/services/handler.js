@@ -2001,6 +2001,9 @@ async function executeAction(user, phone, classified, originalText, quotedText =
     case 'chamada_combinada': {
       const horaJaInformada = classified.hora;
       let horaFinal = horaJaInformada;
+      // Detecta se o pedido é especificamente sobre o almoço — usado abaixo
+      // pra decidir entre memória salva, pergunta direta, ou cálculo genérico.
+      const mencionaAlmoco = /almo[çc]o/i.test(originalText || '');
 
       // Suporte a tempo relativo: "daqui 15 minutos", "em 30 min"
       if (!horaFinal) {
@@ -2015,10 +2018,13 @@ async function executeAction(user, phone, classified, originalText, quotedText =
         }
       }
 
-      if (!horaFinal) {
-        // Antes de calcular: verifica se há horário de almoço ou padrão
-        // de chamada salvo na memória pessoal (ex: usuário já disse antes
-        // "me chama às 12:40 no almoço" várias vezes → deve usar isso).
+      if (!horaFinal && mencionaAlmoco) {
+        // Antes de calcular/perguntar: verifica se há horário de almoço
+        // salvo na memória pessoal (ex: usuário já disse antes "meu almoço
+        // é 12:40" ou "me chama às 12:40 no almoço" → deve usar isso, sem
+        // chutar meio-dia). Restrito a pedidos que mencionam almoço, pra não
+        // aplicar esse horário em chamadas combinadas de outro contexto
+        // (ex: "me chama mais tarde" à noite).
         try {
           const memoriaAlmoco = await prisma.memory.findFirst({
             where: { userId: user.id, type: 'info_pessoal', metadata: { contains: '"chave":"horario_almoco"' } }
@@ -2033,6 +2039,46 @@ async function executeAction(user, phone, classified, originalText, quotedText =
             }
           }
         } catch {}
+      }
+
+      // Pedido de chamada no almoço sem horário conhecido (nem na mensagem,
+      // nem salvo antes) — pergunta em vez de chutar. O cálculo genérico
+      // abaixo é pensado pra chamada NOTURNA (janela 20h-23h) e não faz
+      // sentido pra almoço.
+      if (!horaFinal && mencionaAlmoco) {
+        const expiraAlmoco = Date.now() + 15 * 60 * 1000;
+        await prisma.memory.create({
+          data: {
+            userId: user.id,
+            type: 'confirmacao_pendente',
+            content: JSON.stringify({ tipo: 'hora_almoco_pendente', expira: expiraAlmoco })
+          }
+        }).catch(() => {});
+        const prefsAlmoco = await memory.getUserPreference(user.id).catch(() => ({}));
+        const afetivaAlmoco = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+        const apelidoAlmoco = afetivaAlmoco?.apelido_usuario || prefsAlmoco?.name || '';
+        const systemAlmoco = buildPersonality(prefsAlmoco?.tom || 'leve', apelidoAlmoco, false) + `\n\nUsuário pediu pra ser chamado no almoço, mas você ainda não sabe que horas é o almoço dele. Pergunte de forma natural e curta que horas é o almoço, no seu tom. NUNCA use __BUSCAR__ nem tags de sistema.`;
+        const msgAlmoco = await geminiFreeResponse([
+          { role: 'system', content: systemAlmoco },
+          { role: 'user', content: originalText || 'ok' }
+        ], { temperature: 0.85, maxTokens: 80 }).catch(() => null);
+        const msgAlmocoLimpo = (msgAlmoco || '').replace(/\[.*?\]/g, '').trim();
+        const msgAlmocoFinal = msgAlmocoLimpo && msgAlmocoLimpo.length > 3
+          ? msgAlmocoLimpo
+          : 'Que horas é seu almoço? Assim eu já anoto e não preciso mais perguntar 😉';
+        await sendMessage(phone, msgAlmocoFinal);
+        await memory.saveConversationMessage(user.id, 'assistant', msgAlmocoFinal).catch(() => {});
+        respondeuAqui = true;
+        break;
+      }
+
+      if (mencionaAlmoco && horaFinal) {
+        // Salva/atualiza o horário de almoço como fato permanente de forma
+        // DETERMINÍSTICA — não depende do extractor de IA (fire-and-forget,
+        // roda em background e pode falhar silenciosamente se o Gemini
+        // estiver sobrecarregado). Código > acúmulo de regra de prompt.
+        await memory.savePersonalInfo(user.id, 'horario_almoco', horaFinal, 'rotina').catch(() => {});
+        console.log(`[ChamadaCombinada] horario_almoco salvo/atualizado: ${horaFinal}`);
       }
 
       if (!horaFinal) {
@@ -2967,6 +3013,44 @@ async function checkConfirmacaoPendente(user, phone, text) {
       } else {
         await sendMessage(phone, `✅ Pronto! "${dados.titulo}" agendado pra ${dataFmt} às ${horaFinal} 📌`);
       }
+      return true;
+    }
+
+    // ── Resposta a "que horas é seu almoço?" (chamada combinada no almoço
+    // sem horário conhecido) — salva o horário como fato permanente E
+    // cria a chamada combinada de uma vez, sem o usuário precisar repetir
+    // o pedido.
+    if (dados.tipo === 'hora_almoco_pendente') {
+      let horaEscolhida = null;
+      const matchHM = textNorm.match(/(\d{1,2})[:h](\d{2})/);
+      const matchH = textNorm.match(/(\d{1,2})\s*h(?:oras)?\b/);
+      const matchNum = !matchHM && !matchH ? textNorm.match(/^(\d{1,2})$/) : null;
+      if (matchHM) {
+        horaEscolhida = `${String(parseInt(matchHM[1])).padStart(2,'0')}:${matchHM[2]}`;
+      } else if (matchH || matchNum) {
+        let h = parseInt((matchH || matchNum)[1]);
+        if (/tarde/.test(textNorm) && h < 12) h += 12;
+        horaEscolhida = `${String(h).padStart(2,'0')}:00`;
+      }
+
+      if (!horaEscolhida) {
+        await sendMessage(phone, 'Não entendi o horário 😅 Pode me dizer assim: "12:40" ou "meio-dia e meia"?');
+        return true;
+      }
+
+      await prisma.memory.delete({ where: { id: pendente.id } }).catch(() => {});
+      await memory.savePersonalInfo(user.id, 'horario_almoco', horaEscolhida, 'rotina').catch(() => {});
+
+      await prisma.memory.deleteMany({ where: { userId: user.id, type: 'chamada_combinada' } }).catch(() => {});
+      await prisma.memory.create({
+        data: {
+          userId: user.id, type: 'chamada_combinada', content: horaEscolhida,
+          metadata: JSON.stringify({ hora: horaEscolhida, ctxCombinado: 'Chamada no almoço', expira: Date.now() + 24 * 60 * 60 * 1000 })
+        }
+      }).catch(() => {});
+
+      await sendMessage(phone, `Anotado! Almoço às ${horaEscolhida} — te chamo nesse horário, e da próxima vez já sei sem precisar perguntar 😉`);
+      await memory.saveConversationMessage(user.id, 'assistant', `Anotado! Almoço às ${horaEscolhida} — te chamo nesse horário, e da próxima vez já sei sem precisar perguntar 😉`).catch(() => {});
       return true;
     }
 
