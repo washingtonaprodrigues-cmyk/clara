@@ -1990,17 +1990,8 @@ cron.schedule('0 4 * * *', async () => {
 // Aniversários de filhos, cônjuge, relacionamento, metas — mantido a
 // pedido explícito (baseado em dado real cadastrado, não papo genérico).
 // ═══════════════════════════════════════════════════════════════════════
-cron.schedule('15 8 * * *', async () => {
-  try {
-    const now = nowBRT();
-    const users = await prisma.user.findMany({ where: { blocked: false } });
-    for (const user of users) {
-      try {
-        await alertasPerfilRico(user, now);
-      } catch (e) { console.error(`[AlertasPerfil] Erro ${user.phone}:`, e.message); }
-    }
-  } catch (e) { console.error('[AlertasPerfil] Erro geral:', e.message); }
-}, { timezone: 'America/Sao_Paulo' });
+// AlertasPerfil desativado — meta check-in de começo de mês removido
+// cron.schedule('15 8 * * *', async () => { ... alertasPerfilRico ... });
 
 async function alertasPerfilRico(user, now) {
   const mems = await prisma.memory.findMany({
