@@ -255,7 +255,7 @@ TIPOS e formato de saída:
 - medicamento: {"tipo":"medicamento","nome":"x","quantidade":0,"frequencia":3,"horarios":["08:00","16:00","00:00"],"duracao_dias":7} — PRIORIDADE MÁXIMA sobre tarefa e multiplas_tarefas: quando a mensagem mencionar dar/tomar um remédio de forma RECORRENTE (de X em X horas, X vezes ao dia, por X dias), use este tipo MESMO que contenha "me lembra" ou "me avisa". Calcule os horários a partir da hora de início. Ex: "dar amoxilina a partir das 15h de 8 em 8 horas por uma semana" → medicamento com horarios:["15:00","23:00","07:00"], frequencia:3, duracao_dias:7
 - relatorio_financeiro / consulta_saldo: {"tipo":"..."}
 - busca: {"tipo":"busca","query":"texto da pergunta"} — pergunta factual externa que a Clara não sabe sem pesquisar (clima, notícia, preço, horário de jogo, endereço, telefone), ou pedido explícito ("pesquisa X", "busca X", "procura X", "confirma isso", "vê se isso tá certo")
-- chamada_combinada: {"tipo":"chamada_combinada","hora":"HH:MM ou null"} — usuário pede pra ser chamado/avisado mais tarde ("me chama mais tarde", "me chama às 21h", "a gente se fala mais tarde", "me avisa mais tarde", "me chama quando sentir saudade"). hora=null se não especificou horário (sistema calcula), HH:MM se especificou. "te chamo mais tarde" dito pelo PRÓPRIO USUÁRIO sobre ele mesmo chamando a Clara → outro (não é pedido pra ela chamar)
+- chamada_combinada: {"tipo":"chamada_combinada","hora":"HH:MM ou null"} — usuário pede pra ser chamado/avisado mais tarde ("me chama mais tarde", "me chama às 21h", "a gente se fala mais tarde", "me avisa mais tarde", "me chama quando sentir saudade"). hora=null se não especificou horário (sistema calcula), HH:MM se especificou. "te chamo mais tarde" dito pelo PRÓPRIO USUÁRIO sobre ele mesmo chamando a Clara → outro (não é pedido pra ela chamar). ATENÇÃO: mencionar um MOMENTO do dia sem número explícito ("no almoço", "na janta", "de manhã", "à tarde") NÃO é um horário — use hora:null nesses casos (o sistema decide/pergunta depois). Só preencha "hora" quando houver um número/expressão de horário explícita (ex: "12:40", "meio-dia", "21h").
 - outro: {"tipo":"outro"} — conversa, pergunta de conhecimento, saudação, qualquer coisa que não seja ação acima
 
 REGRAS DE BUSCA:
@@ -333,11 +333,12 @@ REGRAS:
 - Horário/data + intenção de CRIAR um novo lembrete/compromisso → tarefa
 - "você já criou?", "já tem na agenda?", "você anotou?" → outro (responde conversacionalmente)
 - "cancela o lembrete", "não era pra criar lembrete", "só to contando", "era só pra contar", "não precisa criar" → deletar_lembrete com titulo do lembrete mais recente criado que ainda não foi disparado
-- CHAMADA COMBINADA: quando o usuário pedir pra ser chamado mais tarde ("me chama mais tarde", "me chama às X", "a gente se fala mais tarde", "me avisa mais tarde") → {"tipo":"chamada_combinada","hora":null} — hora null se não especificada, HH:MM se especificada.
+- CHAMADA COMBINADA: quando o usuário pedir pra ser chamado mais tarde ("me chama mais tarde", "me chama às X", "a gente se fala mais tarde", "me avisa mais tarde") → {"tipo":"chamada_combinada","hora":null} — hora null se não especificada, HH:MM se especificada. Mencionar um MOMENTO do dia sem número ("no almoço", "na janta") NÃO conta como horário especificado — use hora:null.
 Exemplos:
 "me chama mais tarde" → {"tipo":"chamada_combinada","hora":null}
 "me chama às 21h" → {"tipo":"chamada_combinada","hora":"21:00"}
 "a gente se fala umas 22h" → {"tipo":"chamada_combinada","hora":"22:00"}
+"me chama no almoço" → {"tipo":"chamada_combinada","hora":null}
 "te chamo mais tarde" (usuário dizendo que ELE vai chamar) → outro (não é pedido de chamada)
 
 - CONDICIONAL NÃO É PEDIDO: se a mensagem contiver "se quiser", "se puder", "se der", "se quiser pode", "caso queira", "se tiver como" antes de mencionar criar/anotar algo, NÃO crie a tarefa — classifique como "outro". O usuário está oferecendo uma opção, não pedindo. Só crie quando houver intenção clara e direta ("me lembra", "anota", "cria um lembrete", "agenda", "marca") sem condicionais.
