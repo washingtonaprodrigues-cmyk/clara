@@ -664,17 +664,8 @@ router.post('/lembrete/:phone', async (req, res) => {
 
     res.json({ ok: true });
 
-    try {
-      const dataFormatada = scheduledAt.toLocaleString('pt-BR', {
-        timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short'
-      });
-      await sendButtons(phone,
-        `✅ Lembrete criado!\n\n📌 ${titulo}\n🕒 ${dataFormatada}\n\nVou te avisar no horário certinho.`,
-        [{ id: 'ver_lembretes', label: '📋 Ver lembretes' }, { id: 'menu', label: '🏠 Menu' }]
-      );
-    } catch(wErr) {
-      console.error('[lembrete] Erro ao notificar WhatsApp:', wErr.message);
-    }
+    // Notificação WhatsApp removida — dashboard já exibe feedback visual
+    // ao criar lembrete. O disparo no horário continua funcionando normalmente.
   } catch (e) {
     console.error('Erro form lembrete:', e.message);
     res.status(500).json({ error: e.message });
