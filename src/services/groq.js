@@ -900,7 +900,10 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomU
       const mesAno = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', month: 'long', year: 'numeric' });
       queryBase = `${queryBase} ${mesAno}`;
     }
-    const fullQuery = locationContext ? `${queryBase} em ${locationContext}` : queryBase;
+    // Se a query já menciona uma cidade específica ("de Piraju", "em São Paulo"),
+    // não injeta a cidade do usuário para não sobrepor a intenção da busca
+    const queryJaTemCidade = /\b(de|em|no|na|nos|nas|pra|para)\s+[A-ZÀ-Ú][a-zà-ú]/.test(query);
+    const fullQuery = (locationContext && !queryJaTemCidade) ? `${queryBase} em ${locationContext}` : queryBase;
     console.log(`🔎 Buscando (Google Search grounding): ${fullQuery}`);
 
     // Define as regras de busca aqui (usadas tanto pelo grounding quanto pelo Tavily fallback)
