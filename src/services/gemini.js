@@ -17,8 +17,9 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 //   generateMemorySummary (recupera dado), extrairQueryBusca (extrai termo),
 //   tradução de resultado de busca. Zero risco de emburrecer a Clara.
 const GEMINI_MODELS = [
-  'gemini-2.5-flash',       // primário — melhor qualidade hoje
-  'gemini-3.5-flash',       // reserva — futuro primário em out/2026
+  'gemini-3.5-flash',        // primário — melhor qualidade, personalidade e conversa
+  'gemini-3.1-flash-lite',   // reserva — custo-eficiente, bom pra tarefas mecânicas
+  'gemini-2.5-flash',        // fallback legado — desativa out/2026, não remover ainda
 ];
 
 const GEMINI_MODELS_LITE = [
@@ -461,6 +462,52 @@ async function geminiGerarSelfie(cena, referenciaBase64, referenciaMimeType = 'i
   return { base64: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png' };
 }
 
+// ── Busca com Google Search grounding (família Gemini 3.x) ──────────────
+// Usa o Google Search nativo do Gemini em vez do Tavily externo.
+// Vantagens: 5.000 queries grátis/mês, acesso direto ao índice do Google
+// (melhor pra buscas locais específicas), resposta já no formato de texto
+// pronto pra processar, sem etapa separada de reprocesso.
+// Timeout maior (20s) pois a busca+geração roda tudo no mesmo request.
+async function geminiSearchGrounded(systemPrompt, userQuery, { temperature = 0.7, maxTokens = 600 } = {}) {
+  if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
+
+  const model = 'gemini-3.5-flash';
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: userQuery }] }],
+    tools: [{ googleSearch: {} }],
+    generationConfig: {
+      temperature,
+      maxOutputTokens: maxTokens,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
+  };
+  if (systemPrompt) {
+    body.systemInstruction = { parts: [{ text: systemPrompt }] };
+  }
+
+  const timeoutPromise = new Promise((_, reject) => {
+    const t = setTimeout(() => reject(new Error('timeout')), 20000);
+    if (t.unref) t.unref();
+  });
+  const fetchPromise = fetch(geminiUrl(model), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const response = await Promise.race([fetchPromise, timeoutPromise]);
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    const err = new Error(`Gemini Search erro ${response.status}: ${errText.slice(0, 200)}`);
+    err.status = response.status;
+    throw err;
+  }
+  const data = await response.json();
+  const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
+  if (!text) throw new Error('Gemini Search não retornou texto');
+  return text;
+}
+
 module.exports = {
   geminiDisponivel,
   geminiFreeResponse,
@@ -470,6 +517,7 @@ module.exports = {
   geminiGerarImagem,
   geminiGerarSelfie,
   gerarPromptSelfieDetalhado,
+  geminiSearchGrounded,
   isGeminiRateLimit,
   todosModelosEsgotados,
   GEMINI_MODELS,
