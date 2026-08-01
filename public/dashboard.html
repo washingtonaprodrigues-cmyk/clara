@@ -811,24 +811,24 @@ select option{background:var(--s2)}
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
               <div class="cfg-mood-grid cfg-mood-grid-3" style="border-right:1px solid var(--border)">
-                <div class="cfg-mood-item active" onclick="selectMood('clara_sendo_clara')" data-mood="clara_sendo_clara">
+                <div class="cfg-mood-item active" onclick="selectMood('clara_sendo_clara')" data-mood="clara_sendo_clara" style="display:none">
                   <div class="cfg-mood-emoji">👩🏻</div>
                   <div class="cfg-mood-info"><div class="cfg-mood-name">Clara Sendo Clara</div><div class="cfg-mood-desc">Se adapta a você</div></div>
                   <div class="cfg-mood-radio"></div>
                 </div>
-                <div class="cfg-mood-item" onclick="selectMood('carinhoso')" data-mood="carinhoso">
+                <div class="cfg-mood-item" onclick="selectMood('carinhoso')" data-mood="carinhoso" style="display:none">
                   <div class="cfg-mood-emoji">🥰</div>
                   <div class="cfg-mood-info"><div class="cfg-mood-name">Simpática</div><div class="cfg-mood-desc">Carinhosa, leve e animada</div></div>
                   <div class="cfg-mood-radio"></div>
                 </div>
                 <div class="cfg-mood-item" onclick="selectMood('direto')" data-mood="direto">
-                  <div class="cfg-mood-emoji">🎯</div>
-                  <div class="cfg-mood-info"><div class="cfg-mood-name">Direta</div><div class="cfg-mood-desc">Objetiva e prática</div></div>
+                  <div class="cfg-mood-emoji">💼</div>
+                  <div class="cfg-mood-info"><div class="cfg-mood-name">Clara Business</div><div class="cfg-mood-desc">Profissional e objetiva</div></div>
                   <div class="cfg-mood-radio"></div>
                 </div>
                 <div class="cfg-mood-item" onclick="selectMood('sarcastico')" data-mood="sarcastico" style="border-bottom:none">
-                  <div class="cfg-mood-emoji">🔥</div>
-                  <div class="cfg-mood-info"><div class="cfg-mood-name">Sem Filtro</div><div class="cfg-mood-desc">Sincera e sem rodeios</div></div>
+                  <div class="cfg-mood-emoji">😉</div>
+                  <div class="cfg-mood-info"><div class="cfg-mood-name">Clara IA</div><div class="cfg-mood-desc">Sua amiga sem filtro</div></div>
                   <div class="cfg-mood-radio"></div>
                 </div>
               </div>
@@ -1194,7 +1194,7 @@ async function sendChat(){
 }
 function cs(t){document.getElementById('chat-msg').value=t;sendChat();}
 async function newChat(){if(privateMode&&phone){try{await fetch(`/forms/conversa-limpar/${phone}`,{method:'POST'});}catch{}showToast('🔒 Histórico apagado');}document.getElementById('msgs').innerHTML='';if(phone)addMsg('bot','Nova conversa! Como posso ajudar? 💛');navTo('chat');}
-async function loadMood(){try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();if(d.tom)applyMood(d.tom);const tg=document.getElementById('cfg-proativas-toggle');if(tg)tg.checked=!!d.proativasAtivas;}catch{}}
+async function loadMood(){try{const r=await fetch(`/forms/preferencia/${phone}`);const d=await r.json();if(d.tom){applyMood(d.tom);const proativaCard=document.querySelector('.cfg-proativa-card');if(proativaCard)proativaCard.style.display=(d.tom==='direto')?'none':'';}const tg=document.getElementById('cfg-proativas-toggle');if(tg)tg.checked=!!d.proativasAtivas;}catch{}}
 async function toggleProativas(ativo){
   try{
     await fetch(`/forms/preferencia/${phone}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proativasAtivas:ativo})});
@@ -1211,14 +1211,17 @@ function selectMood(tom){
   document.querySelectorAll('.cfg-mood-item').forEach(el=>{
     el.classList.toggle('active', el.dataset.mood===tom);
   });
+  // Toggle de proativas: some no Business (direto), aparece nos outros
+  const proativaCard=document.querySelector('.cfg-proativa-card');
+  if(proativaCard)proativaCard.style.display=(tom==='direto')?'none':'';
   // Update preview
   const previews={
     'clara_sendo_clara':'Oie! 😄 Vi que tá animado hoje! Bora ver sua agenda? Você tem 3 coisas pra hoje, mas relaxa que eu cuido de te lembrar! ✨',
     'carinhoso':'Eiii Washington! 🎉 Bom dia! Você tem 3 compromissos hoje, bora arrasar! 💜',
-    'direto':'Washington, você tem 3 coisas hoje: reunião 14h, backup 15h, lembrete 16h.<br><br>Confirma?',
+    'direto':'Washington, você tem 3 compromissos hoje: reunião às 14h, backup às 15h e lembrete às 16h. Confirma?',
     'sarcastico':'Oi. Você tem 3 lembretes hoje. Não esquece, tá?<br><br>Dessa vez sem desculpa. 🔥'
   };
-  const names={'clara_sendo_clara':'Clara Sendo Clara','carinhoso':'Simpática','direto':'Direta','sarcastico':'Sem Filtro'};
+  const names={'clara_sendo_clara':'Clara Sendo Clara','carinhoso':'Simpática','direto':'Clara Business','sarcastico':'Clara IA'};
   const prev=document.getElementById('cfg-preview-text');
   const sub=document.getElementById('cfg-preview-sub');
   const link=document.getElementById('cfg-preview-link');
