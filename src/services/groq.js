@@ -890,6 +890,7 @@ async function checkResolucaoPendencia(message, resumo) {
 // mesma linha, injeta \n\n entre eles. Solução em código porque tentativas
 // via prompt nunca foram respeitadas consistentemente pelo Gemini grounding.
 // Padrão: "(XX) XXXX-XXXX texto" ou "(XX) XXXXX-XXXX texto"
+// 01/08: separarTextoApostelefone + regrasBusca simplificada (tom livre)
 function separarTextoApostelefone(texto) {
   if (!texto) return texto;
   return texto.replace(/(\(\d{2}\)\s*\d{4,5}[-\s]\d{4})\s+([^\s\n])/g, (match, fone, proximo) => {
