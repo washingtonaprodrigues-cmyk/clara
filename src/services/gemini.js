@@ -393,6 +393,14 @@ FORMATO OBRIGATÓRIO: "selfie of ${CLARA_APARENCIA}, [atividade específica], [o
 
 Ela deve ser o assunto central da foto, em close ou meio-corpo, ativamente fazendo a atividade mencionada — nunca uma paisagem vazia.
 
+IMPORTANTE — CENAS SEGURAS: o modelo de imagem tem filtros sensíveis. Use sempre descrições neutras e casuais:
+- "deitada na cama" → "relaxing on couch with phone, cozy casual look"
+- "na cama à noite" → "at home relaxing, warm lamp lighting, casual outfit"
+- "quase dormindo" → "looking sleepy and relaxed at home, cozy setting"
+- "íntimo/romântico" → "cozy home setting, casual and relaxed"
+- Nunca use: "bed", "bedroom", "intimate", "seductive", "night" isolados
+- Prefira: "couch", "home", "relaxing", "cozy", "casual", "warm lighting"
+
 Se não conseguir identificar uma atividade clara na conversa, use uma cena genérica coerente com o momento (ex: em casa, no sofá, tomando café).` },
     { role: 'user', content: contextoConversa }
   ];
