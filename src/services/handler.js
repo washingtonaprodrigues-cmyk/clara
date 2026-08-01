@@ -500,6 +500,33 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         await sendMessage(phone, avSC);
         return;
       }
+      // Detecta selfie mesmo no caminho skipContext — sem isso, pedidos de
+      // foto classificados como saudação nunca chegavam no bloco de detecção
+      // principal (linha ~996), pois o return abaixo corta o caminho antes.
+      if (resp && /[*_]{0,2}GERAR_SELFIE(?::[^*_\n]*)?[*_]{0,2}/i.test(resp)) {
+        const selfieMatchSC = resp.match(/[*_]{0,2}GERAR_SELFIE(?::[^*_\n]*)?[*_]{0,2}/i);
+        const respSemTagSC = resp.replace(selfieMatchSC[0], '').trim();
+        const memAfSelfie = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
+        const apelidoSelfie = memAfSelfie?.apelido_usuario || preferences?.name || '';
+        const falaNatural = respSemTagSC.length > 3 ? respSemTagSC
+          : (apelidoSelfie ? `Pera, deixa eu tirar uma foto pra te mandar, ${apelidoSelfie}! 📸` : `Pera, deixa eu tirar uma foto pra te mandar! 📸`);
+        await sendMessage(phone, falaNatural);
+        await memory.saveConversationMessage(user.id, 'user', text).catch(() => {});
+        await memory.saveConversationMessage(user.id, 'assistant', falaNatural).catch(() => {});
+        try {
+          const wTypingSC = getWhatsapp();
+          if (wTypingSC && typeof wTypingSC.sendTyping === 'function') wTypingSC.sendTyping(phone, 8000).catch(() => {});
+          const contextoParaPromptSC = `Usuário disse: "${text}"\nClara respondeu: "${falaNatural}"`;
+          const cenaTecnicaSC = await gerarPromptSelfieDetalhado(contextoParaPromptSC);
+          const referenciaSC = getClaraReferenciaBase64();
+          const selfieSC = referenciaSC
+            ? await geminiGerarSelfie(cenaTecnicaSC, referenciaSC, 'image/jpeg')
+            : await geminiGerarImagem(cenaTecnicaSC);
+          await sendImageMsg(phone, selfieSC.base64, '', selfieSC.mimeType);
+          await memory.saveConversationMessage(user.id, 'assistant', `Te mandei uma selfie minha 📸`).catch(() => {});
+        } catch (eSC) { console.error('[GerarSelfie/skipContext] Erro:', eSC.message); }
+        return;
+      }
       await memory.saveConversationMessage(user.id, 'user', text);
       await memory.saveConversationMessage(user.id, 'assistant', resp);
       await sendMessage(phone, resp);
