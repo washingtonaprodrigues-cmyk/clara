@@ -1020,7 +1020,6 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     //    dela (gerarPromptSelfieDetalhado, em gemini.js) — nunca a mesma
     //    chamada que gera a fala dela.
     const selfieMatch = respStr.match(/[*_]{0,2}GERAR_SELFIE(?::[^*_\n]*)?[*_]{0,2}/i);
-    console.log(`[SelfieDebug] respStr="${respStr.slice(0,80)}" | temTag=${!!selfieMatch}`);
     if (selfieMatch) {
       const respStrSemTag = respStr.replace(selfieMatch[0], '').trim();
       const tomSelfie = preferences?.tom || 'leve';
