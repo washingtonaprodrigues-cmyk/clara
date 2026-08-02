@@ -962,9 +962,14 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         (m.role === 'assistant' && /vou (te )?mandar|deixa eu tirar|só porque você pediu|vou tirar|preparar o coração|tirar uma foto|manda então|olha (só|a minha|a sua)/i.test(m.content || ''))
       );
       if (contextoFoto) {
-        const implicouFoto = /\b(prontinho|vai de verdade|olha (eu aqui|a sua|a minha|só:)|acabei de tirar|tirei essa|agora vai|aqui está|tá aqui|mandei)\b/i.test(respStr)
+        const implicouFoto =
+          // Frases explícitas de foto enviada/prestes a ser enviada
+          /\b(pronto|prontinho|vai de verdade|agora é pra valer|agora vai|olha quem|olha (eu aqui|a sua|a minha|só:)|acabei de tirar|tirei essa|aqui está|tá aqui|mandei|aproveita|aproveita a visão)\b/i.test(respStr)
+          // Descrição de roupa/aparência (ela está se ilustrando)
+          || /\b(pijaminha|pijama|blusa|vestido|saia|legging|cropped|short|biquíni|lingerie|look de|roupa de)\b/i.test(respStr)
+          // Descrição de posição/local no contexto de selfie
           || /olha a (sua|minha)\s+\w+/i.test(respStr)
-          || /\btô (aqui|deitad|sentad|esticad|deita)\b.{0,60}(sofá|cama|couch|aqui)/i.test(respStr);
+          || /\btô (aqui|deitad|sentad|esticad|levantad|me arrumand)\b/i.test(respStr);
         if (implicouFoto) {
           respStr = respStr.replace(/([.!?])\s*$/, '$1') + ' __GERAR_SELFIE__';
           console.log('[SelfieForçada] Tag injetada — modelo descreveu foto sem usar a tag');
