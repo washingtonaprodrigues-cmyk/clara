@@ -944,7 +944,33 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     if (resp === null) return; // modo direto: já avisado, não responde
 
     // Garante que resp é string — o Gemini pode retornar objeto em casos de erro
-    const respStr = typeof resp === 'string' ? resp : String(resp || '');
+    let respStr = typeof resp === 'string' ? resp : String(resp || '');
+
+    // ── Safety net de selfie ───────────────────────────────────────────
+    // O modelo às vezes descreve a foto como tirada/enviada sem incluir a
+    // tag __GERAR_SELFIE__ — a instrução existe na regra 2d mas é ignorada
+    // quando ele está fundo no personagem. Detecta contexto de foto tanto
+    // em mensagens do usuário quanto da própria Clara (ex: ela prometeu
+    // mandar, criou suspense, etc.) e força a geração quando necessário.
+    if (!respStr.match(/[*_]{0,2}GERAR_SELFIE(?::[^*_\n]*)?[*_]{0,2}/i)) {
+      const historicoRecente = [...history.slice(-4), { role: 'user', content: text }];
+      const contextoFoto = historicoRecente.some(m =>
+        // usuário pediu foto
+        (m.role === 'user' && /manda foto|me manda uma foto|quero ver você|manda então|cadê a foto|foto de você|me mostra|manda a foto|manda uma foto/i.test(m.content || ''))
+        ||
+        // Clara criou o contexto (prometeu, fez suspense, ofereceu)
+        (m.role === 'assistant' && /vou (te )?mandar|deixa eu tirar|só porque você pediu|vou tirar|preparar o coração|tirar uma foto|manda então|olha (só|a minha|a sua)/i.test(m.content || ''))
+      );
+      if (contextoFoto) {
+        const implicouFoto = /\b(prontinho|vai de verdade|olha (eu aqui|a sua|a minha|só:)|acabei de tirar|tirei essa|agora vai|aqui está|tá aqui|mandei)\b/i.test(respStr)
+          || /olha a (sua|minha)\s+\w+/i.test(respStr)
+          || /\btô (aqui|deitad|sentad|esticad|deita)\b.{0,60}(sofá|cama|couch|aqui)/i.test(respStr);
+        if (implicouFoto) {
+          respStr = respStr.replace(/([.!?])\s*$/, '$1') + ' __GERAR_SELFIE__';
+          console.log('[SelfieForçada] Tag injetada — modelo descreveu foto sem usar a tag');
+        }
+      }
+    }
     if (!respStr) {
       // Segunda camada de proteção — não deveria mais acontecer com o fix
       // do filtrarResposta (que evita zerar a resposta inteira), mas se
