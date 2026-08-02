@@ -916,9 +916,18 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomU
       const mesAno = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', month: 'long', year: 'numeric' });
       queryBase = `${queryBase} ${mesAno}`;
     }
-    // Se a query já menciona uma cidade específica ("de Piraju", "em São Paulo"),
-    // não injeta a cidade do usuário para não sobrepor a intenção da busca
-    const queryJaTemCidade = /\b(de|em|no|na|nos|nas|pra|para)\s+[A-ZÀ-Ú][a-zà-ú]/.test(query);
+    // 01/08: fix detecção de cidade em minúsculas na query (ex: "em fartura")
+    // — antes exigia maiúscula, injetando Carlópolis por cima indevidamente.
+    // Detecta se a query já menciona uma cidade — funciona com maiúsculas E
+    // minúsculas (ex: "em fartura" e "em Fartura" devem impedir injeção de
+    // Carlópolis). A versão anterior exigia primeira letra maiúscula, então
+    // "em fartura" não era detectada e o sistema injetava "em Carlópolis"
+    // por cima, gerando busca dupla indesejada.
+    const locationCidadeBase = locationContext ? locationContext.split(',')[0].toLowerCase().trim() : '';
+    const queryLower = (query || '').toLowerCase();
+    const queryJaTemOutraCidade = /\b(de|em|no|na|nos|nas|pra|para)\s+\w{4,}/.test(queryLower)
+      && (!locationCidadeBase || !queryLower.includes(locationCidadeBase));
+    const queryJaTemCidade = /\b(de|em|no|na|nos|nas|pra|para)\s+[A-ZÀ-Ú][a-zà-ú]/.test(query) || queryJaTemOutraCidade;
     const fullQuery = (locationContext && !queryJaTemCidade) ? `${queryBase} em ${locationContext}` : queryBase;
     console.log(`🔎 Buscando (Google Search grounding): ${fullQuery}`);
 
