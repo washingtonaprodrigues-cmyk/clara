@@ -920,13 +920,15 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomU
     // — antes exigia maiúscula, injetando Carlópolis por cima indevidamente.
     // Detecta se a query já menciona uma cidade — funciona com maiúsculas E
     // minúsculas (ex: "em fartura" e "em Fartura" devem impedir injeção de
-    // Carlópolis). A versão anterior exigia primeira letra maiúscula, então
-    // "em fartura" não era detectada e o sistema injetava "em Carlópolis"
-    // por cima, gerando busca dupla indesejada.
+    // Carlópolis). Checa tanto a query extraída quanto a mensagem original
+    // pois o classify às vezes omite a cidade na query mesmo quando o usuário
+    // a mencionou (ex: query="cabeleireira masculino", original="em fartura").
     const locationCidadeBase = locationContext ? locationContext.split(',')[0].toLowerCase().trim() : '';
     const queryLower = (query || '').toLowerCase();
-    const queryJaTemOutraCidade = /\b(de|em|no|na|nos|nas|pra|para)\s+\w{4,}/.test(queryLower)
-      && (!locationCidadeBase || !queryLower.includes(locationCidadeBase));
+    const msgLower = (mensagemOriginal || '').toLowerCase();
+    const textoParaVerificar = queryLower + ' ' + msgLower;
+    const queryJaTemOutraCidade = /\b(de|em|no|na|nos|nas|pra|para)\s+\w{4,}/.test(textoParaVerificar)
+      && (!locationCidadeBase || !textoParaVerificar.includes(locationCidadeBase));
     const queryJaTemCidade = /\b(de|em|no|na|nos|nas|pra|para)\s+[A-ZÀ-Ú][a-zà-ú]/.test(query) || queryJaTemOutraCidade;
     const fullQuery = (locationContext && !queryJaTemCidade) ? `${queryBase} em ${locationContext}` : queryBase;
     console.log(`🔎 Buscando (Google Search grounding): ${fullQuery}`);
