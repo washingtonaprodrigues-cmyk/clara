@@ -1488,7 +1488,7 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
       const preferencesBusca = await memory.getUserPreference(user.id).catch(() => ({}));
       const tomBusca = preferencesBusca?.tom || 'leve';
       const apelidoBusca = (await memory.getMemoriaAfetiva(user.id).catch(() => {}))?.apelido_usuario || preferencesBusca?.name || '';
-      const resultadoBusca = await searchWeb(classified.query, cidade, apelidoBusca, tomBusca);
+      const resultadoBusca = await searchWeb(classified.query, cidade, apelidoBusca, tomBusca, '', 'informar', '', text);
       if (resultadoBusca) {
         await memory.saveConversationMessage(user.id, 'user', text);
         await memory.saveConversationMessage(user.id, 'assistant', resultadoBusca);
