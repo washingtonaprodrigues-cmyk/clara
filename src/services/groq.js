@@ -916,6 +916,7 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomU
       const mesAno = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', month: 'long', year: 'numeric' });
       queryBase = `${queryBase} ${mesAno}`;
     }
+    // 01/08 v2: checa mensagemOriginal também pois classify às vezes omite cidade na query
     // 01/08: fix detecção de cidade em minúsculas na query (ex: "em fartura")
     // — antes exigia maiúscula, injetando Carlópolis por cima indevidamente.
     // Detecta se a query já menciona uma cidade — funciona com maiúsculas E
