@@ -1186,7 +1186,13 @@ cron.schedule('* * * * *', async () => {
 
     const now = new Date();
     const reminders = await prisma.reminder.findMany({
-      where: { sent: false, confirmed: false, scheduledAt: { lte: now } },
+      // Janela: até 3h no passado. Lembretes com scheduledAt mais antigo
+      // que isso foram remarcados via Dashboard (sent resetado para false mas
+      // horário original mantido) ou sobreviveram a um deploy sem ser
+      // enviados. Disparar horas depois não faz sentido — o usuário já perdeu
+      // o contexto. O limite de 3h é conservador: cobre atrasos reais
+      // (deploy lento, Railway reiniciando) sem disparar fantasmas do dia.
+      where: { sent: false, confirmed: false, scheduledAt: { gte: new Date(Date.now() - 3 * 60 * 60 * 1000), lte: now } },
       orderBy: { scheduledAt: 'asc' }
     });
     if (!reminders.length) return;
