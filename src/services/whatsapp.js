@@ -205,8 +205,11 @@ async function gerarAudio(texto) {
   if (!edgeTTS) throw new Error('edge-tts-universal não disponível');
   const { UniversalEdgeTTS } = edgeTTS;
   const textoLimpo = limparParaAudio(texto);
-  // pt-BR-ThalitaNeural: única voz confirmada válida nesta API
-  const tts = new UniversalEdgeTTS(textoLimpo, 'pt-BR-ThalitaNeural');
+  // pt-BR-ThalitaMultilingualNeural: versão multilingual — muito mais expressiva
+  // que ThalitaNeural padrão, mesma tecnologia do Copilot/Edge Read Aloud.
+  // Única alternativa feminina pt-BR disponível no Edge TTS gratuito além de
+  // FranciscaNeural. Todas as outras (Brenda, Giovanna, etc.) são Azure pago.
+  const tts = new UniversalEdgeTTS(textoLimpo, 'pt-BR-ThalitaMultilingualNeural');
   const result = await tts.synthesize();
   const arrayBuffer = await result.audio.arrayBuffer();
   console.log('[TTS] edge-tts OK');
