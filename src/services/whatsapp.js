@@ -205,10 +205,8 @@ async function gerarAudio(texto) {
   if (!edgeTTS) throw new Error('edge-tts-universal não disponível');
   const { UniversalEdgeTTS } = edgeTTS;
   const textoLimpo = limparParaAudio(texto);
-  // pt-BR-ThalitaNeural: mais jovem, expressiva e casual que FranciscaNeural
-  // Rate -10% deixa levemente mais vagarosa — soa mais natural e menos robótica
-  const textoComProsody = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='pt-BR'><voice name='pt-BR-ThalitaNeural'><prosody rate='-10%'>${textoLimpo}</prosody></voice></speak>`;
-  const tts = new UniversalEdgeTTS(textoComProsody, 'pt-BR-ThalitaNeural');
+  // pt-BR-YaraNeural: voz feminina calorosa e expressiva
+  const tts = new UniversalEdgeTTS(textoLimpo, 'pt-BR-YaraNeural');
   const result = await tts.synthesize();
   const arrayBuffer = await result.audio.arrayBuffer();
   console.log('[TTS] edge-tts OK');
