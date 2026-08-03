@@ -12,13 +12,13 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 // gemini-2.0-flash — desativado 1° jun 2026 (404).
 // gemini-2.5-flash — desativa 16 out/2026 → migrar vision (linha ~291) antes disso.
 //
+// NOTA: gemini-3.6-flash removido — retorna 400 INVALID_ARGUMENT (não disponível nesta conta/região).
 // FLASH — tudo que faz Clara ser Clara: conversa, proatividade, memória,
 //   relacionamento, busca, classify. gemini-3.6-flash é o mais recente (jul/2026).
 // LITE — mecânico puro sem personalidade: checkResolucaoPendencia (sim/não),
 //   generateMemorySummary (recupera dado), extrairQueryBusca (extrai termo),
 //   tradução de resultado de busca. Zero risco de emburrecer a Clara.
 const GEMINI_MODELS = [
-  'gemini-3.6-flash',        // primário — mais recente (jul/2026), melhor eficiência e custo
   'gemini-3.5-flash',        // reserva — GA desde mai/2026, sem data de desativação
   'gemini-3.1-flash-lite',   // fallback leve — custo-eficiente, bom pra tarefas mecânicas
   'gemini-2.5-flash',        // fallback legado — desativa out/2026, remover após migrar vision
