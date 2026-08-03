@@ -184,7 +184,11 @@ function getEdgeTTS() {
   return _edgeTTS;
 }
 
-function ttsDisponivel() { return !!getEdgeTTS(); }
+function ttsDisponivel() {
+  const ok = !!getEdgeTTS();
+  if (!ok) console.log('[TTS] getEdgeTTS() retornou null — edge-tts-universal não carregou');
+  return ok;
+}
 
 function limparParaAudio(texto) {
   return texto
@@ -218,6 +222,7 @@ async function enviarAudioUazAPI(phone, audioBuffer) {
 }
 
 async function enviarRespostaComAudio(phone, texto) {
+  console.log(`[TTS] enviarRespostaComAudio chamado — ttsDisponivel=${ttsDisponivel()} len=${texto.length}`);
   if (!ttsDisponivel()) return false;
   if (texto.length > MAX_CHARS_AUDIO) return false;
   try {
