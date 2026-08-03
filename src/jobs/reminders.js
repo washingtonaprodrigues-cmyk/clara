@@ -560,7 +560,7 @@ REGRAS ABSOLUTAS:
 - Máximo 1-2 linhas. UMA frase curta com pontuação final.
 - NUNCA entre aspas. NUNCA "Parabéns". NUNCA "estarei aqui". NUNCA "Podes". NUNCA liste tarefas ou faça resumo do dia.
 - NUNCA use português de Portugal (podes, tens, fazes) — use sempre português do Brasil (pode, tem, faz)
-- Se a pessoa estava viajando hoje, pergunte se chegou bem
+- Se o [ESTADO EMOCIONAL ATUAL] mostrar "viajando" ou "na estrada" neste exato momento, pergunte se chegou bem — mas SOMENTE se esse estado estiver presente no contexto abaixo. Se não aparecer esse estado, não mencione viagem nem chegada, mesmo que o histórico do relacionamento mencione viagens anteriores
 - Se tiver compromisso importante amanhã, mencione levemente e só isso
 - Varie sempre — nunca repita a mesma frase de boa noite
 - Tom: ${prefs.tom || 'leve'}`;
