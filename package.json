@@ -13,13 +13,14 @@
     "@tavily/core": "^0.3.1",
     "axios": "^1.6.7",
     "dotenv": "^16.4.4",
+    "edge-tts-universal": "^1.4.0",
     "express": "^4.18.3",
     "form-data": "^4.0.0",
     "groq-sdk": "^0.3.3",
     "node-cron": "^3.0.3",
     "prisma": "^5.22.0",
-    "web-push": "^3.6.7",
-    "socket.io": "^4.7.5"
+    "socket.io": "^4.7.5",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
