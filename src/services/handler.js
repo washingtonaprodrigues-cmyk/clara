@@ -1096,18 +1096,20 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     await memory.saveConversationMessage(user.id, 'assistant', respStr);
 
     // ── Envio em áudio se solicitado ──────────────────────────────────
-    // Verifica modo_audio salvo OU se o texto original veio de transcrição
-    // de áudio (flag passada como prefixo pelo webhook). Limite de 500 chars
-    // pra não cortar mensagem no meio — textos longos vão como texto.
     let enviouAudio = false;
     if (respStr.length <= 500) {
       const modoAudio = await prisma.memory.findFirst({ where: { userId: user.id, type: 'modo_audio' } }).catch(() => null);
       const audioAtivo = modoAudio?.content === 'ativo';
       const usuarioMandouAudio = _audioTurno.get(phone) || false;
       _audioTurno.delete(phone);
+      console.log(`[AudioCheck] audioAtivo=${audioAtivo} turno=${usuarioMandouAudio} len=${respStr.length}`);
       if (audioAtivo || usuarioMandouAudio) {
-        const { enviarRespostaComAudio } = require('./whatsapp');
-        enviouAudio = await enviarRespostaComAudio(phone, respStr).catch(() => false);
+        const w = require('./whatsapp');
+        console.log(`[AudioCheck] ttsDisponivel=${typeof w.ttsDisponivel === 'function' ? w.ttsDisponivel() : 'N/A'}`);
+        enviouAudio = await w.enviarRespostaComAudio(phone, respStr).catch(e => {
+          console.error('[AudioCheck] erro:', e.message);
+          return false;
+        });
       }
     }
     if (!enviouAudio) await sendMessage(phone, respStr);
