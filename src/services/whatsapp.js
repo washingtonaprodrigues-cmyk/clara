@@ -179,7 +179,8 @@ const MAX_CHARS_AUDIO = 500;
 let _edgeTTS = null;
 function getEdgeTTS() {
   if (!_edgeTTS) {
-    try { _edgeTTS = require('edge-tts-universal'); } catch {}
+    try { _edgeTTS = require('edge-tts-universal'); }
+    catch (e) { console.error('[TTS] require(edge-tts-universal) falhou:', e.code || e.message); }
   }
   return _edgeTTS;
 }
