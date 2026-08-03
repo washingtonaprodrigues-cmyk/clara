@@ -1626,6 +1626,7 @@ const FALLBACK_CLARA = [
 
 async function freeResponse(message, history = [], preferences = {}, privateMode = false) {
   const phone = preferences?._phone || null;
+  console.log(`[freeResponse] chamado para ${phone} — msg="${(message||'').slice(0,25)}" skipCtx=${preferences?._skipCtx||false}`);
 
   try {
     const name = preferences?.name || null;
