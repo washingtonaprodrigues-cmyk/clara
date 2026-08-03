@@ -2664,7 +2664,13 @@ async function editarLembrete(user, phone, classified, contextoClassify = '', or
 
     // Busca todos os lembretes não confirmados
     const todosLembretes = await prisma.reminder.findMany({
-      where: { userId: user.id, confirmed: false },
+      // Restrito a sent=true — lembretes que JÁ FORAM DISPARADOS.
+      // Antes buscava confirmed:false sem filtro de sent, o que incluía
+      // lembretes futuros ainda não disparados. Isso causava falsos matches
+      // quando o usuário arrastava (swipe-reply) um lembrete: palavras do
+      // título coincidiam com um lembrete futuro não relacionado, marcando
+      // o errado como concluído.
+      where: { userId: user.id, confirmed: false, sent: true },
       orderBy: { scheduledAt: 'asc' }
     });
 
