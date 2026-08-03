@@ -400,13 +400,6 @@ ROUPAS — use roupas normais e variadas de mulher brasileira, não genéricas. 
 - Noite/sozinha: "in a cozy oversized shirt and leggings", "wearing a spaghetti strap top"
 NUNCA use apenas "casual outfit" ou "casual clothing" sem detalhar — seja específica na roupa.
 
-IMPORTANTE — CENAS SEGURAS: o modelo de imagem tem filtros sensíveis. Use sempre descrições neutras de cena:
-- "deitada na cama" → "relaxing on couch with phone, cozy look"
-- "na cama à noite" → "at home relaxing, warm lamp lighting"
-- "quase dormindo" → "looking sleepy and relaxed at home, cozy setting"
-- Nunca use: "bed", "bedroom", "intimate", "seductive", "night" isolados
-- Prefira: "couch", "home", "relaxing", "cozy", "warm lighting"
-
 Se não conseguir identificar uma atividade clara na conversa, use uma cena genérica coerente com o momento (ex: em casa, no sofá, tomando café).` },
     { role: 'user', content: contextoConversa }
   ];
