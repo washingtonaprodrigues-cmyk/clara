@@ -8,18 +8,20 @@
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // Lista de modelos para tentar, em ordem de preferência.
-// gemini-2.5-flash-lite — desativa 22 jul 2026, substituído por 3.1-flash-lite.
+// gemini-2.5-flash-lite — desativado 22 jul 2026, substituído por 3.1-flash-lite.
 // gemini-2.0-flash — desativado 1° jun 2026 (404).
+// gemini-2.5-flash — desativa 16 out/2026 → migrar vision (linha ~291) antes disso.
 //
 // FLASH — tudo que faz Clara ser Clara: conversa, proatividade, memória,
-//   relacionamento, busca, classify. Primário até out/2026 → migrar pro 3.5-flash.
+//   relacionamento, busca, classify. gemini-3.6-flash é o mais recente (jul/2026).
 // LITE — mecânico puro sem personalidade: checkResolucaoPendencia (sim/não),
 //   generateMemorySummary (recupera dado), extrairQueryBusca (extrai termo),
 //   tradução de resultado de busca. Zero risco de emburrecer a Clara.
 const GEMINI_MODELS = [
-  'gemini-3.5-flash',        // primário — melhor qualidade, personalidade e conversa
-  'gemini-3.1-flash-lite',   // reserva — custo-eficiente, bom pra tarefas mecânicas
-  'gemini-2.5-flash',        // fallback legado — desativa out/2026, não remover ainda
+  'gemini-3.6-flash',        // primário — mais recente (jul/2026), melhor eficiência e custo
+  'gemini-3.5-flash',        // reserva — GA desde mai/2026, sem data de desativação
+  'gemini-3.1-flash-lite',   // fallback leve — custo-eficiente, bom pra tarefas mecânicas
+  'gemini-2.5-flash',        // fallback legado — desativa out/2026, remover após migrar vision
 ];
 
 const GEMINI_MODELS_LITE = [
@@ -288,6 +290,7 @@ async function geminiVision(base64Image, mimeType, systemPrompt, userPrompt = 'O
   if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
 
   // Modelo com visão — gemini-2.5-flash enxerga imagem nativamente
+  // ⚠️ Desativa out/2026 — migrar pra gemini-3.5-flash quando liberar suporte a visão
   const model = 'gemini-2.5-flash';
   const parts = [{ text: userPrompt }];
   // Se houver foto de referência da própria Clara, manda ela JUNTO na
@@ -334,7 +337,9 @@ async function geminiVision(base64Image, mimeType, systemPrompt, userPrompt = 'O
 // tempo (o Google itera bastante nessa linha) — se começar a dar erro
 // 404, provavelmente é isso: verificar o nome atual do modelo na
 // documentação do Gemini API antes de assumir que é outro bug.
-const GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image';
+// gemini-2.5-flash-image desativa 2 out/2026 → substituído por gemini-3.1-flash-image
+// gemini-3.1-flash-image: GA desde mai/2026, sem data de desativação anunciada
+const GEMINI_IMAGE_MODEL = 'gemini-3.1-flash-image';
 
 async function geminiGerarImagem(prompt) {
   if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
@@ -399,6 +404,13 @@ ROUPAS — use roupas normais e variadas de mulher brasileira, não genéricas. 
 - Praia/calor: "in a colorful sundress", "in a bikini top and shorts", "in a light tank top"
 - Noite/sozinha: "in a cozy oversized shirt and leggings", "wearing a spaghetti strap top"
 NUNCA use apenas "casual outfit" ou "casual clothing" sem detalhar — seja específica na roupa.
+
+IMPORTANTE — CENAS SEGURAS: o modelo de imagem tem filtros sensíveis. Use sempre descrições neutras de cena:
+- "deitada na cama" → "relaxing on couch with phone, cozy look"
+- "na cama à noite" → "at home relaxing, warm lamp lighting"
+- "quase dormindo" → "looking sleepy and relaxed at home, cozy setting"
+- Nunca use: "bed", "bedroom", "intimate", "seductive", "night" isolados
+- Prefira: "couch", "home", "relaxing", "cozy", "warm lighting"
 
 Se não conseguir identificar uma atividade clara na conversa, use uma cena genérica coerente com o momento (ex: em casa, no sofá, tomando café).` },
     { role: 'user', content: contextoConversa }
