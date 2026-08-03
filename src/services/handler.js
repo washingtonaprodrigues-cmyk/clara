@@ -2944,7 +2944,7 @@ async function checkConfirmacaoPendente(user, phone, text) {
         ctxParaResposta = `\n\n[COLETA] Lembrete "${tituloCompleto}" — ainda falta o horário. Pergunte que horas de forma natural.`;
       }
       await responderLivre(user, phone, text, ctxParaResposta);
-      return;
+      return true;
     }
 
     // ── Coleta de lembrete em múltiplos turnos ────────────────────────────
@@ -2996,7 +2996,7 @@ async function checkConfirmacaoPendente(user, phone, text) {
           ? `\n\n[COLETA] Usuário ainda não disse quando é "${titulo}". Pergunte a data de forma natural e curta.`
           : `\n\n[COLETA] Usuário disse que é ${dataFinal} mas não disse o horário de "${titulo}". Pergunte que horas de forma natural — pode sugerir um horário inteligente ex: "às 16h pra dar tempo de se preparar?" dependendo do contexto.`;
         await responderLivre(user, phone, text, ctx, false, null, null);
-        return;
+        return true;
       }
 
       // Tem tudo — cria o lembrete
@@ -3011,7 +3011,7 @@ async function checkConfirmacaoPendente(user, phone, text) {
       const ctx = `\n\n[LEMBRETE CRIADO] "${titulo}" para ${dataFmt} às ${horaFmt}. Confirme de forma natural e animada no seu tom.`;
       await responderLivre(user, phone, text, ctx, false, null, confirmacao);
       emitirAtualizacao(phone, 'lembretes');
-      return;
+      return true;
     }
 
     if (dados.tipo === 'fechamento_pendentes') {
