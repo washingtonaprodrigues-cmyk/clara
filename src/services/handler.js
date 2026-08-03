@@ -1329,7 +1329,7 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
       /sua\s+voz/.test(tAudio) ||
       /\baudio\b.{0,20}(sim|pode|quero|bora|manda)/.test(tAudio) ||
       /(me manda|pode mandar).{0,10}(audio|voz)/.test(tAudio);
-    const pedidoTexto = /\b(manda texto|digita|por mensagem|responde (escrito|por texto)|volta (pro texto|pra mensagem)|sem audio|em texto)\b/i.test(tAudio);
+    const pedidoTexto = /\b(manda(r)? texto|digita(r)?|por mensagem|responde (escrito|por texto)|volta.{0,15}(texto|mensagem)|sem audio|em texto|de volta.{0,10}texto|volta pro texto|pode (parar|voltar)|texto agora|so texto|s[oó] texto)\b/i.test(tAudio);
     if (pedidoAudio) {
       await upsertMemoryPorTipo(user.id, 'modo_audio', 'ativo').catch(() => {});
       console.log(`[ModoAudio] Ativado para ${phone}`);
