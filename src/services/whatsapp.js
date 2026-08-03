@@ -171,32 +171,40 @@ async function sendLocationRequest(phone) {
 }
 
 // ════════════════════════════════════════════════════════════
-// TTS (Text-to-Speech) via ElevenLabs
+// TTS (Text-to-Speech) — edge-tts-universal (gratuito)
+// Microsoft Edge TTS, sem API key, voz pt-BR-FranciscaNeural
 // ════════════════════════════════════════════════════════════
-const ELEVENLABS_API_KEY  = process.env.ELEVENLABS_API_KEY;
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'hpp4J3VqNfWAUOO0d1Us';
-const ELEVENLABS_URL = `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`;
 const MAX_CHARS_AUDIO = 500;
 
-function ttsDisponivel() { return !!ELEVENLABS_API_KEY; }
+let _edgeTTS = null;
+function getEdgeTTS() {
+  if (!_edgeTTS) {
+    try { _edgeTTS = require('edge-tts-universal'); } catch {}
+  }
+  return _edgeTTS;
+}
+
+function ttsDisponivel() { return !!getEdgeTTS(); }
 
 function limparParaAudio(texto) {
   return texto
     .replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1')
     .replace(/_(.*?)_/g, '$1').replace(/`(.*?)`/g, '$1')
     .replace(/^[•\-\*]\s+/gm, '').replace(/#{1,6}\s+/g, '')
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu, '') // remove emojis (TTS não lê bem)
     .replace(/\n{3,}/g, '\n\n').trim();
 }
 
 async function gerarAudio(texto) {
-  if (!ELEVENLABS_API_KEY) throw new Error('ELEVENLABS_API_KEY não configurada');
+  const edgeTTS = getEdgeTTS();
+  if (!edgeTTS) throw new Error('edge-tts-universal não disponível');
+  const { UniversalEdgeTTS } = edgeTTS;
   const textoLimpo = limparParaAudio(texto);
-  const response = await axios.post(
-    ELEVENLABS_URL,
-    { text: textoLimpo, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.45, similarity_boost: 0.80, style: 0.35, use_speaker_boost: true } },
-    { headers: { 'xi-api-key': ELEVENLABS_API_KEY, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' }, responseType: 'arraybuffer', timeout: 30000 }
-  );
-  return Buffer.from(response.data);
+  const tts = new UniversalEdgeTTS(textoLimpo, 'pt-BR-FranciscaNeural');
+  const result = await tts.synthesize();
+  const arrayBuffer = await result.audio.arrayBuffer();
+  console.log('[TTS] edge-tts OK');
+  return Buffer.from(arrayBuffer);
 }
 
 async function enviarAudioUazAPI(phone, audioBuffer) {
