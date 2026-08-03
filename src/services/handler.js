@@ -1090,7 +1090,23 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
     await memory.saveConversationMessage(user.id, 'user', text);
     await memory.saveConversationMessage(user.id, 'assistant', respStr);
-    await sendMessage(phone, respStr);
+
+    // ── Envio em áudio se solicitado ──────────────────────────────────
+    // Verifica modo_audio salvo OU se o texto original veio de transcrição
+    // de áudio (flag passada como prefixo pelo webhook). Limite de 500 chars
+    // pra não cortar mensagem no meio — textos longos vão como texto.
+    let enviouAudio = false;
+    if (respStr.length <= 500) {
+      const modoAudio = await prisma.memory.findFirst({ where: { userId: user.id, type: 'modo_audio' } }).catch(() => null);
+      const audioAtivo = modoAudio?.content === 'ativo';
+      // Detecta se usuário enviou áudio neste turno (webhook.js prefixa com [áudio])
+      const usuarioMandouAudio = /^\[áudio\]/i.test(text || '');
+      if (audioAtivo || usuarioMandouAudio) {
+        const { enviarRespostaComAudio } = require('./whatsapp');
+        enviouAudio = await enviarRespostaComAudio(phone, respStr).catch(() => false);
+      }
+    }
+    if (!enviouAudio) await sendMessage(phone, respStr);
 
     // ── Detecção de promessa de busca não executada ───────────────────
     // Restrito ao final da resposta (~40 chars) — mesmo motivo do fix em
@@ -1260,6 +1276,11 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
     if (!text) return;
 
     const textLower = normalizar(text);
+    // Remove prefixo [áudio] antes de qualquer processamento —
+    // o webhook.js adiciona pra sinalizar que veio de voz, mas o
+    // classify e demais fluxos devem ver só o texto limpo.
+    const originalText = text;
+    const text = text.replace(/^\[áudio\]\s*/i, '');
 
     // ── Comando interno: ativa/desativa modo comparação (Gemini manual) ──
     const comandoComparacao = detectarComandoComparacao(text);
@@ -1286,6 +1307,21 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
         ? '😏 Bora, vou soltar mais o verbo. Diga "volta ironia ao normal" quando quiser desligar o teste.'
         : '😊 Combinado, vou segurar mais a ironia. Diga "volta ironia ao normal" quando quiser desligar o teste.';
       return await sendMessage(phone, msgConfirma);
+    }
+
+    // ── Modo áudio: ativa/desativa por pedido natural ─────────────────
+    // "responde em áudio", "fala por áudio", "manda áudio" → ativa
+    // "manda texto", "digita", "por mensagem", "responde escrito" → desativa
+    // Salvo em memory tipo 'modo_audio' — persiste entre conversas.
+    const tNormAudio = normalizar(text);
+    const pedidoAudio = /\b(responde?|fala|manda|me manda|pode (responder?|falar|mandar))\b.{0,20}\b(em |no |por |de )?(áudio|audio|voz|vozão|falado)\b/i.test(text)
+      || /\b(áudio|audio)\b.*\b(sim|pode|quero|bora|manda)\b/i.test(tNormAudio)
+      || /\b(quero (ouvir|escutar)|fala comigo|me manda um audio)\b/i.test(tNormAudio);
+    const pedidoTexto = /\b(manda texto|digita|por mensagem|responde (escrito|por texto)|volta (pro texto|pra mensagem)|sem audio|sem áudio|texto mesmo|em texto)\b/i.test(tNormAudio);
+    if (pedidoAudio) {
+      await upsertMemoryPorTipo(user.id, 'modo_audio', 'ativo').catch(() => {});
+    } else if (pedidoTexto) {
+      await upsertMemoryPorTipo(user.id, 'modo_audio', 'inativo').catch(() => {});
     }
 
     const foiConfirmacao = await checkConfirmacaoPendente(user, phone, text);
