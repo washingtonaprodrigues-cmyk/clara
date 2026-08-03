@@ -205,8 +205,8 @@ async function gerarAudio(texto) {
   if (!edgeTTS) throw new Error('edge-tts-universal não disponível');
   const { UniversalEdgeTTS } = edgeTTS;
   const textoLimpo = limparParaAudio(texto);
-  // pt-BR-LeticiaNeural: voz feminina energética e expressiva — testando
-  const tts = new UniversalEdgeTTS(textoLimpo, 'pt-BR-LeticiaNeural');
+  // pt-BR-ThalitaNeural: única voz confirmada válida nesta API
+  const tts = new UniversalEdgeTTS(textoLimpo, 'pt-BR-ThalitaNeural');
   const result = await tts.synthesize();
   const arrayBuffer = await result.audio.arrayBuffer();
   console.log('[TTS] edge-tts OK');
