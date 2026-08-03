@@ -1315,18 +1315,25 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
     }
 
     // ── Modo áudio: ativa/desativa por pedido natural ─────────────────
-    // "responde em áudio", "fala por áudio", "manda áudio" → ativa
-    // "manda texto", "digita", "por mensagem", "responde escrito" → desativa
-    // Salvo em memory tipo 'modo_audio' — persiste entre conversas.
-    const tNormAudio = normalizar(text);
-    const pedidoAudio = /\b(responde?|fala|manda|me manda|pode (responder?|falar|mandar))\b.{0,20}\b(em |no |por |de )?(áudio|audio|voz|vozão|falado)\b/i.test(text)
-      || /\b(áudio|audio)\b.*\b(sim|pode|quero|bora|manda)\b/i.test(tNormAudio)
-      || /\b(quero (ouvir|escutar)|fala comigo|me manda um audio)\b/i.test(tNormAudio);
-    const pedidoTexto = /\b(manda texto|digita|por mensagem|responde (escrito|por texto)|volta (pro texto|pra mensagem)|sem audio|sem áudio|texto mesmo|em texto)\b/i.test(tNormAudio);
+    // Remove acentos antes do regex — \b não funciona com caracteres Unicode
+    // como 'á', então "áudio" precisa virar "audio" pra casar o padrão.
+    const tAudio = (text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const pedidoAudio =
+      /manda.{0,15}(audio|voz)/.test(tAudio) ||
+      /responde?.{0,15}(audio|voz)/.test(tAudio) ||
+      /fala.{0,10}(audio|voz)/.test(tAudio) ||
+      /\b(quero|queria|queria)\s.{0,10}(ouvir|escutar)/.test(tAudio) ||
+      /(ouvir|escutar).{0,15}(sua|tua).{0,10}voz/.test(tAudio) ||
+      /sua\s+voz/.test(tAudio) ||
+      /\baudio\b.{0,20}(sim|pode|quero|bora|manda)/.test(tAudio) ||
+      /(me manda|pode mandar).{0,10}(audio|voz)/.test(tAudio);
+    const pedidoTexto = /\b(manda texto|digita|por mensagem|responde (escrito|por texto)|volta (pro texto|pra mensagem)|sem audio|em texto)\b/i.test(tAudio);
     if (pedidoAudio) {
       await upsertMemoryPorTipo(user.id, 'modo_audio', 'ativo').catch(() => {});
+      console.log(`[ModoAudio] Ativado para ${phone}`);
     } else if (pedidoTexto) {
       await upsertMemoryPorTipo(user.id, 'modo_audio', 'inativo').catch(() => {});
+      console.log(`[ModoAudio] Desativado para ${phone}`);
     }
 
     const foiConfirmacao = await checkConfirmacaoPendente(user, phone, text);
