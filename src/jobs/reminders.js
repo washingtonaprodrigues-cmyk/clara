@@ -152,6 +152,42 @@ function getClaraReferenciaBase64Rem() {
   }
 }
 
+// ── Envio com suporte a selfie espontânea ────────────────────────────
+// Quando Clara gera __GERAR_SELFIE__ espontaneamente numa mensagem proativa
+// (chamada combinada, boa noite, etc.), esse helper detecta a tag, envia
+// o texto natural e depois gera e manda a foto — igual ao handler.js faz
+// nas conversas normais. Sem isso a tag vaza como texto no WhatsApp.
+async function enviarComSelfie(phone, msg, userId, contextoConversa = '') {
+  const selfieMatch = msg.match(/[*_]{0,2}GERAR_SELFIE(?::[^*_\n]*)?[*_]{0,2}/i);
+  if (!selfieMatch) {
+    await sendMessage(phone, msg);
+    return;
+  }
+  // Tem selfie — separa o texto da tag e processa
+  const textoSemTag = msg.replace(selfieMatch[0], '').trim();
+  const textoFinal = textoSemTag.length > 3 ? textoSemTag : 'Pera, deixa eu tirar uma foto pra te mandar! 📸';
+  await sendMessage(phone, textoFinal);
+  if (userId) {
+    await memory.saveConversationMessage(userId, 'assistant', textoFinal).catch(() => {});
+  }
+  try {
+    const cenaTecnica = await gerarPromptSelfieDetalhado(
+      contextoConversa || `Clara disse: "${textoFinal}"`
+    );
+    const referencia = getClaraReferenciaBase64Rem();
+    const selfie = referencia
+      ? await geminiGerarSelfie(cenaTecnica, referencia, 'image/jpeg')
+      : await geminiGerarImagem(cenaTecnica);
+    await sendImageRem(phone, selfie.base64, '', selfie.mimeType);
+    if (userId) {
+      await memory.saveConversationMessage(userId, 'assistant', 'Te mandei uma selfie minha 📸').catch(() => {});
+    }
+    console.log(`[SelfieProativa] Selfie enviada para ${phone}`);
+  } catch (e) {
+    console.error(`[SelfieProativa] Erro ao gerar selfie:`, e.message);
+  }
+}
+
 // ── Retry automático em falha de conexão (mesma lógica de memory.js) ──
 prisma.$use(async (params, next) => {
   const MAX_TENTATIVAS = 3;
@@ -1695,8 +1731,11 @@ cron.schedule('* * * * *', async () => {
       }
 
       if (resposta) {
-        await sendMessage(phone, resposta);
-        await memory.saveConversationMessage(userId, 'assistant', resposta).catch(() => {});
+        const ctxSelfie = history.slice(-4).map(m => `${m.role === 'user' ? 'Ele' : 'Clara'}: ${(m.content||'').slice(0,80)}`).join('\n');
+        await enviarComSelfie(phone, resposta, userId, ctxSelfie);
+        if (!resposta.match(/[*_]{0,2}GERAR_SELFIE/i)) {
+          await memory.saveConversationMessage(userId, 'assistant', resposta).catch(() => {});
+        }
         console.log(`[ChamadaCombinada] Disparada para ${phone} às ${hAtual}`);
       }
     }
