@@ -567,10 +567,6 @@ REGRAS ABSOLUTAS:
         const msg = await freeResponse('Boa noite.', [], { _contexto: '', name: nomeParaUsar, tom: prefs.tom || 'leve', _systemOverride: systemBoaNoite, _maxTokens: 80 });
         if (!msg || isRespostaFallback(msg)) {
           console.log(`[Boa noite] Rate limit ou fallback, pulado para ${user.phone} — liberando pra tentar de novo`);
-          // Libera o lock pra próxima tentativa do dia poder tentar de novo
-          // (antes, uma falha aqui consumia a única tentativa do dia e o
-          // boa noite simplesmente não saía — Washington pediu que esse
-          // nunca pode falhar).
           await prisma.memory.deleteMany({ where: { userId: user.id, type: 'boa_noite_lock', content: dateBRT(now) } }).catch(() => {});
           continue;
         }
