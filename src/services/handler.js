@@ -70,6 +70,10 @@ function getWhatsapp() {
   return _whatsappModule;
 }
 
+// Sinaliza por turno se a mensagem atual veio de áudio — usado em
+// responderLivre pra enviar resposta como PTT sem mudar a assinatura.
+const _audioTurno = new Map();
+
 async function sendMessage(phone, msg, delay) {
   const w = getWhatsapp();
   if (w && typeof w.sendMessage === 'function') {
@@ -1099,8 +1103,8 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     if (respStr.length <= 500) {
       const modoAudio = await prisma.memory.findFirst({ where: { userId: user.id, type: 'modo_audio' } }).catch(() => null);
       const audioAtivo = modoAudio?.content === 'ativo';
-      // Detecta se usuário enviou áudio neste turno (webhook.js prefixa com [áudio])
-      const usuarioMandouAudio = /^\[áudio\]/i.test(text || '');
+      const usuarioMandouAudio = _audioTurno.get(phone) || false;
+      _audioTurno.delete(phone);
       if (audioAtivo || usuarioMandouAudio) {
         const { enviarRespostaComAudio } = require('./whatsapp');
         enviouAudio = await enviarRespostaComAudio(phone, respStr).catch(() => false);
@@ -1275,12 +1279,13 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
 
     if (!text) return;
 
+    // Flag por turno: usuário mandou áudio nesta mensagem?
+    // Guardado num Map em vez de parâmetro pra não mudar assinatura de responderLivre.
+    const veiuDeAudio = /^\[áudio\]\s*/i.test(text || '');
+    if (veiuDeAudio) text = text.replace(/^\[áudio\]\s*/i, '');
+    _audioTurno.set(phone, veiuDeAudio);
+
     const textLower = normalizar(text);
-    // Remove prefixo [áudio] antes de qualquer processamento —
-    // o webhook.js adiciona pra sinalizar que veio de voz, mas o
-    // classify e demais fluxos devem ver só o texto limpo.
-    const originalText = text;
-    const text = text.replace(/^\[áudio\]\s*/i, '');
 
     // ── Comando interno: ativa/desativa modo comparação (Gemini manual) ──
     const comandoComparacao = detectarComandoComparacao(text);
