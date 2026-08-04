@@ -7,15 +7,15 @@
 // Usa fetch nativo (Node 18+), sem dependências novas.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// NOTA: gemini-3.6-flash removido — retorna 400 INVALID_ARGUMENT (não disponível nesta conta/região).
+// NOTA: gemini-3.6-flash e gemini-3.5-flash-lite removidos — retornam 400
+// INVALID_ARGUMENT (não disponíveis nesta conta/região).
 // FLASH — tudo que faz Clara ser Clara: conversa, proatividade, memória,
-//   relacionamento, busca, classify. gemini-3.5-flash é o primário estável.
+//   relacionamento, busca, classify.
 // LITE — mecânico puro sem personalidade: extractPersonalInfo, extractEpisodio,
 //   memória relacional, gênero, tradução de busca, etc.
-//   Zero risco de emburrecer a Clara — lite só faz extração/classificação.
 const GEMINI_MODELS = [
-  'gemini-3.5-flash',        // primário — qualidade e personalidade da Clara
-  'gemini-3.1-flash-lite',   // reserva
+  'gemini-3.1-flash-lite',   // primário — 15x mais barato, testado e aprovado pra personalidade
+  'gemini-3.5-flash',        // reserva — qualidade máxima, entra se lite falhar
   'gemini-2.5-flash',        // fallback legado — desativa out/2026, não remover ainda
 ];
 
