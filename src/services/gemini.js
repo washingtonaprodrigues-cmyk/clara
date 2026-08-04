@@ -20,8 +20,9 @@ const GEMINI_MODELS = [
 ];
 
 const GEMINI_MODELS_LITE = [
-  'gemini-3.5-flash-lite',   // primário — lançado jul/2026, 5x mais barato que 3.5-flash, ótimo pra mecânico
-  'gemini-3.1-flash-lite',   // fallback — estável até mai/2027
+  // gemini-3.5-flash-lite removido — retornava 400 INVALID_ARGUMENT (não disponível nesta conta)
+  // igual ao gemini-3.6-flash. Reativar depois de confirmar disponibilidade.
+  'gemini-3.1-flash-lite',   // estável até mai/2027
 ];
 
 // ── Cache de quota esgotada (em memória) ──
