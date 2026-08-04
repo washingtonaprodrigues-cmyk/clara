@@ -185,11 +185,9 @@ function getEdgeTTS() {
   return _edgeTTS;
 }
 
-function ttsDisponivel() {
-  const ok = !!getEdgeTTS();
-  if (!ok) console.log('[TTS] getEdgeTTS() retornou null — edge-tts-universal não carregou');
-  return ok;
-}
+// TTS desativado — vozes gratuitas (Edge TTS) narram emojis e risadas.
+// Reativar com ElevenLabs Starter ou OpenAI TTS quando tiver budget.
+function ttsDisponivel() { return false; }
 
 function limparParaAudio(texto) {
   return texto
