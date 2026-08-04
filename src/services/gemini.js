@@ -7,15 +7,16 @@
 // Usa fetch nativo (Node 18+), sem dependências novas.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// NOTA: gemini-3.6-flash e gemini-3.5-flash-lite removidos — retornam 400
-// INVALID_ARGUMENT (não disponíveis nesta conta/região).
+// NOTA: gemini-3.6-flash e gemini-3.5-flash-lite removidos — retornam 400.
 //
 // GEMINI_MODELS — personalidade, classify e resposta principal.
-//   Precisa de flash completo: segue contexto, mantém gênero, nuance.
-// GEMINI_MODELS_LITE — background mecânico (extração, episódios, etc.)
+// Lite como primário: econômico e suficiente pra conversa.
+// Flash como reserva: entra quando lite falhar ou esgotar.
+// O gênero agora vem via generoExplicito no buildPersonality (não depende
+// do modelo — então lite não erra mais gênero como antes).
 const GEMINI_MODELS = [
-  'gemini-3.5-flash',        // primário — personalidade, contexto rico, gênero
-  'gemini-3.1-flash-lite',   // reserva — entra se flash falhar/esgotar
+  'gemini-3.1-flash-lite',   // primário — econômico, bom rate limit
+  'gemini-3.5-flash',        // reserva — qualidade máxima se lite falhar
   'gemini-2.5-flash',        // fallback legado — desativa out/2026
 ];
 
