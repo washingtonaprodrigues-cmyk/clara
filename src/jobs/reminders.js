@@ -1706,13 +1706,13 @@ cron.schedule('* * * * *', async () => {
         }
       } catch {}
 
-      const ctx = `[CHAMADA COMBINADA] Você combinou de chamar ${nome || 'o usuário'} agora (${horaCombinada}). Apareça de forma natural — retome o assunto que ficou pendente, use o contexto abaixo. NÃO apareça genérica. NÃO diga "passei pra ver se você está bem".${ctxCombinado}${contextoRelChamada}`;
+      const ctx = `[CHAMADA COMBINADA] Você combinou de chamar ${nome || 'o usuário'} agora (${horaCombinada}). Apareça de forma natural — retome o assunto que ficou pendente, use o contexto abaixo. NÃO apareça genérica. NÃO diga "passei pra ver se você está bem". SEJA CURTA — máximo 2-3 linhas, termine sempre com frase completa.${ctxCombinado}${contextoRelChamada}`;
 
       // Tenta gerar mensagem contextual — retry duplo + fallback garantido
       let resposta = null;
       try {
         resposta = await Promise.race([
-          freeResponse('', history, { ...prefs, _contexto: ctx }),
+          freeResponse('', history, { ...prefs, _contexto: ctx, _maxTokens: 200 }),
           new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 10000))
         ]);
       } catch {}
@@ -1721,7 +1721,7 @@ cron.schedule('* * * * *', async () => {
         await new Promise(r => setTimeout(r, 4000));
         try {
           resposta = await Promise.race([
-            freeResponse('', history, { ...prefs, _contexto: ctx }),
+            freeResponse('', history, { ...prefs, _contexto: ctx, _maxTokens: 200 }),
             new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000))
           ]);
         } catch {}
