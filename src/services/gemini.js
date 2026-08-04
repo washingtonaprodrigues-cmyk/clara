@@ -10,13 +10,11 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 // NOTA: gemini-3.6-flash e gemini-3.5-flash-lite removidos — retornam 400.
 //
 // GEMINI_MODELS — personalidade, classify e resposta principal.
-// Lite como primário: econômico e suficiente pra conversa.
-// Flash como reserva: entra quando lite falhar ou esgotar.
-// O gênero agora vem via generoExplicito no buildPersonality (não depende
-// do modelo — então lite não erra mais gênero como antes).
+// Flash como primário: único que sustenta a personalidade da Clara com fidelidade.
+// Lite testado como primário e confirmado: perde o tom, vira assistente genérico.
 const GEMINI_MODELS = [
-  'gemini-3.1-flash-lite',   // primário — econômico, bom rate limit
-  'gemini-3.5-flash',        // reserva — qualidade máxima se lite falhar
+  'gemini-3.5-flash',        // primário — único que sustenta a personalidade da Clara
+  'gemini-3.1-flash-lite',   // reserva — entra se flash falhar/esgotar
   'gemini-2.5-flash',        // fallback legado — desativa out/2026
 ];
 
