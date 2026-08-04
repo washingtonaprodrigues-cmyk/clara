@@ -250,7 +250,7 @@ TIPOS e formato de saída:
 - entrada_financeira: {"tipo":"entrada_financeira","valor":100.0,"descricao":"x"}
 - consulta: {"tipo":"consulta","sobre":"x","datas":["YYYY-MM-DD"] ou null} — pergunta sobre agenda
 - concluir_lembrete: {"tipo":"concluir_lembrete","titulo":"x"} — "já fiz", "deu certo", "feito", "resolvido" quando há lembrete no contexto
-- editar_lembrete / deletar_lembrete: {"tipo":"...","titulo":"x","data":null,"hora":null}
+- editar_lembrete / deletar_lembrete: {"tipo":"...","titulo":"x","nova_data":null,"nova_hora":null}
 - ajustar_remedio: {"tipo":"ajustar_remedio","nome":"x","operacao":"decrementar/ajustar","valor":N}
 - medicamento: {"tipo":"medicamento","nome":"x","quantidade":0,"frequencia":3,"horarios":["08:00","16:00","00:00"],"duracao_dias":7} — PRIORIDADE MÁXIMA sobre tarefa e multiplas_tarefas: quando a mensagem mencionar dar/tomar um remédio de forma RECORRENTE (de X em X horas, X vezes ao dia, por X dias), use este tipo MESMO que contenha "me lembra" ou "me avisa". Calcule os horários a partir da hora de início. Ex: "dar amoxilina a partir das 15h de 8 em 8 horas por uma semana" → medicamento com horarios:["15:00","23:00","07:00"], frequencia:3, duracao_dias:7
 - relatorio_financeiro / consulta_saldo: {"tipo":"..."}
