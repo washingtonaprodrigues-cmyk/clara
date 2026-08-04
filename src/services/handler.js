@@ -466,6 +466,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // resposta explícita salva na memória (funciona pra qualquer usuário,
     // não só nomes numa lista fixa) — só cai pro nome como último recurso.
     const generoUsuario = await getGeneroConfiavel(user.id, preferences.name);
+    if (generoUsuario) preferences._genero = generoUsuario; // passa pra buildPersonality resolver corretamente
 
     // Usa o apelido carinhoso (ex: "fedo") em vez do nome real sempre que
     // existir — sem isso, freeResponse/buildPersonality recebem só o nome
