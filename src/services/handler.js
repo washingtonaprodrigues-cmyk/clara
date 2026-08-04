@@ -2,7 +2,7 @@
 // Sessao 11 (25/06/2026): multiplas_tarefas, acao confirmada no contexto,
 // timezone no contexto, classify com exemplos de horario quebrado, anti-loop apelido.
 const { classify, detectarGeneroPorNome, extractPersonalInfo, extractPendenciaEmocional, extractEpisodio, checkResolucaoPendencia, searchWeb, freeResponse, generateMemorySummary, generateRelationshipSummary, ativarModoComparacao, desativarModoComparacao, emModoComparacao, detectarComandoComparacao, detectarComandoIronia, detectarAssuntoEmAberto, infoDatas, isRespostaFallback, extrairQueryBusca, buildPersonality, apararRespostaCortada, detectarPadraoReacao, filtrarResposta } = require('./groq');
-const { geminiFreeResponse, geminiDisponivel, todosModelosEsgotados, geminiGerarImagem, geminiGerarSelfie, gerarPromptSelfieDetalhado } = require('./gemini');
+const { geminiFreeResponse, geminiFreeResponseLite, geminiDisponivel, todosModelosEsgotados, geminiGerarImagem, geminiGerarSelfie, gerarPromptSelfieDetalhado } = require('./gemini');
 const fs = require('fs');
 const path = require('path');
 
@@ -1143,7 +1143,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         const resumoMR = histMR.slice(-6).map(m =>
           `${m.role === 'user' ? 'Ele' : 'Clara'}: ${(m.content || '').slice(0, 120)}`
         ).join('\n');
-        const extracted = await geminiFreeResponse([
+        const extracted = await geminiFreeResponseLite([
           { role: 'user', content: `Conversa (prefixo "Ele:" = o usuário Washington, homem. Prefixo "Clara:" = você mesma, mulher):\n${resumoMR}\n\nO que dessa conversa merece ser lembrado?\n\nATENÇÃO CRÍTICA NA ATRIBUIÇÃO: preste muita atenção em QUEM disse o quê antes de escrever a memória — nunca troque a autoria. Se a Clara falou uma regra ou característica sobre SI MESMA (ex: "eu não posso dizer labuta", "eu não uso essa palavra"), isso é sobre a Clara — NUNCA escreva como se fosse algo que ela proibiu ELE de fazer ou dizer. Se o Ele disse algo sobre si mesmo, é sobre ele, não sobre ela. Também respeite o gênero de cada um: Clara é mulher (adjetivos no feminino ao falar dela), Ele é homem (adjetivos no masculino ao falar dele) — nunca inverta.\n\nPERMANENTE (nunca apaga): novo apelido criado, brincadeira interna nova (incluindo referências a "combinados" hipotéticos/brincalhões tipo "nosso encontro", "nosso date" — mesmo que fictício, isso é o tipo de coisa que define a intimidade da relação e precisa ser lembrado), algo que define quem são juntos, papel de pessoa importante na vida dele (filha Isis, esposa/patroa).\nACONTECIMENTO (1 ano): saúde marcante, trabalho com carga emocional, momento familiar importante, algo emotivamente significativo que aconteceu.\nDESCARTAR: lembrete, lista, gasto, agenda, pão de queijo, qualquer coisa operacional sem peso emocional.\n\nPara cada memória relevante: {"categoria":"permanente|acontecimento","conteudo":"1 frase natural","tags":["tag1","tag2"]}\nResposta APENAS como JSON array. Se nada relevante: []` }
         ], { temperature: 0.1, maxTokens: 200 }).catch(() => null);
         if (!extracted) return;
@@ -1167,7 +1167,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         // Detecta se ela fez afirmação sobre si mesma (atividade, apelido, qualidade)
         const temAutoReferencia = /\b(tô|tava|sou|me chamo|sou a|me\s+\w+|minha|minhas|aqui eu|aqui a|fraquinha|aqui tô|acabei de|eu que|eu já|eu também|eu adoro|eu odeio|eu gosto|eu sou)\b/i.test(respStr);
         if (!temAutoReferencia) return;
-        const extraido = await geminiFreeResponse([
+        const extraido = await geminiFreeResponseLite([
           { role: 'user', content: `Mensagem da Clara: "${respStr.slice(0, 400)}"\n\nSe Clara disse algo MEMORÁVEL sobre si mesma — um apelido que usou ("fraquinha"), algo que inventou sobre sua vida (amiga, lugar, atividade), ou uma afirmação marcante sobre quem ela é — extraia em 1 frase curta. Se não há nada memorável, responda: NADA.` }
         ], { temperature: 0.1, maxTokens: 80 }).catch(() => null);
         if (!extraido || /^NADA/i.test(extraido.trim())) return;
@@ -1548,7 +1548,7 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
               const reforcoGeneroBusca = generoBusca === 'M'
                 ? '\n\n[GÊNERO] O usuário é homem — concorde no masculino ao falar dele. Você é mulher — concorde no feminino ao falar de si.'
                 : generoBusca === 'F' ? '\n\n[GÊNERO] O usuário é mulher — concorde no feminino ao falar dela. Você é mulher — concorde no feminino ao falar de si.' : '';
-              const coment = await geminiFreeResponse([
+              const coment = await geminiFreeResponseLite([
                 { role: 'system', content: buildPersonality(tomBusca, apelidoBusca, false) + promptComent + reforcoGeneroBusca },
                 { role: 'user', content: text }
               ], { temperature: 0.85, maxTokens: 120 }).catch(() => null);
@@ -1651,7 +1651,7 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
       const afetivaHora = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
       const nomeHora = afetivaHora?.apelido_usuario || prefsHora?.name || '';
       const systemHora = buildPersonality(prefsHora?.tom || 'leve', nomeHora, false) + `\n\nVocê anotou um lembrete: "${classified.titulo}" pro dia ${dataFmt}. Mas não foi informado o horário. Pergunte que horas colocar, do SEU jeito — curta, natural, sem parecer formulário de sistema. Deixe claro que se não souber pode dizer que você coloca às 09:00. NUNCA use __BUSCAR__ nem tags de sistema.`;
-      const msgHora = await geminiFreeResponse([
+      const msgHora = await geminiFreeResponseLite([
         { role: 'system', content: systemHora },
         { role: 'user', content: text }
       ], { temperature: 0.85, maxTokens: 120 }).catch(() => null);
@@ -2091,7 +2091,7 @@ async function executeAction(user, phone, classified, originalText, quotedText =
         const afetivaAlmoco = await memory.getMemoriaAfetiva(user.id).catch(() => ({}));
         const apelidoAlmoco = afetivaAlmoco?.apelido_usuario || prefsAlmoco?.name || '';
         const systemAlmoco = buildPersonality(prefsAlmoco?.tom || 'leve', apelidoAlmoco, false) + `\n\nUsuário pediu pra ser chamado no almoço, mas você ainda não sabe que horas é o almoço dele. Pergunte de forma natural e curta que horas é o almoço, no seu tom. NUNCA use __BUSCAR__ nem tags de sistema.`;
-        const msgAlmoco = await geminiFreeResponse([
+        const msgAlmoco = await geminiFreeResponseLite([
           { role: 'system', content: systemAlmoco },
           { role: 'user', content: originalText || 'ok' }
         ], { temperature: 0.85, maxTokens: 80 }).catch(() => null);
