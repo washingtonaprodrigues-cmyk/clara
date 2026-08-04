@@ -1890,7 +1890,7 @@ Corrija erros do resumo anterior se houver.` },
 
     if (geminiDisponivel() && !todosModelosEsgotados()) {
       try {
-        const respGemini = await geminiFreeResponseLite(chatMsgs, { temperature: 0.4, maxTokens: 500 });
+        const respGemini = await geminiFreeResponse(chatMsgs, { temperature: 0.4, maxTokens: 500 });
         if (respGemini) return filtrarConteudoIntimo(respGemini.trim());
       } catch (eGemini) {
         console.error('[generateRelationshipSummary] Gemini falhou, tentando Groq:', eGemini.message);
