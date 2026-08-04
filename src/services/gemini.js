@@ -7,25 +7,21 @@
 // Usa fetch nativo (Node 18+), sem dependências novas.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// Lista de modelos para tentar, em ordem de preferência.
-// gemini-2.5-flash-lite — desativado 22 jul 2026, substituído por 3.1-flash-lite.
-// gemini-2.0-flash — desativado 1° jun 2026 (404).
-// gemini-2.5-flash — desativa 16 out/2026 → migrar vision (linha ~291) antes disso.
-//
 // NOTA: gemini-3.6-flash removido — retorna 400 INVALID_ARGUMENT (não disponível nesta conta/região).
 // FLASH — tudo que faz Clara ser Clara: conversa, proatividade, memória,
-//   relacionamento, busca, classify. gemini-3.6-flash é o mais recente (jul/2026).
-// LITE — mecânico puro sem personalidade: checkResolucaoPendencia (sim/não),
-//   generateMemorySummary (recupera dado), extrairQueryBusca (extrai termo),
-//   tradução de resultado de busca. Zero risco de emburrecer a Clara.
+//   relacionamento, busca, classify. gemini-3.5-flash é o primário estável.
+// LITE — mecânico puro sem personalidade: extractPersonalInfo, extractEpisodio,
+//   memória relacional, gênero, tradução de busca, etc.
+//   Zero risco de emburrecer a Clara — lite só faz extração/classificação.
 const GEMINI_MODELS = [
-  'gemini-3.5-flash',        // reserva — GA desde mai/2026, sem data de desativação
-  'gemini-3.1-flash-lite',   // fallback leve — custo-eficiente, bom pra tarefas mecânicas
-  'gemini-2.5-flash',        // fallback legado — desativa out/2026, remover após migrar vision
+  'gemini-3.5-flash',        // primário — qualidade e personalidade da Clara
+  'gemini-3.1-flash-lite',   // reserva
+  'gemini-2.5-flash',        // fallback legado — desativa out/2026, não remover ainda
 ];
 
 const GEMINI_MODELS_LITE = [
-  'gemini-3.1-flash-lite',  // mecânico — estável até mai/2027
+  'gemini-3.5-flash-lite',   // primário — lançado jul/2026, 5x mais barato que 3.5-flash, ótimo pra mecânico
+  'gemini-3.1-flash-lite',   // fallback — estável até mai/2027
 ];
 
 // ── Cache de quota esgotada (em memória) ──
@@ -290,7 +286,6 @@ async function geminiVision(base64Image, mimeType, systemPrompt, userPrompt = 'O
   if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
 
   // Modelo com visão — gemini-2.5-flash enxerga imagem nativamente
-  // ⚠️ Desativa out/2026 — migrar pra gemini-3.5-flash quando liberar suporte a visão
   const model = 'gemini-2.5-flash';
   const parts = [{ text: userPrompt }];
   // Se houver foto de referência da própria Clara, manda ela JUNTO na
@@ -337,9 +332,7 @@ async function geminiVision(base64Image, mimeType, systemPrompt, userPrompt = 'O
 // tempo (o Google itera bastante nessa linha) — se começar a dar erro
 // 404, provavelmente é isso: verificar o nome atual do modelo na
 // documentação do Gemini API antes de assumir que é outro bug.
-// gemini-2.5-flash-image desativa 2 out/2026 → substituído por gemini-3.1-flash-image
-// gemini-3.1-flash-image: GA desde mai/2026, sem data de desativação anunciada
-const GEMINI_IMAGE_MODEL = 'gemini-3.1-flash-image';
+const GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image';
 
 async function geminiGerarImagem(prompt) {
   if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
