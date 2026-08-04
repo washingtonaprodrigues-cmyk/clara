@@ -9,13 +9,17 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // NOTA: gemini-3.6-flash e gemini-3.5-flash-lite removidos — retornam 400
 // INVALID_ARGUMENT (não disponíveis nesta conta/região).
-// FLASH — tudo que faz Clara ser Clara: conversa, proatividade, memória,
-//   relacionamento, busca, classify.
-// LITE — mecânico puro sem personalidade: extractPersonalInfo, extractEpisodio,
-//   memória relacional, gênero, tradução de busca, etc.
+//
+// GEMINI_MODELS — usado pela personalidade da Clara (tentarGeminiComPersonalidade),
+//   classify e respostas principais. Precisa de modelo com boa capacidade de
+//   seguir contexto, memória e nuance. Lite aqui degrada: perde gênero, esquece
+//   o que foi dito na conversa, contexto não persiste bem.
+// GEMINI_MODELS_LITE — background mecânico sem personalidade: extractPersonalInfo,
+//   extractEpisodio, memória relacional, tradução de busca, etc. Lite é perfeito
+//   aqui: tarefas simples, sem nuance, muito mais barato.
 const GEMINI_MODELS = [
-  'gemini-3.1-flash-lite',   // primário — 15x mais barato, testado e aprovado pra personalidade
-  'gemini-3.5-flash',        // reserva — qualidade máxima, entra se lite falhar
+  'gemini-3.5-flash',        // primário — contexto rico, personalidade, gênero, nuance
+  'gemini-3.1-flash-lite',   // reserva — entra se flash falhar/esgotar
   'gemini-2.5-flash',        // fallback legado — desativa out/2026, não remover ainda
 ];
 
