@@ -725,7 +725,7 @@ Resposta do usuário: ${message}`
     }
 
     // Usa Gemini em vez de Groq — evita 413 por payload grande no Groq
-    const respGemini = await geminiFreeResponse(messages, { maxTokens: 150, temperature: 0.1 }).catch(() => null);
+    const respGemini = await geminiFreeResponseLite(messages, { maxTokens: 150, temperature: 0.1 }).catch(() => null);
     if (!respGemini) return [];
     let text = respGemini.trim();
     text = text.replace(/```/g, '').replace(/```/g, '').trim();
@@ -769,7 +769,7 @@ async function extractPendenciaEmocional(message) {
     if (!message || message.trim().length < 5) return null;
     if (!PENDENCIA_KEYWORDS.test(message)) return null;
 
-    const respPend = await geminiFreeResponse([
+    const respPend = await geminiFreeResponseLite([
       { role: 'system', content: EXTRACT_PENDENCIA_SYSTEM },
       { role: 'user', content: message }
     ], { maxTokens: 100, temperature: 0.1 }).catch(() => null);
@@ -821,7 +821,7 @@ async function extractEpisodio(message) {
     if (!message || message.trim().length < 8) return null;
     if (!EPISODIO_KEYWORDS.test(message)) return null;
 
-    const resposta = await geminiFreeResponse([
+    const resposta = await geminiFreeResponseLite([
       { role: 'system', content: EXTRACT_EPISODIO_SYSTEM },
       { role: 'user', content: message }
     ], { maxTokens: 120, temperature: 0.1 }).catch(() => null);
@@ -1044,7 +1044,7 @@ async function searchWebGroq(query, locationContext = '', nomeUsuario = '', tomU
     let traduzida = null;
     if (geminiDisponivel() && !todosModelosEsgotados()) {
       try {
-        traduzida = await geminiFreeResponse(msgsReprocesso, { temperature: 0.7, maxTokens: 600 });
+        traduzida = await geminiFreeResponseLite(msgsReprocesso, { temperature: 0.7, maxTokens: 600 });
       } catch (eReprocGem) {
         console.error('[searchWeb] Gemini falhou ao reprocessar, tentando Groq:', eReprocGem?.message);
       }
@@ -1890,7 +1890,7 @@ Corrija erros do resumo anterior se houver.` },
 
     if (geminiDisponivel() && !todosModelosEsgotados()) {
       try {
-        const respGemini = await geminiFreeResponse(chatMsgs, { temperature: 0.4, maxTokens: 500 });
+        const respGemini = await geminiFreeResponseLite(chatMsgs, { temperature: 0.4, maxTokens: 500 });
         if (respGemini) return filtrarConteudoIntimo(respGemini.trim());
       } catch (eGemini) {
         console.error('[generateRelationshipSummary] Gemini falhou, tentando Groq:', eGemini.message);
@@ -1987,7 +1987,7 @@ Se não houver nada que passe nos critérios, retorna APENAS: null`;
     let text = null;
     if (geminiDisponivel() && !todosModelosEsgotados()) {
       try {
-        const respGemini = await geminiFreeResponse(msgs, { temperature: 0, maxTokens: 120 });
+        const respGemini = await geminiFreeResponseLite(msgs, { temperature: 0, maxTokens: 120 });
         if (respGemini) text = respGemini.trim();
       } catch (eGemini) {
         console.error('[detectarAssuntoEmAberto] Gemini falhou, tentando Groq:', eGemini.message);
@@ -2115,7 +2115,7 @@ Responda APENAS JSON sem markdown:
 ou: {"encontrou": false}`;
 
     if (geminiDisponivel() && !todosModelosEsgotados()) {
-      const resp = await geminiFreeResponse([
+      const resp = await geminiFreeResponseLite([
         { role: 'user', content: prompt }
       ], { temperature: 0.1, maxTokens: 80 }).catch(() => null);
       if (!resp) return null;
