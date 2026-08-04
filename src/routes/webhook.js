@@ -706,7 +706,7 @@ async function transcribeAndProcess(phone, body) {
       return;
     }
 
-    await handleMessage(phone, `[áudio] ${texto}`);
+    await handleMessage(phone, texto);
   } catch (e) {
     console.error('[Áudio] Erro:', e.message);
     await sendMessage(phone, 'Tive um problema com o áudio 😕 Pode digitar?');
