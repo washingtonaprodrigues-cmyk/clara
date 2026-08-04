@@ -2312,6 +2312,30 @@ async function executeAction(user, phone, classified, originalText, quotedText =
       const pendentes = await getLembretesPendentesConfirmacao(user.id);
       if (!pendentes.length) break;
 
+      // ── Resposta ao aviso AGRUPADO ─────────────────────────────────
+      // Quando o usuário arrasta a mensagem "Você tem N lembretes agora"
+      // e diz "feito" (ou qualquer confirmação genérica sem especificar
+      // qual), marca TODOS os pendentes de uma vez. O WhatsApp trunca o
+      // quotedText então não dá pra contar com word-matching nesses casos.
+      const ehLembreteDeFoto = (msg) => /\b(foto|fotinha|selfie)\b/i.test(msg || '');
+      const ehRespostaGrupo = quotedText && /Você tem \d+ lembretes? agora/i.test(quotedText);
+      if (ehRespostaGrupo && !extrairCodigoLembrete(originalText || '') && !classified.titulo) {
+        const semFoto = pendentes.filter(r => !ehLembreteDeFoto(r.message));
+        if (semFoto.length) {
+          await prisma.reminder.updateMany({ where: { id: { in: semFoto.map(m => m.id) } }, data: { confirmed: true } });
+          for (const m of semFoto) fecharPendenciaLembrete(user.id, m.message).catch(() => {});
+          emitirAtualizacao(phone, 'lembretes');
+          const nomes = semFoto.map(m => `"${m.message}"`).join(' e ');
+          const msgGrupo = semFoto.length > 1
+            ? `✅ Anotado! Marquei ${semFoto.length} lembretes como concluídos: ${nomes}.`
+            : `✅ Feito! ${nomes} concluído.`;
+          await sendMessage(phone, msgGrupo);
+          await memory.saveConversationMessage(user.id, 'assistant', msgGrupo).catch(() => {});
+          respondeuAqui = true;
+        }
+        break;
+      }
+
       // Se o usuário citou um código curto (#1, #2, "feito o 2"...), usa
       // o índice diretamente — evita ambiguidade quando vários lembretes
       // foram disparados juntos.
@@ -2359,12 +2383,6 @@ async function executeAction(user, phone, classified, originalText, quotedText =
         }
       }
 
-      // PROTEÇÃO: lembrete de mandar foto/selfie nunca fecha por essa via
-      // genérica de "confirmação conversacional" — só a entrega real da
-      // foto (no bloco de geração de selfie) pode marcar como concluído.
-      // Sem isso, uma resposta tipo "tá pronta!" (mesmo sem a foto ter
-      // saído de verdade) podia fechar o lembrete como se tivesse cumprido.
-      const ehLembreteDeFoto = (msg) => /\b(foto|fotinha|selfie)\b/i.test(msg || '');
       if (matchMultiplo) {
         const semFoto = matchMultiplo.filter(m => !ehLembreteDeFoto(m.message));
         if (semFoto.length) {
