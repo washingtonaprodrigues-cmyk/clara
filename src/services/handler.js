@@ -70,10 +70,6 @@ function getWhatsapp() {
   return _whatsappModule;
 }
 
-// Sinaliza por turno se a mensagem atual veio de áudio — usado em
-// responderLivre pra enviar resposta como PTT sem mudar a assinatura.
-const _audioTurno = new Map();
-
 async function sendMessage(phone, msg, delay) {
   const w = getWhatsapp();
   if (w && typeof w.sendMessage === 'function') {
@@ -1094,25 +1090,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
 
     await memory.saveConversationMessage(user.id, 'user', text);
     await memory.saveConversationMessage(user.id, 'assistant', respStr);
-
-    // ── Envio em áudio se solicitado ──────────────────────────────────
-    let enviouAudio = false;
-    if (respStr.length <= 500) {
-      const modoAudio = await prisma.memory.findFirst({ where: { userId: user.id, type: 'modo_audio' } }).catch(() => null);
-      const audioAtivo = modoAudio?.content === 'ativo';
-      const usuarioMandouAudio = _audioTurno.get(phone) || false;
-      _audioTurno.delete(phone);
-      console.log(`[AudioCheck] audioAtivo=${audioAtivo} turno=${usuarioMandouAudio} len=${respStr.length}`);
-      if (audioAtivo || usuarioMandouAudio) {
-        const w = require('./whatsapp');
-        console.log(`[AudioCheck] ttsDisponivel=${typeof w.ttsDisponivel === 'function' ? w.ttsDisponivel() : 'N/A'}`);
-        enviouAudio = await w.enviarRespostaComAudio(phone, respStr).catch(e => {
-          console.error('[AudioCheck] erro:', e.message);
-          return false;
-        });
-      }
-    }
-    if (!enviouAudio) await sendMessage(phone, respStr);
+    await sendMessage(phone, respStr);
 
     // ── Detecção de promessa de busca não executada ───────────────────
     // Restrito ao final da resposta (~40 chars) — mesmo motivo do fix em
@@ -1281,12 +1259,6 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
 
     if (!text) return;
 
-    // Flag por turno: usuário mandou áudio nesta mensagem?
-    // Guardado num Map em vez de parâmetro pra não mudar assinatura de responderLivre.
-    const veiuDeAudio = /^\[áudio\]\s*/i.test(text || '');
-    if (veiuDeAudio) text = text.replace(/^\[áudio\]\s*/i, '');
-    _audioTurno.set(phone, veiuDeAudio);
-
     const textLower = normalizar(text);
 
     // ── Comando interno: ativa/desativa modo comparação (Gemini manual) ──
@@ -1314,28 +1286,6 @@ async function handleMessage(phone, text, location = null, quotedText = null) {
         ? '😏 Bora, vou soltar mais o verbo. Diga "volta ironia ao normal" quando quiser desligar o teste.'
         : '😊 Combinado, vou segurar mais a ironia. Diga "volta ironia ao normal" quando quiser desligar o teste.';
       return await sendMessage(phone, msgConfirma);
-    }
-
-    // ── Modo áudio: ativa/desativa por pedido natural ─────────────────
-    // Remove acentos antes do regex — \b não funciona com caracteres Unicode
-    // como 'á', então "áudio" precisa virar "audio" pra casar o padrão.
-    const tAudio = (text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const pedidoAudio =
-      /manda.{0,15}(audio|voz)/.test(tAudio) ||
-      /responde?.{0,15}(audio|voz)/.test(tAudio) ||
-      /fala.{0,10}(audio|voz)/.test(tAudio) ||
-      /\b(quero|queria|queria)\s.{0,10}(ouvir|escutar)/.test(tAudio) ||
-      /(ouvir|escutar).{0,15}(sua|tua).{0,10}voz/.test(tAudio) ||
-      /sua\s+voz/.test(tAudio) ||
-      /\baudio\b.{0,20}(sim|pode|quero|bora|manda)/.test(tAudio) ||
-      /(me manda|pode mandar).{0,10}(audio|voz)/.test(tAudio);
-    const pedidoTexto = /\b(manda(r)? texto|digita(r)?|por mensagem|responde (escrito|por texto)|volta.{0,15}(texto|mensagem)|sem audio|em texto|de volta.{0,10}texto|volta pro texto|pode (parar|voltar)|texto agora|so texto|s[oó] texto)\b/i.test(tAudio);
-    if (pedidoAudio) {
-      await upsertMemoryPorTipo(user.id, 'modo_audio', 'ativo').catch(() => {});
-      console.log(`[ModoAudio] Ativado para ${phone}`);
-    } else if (pedidoTexto) {
-      await upsertMemoryPorTipo(user.id, 'modo_audio', 'inativo').catch(() => {});
-      console.log(`[ModoAudio] Desativado para ${phone}`);
     }
 
     const foiConfirmacao = await checkConfirmacaoPendente(user, phone, text);
