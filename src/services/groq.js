@@ -1382,7 +1382,7 @@ async function tentarGeminiComPersonalidade(message, history, tom, name, context
     const reforcoSituacional = tom === 'sarcastico'
       ? `REFORÇO DE TOM: quando o clima for de brincadeira, provocação ou intimidade — vá fundo. Ironia afiada, flerte com charme, deboche carinhoso. Não amacie nesses momentos. Se o assunto virar sério, muda o tom naturalmente.\n\n`
       : '';
-    const sistemaCompleto = reforcoBrevidade + reforcoSituacional + buildPersonality(tom, name, false, generoPrefs) + contexto;
+    const sistemaCompleto = reforcoBrevidade + reforcoSituacional + buildPersonality(tom, name, false) + contexto;
     const msgs = [
       { role: 'system', content: sistemaCompleto },
       ...history.slice(-12),
