@@ -467,6 +467,19 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // não só nomes numa lista fixa) — só cai pro nome como último recurso.
     const generoUsuario = await getGeneroConfiavel(user.id, preferences.name);
 
+    // Injeta gênero via _reforcoSituacional — vem ANTES do buildPersonality
+    // no system prompt, garantindo que a rule 3d nunca conflite com o gênero
+    // real salvo na memória. Sem isso, apelidos como "fedo" (não reconhecido
+    // na lista de nomes) fazem a rule 3d dizer "pergunte o gênero" e às vezes
+    // ela usa "doida" ou feminino pra um usuário masculino.
+    if (generoUsuario === 'M') {
+      preferences._reforcoSituacional = (preferences._reforcoSituacional || '') +
+        '[GÊNERO] O usuário é HOMEM — use SEMPRE masculino ao se referir a ele. Nunca "doida", "querida" ou "ela" referindo-se ao usuário.\n\n';
+    } else if (generoUsuario === 'F') {
+      preferences._reforcoSituacional = (preferences._reforcoSituacional || '') +
+        '[GÊNERO] A usuária é MULHER — use SEMPRE feminino ao se referir a ela.\n\n';
+    }
+
     // Usa o apelido carinhoso (ex: "fedo") em vez do nome real sempre que
     // existir — sem isso, freeResponse/buildPersonality recebem só o nome
     // cadastrado (Washington) e a Clara depende só do histórico/memória do
