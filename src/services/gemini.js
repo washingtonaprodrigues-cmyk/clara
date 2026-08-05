@@ -7,19 +7,13 @@
 // Usa fetch nativo (Node 18+), sem dependências novas.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// NOTA: gemini-3.6-flash confirmado disponível na conta (testado AI Studio ago/2026).
-//
-// CASCATA "BARATO AO TOP":
-// 1º gemini-3.5-flash-lite  — $0.30/$2.50 por 1M tokens (5x mais barato que flash)
-//    Lançado jul/2026, muito superior ao 3.1-flash-lite. Testar se sustenta a personalidade.
-// 2º gemini-3.6-flash       — $1.50/$7.50 — qualidade máxima se lite falhar
-// 3º gemini-3.5-flash       — $1.50/$7.50 — backup se 3.6 ainda tiver problemas
-// 4º gemini-3.1-flash-lite  — $0.25/$1.50 — último recurso Gemini
-// Groq                      — absoluto último recurso (fora do GEMINI_MODELS)
+// Cascata TOP → BÁSICO (testado e aprovado ago/2026):
+// Lite como primário degrada a personalidade — Clara vira assistente genérica.
+// 3.6-flash confirmado disponível na conta (testado AI Studio ago/2026).
 const GEMINI_MODELS = [
-  'gemini-3.5-flash-lite',   // 1º — econômico, lançado jul/2026
-  'gemini-3.6-flash',        // 2º — qualidade se lite falhar
-  'gemini-3.5-flash',        // 3º — backup comprovado
+  'gemini-3.6-flash',        // 1º — mais recente, melhor qualidade
+  'gemini-3.5-flash',        // 2º — comprovado, personalidade plena
+  'gemini-3.5-flash-lite',   // 3º — econômico, personalidade um pouco mais fraca
   'gemini-3.1-flash-lite',   // 4º — último recurso Gemini
 ];
 
