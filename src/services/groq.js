@@ -1106,13 +1106,8 @@ function detectarGeneroPorNome(nome) {
   return null;
 }
 
-function buildPersonality(tom, name, privateMode = false, generoExplicito = null) {
-  // generoExplicito vem da info_pessoal ('ele' → 'M', 'ela' → 'F')
-  // e tem prioridade total sobre a detecção por nome — resolve o bug de
-  // apelidos como "fedo" não sendo reconhecidos e virando gênero desconhecido.
-  const genero = generoExplicito
-    ? (generoExplicito === 'ele' ? 'M' : generoExplicito === 'ela' ? 'F' : generoExplicito)
-    : detectarGeneroPorNome(name);
+function buildPersonality(tom, name, privateMode = false) {
+  const genero = detectarGeneroPorNome(name);
   const nomeTxt = name ? `O nome da pessoa é ${name}. ${genero === 'M' ? 'Esta pessoa é HOMEM — use sempre masculino ao se referir a ela.' : genero === 'F' ? 'Esta pessoa é MULHER — use sempre feminino ao se referir a ela.' : ''}` : '';
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
   const pad = n => String(n).padStart(2, '0');
@@ -1637,7 +1632,6 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
   try {
     const name = preferences?.name || null;
     const tom = preferences?.tom || 'leve';
-    const generoPrefs = preferences?._genero || null; // salvo em handler.js via getGeneroConfiavel
     const contexto = preferences?._contexto || '';
 
     if (preferences?._systemOverride) {
@@ -1645,7 +1639,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       // Injeta a personalidade da Clara ANTES do override, pra ela manter
       // o tom dela (carinhoso, brincalhão, "fedo") mesmo numa boa noite curta.
       // Sem isso o modelo escreve genérico/formal com "parabéns" e aspas.
-      const sistemaComAlma = buildPersonality(tom, name, false, generoPrefs) + '\n\n' + preferences._systemOverride;
+      const sistemaComAlma = buildPersonality(tom, name, false) + '\n\n' + preferences._systemOverride;
       const msgsOverride = [
         { role: 'system', content: sistemaComAlma },
         { role: 'user', content: message }
@@ -1711,7 +1705,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         body: JSON.stringify({
           model: MODEL_PRIVADO,
           messages: [
-            { role: 'system', content: buildPersonality(tom, name, true, generoPrefs) + contexto },
+            { role: 'system', content: buildPersonality(tom, name, true) + contexto },
             ...history.slice(-12),
             { role: 'user', content: message }
           ],
@@ -1744,7 +1738,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       // Gemini indisponível/falhou — tenta Groq chave 2 antes de desistir
       if (groq2 && !_groq2EmTPD) {
         const msgs2 = [
-          { role: 'system', content: buildPersonality(tom, name, false, generoPrefs) + contexto },
+          { role: 'system', content: buildPersonality(tom, name, false) + contexto },
           ...history.slice(-12),
           { role: 'user', content: message }
         ];
@@ -1777,7 +1771,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
       contextoComAcao += `\n\n[AÇÃO JÁ EXECUTADA]: ${preferences._dicaAcao}`;
     }
 
-    const sistemaCompleto = buildPersonality(tom, name, false, generoPrefs) + contextoComAcao;
+    const sistemaCompleto = buildPersonality(tom, name, false) + contextoComAcao;
 
     const msgs = [
       { role: 'system', content: sistemaCompleto },
@@ -1823,7 +1817,7 @@ async function freeResponse(message, history = [], preferences = {}, privateMode
         // ── Groq KEY_1 paga — reserva quando KEY_2 esgota ──
         if (isTPD(e1) && groq2 && !_groq2EmTPD) {
           const msgs2 = [
-            { role: 'system', content: buildPersonality(tom, name, false, generoPrefs) + contexto },
+            { role: 'system', content: buildPersonality(tom, name, false) + contexto },
             ...history.slice(-12),
             { role: 'user', content: message }
           ];
