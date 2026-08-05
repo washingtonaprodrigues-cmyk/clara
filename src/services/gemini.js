@@ -17,9 +17,8 @@ const GEMINI_MODELS = [
 ];
 
 const GEMINI_MODELS_LITE = [
-  // gemini-3.5-flash-lite confirmado disponível (ago/2026) e movido para
-  // GEMINI_MODELS como primário. Aqui fica só o 3.1 como último recurso lite.
-  'gemini-3.1-flash-lite',   // estável até mai/2027
+  'gemini-3.5-flash-lite',   // primário — melhor qualidade pra resumo de relacionamento e extrações
+  'gemini-3.1-flash-lite',   // fallback — estável até mai/2027
 ];
 
 // ── Cache de quota esgotada (em memória) ──
