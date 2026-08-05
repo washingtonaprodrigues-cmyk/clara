@@ -12,10 +12,11 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 // GEMINI_MODELS — personalidade, classify e resposta principal.
 // Flash como primário: único que sustenta a personalidade da Clara com fidelidade.
 // Lite testado como primário e confirmado: perde o tom, vira assistente genérico.
+// Fallback: 2.5-flash (flash completo, mantém personalidade) → lite (último recurso)
 const GEMINI_MODELS = [
-  'gemini-3.5-flash',        // primário — único que sustenta a personalidade da Clara
-  'gemini-3.1-flash-lite',   // reserva — entra se flash falhar/esgotar
-  'gemini-2.5-flash',        // fallback legado — desativa out/2026
+  'gemini-3.5-flash',        // primário — personalidade plena da Clara
+  'gemini-2.5-flash',        // 2º fallback — flash completo, mantém personalidade
+  'gemini-3.1-flash-lite',   // último recurso — perde tom mas não trava
 ];
 
 const GEMINI_MODELS_LITE = [
