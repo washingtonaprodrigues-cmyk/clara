@@ -466,7 +466,6 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // resposta explícita salva na memória (funciona pra qualquer usuário,
     // não só nomes numa lista fixa) — só cai pro nome como último recurso.
     const generoUsuario = await getGeneroConfiavel(user.id, preferences.name);
-    if (generoUsuario) preferences._genero = generoUsuario; // passa pra buildPersonality resolver corretamente
 
     // Usa o apelido carinhoso (ex: "fedo") em vez do nome real sempre que
     // existir — sem isso, freeResponse/buildPersonality recebem só o nome
@@ -959,19 +958,32 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         // usuário pediu foto
         (m.role === 'user' && /manda foto|me manda uma foto|quero ver você|manda então|cadê a foto|foto de você|me mostra|manda a foto|manda uma foto/i.test(m.content || ''))
         ||
-        // Clara criou o contexto (prometeu, fez suspense, ofereceu)
-        (m.role === 'assistant' && /vou (te )?mandar|deixa eu tirar|só porque você pediu|vou tirar|preparar o coração|tirar uma foto|manda então|olha (só|a minha|a sua)/i.test(m.content || ''))
+        // Clara criou o contexto (prometeu, fez suspense, ofereceu, perguntou)
+        (m.role === 'assistant' && /vou (te )?mandar|deixa eu tirar|só porque você pediu|vou tirar|preparar o coração|tirar uma foto|manda então|olha (só|a minha|a sua)|quer( que eu)? (mand|tir|ver|uma foto|selfie)|que tal (uma foto|selfie)|se quiser (te mand|tirar)/i.test(m.content || ''))
       );
+
+      // Confirmação afirmativa quando Clara perguntou se queria foto
+      const claraOfereceuFoto = historicoRecente.some(m =>
+        m.role === 'assistant' && /quer( que eu)? (mand|tir|ver|uma foto|selfie)|que tal (uma foto|selfie)|se quiser/i.test(m.content || '')
+      );
+      const ehConfirmacaoFoto = claraOfereceuFoto &&
+        /^(sim|pode|quero|manda|vai|bora|claro|tá bom|ok|pode sim|quero sim|pode mandar|vai lá|vai)[\s!.?kkk]*$/i.test(text.trim());
       if (contextoFoto) {
         const implicouFoto =
           // Frases explícitas de foto enviada/prestes a ser enviada
-          /\b(pronto|prontinho|vai de verdade|agora é pra valer|agora vai|olha quem|olha (eu aqui|a sua|a minha|só:)|acabei de tirar|tirei essa|aqui está|tá aqui|mandei|aproveita|aproveita a visão)\b/i.test(respStr)
-          // Descrição de roupa/aparência (ela está se ilustrando)
+          /\b(pronto|prontinho|vai de verdade|agora é pra valer|agora vai|olha quem|olha (eu aqui|a sua|a minha|só:)|acabei de tirar|tirei essa|aqui está|tá aqui|mandei|aproveita|aproveita a visão|tá indo agora|foto tá indo|chamego.*foto|foto.*indo|mando agora|se prepara|prepara o coração|impacto)\b/i.test(respStr)
+          // Descrição de roupa/aparência
           || /\b(pijaminha|pijama|blusa|vestido|saia|legging|cropped|short|biquíni|lingerie|look de|roupa de)\b/i.test(respStr)
-          // Descrição de posição/local no contexto de selfie
+          // Descrição de posição/local
           || /olha a (sua|minha)\s+\w+/i.test(respStr)
-          || /\btô (aqui|deitad|sentad|esticad|levantad|me arrumand)\b/i.test(respStr);
-        if (implicouFoto) {
+          || /\btô (aqui|deitad|sentad|esticad|levantad|me arrumand)\b/i.test(respStr)
+          // Confirmação afirmativa quando Clara ofereceu foto
+          || ehConfirmacaoFoto;
+
+      // Adiciona 'combinado' como confirmação afirmativa de foto
+      const ehAfirmativoFoto = ehConfirmacaoFoto ||
+        (/^(combinado|tá bom|fechado|fechou|vai|bora|manda|pode mandar|pode|vai sim)[\s!.?kkk]*$/i.test(text.trim()) && claraOfereceuFoto);
+        if (implicouFoto || ehAfirmativoFoto) {
           respStr = respStr.replace(/([.!?])\s*$/, '$1') + ' __GERAR_SELFIE__';
           console.log('[SelfieForçada] Tag injetada — modelo descreveu foto sem usar a tag');
         }
@@ -1073,8 +1085,14 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         if (wTyping && typeof wTyping.sendTyping === 'function') {
           wTyping.sendTyping(phone, 8000).catch(() => {});
         }
-        // Contexto pra montar o prompt técnico: a fala dela + a mensagem do usuário
-        const contextoParaPrompt = `Usuário disse: "${text}"\nClara respondeu: "${falaNatural}"`;
+        // Contexto pra montar o prompt técnico: inclui histórico recente pra
+        // capturar cenas que Clara descreveu em turnos anteriores — sem isso,
+        // a selfie é gerada com base só na mensagem atual e pode ser diferente
+        // do que ela disse estar fazendo.
+        const histContexto = history.slice(-4).map(m =>
+          `${m.role === 'user' ? 'Usuário' : 'Clara'}: "${(m.content || '').slice(0, 120)}"`
+        ).join('\n');
+        const contextoParaPrompt = `${histContexto}\nUsuário disse: "${text}"\nClara respondeu: "${falaNatural}"`;
         const cenaTecnica = await gerarPromptSelfieDetalhado(contextoParaPrompt);
         const referencia = getClaraReferenciaBase64();
         const selfie = referencia
