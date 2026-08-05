@@ -7,13 +7,12 @@
 // Usa fetch nativo (Node 18+), sem dependências novas.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// Cascata TOP → BÁSICO (testado e aprovado ago/2026):
-// Lite como primário degrada a personalidade — Clara vira assistente genérica.
-// 3.6-flash confirmado disponível na conta (testado AI Studio ago/2026).
+// Cascata TOP → BÁSICO (ago/2026):
+// 3.6-flash mais lento e ligeiramente diferente — 3.5-flash como primário comprovado.
 const GEMINI_MODELS = [
-  'gemini-3.6-flash',        // 1º — mais recente, melhor qualidade
-  'gemini-3.5-flash',        // 2º — comprovado, personalidade plena
-  'gemini-3.5-flash-lite',   // 3º — econômico, personalidade um pouco mais fraca
+  'gemini-3.5-flash',        // 1º — comprovado, personalidade plena, latência boa
+  'gemini-3.6-flash',        // 2º — mais recente, entra se 3.5 falhar
+  'gemini-3.5-flash-lite',   // 3º — econômico, personalidade mais fraca
   'gemini-3.1-flash-lite',   // 4º — último recurso Gemini
 ];
 
