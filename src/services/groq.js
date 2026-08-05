@@ -1,3 +1,5 @@
+// 05/08: ajustes em gemini.js (GEMINI_MODELS_LITE → 3.5-flash-lite) e
+// handler.js (gênero via _reforcoSituacional). groq.js sem mudança funcional.
 // Revertida a distinção formal "duas formas de recusa" da regra 2d —
 // estava vazando pra ela recusar assuntos em geral na conversa, não só
 // pedidos de foto. Mantida a regra simples: recusar é permitido, mentir
