@@ -24,8 +24,8 @@ const GEMINI_MODELS = [
 ];
 
 const GEMINI_MODELS_LITE = [
-  // gemini-3.5-flash-lite removido — retornava 400 INVALID_ARGUMENT (não disponível nesta conta)
-  // igual ao gemini-3.6-flash. Reativar depois de confirmar disponibilidade.
+  // gemini-3.5-flash-lite confirmado disponível (ago/2026) e movido para
+  // GEMINI_MODELS como primário. Aqui fica só o 3.1 como último recurso lite.
   'gemini-3.1-flash-lite',   // estável até mai/2027
 ];
 
