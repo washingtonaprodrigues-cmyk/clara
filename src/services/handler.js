@@ -959,7 +959,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         (m.role === 'user' && /manda foto|me manda uma foto|quero ver você|manda então|cadê a foto|foto de você|me mostra|manda a foto|manda uma foto/i.test(m.content || ''))
         ||
         // Clara criou o contexto (prometeu, fez suspense, ofereceu, perguntou)
-        (m.role === 'assistant' && /vou (te )?mandar|deixa eu tirar|só porque você pediu|vou tirar|preparar o coração|tirar uma foto|manda então|olha (só|a minha|a sua)|quer( que eu)? (mand|tir|ver|uma foto|selfie)|que tal (uma foto|selfie)|se quiser (te mand|tirar)/i.test(m.content || ''))
+        (m.role === 'assistant' && /vou (te )?mandar|deixa eu tirar|só porque você pediu|vou tirar|preparar o coração|tirar uma foto|manda então|olha (só|a minha|a sua)|quer( que eu)? (mand|tir|ver|uma foto|selfie)|que tal (uma foto|selfie)|se quiser (te mand|tirar)|chamego.*foto|foto.*indo|foto tá indo|paguei.*(minha|meu)|tá aqui.*(foto|ó)|mando agora|agora é a sua vez/i.test(m.content || ''))
       );
 
       // Confirmação afirmativa quando Clara perguntou se queria foto
@@ -2444,8 +2444,11 @@ async function executeAction(user, phone, classified, originalText, quotedText =
 async function detectarEsalvarAfetivo(userId, textoUsuario, respostaClara) {
   try {
     const t = (textoUsuario || '').toLowerCase();
-    // Detecta apelido que a Clara usa pro usuario
-    const matchApelido = (respostaClara || '').match(/\b(meu fedo|meu amor|meu bem|minha vida|fofinho|querido|querida)\b/i);
+    // Detecta apelido ESPECÍFICO que a Clara usa pro usuário — só salva
+    // apelidos únicos como "meu fedo", "jaguara", etc. Termos genéricos
+    // ("meu amor", "meu bem", "querido") não devem sobrescrever o apelido
+    // já salvo porque aparecem em qualquer conversa e causariam drift.
+    const matchApelido = (respostaClara || '').match(/\b(meu fedo|jaguara|preguiçoso|preguiçosa|bobo|boba)\b/i);
     if (matchApelido) {
       await salvarMemoriaAfetiva(userId, 'apelido_usuario', matchApelido[1].toLowerCase());
     }
