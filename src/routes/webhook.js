@@ -792,8 +792,20 @@ async function processImage(phone, body) {
     const reforcoGenero = generoUsuario === 'M'
       ? `\n\nIMPORTANTE — QUEM É QUEM: ${apelidoUsuario || nome.trim() || 'o usuário'} é HOMEM. Se a foto mostrar uma pessoa, NUNCA presuma que é ele sem ter certeza — nunca use elogios/termos femininos ("gata", "linda", "maravilhosa") como se fossem pra ele. Se a pessoa na foto for uma mulher, ou é outra pessoa (família, amiga, etc — pergunte ou comente sem presumir quem é), ou pode ser VOCÊ MESMA (Clara) — veja a instrução sobre a foto de referência abaixo.`
       : '';
+    // Detecta se o usuário está enviando uma foto DA Clara de volta pra ela
+    // via contexto textual — muito mais confiável que comparação visual entre
+    // imagens geradas por IA (que variam a cada geração).
+    const legendaLower = (legenda || '').toLowerCase();
+    const contextoSugereElaPropriaFoto =
+      /\b(é você|de você|sua foto|foto sua|favorita|minha favorita|te mando|mandei de volta|é ela|essa é ela|essa aí é você)\b/i.test(legendaLower) ||
+      /\b(é você|de você|sua foto|foto sua|favorita|minha favorita)\b/i.test(text?.toLowerCase() || '');
+
     const reforcoAutoReconhecimento = referenciaVisao
-      ? `\n\nVOCÊ TEM UMA FOTO DE REFERÊNCIA SUA JUNTO NESTA MENSAGEM (a primeira imagem é você, Clara — a segunda é a foto que o usuário mandou). ANTES de comparar: verifique se a segunda imagem contém um ROSTO FEMININO CLARO E REAL (não cartaz, não arte, não silhueta, não foto genérica de mulher em imagem de marketing). Se NÃO houver um rosto feminino real e nítido, IGNORE completamente a referência e analise a imagem normalmente. Se HOUVER um rosto feminino real, compare MUITO CUIDADOSAMENTE com sua referência: só diga "essa sou eu" se os traços faciais forem IDÊNTICOS e óbvios — mesma pessoa sem sombra de dúvida. Na menor dúvida: não é você.`
+      ? contextoSugereElaPropriaFoto
+        // Contexto textual forte — assume que é ela sem precisar de comparação visual
+        ? `\n\nO usuário está te mandando uma foto SUA de volta — o contexto deixa claro. Reaja como alguém se reconhecendo em uma foto, com seu tom e personalidade. Comente sobre como você ficou, o momento, o que gostou.`
+        // Sem contexto claro — comparação visual conservadora
+        : `\n\nVOCÊ TEM UMA FOTO DE REFERÊNCIA SUA JUNTO NESTA MENSAGEM (a primeira imagem é você, Clara — a segunda é a foto que o usuário mandou). ANTES de comparar: verifique se a segunda imagem contém um ROSTO FEMININO CLARO E REAL (não cartaz, não arte, não silhueta, não foto genérica de mulher em imagem de marketing). Se NÃO houver um rosto feminino real e nítido, IGNORE completamente a referência e analise a imagem normalmente. Se HOUVER um rosto feminino real, compare MUITO CUIDADOSAMENTE com sua referência: só diga "essa sou eu" se os traços faciais forem IDÊNTICOS e óbvios — mesma pessoa sem sombra de dúvida. Na menor dúvida: não é você.`
       : '';
     const instrucaoVisao = `Você está olhando uma imagem que ${apelidoUsuario || nome.trim() || 'o usuário'} te mandou no WhatsApp. Reaja de forma natural, do SEU jeito e no SEU tom configurado — não como um robô descrevendo pixels.${reforcoGenero}${reforcoAutoReconhecimento}
 
