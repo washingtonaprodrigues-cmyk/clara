@@ -370,7 +370,7 @@ ${resumo}`;
   if (pendencias.length > 0) {
     // [0] = mais recente (orderBy createdAt desc em getPendenciasAbertas)
     const principal = pendencias[0];
-    texto += `\n\n[ASSUNTO EM ABERTO${formatarIdade(principal.criadoEm)} — prioridade máxima, retome quando houver abertura natural. Use a idade acima pra calibrar: se foi ontem ou há dias, não trate como se tivesse acabado de acontecer]\n• ${principal.assunto}: ${principal.contexto} → ${principal.como_retomar}`;
+    texto += `\n\n[ASSUNTO EM ABERTO${formatarIdade(principal.criadoEm)} — retome quando o tom da conversa for leve e o momento for conveniente. NUNCA puxe esse assunto durante desabafos, discussões pessoais, momentos emocionais ou qualquer conversa que não seja claramente casual ou de trabalho. Espere a abertura real, não force.]\n• ${principal.assunto}: ${principal.contexto} → ${principal.como_retomar}`;
     // Demais assuntos: mencionados de forma mais leve, sem forçar
     if (pendencias.length > 1) {
       const outros = pendencias.slice(1, 3).map(p => `• ${p.assunto}${formatarIdade(p.criadoEm)}: ${p.contexto}`).join('\n');
