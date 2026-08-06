@@ -17,8 +17,9 @@ const GEMINI_MODELS = [
 ];
 
 const GEMINI_MODELS_LITE = [
-  'gemini-3.5-flash-lite',   // primário — melhor qualidade pra resumo de relacionamento e extrações
-  'gemini-3.1-flash-lite',   // fallback — estável até mai/2027
+  // gemini-3.5-flash-lite confirmado disponível (ago/2026) e movido para
+  // GEMINI_MODELS como primário. Aqui fica só o 3.1 como último recurso lite.
+  'gemini-3.1-flash-lite',   // estável até mai/2027
 ];
 
 // ── Cache de quota esgotada (em memória) ──
@@ -384,7 +385,7 @@ async function gerarPromptSelfieDetalhado(contextoConversa) {
   const msgs = [
     { role: 'system', content: `Você extrai, a partir de uma conversa em português, qual atividade/cena a pessoa está fazendo ou mencionou, e escreve uma descrição de selfie fotorealista EM INGLÊS pronta pra gerar imagem. Retorne APENAS a descrição em inglês, sem explicação.
 
-FORMATO OBRIGATÓRIO: "selfie of ${CLARA_APARENCIA}, [atividade específica], [objetos/equipamento visíveis do cenário], natural casual phone-selfie style, photorealistic"
+FORMATO OBRIGATÓRIO: "photo of ${CLARA_APARENCIA}, [atividade específica], [objetos/equipamento visíveis do cenário], photorealistic casual photo, natural lighting"
 
 Ela deve ser o assunto central da foto, em close ou meio-corpo, ativamente fazendo a atividade mencionada — nunca uma paisagem vazia.
 
@@ -398,7 +399,7 @@ Se não conseguir identificar uma atividade clara na conversa, use uma cena gen�
     console.error('[gerarPromptSelfieDetalhado] Erro:', e.message);
   }
   // Fallback genérico — sem roupa especificada, Gemini Image decide
-  return `selfie of ${CLARA_APARENCIA}, sitting comfortably at home, natural lighting, photorealistic phone-selfie style`;
+  return `photo of ${CLARA_APARENCIA}, sitting comfortably at home, natural lighting, photorealistic casual photo`;
 }
 
 // ── Geração de "selfie" da Clara, com identidade consistente ──────────
