@@ -7,13 +7,12 @@
 // Usa fetch nativo (Node 18+), sem dependências novas.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// OPÇÃO 1 — lite primeiro (arquivo de teste, não é o padrão)
-// Quando quiser testar: renomeia pra gemini.js e commita.
-// Se Clara ficar seca: volta pro backup com flash primeiro.
+// Cascata TOP → BÁSICO (ago/2026):
+// 3.6-flash mais lento e ligeiramente diferente — 3.5-flash como primário comprovado.
 const GEMINI_MODELS = [
-  'gemini-3.5-flash-lite',   // 1º — teste econômico
-  'gemini-3.5-flash',        // 2º — personalidade plena se lite falhar
-  'gemini-3.6-flash',        // 3º — mais recente
+  'gemini-3.5-flash',        // 1º — comprovado, personalidade plena, latência boa
+  'gemini-3.6-flash',        // 2º — mais recente, entra se 3.5 falhar
+  'gemini-3.5-flash-lite',   // 3º — econômico, personalidade mais fraca
   'gemini-3.1-flash-lite',   // 4º — último recurso Gemini
 ];
 
