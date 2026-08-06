@@ -831,6 +831,10 @@ Seja você mesma, breve (máximo 5 linhas), sem aspas, no português do Brasil. 
 
     // Se a Clara detectou um gasto, extrai a tag e cria o registro em silêncio
     // (a própria resposta dela já confirma o gasto — não duplica mensagem)
+
+    // Remove tags auto-geradas pelo modelo por analogia com [GASTO:...]
+    // O modelo às vezes cria "[IMAGEM_RECEBIDA]" ou similares sem instrução
+    analise = analise.replace(/^\[[A-Z_]+\]\s*/i, '').trim();
     const gastoMatch = analise.match(/\[GASTO:([\d.]+):([^:]+):([^\]]+)\]/);
     if (gastoMatch) {
       const valor = parseFloat(gastoMatch[1]);
