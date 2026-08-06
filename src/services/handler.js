@@ -2224,13 +2224,12 @@ async function executeAction(user, phone, classified, originalText, quotedText =
       const confMsg = await geminiFreeResponse([
         { role: 'system', content: systemChamada },
         { role: 'user', content: originalText || 'ok' }
-      ], { temperature: 0.85, maxTokens: 80 }).catch(() => null);
+      ], { temperature: 0.85, maxTokens: 160 }).catch(() => null);
       const confLimpo = (confMsg || '').replace(/\[.*?\]/g, '').trim();
       const msgFinal = confLimpo && confLimpo.length > 3
         ? confLimpo
         : (foiSaudade ? `Combinado, apareço quando a saudade bater 😏` : `Combinado! Te chamo às ${horaFinal} 😉`);
       await sendMessage(phone, msgFinal);
-      await memory.saveConversationMessage(user.id, 'assistant', msgFinal).catch(() => {});
       respondeuAqui = true;
       break;
     }
