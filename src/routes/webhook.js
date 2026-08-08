@@ -149,6 +149,40 @@ async function getLembretePendente(userId, phone, quotedText) {
   return candidatos[0];
 }
 
+function normalizarTextoBusca(texto) {
+  return (texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function ehLembreteDeFoto(msg) {
+  return /\b(foto|fotinha|selfie)\b/i.test(msg || '');
+}
+
+async function getLembretesGrupoPendente(userId, phone, quotedText) {
+  const quotedNorm = normalizarTextoBusca(quotedText);
+  if (!quotedNorm || !/voce tem \d+ lembretes? agora/.test(quotedNorm)) return [];
+
+  const tresHoras = new Date(nowBRT().getTime() - 3 * 60 * 60 * 1000);
+  const candidatos = await prisma.reminder.findMany({
+    where: {
+      OR: [
+        { userId, sent: true, confirmed: false, scheduledAt: { gte: tresHoras } },
+        { phone, sent: true, confirmed: false, scheduledAt: { gte: tresHoras } },
+      ]
+    },
+    orderBy: { scheduledAt: 'desc' }
+  }).catch(() => []);
+
+  const semFoto = candidatos.filter(r => !ehLembreteDeFoto(r.message));
+  if (!semFoto.length) return [];
+
+  const citados = semFoto.filter(r => quotedNorm.includes(normalizarTextoBusca(r.message)));
+  if (citados.length > 1) return citados;
+
+  const maisRecente = semFoto[0];
+  const minutoMaisRecente = new Date(maisRecente.scheduledAt).getTime();
+  return semFoto.filter(r => Math.abs(new Date(r.scheduledAt).getTime() - minutoMaisRecente) < 60 * 1000);
+}
+
 async function getRemedioRecente(userId) {
   const now = nowBRT();
   const pad = n => String(n).padStart(2, '0');
@@ -274,6 +308,14 @@ async function handleSimpleResponse(phone, text, quotedText) {
   }
 
   if (LEMBRETE_FEITO.some(r => r.test(textLower))) {
+    const grupo = await getLembretesGrupoPendente(user.id, phone, quotedText);
+    if (grupo.length > 1) {
+      await prisma.reminder.updateMany({ where: { id: { in: grupo.map(r => r.id) } }, data: { confirmed: true } });
+      const nomes = grupo.map(r => `"${r.message}"`).join(' e ');
+      await sendMessage(phone, `✅ Feito! Marquei ${grupo.length} lembretes como concluídos: ${nomes}.`, 400, quotedText);
+      return true;
+    }
+
     const lembrete = await getLembretePendente(user.id, phone, quotedText);
     if (lembrete) {
       await prisma.reminder.update({ where: { id: lembrete.id }, data: { confirmed: true } });
