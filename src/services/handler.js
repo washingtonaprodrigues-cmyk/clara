@@ -319,6 +319,22 @@ function detectarCalorConversa(textoOriginal) {
   return '';
 }
 
+function devePularMemoriaProfunda(textoOriginal) {
+  const original = (textoOriginal || '').trim();
+  const t = normalizar(original);
+  if (!t) return true;
+
+  const contemAfetoOuApelido = /\b(amor|meu amor|te amo|amo voce|saudade|senti sua falta|carinho|beijo|abraco|fedo|clarita|clarinha|jaguara|meu bem|minha vida|gata|linda|fofa)\b/.test(t);
+  const contemSaudeOuEvento = /\b(dor|doendo|febre|passando mal|hospital|medico|consulta|exame|remedio|trabalho|familia|filha|filho|esposa|patroa|aconteceu|deu certo|deu ruim|problema)\b/.test(t);
+  if (contemAfetoOuApelido || contemSaudeOuEvento) return false;
+
+  const soEmojiOuPontuacao = /^[\s\p{Emoji_Presentation}\p{Extended_Pictographic}!?.…]+$/u.test(original);
+  if (soEmojiOuPontuacao) return true;
+
+  const curtoSemConteudo = t.length <= 18 && /^(kk+k*|rs+|haha+|sim|nao|não|ok|ta|tá|blz|beleza|boa|show|valeu|obrigad[oa]?|rachei|eita|vish|nossa|uai|ixi|aham|hum|hmm|verdade|pois e|pois é)$/.test(t);
+  return curtoSemConteudo;
+}
+
 // Extrai um código curto de lembrete do texto do usuário (ex: "#1", "feito 2",
 // "concluí o 1", "número 3"). Retorna o número (1-indexed) ou null se não
 // encontrar. Usado para desambiguar quando múltiplos lembretes foram
@@ -1184,7 +1200,9 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       }
     }
 
-    updateRelationshipSummary(user.id, history, respStr).catch(() => {});
+    const pularMemoriaProfunda = devePularMemoriaProfunda(text);
+
+    if (!pularMemoriaProfunda) updateRelationshipSummary(user.id, history, respStr).catch(() => {});
 
     // ── Memória relacional: categoriza e salva o que vale lembrar ──────────
     // PERMANENTE: apelidos novos, brincadeiras internas, quem são juntos
@@ -1192,6 +1210,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // DESCARTA: lembretes, listas, agenda, operacional sem carga emocional
     ;(async () => {
       try {
+        if (pularMemoriaProfunda) return;
         const histMR = await memory.getConversationHistory(user.id, 8).catch(() => []);
         if (histMR.length < 3) return;
         const resumoMR = histMR.slice(-6).map(m =>
@@ -1217,6 +1236,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
     // quando o assunto voltar. Ela não pode se esquecer do que ela mesma disse.
     ;(async () => {
       try {
+        if (pularMemoriaProfunda) return;
         if (!respStr || respStr.length < 30) return;
         // Detecta se ela fez afirmação sobre si mesma (atividade, apelido, qualidade)
         const temAutoReferencia = /\b(tô|tava|sou|me chamo|sou a|me\s+\w+|minha|minhas|aqui eu|aqui a|fraquinha|aqui tô|acabei de|eu que|eu já|eu também|eu adoro|eu odeio|eu gosto|eu sou)\b/i.test(respStr);
@@ -1253,6 +1273,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         detectarEsalvarHumor(user.id, text, respStr).catch(() => {});
         // Detecta apelidos e tom da relacao
         detectarEsalvarAfetivo(user.id, text, respStr).catch(() => {});
+        if (pularMemoriaProfunda) return;
         const histAtual = [...history, { role: 'user', content: text }, { role: 'assistant', content: respStr }];
         if (histAtual.length >= 2 && text.length > 15) {
           const pendencia = await detectarAssuntoEmAberto(histAtual);
