@@ -87,7 +87,6 @@ async function chamarGemini(model, msgs, { temperature = 0.7, maxTokens = 800 } 
     generationConfig: {
       temperature,
       maxOutputTokens: maxTokens,
-      thinkingConfig: { thinkingBudget: 0 },
     },
   };
   if (systemInstruction) {
@@ -253,7 +252,7 @@ async function geminiVision(base64Image, mimeType, systemPrompt, userPrompt = 'O
   parts.push({ inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Image } });
   const body = {
     contents: [{ role: 'user', parts }],
-    generationConfig: { temperature: 0.7, maxOutputTokens: 800, thinkingConfig: { thinkingBudget: 0 } },
+    generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
   };
   if (systemPrompt) {
     body.systemInstruction = { parts: [{ text: systemPrompt }] };
@@ -387,7 +386,6 @@ async function geminiGerarSelfie(cena, referenciaBase64, referenciaMimeType = 'i
 async function geminiSearchGrounded(systemPrompt, userQuery, { temperature = 0.7, maxTokens = 600 } = {}) {
   if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
 
-  // Ajustado para o 3.6-flash na busca também
   const model = 'gemini-3.6-flash';
   const body = {
     contents: [{ role: 'user', parts: [{ text: userQuery }] }],
@@ -395,7 +393,6 @@ async function geminiSearchGrounded(systemPrompt, userQuery, { temperature = 0.7
     generationConfig: {
       temperature,
       maxOutputTokens: maxTokens,
-      thinkingConfig: { thinkingBudget: 0 },
     },
   };
   if (systemPrompt) {
