@@ -82,13 +82,24 @@ function isQuotaError(err) {
 // Faz uma chamada a um modelo específico do Gemini.
 async function chamarGemini(model, msgs, { temperature = 0.7, maxTokens = 800 } = {}) {
   const { systemInstruction, contents } = converterMensagens(msgs);
+  
+  const generationConfig = {
+    temperature,
+    maxOutputTokens: maxTokens,
+  };
+
+  // Se for a família 3.6, desativa explicitamente o orçamento de raciocínio
+  if (model.includes('3.6')) {
+    generationConfig.thinkingConfig = {
+      thinkingBudget: 0
+    };
+  }
+
   const body = {
     contents,
-    generationConfig: {
-      temperature,
-      maxOutputTokens: maxTokens,
-    },
+    generationConfig,
   };
+
   if (systemInstruction) {
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
