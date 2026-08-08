@@ -1,23 +1,24 @@
 // touch redeploy
 // ── Fallback Gemini ──
-// Gerenciador de chamadas Gemini com cascata de economia e velocidade.
+// Quando o Groq (70b) esgota (rate limit), tenta o Gemini Flash antes de
+// cair pro modo direto. Gemini Flash tem free tier sem cartão de crédito —
+// boa rede de segurança pro uso pessoal.
 //
 // Usa fetch nativo (Node 18+), sem dependências novas.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// Cascata de modelos otimizada:
-// 1º Lite (super rápido/barato) -> 2º 3.5 Flash -> 3º 3.6 Flash (com Thinking) -> 4º 3.1 Lite -> (Groq no app principal)
+// Cascata TOP → BÁSICO (ago/2026):
+// 3.6-flash mais lento e ligeiramente diferente — 3.5-flash como primário comprovado.
 const GEMINI_MODELS = [
-  'gemini-3.5-flash-lite',   // 1º — Ultra econômico, rápido e ideal para bate-papo
-  'gemini-3.5-flash',        // 2º — Robusto e rápido
-  'gemini-3.6-flash',        // 3º — Raciocínio profundo com Thinking ativado
-  'gemini-3.1-flash-lite',   // 4º — Reserva leve
+  'gemini-3.5-flash',        // 1º — comprovado, personalidade plena, latência boa
+  'gemini-3.6-flash',        // 2º — mais recente, entra se 3.5 falhar
+  'gemini-3.5-flash-lite',   // 3º — econômico, personalidade mais fraca
+  'gemini-3.1-flash-lite',   // 4º — último recurso Gemini
 ];
 
-// Modelos Lite para tarefas mecânicas/internas sem custo elevado
 const GEMINI_MODELS_LITE = [
-  'gemini-3.5-flash-lite',   // Primário econômico para funções secundárias
-  'gemini-3.1-flash-lite',   // Último recurso lite
+  'gemini-3.5-flash-lite',   // 1º — lite atual e disponível
+  'gemini-3.1-flash-lite',   // 2º — estável até mai/2027
 ];
 
 // ── Cache de quota esgotada (em memória) ──
@@ -51,8 +52,6 @@ function geminiDisponivel() {
   return !!GEMINI_API_KEY;
 }
 
-// Converte mensagens no formato OpenAI/Groq (role: system/user/assistant)
-// para o formato do Gemini (system_instruction + contents com role user/model)
 function converterMensagens(msgs) {
   let systemInstruction = null;
   const contents = [];
@@ -69,12 +68,10 @@ function converterMensagens(msgs) {
   return { systemInstruction, contents };
 }
 
-// Identifica se o erro do Gemini é de quota/rate limit (429 com RESOURCE_EXHAUSTED)
 function isQuotaError(err) {
   return err?.status === 429 || /quota|rate.?limit|resource_exhausted/i.test(err?.message || '');
 }
 
-// Faz uma chamada a um modelo específico do Gemini.
 async function chamarGemini(model, msgs, { temperature = 0.7, maxTokens = 800 } = {}) {
   const { systemInstruction, contents } = converterMensagens(msgs);
   
@@ -83,11 +80,10 @@ async function chamarGemini(model, msgs, { temperature = 0.7, maxTokens = 800 } 
     maxOutputTokens: maxTokens,
   };
 
-  // Se a requisição cair no 3.6 Flash, ativa o orçamento de raciocínio (thinking)
-  if (model.includes('3.6')) {
-    generationConfig.thinkingConfig = {
-      thinkingBudget: 1024
-    };
+  // Envia thinkingConfig para evitar respostas cortadas,
+  // EXCETO no 3.6 que retorna Erro 400 ao receber esse parâmetro.
+  if (!model.includes('3.6')) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
   }
 
   const body = {
@@ -106,7 +102,7 @@ async function chamarGemini(model, msgs, { temperature = 0.7, maxTokens = 800 } 
   });
 
   const timeoutPromise = new Promise((_, reject) => {
-    const t = setTimeout(() => reject(new Error('timeout')), 10000);
+    const t = setTimeout(() => reject(new Error('timeout')), 6000);
     if (t.unref) t.unref();
   });
 
@@ -135,7 +131,6 @@ async function chamarGemini(model, msgs, { temperature = 0.7, maxTokens = 800 } 
   return { text: text.trim(), finishReason };
 }
 
-// Gera uma resposta via Gemini seguindo a ordem de GEMINI_MODELS
 async function geminiFreeResponse(msgs, opts = {}) {
   if (!geminiDisponivel()) {
     throw new Error('GEMINI_API_KEY não configurada');
@@ -170,7 +165,6 @@ async function geminiFreeResponse(msgs, opts = {}) {
   throw ultimoErro || new Error('Todos os modelos Gemini falharam');
 }
 
-// Continuação automática quando a resposta é cortada por MAX_TOKENS
 async function geminiFreeResponseComContinuacao(msgs, opts = {}) {
   if (!geminiDisponivel()) {
     throw new Error('GEMINI_API_KEY não configurada');
@@ -217,17 +211,14 @@ async function geminiFreeResponseComContinuacao(msgs, opts = {}) {
   throw ultimoErro || new Error('Todos os modelos Gemini falharam');
 }
 
-// Identifica se o erro do Gemini é rate limit (429)
 function isGeminiRateLimit(err) {
   return err?.status === 429 || /quota|rate.?limit/i.test(err?.message || '');
 }
 
-// Verifica se TODOS os modelos FLASH estão esgotados
 function todosModelosEsgotados() {
   return GEMINI_MODELS.every(m => estaEsgotado(m));
 }
 
-// Gera resposta usando modelo LITE (economico)
 async function geminiFreeResponseLite(msgs, opts = {}) {
   if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
   let ultimoErro;
@@ -242,11 +233,9 @@ async function geminiFreeResponseLite(msgs, opts = {}) {
       if (isQuotaError(err)) marcarEsgotado(model);
     }
   }
-  // Lite falhou — cai no fluxo normal via geminiFreeResponse
   return geminiFreeResponse(msgs, opts);
 }
 
-// Analisa uma imagem com o Gemini Vision
 async function geminiVision(base64Image, mimeType, systemPrompt, userPrompt = 'O que você vê nesta imagem?', referenciaBase64 = null, referenciaMimeType = 'image/jpeg') {
   if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
 
@@ -258,7 +247,7 @@ async function geminiVision(base64Image, mimeType, systemPrompt, userPrompt = 'O
   parts.push({ inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Image } });
   const body = {
     contents: [{ role: 'user', parts }],
-    generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
+    generationConfig: { temperature: 0.7, maxOutputTokens: 800, thinkingConfig: { thinkingBudget: 0 } },
   };
   if (systemPrompt) {
     body.systemInstruction = { parts: [{ text: systemPrompt }] };
@@ -284,7 +273,6 @@ async function geminiVision(base64Image, mimeType, systemPrompt, userPrompt = 'O
   return text.trim();
 }
 
-// Geração de imagem nativa
 const GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image';
 
 async function geminiGerarImagem(prompt) {
@@ -320,7 +308,6 @@ async function geminiGerarImagem(prompt) {
   return { base64: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png' };
 }
 
-// Descrição textual fixa da Clara
 const CLARA_APARENCIA = `a young Brazilian/Latina woman in her mid-to-late 20s, with warm olive skin tone, long dark brown/black wavy hair usually worn in a loose messy bun with a few face-framing strands falling naturally, brown eyes, defined natural eyebrows, an oval/heart-shaped face, and a warm, genuine smile with visible teeth. Natural, minimal makeup look. She dresses like a normal everyday Brazilian woman — casual blouses, tank tops, sundresses, shorts, skirts, leggings, jeans — always appropriate for the situation but never overly conservative or formal.`;
 
 async function gerarPromptSelfieDetalhado(contextoConversa) {
@@ -379,7 +366,6 @@ async function geminiGerarSelfie(cena, referenciaBase64, referenciaMimeType = 'i
   const textPart = parts.find(p => p.text)?.text;
   const safetyRatings = data?.candidates?.[0]?.safetyRatings;
   const promptFeedback = data?.promptFeedback;
-
   console.log(`[Gemini-Selfie-DIAG] temImagem=${!!imgPart} textoJunto="${(textPart || '').slice(0, 200)}" promptFeedback=${JSON.stringify(promptFeedback || {})} safetyRatings=${JSON.stringify(safetyRatings || [])}`);
   if (!imgPart) {
     const bloqueio = data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason;
@@ -388,7 +374,6 @@ async function geminiGerarSelfie(cena, referenciaBase64, referenciaMimeType = 'i
   return { base64: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png' };
 }
 
-// Busca com Google Search grounding
 async function geminiSearchGrounded(systemPrompt, userQuery, { temperature = 0.7, maxTokens = 600 } = {}) {
   if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
 
@@ -399,6 +384,7 @@ async function geminiSearchGrounded(systemPrompt, userQuery, { temperature = 0.7
     generationConfig: {
       temperature,
       maxOutputTokens: maxTokens,
+      thinkingConfig: { thinkingBudget: 0 },
     },
   };
   if (systemPrompt) {
