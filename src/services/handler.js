@@ -287,6 +287,7 @@ function normalizar(text) {
   return (text || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+// Termometro leve por mensagem: reforca o tom sem mudar a personalidade base.
 function detectarCalorConversa(textoOriginal) {
   const original = textoOriginal || '';
   const t = normalizar(original);
