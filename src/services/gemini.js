@@ -1,31 +1,24 @@
 // touch redeploy
 // ── Fallback Gemini ──
-// Quando o Groq (70b) esgota (rate limit), tenta o Gemini Flash antes de
-// cair pro modo direto. Gemini Flash tem free tier sem cartão de crédito —
-// boa rede de segurança pro uso pessoal.
-//
+// Gerenciador de chamadas Gemini com streaming otimizado e busca isolada.
 // Usa fetch nativo (Node 18+), sem dependências novas.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// Cascata de modelos ajustada para economia e ordem de prioridade solicitada:
+// Cascata de modelos (Gemini 3.6 Flash como primário com alta velocidade):
 const GEMINI_MODELS = [
-  'gemini-3.6-flash',        // 1º — modelo primário
-  'gemini-3.5-flash',        // 2º — fallback intermediário
-  'gemini-3.5-flash-lite',   // 3º — econômico
-  'gemini-3.1-flash-lite',   // 4º — último recurso Gemini
+  'gemini-3.6-flash',        // 1º — Primário rápido com streaming
+  'gemini-3.5-flash',        // 2º — Backup rápido
+  'gemini-3.5-flash-lite',   // 3º — Econômico
+  'gemini-3.1-flash-lite',   // 4º — Último recurso Gemini
 ];
 
 // Modelos Lite para tarefas mecânicas/internas sem custo elevado
 const GEMINI_MODELS_LITE = [
-  'gemini-3.5-flash-lite',   // Primário econômico para funções secundárias
-  'gemini-3.1-flash-lite',   // Último recurso lite
+  'gemini-3.5-flash-lite',   
+  'gemini-3.1-flash-lite',   
 ];
 
 // ── Cache de quota esgotada (em memória) ──
-// Quando um modelo retorna erro de quota, marcamos ele como "esgotado até
-// o fim do dia" (a quota gratuita do Gemini reseta diariamente, geralmente
-// à meia-noite UTC). Isso evita tentar os modelos em sequência sempre
-// que TODOS já estão sabidamente esgotados.
 const _modelosEsgotados = new Map(); // model -> timestamp de quando esgotou
 
 function proximaMeiaNoiteUTC() {
@@ -42,10 +35,15 @@ function estaEsgotado(model) {
   const expiraEm = _modelosEsgotados.get(model);
   if (!expiraEm) return false;
   if (Date.now() >= expiraEm) {
-    _modelosEsgotados.delete(model); // já passou da meia-noite, reseta
+    _modelosEsgotados.delete(model);
     return false;
   }
   return true;
+}
+
+// ALTERADO: Endpoint trocado de generateContent para streamGenerateContent (com alt=sse para resposta em fluxo)
+function geminiStreamUrl(model) {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
 }
 
 function geminiUrl(model) {
@@ -56,8 +54,7 @@ function geminiDisponivel() {
   return !!GEMINI_API_KEY;
 }
 
-// Converte mensagens no formato OpenAI/Groq (role: system/user/assistant)
-// para o formato do Gemini (system_instruction + contents com role user/model)
+// Converte mensagens no formato OpenAI/Groq para o formato Gemini
 function converterMensagens(msgs) {
   let systemInstruction = null;
   const contents = [];
@@ -74,42 +71,44 @@ function converterMensagens(msgs) {
   return { systemInstruction, contents };
 }
 
-// Identifica se o erro do Gemini é de quota/rate limit (429 com RESOURCE_EXHAUSTED)
 function isQuotaError(err) {
   return err?.status === 429 || /quota|rate.?limit|resource_exhausted/i.test(err?.message || '');
 }
 
-// Faz uma chamada a um modelo específico do Gemini.
-async function chamarGemini(model, msgs, { temperature = 0.7, maxTokens = 800 } = {}) {
+// Faz uma chamada com STREAMING via Server-Sent Events (SSE) sem ativar ferramentas de busca
+async function chamarGeminiStream(model, msgs, { temperature = 0.7, maxTokens = 800 } = {}) {
   const { systemInstruction, contents } = converterMensagens(msgs);
+  
   const body = {
     contents,
     generationConfig: {
       temperature,
       maxOutputTokens: maxTokens,
     },
+    // NOTA: SEM ferramentas de busca (tools) aqui para manter a resposta ultra rápida
   };
+
   if (systemInstruction) {
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
 
-  const fetchPromise = fetch(geminiUrl(model), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  const timeoutPromise = new Promise((_, reject) => {
-    const t = setTimeout(() => reject(new Error('timeout')), 6000);
-    if (t.unref) t.unref();
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s de timeout máximo
 
   let response;
   try {
-    response = await Promise.race([fetchPromise, timeoutPromise]);
-  } finally {
-    fetchPromise.catch(() => {});
+    response = await fetch(geminiStreamUrl(model), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') throw new Error(`Timeout na resposta de ${model}`);
+    throw err;
   }
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
     const errText = await response.text().catch(() => '');
@@ -118,15 +117,47 @@ async function chamarGemini(model, msgs, { temperature = 0.7, maxTokens = 800 } 
     throw err;
   }
 
-  const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  const finishReason = data?.candidates?.[0]?.finishReason;
-  const usage = data?.usageMetadata;
-  console.log(`[Gemini-DIAG] model=${model} finishReason=${finishReason} thoughtsTokens=${usage?.thoughtsTokenCount || 0} outputTokens=${usage?.candidatesTokenCount || 0} maxTokens=${maxTokens}`);
-  if (!text) {
-    throw new Error(`Gemini retornou vazio (${model}, finishReason: ${finishReason || 'desconhecido'})`);
+  // Lendo a resposta em tempo real via stream
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let textoCompleto = '';
+  let finishReason = null;
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const linhas = buffer.split('\n');
+    buffer = linhas.pop() || '';
+
+    for (const linha of linhas) {
+      if (linha.startsWith('data: ')) {
+        const jsonStr = linha.slice(6).trim();
+        if (!jsonStr || jsonStr === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(jsonStr);
+          const chunkText = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (chunkText) textoCompleto += chunkText;
+          if (parsed?.candidates?.[0]?.finishReason) {
+            finishReason = parsed.candidates[0].finishReason;
+          }
+        } catch (e) {
+          // ignora linhas SSE malformadas
+        }
+      }
+    }
   }
-  return { text: text.trim(), finishReason };
+
+  textoCompleto = textoCompleto.trim();
+  console.log(`[Gemini-STREAM-DIAG] model=${model} finishReason=${finishReason || 'OK'} tamanho=${textoCompleto.length}`);
+
+  if (!textoCompleto) {
+    throw new Error(`Gemini retornou vazio em stream (${model})`);
+  }
+
+  return { text: textoCompleto, finishReason };
 }
 
 // Gera uma resposta via Gemini seguindo a ordem de GEMINI_MODELS
@@ -145,12 +176,12 @@ async function geminiFreeResponse(msgs, opts = {}) {
     }
     tentouAlgum = true;
     try {
-      const resultado = await chamarGemini(model, msgs, opts);
-      console.log(`[Gemini] modelo usado com sucesso: ${model}`);
+      const resultado = await chamarGeminiStream(model, msgs, opts);
+      console.log(`[Gemini-Stream] modelo usado com sucesso: ${model}`);
       return resultado.text;
     } catch (err) {
       ultimoErro = err;
-      console.error(`[Gemini] modelo ${model} falhou: ${err.message}`);
+      console.error(`[Gemini-Stream] modelo ${model} falhou: ${err.message}`);
       if (isQuotaError(err)) {
         marcarEsgotado(model);
       }
@@ -177,8 +208,8 @@ async function geminiFreeResponseComContinuacao(msgs, opts = {}) {
     if (estaEsgotado(model)) continue;
     tentouAlgum = true;
     try {
-      const resultado = await chamarGemini(model, msgs, opts);
-      console.log(`[Gemini] modelo usado com sucesso: ${model}`);
+      const resultado = await chamarGeminiStream(model, msgs, opts);
+      console.log(`[Gemini-Stream] modelo usado com sucesso: ${model}`);
 
       if (resultado.finishReason === 'MAX_TOKENS' && resultado.text.length > 20) {
         try {
@@ -187,11 +218,11 @@ async function geminiFreeResponseComContinuacao(msgs, opts = {}) {
             { role: 'assistant', content: resultado.text },
             { role: 'user', content: '(sua resposta foi cortada por limite de tamanho — continue EXATAMENTE de onde parou, sem repetir nada do que já disse, sem reintroduzir o assunto, sem comentar que foi cortada. Só emende a continuação direta.)' }
           ];
-          const continuacao = await chamarGemini(model, msgsContinuacao, { ...opts, maxTokens: opts.maxTokens || 800 });
-          console.log(`[Gemini] continuação automática gerada (resposta original estava cortada)`);
+          const continuacao = await chamarGeminiStream(model, msgsContinuacao, { ...opts, maxTokens: opts.maxTokens || 800 });
+          console.log(`[Gemini-Stream] continuação automática gerada`);
           return `${resultado.text} ${continuacao.text}`.trim();
         } catch (eCont) {
-          console.error(`[Gemini] continuação falhou, devolvendo resposta cortada mesmo: ${eCont.message}`);
+          console.error(`[Gemini-Stream] continuação falhou, devolvendo resposta cortada mesmo: ${eCont.message}`);
           return resultado.text;
         }
       }
@@ -199,7 +230,7 @@ async function geminiFreeResponseComContinuacao(msgs, opts = {}) {
       return resultado.text;
     } catch (err) {
       ultimoErro = err;
-      console.error(`[Gemini] modelo ${model} falhou: ${err.message}`);
+      console.error(`[Gemini-Stream] modelo ${model} falhou: ${err.message}`);
       if (isQuotaError(err)) marcarEsgotado(model);
       continue;
     }
@@ -211,32 +242,28 @@ async function geminiFreeResponseComContinuacao(msgs, opts = {}) {
   throw ultimoErro || new Error('Todos os modelos Gemini falharam');
 }
 
-// Identifica se o erro do Gemini é rate limit (429)
 function isGeminiRateLimit(err) {
   return err?.status === 429 || /quota|rate.?limit/i.test(err?.message || '');
 }
 
-// Verifica se TODOS os modelos FLASH estão esgotados
 function todosModelosEsgotados() {
   return GEMINI_MODELS.every(m => estaEsgotado(m));
 }
 
-// Gera resposta usando modelo LITE (economico)
 async function geminiFreeResponseLite(msgs, opts = {}) {
   if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
   let ultimoErro;
   for (const model of GEMINI_MODELS_LITE) {
     if (estaEsgotado(model)) continue;
     try {
-      const resultado = await chamarGemini(model, msgs, opts);
-      console.log(`[Gemini-Lite] ${model}`);
+      const resultado = await chamarGeminiStream(model, msgs, opts);
+      console.log(`[Gemini-Lite-Stream] ${model}`);
       return resultado.text;
     } catch (err) {
       ultimoErro = err;
       if (isQuotaError(err)) marcarEsgotado(model);
     }
   }
-  // Lite falhou — cai no fluxo normal via geminiFreeResponse
   return geminiFreeResponse(msgs, opts);
 }
 
@@ -382,14 +409,14 @@ async function geminiGerarSelfie(cena, referenciaBase64, referenciaMimeType = 'i
   return { base64: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png' };
 }
 
-// Busca com Google Search grounding
+// Busca com Google Search grounding (ÚNICA FUNÇÃO COM BUSCA ATIVADA)
 async function geminiSearchGrounded(systemPrompt, userQuery, { temperature = 0.7, maxTokens = 600 } = {}) {
   if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
 
   const model = 'gemini-3.6-flash';
   const body = {
     contents: [{ role: 'user', parts: [{ text: userQuery }] }],
-    tools: [{ googleSearch: {} }],
+    tools: [{ googleSearch: {} }], // Busca ativa APENAS quando explicitamente solicitado nesta função
     generationConfig: {
       temperature,
       maxOutputTokens: maxTokens,
