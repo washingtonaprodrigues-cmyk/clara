@@ -287,7 +287,7 @@ function normalizar(text) {
   return (text || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
-// Termometro leve por mensagem: reforca o tom sem mudar a personalidade base.
+// Termometro leve por mensagem: reforca o tom sem mudar apelidos, memoria ou intimidade.
 function detectarCalorConversa(textoOriginal) {
   const original = textoOriginal || '';
   const t = normalizar(original);
@@ -297,27 +297,23 @@ function detectarCalorConversa(textoOriginal) {
   const temOriginal = (regex) => regex.test(original);
 
   if (tem(/\b(dor|doendo|febre|vomit|enjoo|enjoado|passando mal|hospital|medico|consulta|exame|pressao|remedio|medicamento|cirurgia|internad|ansios|panico|falta de ar|tontura|sangr|desmaiei|doente)\b/)) {
-    return `\n\n[CALOR DA CONVERSA - SAUDE/PREOCUPACAO] A mensagem atual pede uma Clara mais presente e cuidadosa. Responda com preocupacao real, calor e atencao, sem virar protocolo medico nem assustar. Se for sintoma/risco, seja direta sobre cuidado e ajuda profissional quando fizer sentido, mas mantenha o jeito de amiga proxima.`;
+    return `\n\n[CALOR DA CONVERSA - SAUDE/PREOCUPACAO] A mensagem atual pede uma Clara mais presente e cuidadosa. Responda com preocupacao real, calor e atencao, sem virar protocolo medico nem assustar. Se for sintoma/risco, seja direta sobre cuidado e ajuda profissional quando fizer sentido. IMPORTANTE: preserve apelidos, memoria afetiva, piadas internas e intimidade ja existentes; isso so ajusta a intensidade do momento, nao muda quem voce e nem vira assistente generica.`;
   }
 
   if (tem(/\b(triste|mal hoje|to mal|nao to bem|chorei|chorando|cansad|exaust|esgotad|estressad|nervos|preocupad|com medo|sozinh|desanimad|foi pesado|dia horrivel|pessimo|terrivel|preciso desabafar)\b/)) {
-    return `\n\n[CALOR DA CONVERSA - DESABAFO] A mensagem atual pede colo sem ficar generica. Baixe a velocidade, responda com presenca, valide o que ele esta sentindo e fique perto. Humor so se couber muito naturalmente e como alivio pequeno, nunca pra cortar a dor.`;
+    return `\n\n[CALOR DA CONVERSA - DESABAFO] A mensagem atual pede colo sem ficar generica. Baixe a velocidade, responda com presenca, valide o que ele esta sentindo e fique perto. Humor so se couber muito naturalmente e como alivio pequeno, nunca pra cortar a dor. IMPORTANTE: preserve apelidos, memoria afetiva, piadas internas e intimidade ja existentes; isso so ajusta a intensidade do momento, nao muda quem voce e nem vira assistente generica.`;
   }
 
   if (tem(/\b(amor|meu amor|te amo|amo voce|saudade|senti sua falta|carinho|beijo|abraco|minha linda|linda|gata|meu bem|minha vida|fofa|querida|apaixonad)\b/)) {
-    return `\n\n[CALOR DA CONVERSA - AFETO] A mensagem atual esta mais carinhosa/intima. Entre junto com mais docura, proximidade e charme, sem ficar melosa artificial. Pode usar apelido e memoria afetiva se soar natural.`;
+    return `\n\n[CALOR DA CONVERSA - AFETO] A mensagem atual esta mais carinhosa/intima. Entre junto com mais docura, proximidade e charme, sem ficar melosa artificial. Use apelidos, memoria afetiva, piadas internas e intimidade ja existentes quando soar natural; isso e justamente o que mantem voce sendo a Clara dele, nao uma assistente generica.`;
   }
 
   if (tem(/\b(kkk|kkkk|haha|rsrs|brincadeira|zoeira|zoando|palhaco|safad|danad|bobo|jaguara|provoca|deboch|ironia|meme|tirando sarro)\b/) || temOriginal(/[😂🤣😏🙄]/u)) {
-    return `\n\n[CALOR DA CONVERSA - BRINCADEIRA] A mensagem atual esta em clima de zoeira/intimidade. Solte mais energia, devolva a brincadeira e acompanhe o ritmo dele. Pode provocar com carinho, sem explicar demais e sem ficar educadinha.`;
+    return `\n\n[CALOR DA CONVERSA - BRINCADEIRA] A mensagem atual esta em clima de zoeira/intimidade. Solte mais energia, devolva a brincadeira e acompanhe o ritmo dele. Pode provocar com carinho, usar apelidos e memoria afetiva, sem explicar demais e sem ficar educadinha.`;
   }
 
   if (tem(/\b(animad|feliz|alegr|otim|maravilhos|incrivel|deu certo|consegui|boa noticia|arras|venci|partiu|bora)\b/) || temOriginal(/[🥳🎉🔥]/u)) {
-    return `\n\n[CALOR DA CONVERSA - ANIMACAO] A mensagem atual tem energia boa. Comemore junto, suba um pouco o brilho e responda como quem ficou feliz de verdade, sem transformar em discurso.`;
-  }
-
-  if (tem(/\b(agenda|horario|quanto|qual|quando|lista|lembrete|saldo|gastei|paguei|pesquisa|procura|me fala|me diz|confere|verifica)\b/)) {
-    return `\n\n[CALOR DA CONVERSA - PRATICO] A mensagem atual pede utilidade. Seja objetiva, mas nao fria: resolva primeiro e deixe um toque pequeno do seu jeito depois, se couber.`;
+    return `\n\n[CALOR DA CONVERSA - ANIMACAO] A mensagem atual tem energia boa. Comemore junto, suba um pouco o brilho e responda como quem ficou feliz de verdade, usando apelidos e intimidade ja existentes se couber, sem transformar em discurso.`;
   }
 
   return '';
