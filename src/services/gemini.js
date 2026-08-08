@@ -1,17 +1,18 @@
 // touch redeploy
 // ── Fallback Gemini ──
-// Gerenciador de chamadas Gemini com cascata de economia e velocidade.
+// Quando o Groq (70b) esgota (rate limit), tenta o Gemini Flash antes de
+// cair pro modo direto. Gemini Flash tem free tier sem cartão de crédito —
+// boa rede de segurança pro uso pessoal.
 //
 // Usa fetch nativo (Node 18+), sem dependências novas.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// Cascata de modelos otimizada:
-// 1º Lite (super rápido/barato) -> 2º 3.5 Flash -> 3º 3.6 Flash (com Thinking) -> 4º 3.1 Lite -> (Groq no app principal)
+// Cascata de modelos ajustada para economia e ordem de prioridade solicitada:
 const GEMINI_MODELS = [
-  'gemini-3.5-flash-lite',   // 1º — Ultra econômico, rápido e ideal para bate-papo
-  'gemini-3.5-flash',        // 2º — Robusto e rápido
-  'gemini-3.6-flash',        // 3º — Raciocínio profundo com Thinking ativado
-  'gemini-3.1-flash-lite',   // 4º — Reserva leve
+  'gemini-3.6-flash',        // 1º — modelo primário
+  'gemini-3.5-flash',        // 2º — fallback intermediário
+  'gemini-3.5-flash-lite',   // 3º — econômico
+  'gemini-3.1-flash-lite',   // 4º — último recurso Gemini
 ];
 
 // Modelos Lite para tarefas mecânicas/internas sem custo elevado
@@ -21,6 +22,10 @@ const GEMINI_MODELS_LITE = [
 ];
 
 // ── Cache de quota esgotada (em memória) ──
+// Quando um modelo retorna erro de quota, marcamos ele como "esgotado até
+// o fim do dia" (a quota gratuita do Gemini reseta diariamente, geralmente
+// à meia-noite UTC). Isso evita tentar os modelos em sequência sempre
+// que TODOS já estão sabidamente esgotados.
 const _modelosEsgotados = new Map(); // model -> timestamp de quando esgotou
 
 function proximaMeiaNoiteUTC() {
@@ -77,24 +82,13 @@ function isQuotaError(err) {
 // Faz uma chamada a um modelo específico do Gemini.
 async function chamarGemini(model, msgs, { temperature = 0.7, maxTokens = 800 } = {}) {
   const { systemInstruction, contents } = converterMensagens(msgs);
-  
-  const generationConfig = {
-    temperature,
-    maxOutputTokens: maxTokens,
-  };
-
-  // Se a requisição cair no 3.6 Flash, ativa o orçamento de raciocínio (thinking)
-  if (model.includes('3.6')) {
-    generationConfig.thinkingConfig = {
-      thinkingBudget: 1024
-    };
-  }
-
   const body = {
     contents,
-    generationConfig,
+    generationConfig: {
+      temperature,
+      maxOutputTokens: maxTokens,
+    },
   };
-
   if (systemInstruction) {
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
@@ -106,7 +100,7 @@ async function chamarGemini(model, msgs, { temperature = 0.7, maxTokens = 800 } 
   });
 
   const timeoutPromise = new Promise((_, reject) => {
-    const t = setTimeout(() => reject(new Error('timeout')), 10000);
+    const t = setTimeout(() => reject(new Error('timeout')), 6000);
     if (t.unref) t.unref();
   });
 
@@ -392,7 +386,7 @@ async function geminiGerarSelfie(cena, referenciaBase64, referenciaMimeType = 'i
 async function geminiSearchGrounded(systemPrompt, userQuery, { temperature = 0.7, maxTokens = 600 } = {}) {
   if (!geminiDisponivel()) throw new Error('GEMINI_API_KEY não configurada');
 
-  const model = 'gemini-3.5-flash';
+  const model = 'gemini-3.6-flash';
   const body = {
     contents: [{ role: 'user', parts: [{ text: userQuery }] }],
     tools: [{ googleSearch: {} }],
