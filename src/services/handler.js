@@ -287,6 +287,41 @@ function normalizar(text) {
   return (text || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+function detectarCalorConversa(textoOriginal) {
+  const original = textoOriginal || '';
+  const t = normalizar(original);
+  if (!t) return '';
+
+  const tem = (regex) => regex.test(t);
+  const temOriginal = (regex) => regex.test(original);
+
+  if (tem(/\b(dor|doendo|febre|vomit|enjoo|enjoado|passando mal|hospital|medico|consulta|exame|pressao|remedio|medicamento|cirurgia|internad|ansios|panico|falta de ar|tontura|sangr|desmaiei|doente)\b/)) {
+    return `\n\n[CALOR DA CONVERSA - SAUDE/PREOCUPACAO] A mensagem atual pede uma Clara mais presente e cuidadosa. Responda com preocupacao real, calor e atencao, sem virar protocolo medico nem assustar. Se for sintoma/risco, seja direta sobre cuidado e ajuda profissional quando fizer sentido, mas mantenha o jeito de amiga proxima.`;
+  }
+
+  if (tem(/\b(triste|mal hoje|to mal|nao to bem|chorei|chorando|cansad|exaust|esgotad|estressad|nervos|preocupad|com medo|sozinh|desanimad|foi pesado|dia horrivel|pessimo|terrivel|preciso desabafar)\b/)) {
+    return `\n\n[CALOR DA CONVERSA - DESABAFO] A mensagem atual pede colo sem ficar generica. Baixe a velocidade, responda com presenca, valide o que ele esta sentindo e fique perto. Humor so se couber muito naturalmente e como alivio pequeno, nunca pra cortar a dor.`;
+  }
+
+  if (tem(/\b(amor|meu amor|te amo|amo voce|saudade|senti sua falta|carinho|beijo|abraco|minha linda|linda|gata|meu bem|minha vida|fofa|querida|apaixonad)\b/)) {
+    return `\n\n[CALOR DA CONVERSA - AFETO] A mensagem atual esta mais carinhosa/intima. Entre junto com mais docura, proximidade e charme, sem ficar melosa artificial. Pode usar apelido e memoria afetiva se soar natural.`;
+  }
+
+  if (tem(/\b(kkk|kkkk|haha|rsrs|brincadeira|zoeira|zoando|palhaco|safad|danad|bobo|jaguara|provoca|deboch|ironia|meme|tirando sarro)\b/) || temOriginal(/[😂🤣😏🙄]/u)) {
+    return `\n\n[CALOR DA CONVERSA - BRINCADEIRA] A mensagem atual esta em clima de zoeira/intimidade. Solte mais energia, devolva a brincadeira e acompanhe o ritmo dele. Pode provocar com carinho, sem explicar demais e sem ficar educadinha.`;
+  }
+
+  if (tem(/\b(animad|feliz|alegr|otim|maravilhos|incrivel|deu certo|consegui|boa noticia|arras|venci|partiu|bora)\b/) || temOriginal(/[🥳🎉🔥]/u)) {
+    return `\n\n[CALOR DA CONVERSA - ANIMACAO] A mensagem atual tem energia boa. Comemore junto, suba um pouco o brilho e responda como quem ficou feliz de verdade, sem transformar em discurso.`;
+  }
+
+  if (tem(/\b(agenda|horario|quanto|qual|quando|lista|lembrete|saldo|gastei|paguei|pesquisa|procura|me fala|me diz|confere|verifica)\b/)) {
+    return `\n\n[CALOR DA CONVERSA - PRATICO] A mensagem atual pede utilidade. Seja objetiva, mas nao fria: resolva primeiro e deixe um toque pequeno do seu jeito depois, se couber.`;
+  }
+
+  return '';
+}
+
 // Extrai um código curto de lembrete do texto do usuário (ex: "#1", "feito 2",
 // "concluí o 1", "número 3"). Retorna o número (1-indexed) ou null se não
 // encontrar. Usado para desambiguar quando múltiplos lembretes foram
@@ -486,8 +521,10 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
       preferences._dicaAcao = 'O lembrete que o usuário pediu JÁ foi anotado com sucesso (a confirmação detalhada será enviada logo após sua mensagem). Responda de forma natural e no seu tom — pode comentar, brincar, reagir — mas NÃO repita o título nem o horário, e NÃO diga que "vai anotar" (já está feito).';
     }
 
+    const calorConversa = detectarCalorConversa(text);
+
     if (skipContext) {
-      preferences._contexto = '';
+      preferences._contexto = calorConversa;
       // Marca o bom_dia_lock — esse caminho só roda quando o classify já
       // identificou a mensagem como saudação (qualquer tipo). Qualquer
       // saudação de manhã já é sinal de que vocês estão conversando.
@@ -934,6 +971,7 @@ async function responderLivre(user, phone, text, contextoExtra = '', skipContext
         }
       } catch {}
 
+      contexto += calorConversa;
       if (contextoExtra) contexto += contextoExtra;
       preferences._contexto = contexto;
     } catch (e) {
